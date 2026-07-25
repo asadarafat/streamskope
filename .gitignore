@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.cache/
+.vite/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+.vscode/
+
+# Keep product planning private during incubation.
+docs/
+openspec/
