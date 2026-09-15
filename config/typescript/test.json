@@ -1,0 +1,18 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "../../.cache/typescript/test.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client", "vitest/globals"]
+  },
+  "include": [
+    "../../src/**/*.ts",
+    "../../src/**/*.tsx",
+    "../../test/**/*.ts",
+    "../../test/**/*.tsx",
+    "../../tools/**/*.ts",
+    "../*.ts"
+  ]
+}

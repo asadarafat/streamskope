@@ -2,13 +2,60 @@ node_modules/
 dist/
 coverage/
 .cache/
+.artifacts/
+.codex/
 .vite/
 playwright-report/
 test-results/
 *.log
+*.tsbuildinfo
 .DS_Store
 .vscode/
+
+# Local secrets and trust stores (never production source).
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+
+# Local recordings, exports and distribution archives.
+*.mp4
+*.webm
+*.mov
+*.zip
+*.tar.gz
+*.dmg
+*.exe
+*.msi
+
+# Generated package output.
+build/
+package.json.md5
 
 # Keep product planning private during incubation.
 docs/
 openspec/
+
+# Public website sources are versioned; derived assets and tool caches are not.
+!website/docs/
+website/.site/
+website/.preview/
+website/.cache/
+website/.zensical.local.toml
+website/.zensical.serve.toml
+website/docs/assets/streamskope.svg
+website/docs/launch/assets/
+website/docs/launch/.hyperframes/
+__pycache__/
+
+# Published intro variants; other recordings remain private.
+!website/docs/assets/streamskope-intro-light.mp4
+!website/docs/assets/streamskope-intro-dark.mp4

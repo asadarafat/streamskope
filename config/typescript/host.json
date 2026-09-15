@@ -1,0 +1,20 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "../../.cache/typescript/host.tsbuildinfo",
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "files": [],
+  "include": [
+    "../../src/kafka/contracts/**/*.ts",
+    "../../src/kafka/application/**/*.ts",
+    "../../src/kafka/facade/**/*.ts",
+    "../../src/kafka/engine/**/*.ts",
+    "../../src/main/**/*.ts",
+    "../../src/platform/**/*.ts",
+    "../../src/preload/**/*.ts",
+    "../../tools/**/*.ts"
+  ]
+}

@@ -1,0 +1,5 @@
+clab-*/
+config/kafka-broker/certs/
+*.annotations.json
+*.log
+ownership/

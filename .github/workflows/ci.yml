@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  workflow_call:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - converted_to_draft
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streamskope-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  static-and-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run shared source qualification
+        run: npm run verify:source
+      - name: Verify performance evidence contains no sensitive test values
+        id: performance-artifact-safety
+        if: always()
+        run: npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Upload safe runtime-efficiency evidence
+        if: always() && steps.performance-artifact-safety.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: runtime-efficiency-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          path: dist/performance
+          retention-days: 14
+
+  package-verification:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+          - runner: windows-2025
+            platform: win32
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    env:
+      EXPECTED_PLATFORM: ${{ matrix.platform }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: npx --no-install playwright install-deps chromium
+      - name: Run shared native qualification
+        run: npm run verify:native
+      - name: Verify package-test artifacts contain no sensitive test values
+        id: artifact-safety
+        if: always()
+        run: npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Upload safe package-efficiency evidence
+        if: always() && steps.artifact-safety.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: package-efficiency-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          path: |
+            dist/package/verification.json
+            dist/package/runtime-evidence.json
+          retention-days: 14
+      - name: Upload safe package failure evidence
+        if: failure() && steps.artifact-safety.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: package-failure-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          path: test-results
+          retention-days: 7
+
+  kafka-real-system:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      FIXTURE_NAME: streamskope-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      STREAMSKOPE_TEST_FIXTURE_NAME: streamskope-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install pinned Containerlab
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/containerlab.deb" \
+            https://github.com/srl-labs/containerlab/releases/download/v0.77.0/containerlab_0.77.0_linux_amd64.deb
+          echo "675eea8bd4d05ea3abc4a98cfa859975c9886705d6a510fead4dfd8dbed8b793  $RUNNER_TEMP/containerlab.deb" \
+            | sha256sum --check
+          sudo dpkg --install "$RUNNER_TEMP/containerlab.deb"
+          containerlab version
+          docker version
+          keytool -help >/dev/null
+      - name: Install the locked Playwright Chromium runtime
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Start owned Kafka fixture and wait for protocol readiness
+        run: |
+          npm run fixture:start -- \
+            --name "$FIXTURE_NAME" \
+            --kafka-port 19093 \
+            --oauth-port 15000
+      - name: Run shared real-system qualification
+        run: npm run verify:system
+      - name: Stop owned Kafka fixture
+        if: always()
+        run: |
+          if [ -f "aio-kafka/ownership/records/$FIXTURE_NAME.json" ]; then
+            npm run fixture:stop -- --name "$FIXTURE_NAME"
+          fi
+      - name: Verify real-system artifacts contain no sensitive test values
+        id: artifact-safety
+        if: always()
+        run: npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Upload safe connected-desktop evidence
+        if: always() && steps.artifact-safety.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: connected-desktop-efficiency-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          path: test-results/**/electron-connected-runtime-evidence.json
+          retention-days: 14
+      - name: Upload safe real-system failure evidence
+        if: failure() && steps.artifact-safety.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: kafka-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          path: test-results
+          retention-days: 7

@@ -1,0 +1,53 @@
+name: Launch video
+
+on:
+  workflow_dispatch:
+    inputs:
+      documentation_url:
+        description: Deployed documentation URL, including any repository subpath
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      DO_NOT_TRACK: "1"
+      STREAMSKOPE_DOCS_URL: ${{ inputs.documentation_url }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/promo/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.2.0
+        with:
+          python-version: "3.11"
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chromium firefox
+      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+      - name: Verify the launch destination
+        run: curl --fail --silent --show-error --location --max-time 30 "${STREAMSKOPE_DOCS_URL%/}/start/quickstart/" > /dev/null
+      - name: Verify the approved paired intro masters
+        run: |
+          export HYPERFRAMES_BROWSER_PATH="$(node -e 'process.stdout.write(require("@playwright/test").chromium.executablePath())')"
+          npm run ci:docs
+          ffmpeg -v error -i website/docs/assets/streamskope-intro-light.mp4 -f null -
+          ffmpeg -v error -i website/docs/assets/streamskope-intro-dark.mp4 -f null -
+          ffprobe -v error -show_entries format=duration,size -of json website/docs/assets/streamskope-intro-light.mp4
+          ffprobe -v error -show_entries format=duration,size -of json website/docs/assets/streamskope-intro-dark.mp4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: streamskope-launch
+          path: |
+            website/docs/assets/streamskope-intro-light.mp4
+            website/docs/assets/streamskope-intro-dark.mp4
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,13 @@
+{
+  "oauthClientId": "admin",
+  "oauthClientSecret": "NokiaNsp@",
+  "oauthImage": "streamskope-aio-kafka-oauth:1.1.0",
+  "oauthScope": "kafka",
+  "schemaDefinition": "{\"type\":\"record\",\"name\":\"StreamSkopeFixtureEvent\",\"namespace\":\"dev.streamskope.fixture\",\"fields\":[{\"name\":\"source\",\"type\":\"string\"},{\"name\":\"sequence\",\"type\":\"long\"},{\"name\":\"message\",\"type\":\"string\"}]}",
+  "schemaRegistryAudience": "streamskope-schema-registry",
+  "schemaRegistryImage": "ghcr.io/aiven-open/karapace:5.0.3@sha256:4cf3dbea61eebb6c85a5198ea8f0b6c32ca3e7fe330cf3b9843cf3837fcdb868",
+  "schemaRegistryRole": "streamskope.schema:manage",
+  "schemaSubject": "test-value",
+  "seedPayload": "{\"source\":\"streamskope-fixture\",\"sequence\":1,\"message\":\"ready\"}",
+  "topic": "test"
+}

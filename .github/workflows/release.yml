@@ -1,0 +1,439 @@
+name: Release artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Unsigned macOS build or gated signed release
+        required: true
+        default: unsigned-macos-preview
+        type: choice
+        options:
+          - unsigned-macos-preview
+          - production
+
+env:
+  STREAMSKOPE_RELEASE_PHASE: incubation
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streamskope-release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Enforce incubation release boundary
+        if: inputs.channel == 'production'
+        run: |
+          test "$STREAMSKOPE_RELEASE_PHASE" = "production" || {
+            echo "Publication requires release approval. Build an unsigned artifact or complete the protected release gates."
+            exit 1
+          }
+      - name: Check out the protected tag
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Validate tag, version and source commit
+        id: release
+        if: inputs.channel == 'production'
+        run: npm run release:validate-tag
+  qualification:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  macos-preview:
+    needs: [validate, qualification]
+    if: inputs.channel == 'unsigned-macos-preview'
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          architecture: arm64
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check source and package the unsigned DMG
+        run: |
+          npm run package:dmg:macos
+          npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Record signing status
+        run: |
+          echo "This macOS build has no Developer ID signature and is not notarized. Verify its source and SHA-256 before installation." >> "$GITHUB_STEP_SUMMARY"
+          echo "Download the DMG and checksum from this run's artifacts; verify the checksum before installing." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload unsigned macOS build
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: streamskope-unsigned-macos-arm64-${{ github.sha }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            dist/release/unsigned-macos-*/*.dmg
+            dist/release/unsigned-macos-*/*.sha256
+          retention-days: 14
+
+  macos:
+    if: inputs.channel == 'production'
+    needs: [validate, qualification]
+    runs-on: macos-15
+    timeout-minutes: 40
+    environment: production-release
+    env:
+      EXPECTED_PLATFORM: darwin
+      EXPECTED_ARCH: arm64
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the protected tag
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Import the ephemeral Developer ID certificate
+        env:
+          STREAMSKOPE_MAC_CERTIFICATE_B64: ${{ secrets.STREAMSKOPE_MAC_CERTIFICATE_B64 }}
+          STREAMSKOPE_MAC_CERTIFICATE_PASSWORD: ${{ secrets.STREAMSKOPE_MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          test -n "$STREAMSKOPE_MAC_CERTIFICATE_B64"
+          keychain="$RUNNER_TEMP/streamskope-signing.keychain-db"
+          certificate="$RUNNER_TEMP/streamskope-signing.p12"
+          keychain_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$STREAMSKOPE_MAC_CERTIFICATE_B64" | base64 --decode > "$certificate"
+          chmod 600 "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$STREAMSKOPE_MAC_CERTIFICATE_PASSWORD" -k "$keychain" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+      - name: Build, sign, notarize, inspect and launch the native package
+        env:
+          STREAMSKOPE_APPLE_APP_PASSWORD: ${{ secrets.STREAMSKOPE_APPLE_APP_PASSWORD }}
+          STREAMSKOPE_APPLE_ID: ${{ secrets.STREAMSKOPE_APPLE_ID }}
+          STREAMSKOPE_APPLE_TEAM_ID: ${{ secrets.STREAMSKOPE_APPLE_TEAM_ID }}
+          STREAMSKOPE_MAC_SIGN_IDENTITY: ${{ secrets.STREAMSKOPE_MAC_SIGN_IDENTITY }}
+        run: node tools/verify-native-package-target.mjs && npm run package:release:verify
+      - name: Verify and archive the notarized macOS application
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          codesign --verify --deep --strict --verbose=2 \
+            dist/package/StreamSkope-darwin-arm64/StreamSkope.app
+          xcrun stapler validate dist/package/StreamSkope-darwin-arm64/StreamSkope.app
+          mkdir -p dist/release
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/package/StreamSkope-darwin-arm64/StreamSkope.app \
+            "dist/release/StreamSkope-$VERSION-darwin-arm64.zip"
+      - name: Remove the ephemeral Developer ID credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/streamskope-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/streamskope-signing.p12"
+      - name: Scan macOS review candidate before upload
+        run: npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Upload immutable macOS candidate
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: streamskope-darwin-arm64-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            dist/release/StreamSkope-${{ needs.validate.outputs.version }}-darwin-arm64.zip
+          retention-days: 30
+
+  windows:
+    if: inputs.channel == 'production'
+    needs: [validate, qualification]
+    runs-on: windows-2025
+    timeout-minutes: 40
+    environment: production-release
+    env:
+      EXPECTED_PLATFORM: win32
+      EXPECTED_ARCH: x64
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the protected tag
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Materialize the ephemeral Authenticode certificate
+        shell: pwsh
+        env:
+          STREAMSKOPE_WINDOWS_CERTIFICATE_B64: ${{ secrets.STREAMSKOPE_WINDOWS_CERTIFICATE_B64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:STREAMSKOPE_WINDOWS_CERTIFICATE_B64)) {
+            throw "Windows signing certificate is required."
+          }
+          $certificate = Join-Path $env:RUNNER_TEMP "streamskope-release.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificate,
+            [Convert]::FromBase64String($env:STREAMSKOPE_WINDOWS_CERTIFICATE_B64)
+          )
+          "WINDOWS_CERTIFICATE_FILE=$certificate" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Build, sign, inspect and launch the native package
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.STREAMSKOPE_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: node tools/verify-native-package-target.mjs && npm run package:release:verify
+      - name: Verify and archive the Authenticode application
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.STREAMSKOPE_WINDOWS_CERTIFICATE_PASSWORD }}
+          CSC_KEY_PASSWORD: ${{ secrets.STREAMSKOPE_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $report = Get-Content "dist/package/verification.json" | ConvertFrom-Json
+          $signature = Get-AuthenticodeSignature $report.executablePath
+          if ($signature.Status -ne "Valid") {
+            throw "StreamSkope Authenticode verification failed: $($signature.Status)"
+          }
+          $env:CSC_LINK = $env:WINDOWS_CERTIFICATE_FILE
+          npm run package:installer:windows:from-package
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer packaging failed." }
+          $installer = "dist/release/StreamSkope-$env:VERSION-win32-x64-Setup.exe"
+          if (-not (Test-Path $installer)) { throw "Windows installer was not produced." }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "Windows SDK signtool is required." }
+          & $signtool.FullName sign /fd SHA256 /f $env:WINDOWS_CERTIFICATE_FILE /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $installer
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer signing failed." }
+          $installerSignature = Get-AuthenticodeSignature $installer
+          if ($installerSignature.Status -ne "Valid") {
+            throw "StreamSkope installer Authenticode verification failed: $($installerSignature.Status)"
+          }
+      - name: Remove the ephemeral Authenticode certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Force -ErrorAction SilentlyContinue $env:WINDOWS_CERTIFICATE_FILE
+      - name: Scan Windows review candidate before upload
+        run: npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Upload immutable Windows candidate
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: streamskope-win32-x64-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            dist/release/StreamSkope-${{ needs.validate.outputs.version }}-win32-x64-Setup.exe
+          retention-days: 30
+
+  linux:
+    if: inputs.channel == 'production'
+    needs: [validate, qualification]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment: production-release
+    env:
+      EXPECTED_PLATFORM: linux
+      EXPECTED_ARCH: x64
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the protected tag
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Linux desktop prerequisites
+        run: npx --no-install playwright install-deps chromium
+      - name: Build, inspect and launch the native package
+        run: node tools/verify-native-package-target.mjs && npm run package:release:verify
+      - name: Build the Linux AppImage
+        run: npm run package:appimage:linux:from-package
+      - name: Sign and verify the Linux AppImage
+        env:
+          STREAMSKOPE_LINUX_GPG_KEY_B64: ${{ secrets.STREAMSKOPE_LINUX_GPG_KEY_B64 }}
+          STREAMSKOPE_LINUX_GPG_PASSPHRASE: ${{ secrets.STREAMSKOPE_LINUX_GPG_PASSPHRASE }}
+          STREAMSKOPE_LINUX_GPG_FINGERPRINT: ${{ vars.STREAMSKOPE_LINUX_GPG_FINGERPRINT }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          test -n "$STREAMSKOPE_LINUX_GPG_KEY_B64"
+          test -n "$STREAMSKOPE_LINUX_GPG_FINGERPRINT"
+          export GNUPGHOME="$(mktemp -d "$RUNNER_TEMP/streamskope-gpg-XXXXXX")"
+          trap 'gpgconf --kill gpg-agent; rm -rf -- "$GNUPGHOME"' EXIT
+          printf '%s' "$STREAMSKOPE_LINUX_GPG_KEY_B64" | base64 --decode | gpg --batch --import
+          artifact="dist/release/StreamSkope-$VERSION-linux-x64.AppImage"
+          printf '%s' "$STREAMSKOPE_LINUX_GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --local-user "$STREAMSKOPE_LINUX_GPG_FINGERPRINT" --armor --detach-sign "$artifact"
+          gpg --batch --verify "$artifact.asc" "$artifact"
+      - name: Scan Linux review candidate before upload
+        run: npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Upload immutable Linux candidate
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: streamskope-linux-x64-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            dist/release/StreamSkope-${{ needs.validate.outputs.version }}-linux-x64.AppImage
+            dist/release/StreamSkope-${{ needs.validate.outputs.version }}-linux-x64.AppImage.asc
+          retention-days: 30
+
+  stage-candidate:
+    needs: [validate, macos, windows, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release-candidate
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out the protected tag
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Download the exact native candidates
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          merge-multiple: true
+          path: dist/release
+          pattern: streamskope-*-${{ github.sha }}
+      - name: Record macOS release evidence
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          STREAMSKOPE_MACOS_ARTIFACT_EVIDENCE_B64: ${{ secrets.STREAMSKOPE_MACOS_ARTIFACT_EVIDENCE_B64 }}
+        run: >-
+          npm run release:evidence --
+          --artifact "dist/release/StreamSkope-$VERSION-darwin-arm64.zip"
+          --platform darwin
+          --architecture arm64
+          --external-evidence env:STREAMSKOPE_MACOS_ARTIFACT_EVIDENCE_B64
+          --output "dist/release/darwin-arm64.release-evidence.json"
+      - name: Record Windows release evidence
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          STREAMSKOPE_WINDOWS_ARTIFACT_EVIDENCE_B64: ${{ secrets.STREAMSKOPE_WINDOWS_ARTIFACT_EVIDENCE_B64 }}
+        run: >-
+          npm run release:evidence --
+          --artifact "dist/release/StreamSkope-$VERSION-win32-x64-Setup.exe"
+          --platform win32
+          --architecture x64
+          --external-evidence env:STREAMSKOPE_WINDOWS_ARTIFACT_EVIDENCE_B64
+          --output "dist/release/win32-x64.release-evidence.json"
+      - name: Record Linux release evidence
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          STREAMSKOPE_LINUX_ARTIFACT_EVIDENCE_B64: ${{ secrets.STREAMSKOPE_LINUX_ARTIFACT_EVIDENCE_B64 }}
+        run: >-
+          npm run release:evidence --
+          --artifact "dist/release/StreamSkope-$VERSION-linux-x64.AppImage"
+          --platform linux
+          --architecture x64
+          --external-evidence env:STREAMSKOPE_LINUX_ARTIFACT_EVIDENCE_B64
+          --output "dist/release/linux-x64.release-evidence.json"
+      - name: Restore externally verified N-1 compatibility evidence
+        env:
+          STREAMSKOPE_N_MINUS_ONE_EVIDENCE_B64: ${{ secrets.STREAMSKOPE_N_MINUS_ONE_EVIDENCE_B64 }}
+        run: |
+          test -n "$STREAMSKOPE_N_MINUS_ONE_EVIDENCE_B64"
+          node --input-type=module -e "import { writeFileSync } from 'node:fs'; writeFileSync('dist/release/n-minus-one.compatibility.json', Buffer.from(process.env.STREAMSKOPE_N_MINUS_ONE_EVIDENCE_B64, 'base64'), { mode: 0o600 })"
+      - name: Scan native candidates for sensitive test values
+        run: npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Generate checksums and SPDX SBOM
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          sha256sum dist/release/StreamSkope-* \
+            > "dist/release/streamskope-$VERSION.sha256"
+          npm --silent run release:sbom \
+            > "dist/release/streamskope-$VERSION.spdx.json"
+      - name: Attest native candidate provenance
+        id: provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-checksums: dist/release/streamskope-${{ needs.validate.outputs.version }}.sha256
+      - name: Preserve provenance and assemble the candidate manifest
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          PREVIOUS_MANIFEST_SHA256: ${{ vars.STREAMSKOPE_PREVIOUS_MANIFEST_SHA256 }}
+        run: |
+          cp "${{ steps.provenance.outputs.bundle-path }}" \
+            "dist/release/streamskope-$VERSION.provenance.json"
+          npm run release:manifest -- \
+            --evidence-directory dist/release \
+            --compatibility-evidence dist/release/n-minus-one.compatibility.json \
+            --sbom "dist/release/streamskope-$VERSION.spdx.json" \
+            --version "$VERSION" \
+            --tag "$GITHUB_REF_NAME" \
+            --commit "$GITHUB_SHA" \
+            --previous-manifest-sha256 "$PREVIOUS_MANIFEST_SHA256" \
+            --attestation-id "${{ steps.provenance.outputs.attestation-id }}" \
+            --output "dist/release/streamskope-$VERSION.release.json"
+      - name: Attest release metadata
+        id: metadata-provenance
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: |
+            dist/release/streamskope-${{ needs.validate.outputs.version }}.release.json
+            dist/release/streamskope-${{ needs.validate.outputs.version }}.spdx.json
+      - name: Preserve metadata provenance and rescan final output
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          cp "${{ steps.metadata-provenance.outputs.bundle-path }}" \
+            "dist/release/streamskope-$VERSION.metadata-provenance.json"
+          npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Stage the immutable candidate as a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          printf '%s\n' \
+            "StreamSkope $VERSION release candidate." \
+            "Promotion remains manual; the preceding verified release remains the rollback target." \
+            > dist/release/notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            dist/release/StreamSkope-* \
+            "dist/release/streamskope-$VERSION.sha256" \
+            "dist/release/streamskope-$VERSION.spdx.json" \
+            "dist/release/streamskope-$VERSION.release.json" \
+            "dist/release/streamskope-$VERSION.provenance.json" \
+            "dist/release/streamskope-$VERSION.metadata-provenance.json" \
+            --draft \
+            --verify-tag \
+            --title "StreamSkope $VERSION candidate" \
+            --notes-file dist/release/notes.md

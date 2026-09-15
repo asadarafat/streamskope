@@ -1,0 +1,374 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>StreamSkope — 36-second energetic edit</title>
+    <style>
+      :root {
+        --intro-canvas: #fdfdfd;
+        --intro-text: #22262b;
+        --intro-surface: #fdfdfd;
+        --intro-muted: #69717a;
+        --intro-shadow: transparent;
+      }
+      :root[data-theme="dark"] {
+        --intro-canvas: #222227;
+        --intro-text: #edf1f5;
+        --intro-surface: #222227;
+        --intro-muted: #a7b0ba;
+        --intro-shadow: transparent;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 3840px;
+        height: 2160px;
+        overflow: hidden;
+        background: var(--intro-canvas);
+        color: var(--intro-text);
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+      main {
+        width: 3840px;
+        height: 2160px;
+        position: relative;
+      }
+      .headline {
+        position: absolute;
+        top: 64px;
+        left: 140px;
+        right: 140px;
+        text-align: center;
+        margin: 0;
+        font-size: 82px;
+        font-weight: 550;
+        letter-spacing: -2.5px;
+        line-height: 1.15;
+      }
+      .stage {
+        position: absolute;
+        overflow: hidden;
+        background: var(--intro-surface);
+        border-radius: 8px;
+      }
+      .media {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 3840px;
+        height: 2160px;
+        transform-origin: 0 0;
+      }
+      .media img,
+      .media video {
+        position: absolute;
+        inset: 0;
+        width: 3840px;
+        height: 2160px;
+        max-width: none;
+      }
+      .end {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+      }
+      .end img {
+        width: 240px;
+        height: 240px;
+        margin-bottom: 36px;
+      }
+      .end h1 {
+        font-size: 148px;
+        letter-spacing: -6px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .end p {
+        font-size: 76px;
+        letter-spacing: -2px;
+        margin: 28px 0 0;
+      }
+      .end small {
+        font-size: 38px;
+        color: var(--intro-muted);
+        margin-top: 64px;
+      }
+    </style>
+  </head>
+  <body>
+    <main
+      data-composition-id="option-a-animatic"
+      data-width="3840"
+      data-height="2160"
+      data-duration="36"
+      data-fps="60"
+    >
+      <h2 class="headline" id="headline"></h2>
+      <div class="stage" id="stage">
+        <div class="media" id="media">
+          <img id="still0" src="assets/01-opening.png" /><video
+            id="clip0"
+            src="assets/01-opening.mp4"
+            data-start="0"
+            data-duration="6"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video
+          ><img id="still1" src="assets/02-find-select.png" /><video
+            id="clip1"
+            src="assets/02-find-select.mp4"
+            data-start="6"
+            data-duration="7"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video
+          ><img id="still2" src="assets/03-payload.png" /><video
+            id="clip2"
+            src="assets/03-payload.mp4"
+            data-start="14"
+            data-duration="2"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video
+          ><img id="still3" src="assets/04-headers.png" /><video
+            id="clip3"
+            src="assets/04-headers.mp4"
+            data-start="16"
+            data-duration="3"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video
+          ><img id="still4" src="assets/05-consumers.png" /><video
+            id="clip4"
+            src="assets/05-consumers.mp4"
+            data-start="19"
+            data-duration="5"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video
+          ><img id="still5" src="assets/06-profiles.png" /><video
+            id="clip5"
+            src="assets/06-profiles.mp4"
+            data-start="24"
+            data-duration="2"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video
+          ><img id="still6" src="assets/07-topics.png" /><video
+            id="clip6"
+            src="assets/07-topics.mp4"
+            data-start="26"
+            data-duration="2"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video
+          ><img id="still7" src="assets/08-workspace.png" /><video
+            id="clip7"
+            src="assets/08-workspace.mp4"
+            data-start="28"
+            data-duration="2"
+            data-media-start="0"
+            data-volume="0"
+            muted
+            playsinline
+            preload="auto"
+          ></video>
+        </div>
+      </div>
+      <div class="end" id="end">
+        <img src="assets/streamskope.svg" />
+        <h1>StreamSkope.</h1>
+        <p>Your Kafka. In context.</p>
+        <small>Explore the preview.</small>
+      </div>
+      <audio
+        id="energetic-score"
+        src="assets/energetic-score.m4a"
+        data-start="0"
+        data-duration="36"
+        data-volume="1"
+        preload="auto"
+      ></audio>
+    </main>
+    <script>
+      const shots = [
+        ["01-opening", 0, 6],
+        ["02-find-select", 6, 7],
+        ["03-payload", 14, 2],
+        ["04-headers", 16, 3],
+        ["05-consumers", 19, 5],
+        ["06-profiles", 24, 2],
+        ["07-topics", 26, 2],
+        ["08-workspace", 28, 2],
+      ];
+      const media = document.querySelector("#media"),
+        stage = document.querySelector("#stage"),
+        heading = document.querySelector("#headline"),
+        end = document.querySelector("#end");
+
+      const clamp = (x) => Math.max(0, Math.min(1, x)),
+        ease = (x) => {
+          x = clamp(x);
+          return x * x * (3 - 2 * x);
+        },
+        mix = (a, b, p) => a.map((v, i) => v + (b[i] - v) * p);
+      // Cameras: source x/y/w/h followed by output x/y/w/h. All pixels come from approved capture.
+      const opening = [3235, 964, 525, 72, 1395, 1000, 1050, 144],
+        inspector = [3198, 374, 642, 920, 1407, 550, 1027.2, 1472],
+        full = [0, 0, 3840, 2160, 220, 210, 3400, 1912.5],
+        payload = [3198, 825, 642, 410, 1300, 750, 1240, 791.9],
+        headers = [3198, 580, 642, 1230, 1465, 300, 910, 1743.5],
+        consumer = [2970, 1110, 850, 140, 1070, 900, 1700, 280];
+      // Interpolate a uniform source transform and a clipping viewport in output space.
+      // The viewport stays inside the transformed source bounds throughout each move.
+      // Clip recorded window edges and the divider fringe from isolated detail views in both themes.
+      const sourceRight = 3836;
+      const sourceBottom = 2156;
+      function camera(a, b, p) {
+        const endpoint = (c) => {
+          const [sx, sy, sw, sh, x, y, w, h] = c,
+            k = w / sw;
+          const detailInset = [inspector, payload, headers].includes(c) ? 10 * k : 0;
+          return [k, x - sx * k, y - sy * k, x + detailInset, y, w - detailInset, h];
+        };
+        const A = endpoint(a),
+          B = endpoint(b),
+          v = mix(A, B, p);
+        const [k, tx, ty, x, y, w, h] = v;
+        const left = Math.max(x, tx),
+          top = Math.max(y, ty),
+          right = Math.min(x + w, tx + sourceRight * k),
+          bottom = Math.min(y + h, ty + sourceBottom * k);
+        return { k, tx, ty, left, top, width: right - left, height: bottom - top };
+      }
+      let current = 0;
+      function seek(t) {
+        current = t;
+        const idx =
+          t < 6
+            ? 0
+            : t < 14
+              ? 1
+              : t < 16
+                ? 2
+                : t < 19
+                  ? 3
+                  : t < 24
+                    ? 4
+                    : t < 26
+                      ? 5
+                      : t < 28
+                        ? 6
+                        : 7;
+        shots.forEach(([n, s, d], i) => {
+          document.getElementById("still" + i).style.visibility = i === idx ? "visible" : "hidden";
+          document.getElementById("clip" + i).style.visibility =
+            i === idx && t >= s && t < s + d && !window.STILL_REVIEW ? "visible" : "hidden";
+        });
+        let from = full,
+          to = full,
+          p = 0;
+        if (t < 2) {
+          from = to = opening;
+        } else if (t < 4) {
+          from = opening;
+          to = inspector;
+          p = ease((t - 2) / 1.25);
+        } else if (t < 6) {
+          from = inspector;
+          to = full;
+          p = ease((t - 4) / 1);
+        } else if (t < 13) {
+          // Actual seven-second filter/select interaction, at recorded speed.
+        } else if (t < 14) {
+          to = payload;
+          p = ease(t - 13);
+        } else if (t < 16) {
+          from = to = payload;
+        } else if (t < 19) {
+          from = to = headers;
+        } else if (t < 21) {
+        } else if (t < 24) {
+          to = consumer;
+          p = ease(t - 21);
+        } else if (t < 30) {
+        } else {
+          to = opening;
+          p = ease(t - 30);
+        }
+        const c = camera(from, to, p),
+          dissolve = ease((t - 32) / 0.2),
+          outroFade = ease((t - 31.8) / 0.2);
+        Object.assign(stage.style, {
+          left: c.left + "px",
+          top: c.top + "px",
+          width: c.width + "px",
+          height: c.height + "px",
+          opacity: String(1 - outroFade),
+          boxShadow: t < 2 || t >= 31 ? "none" : "0 14px 50px var(--intro-shadow)",
+        });
+        media.style.transform = `translate(${c.tx - c.left}px,${c.ty - c.top}px) scale(${c.k})`;
+        const titles = [
+          [0, 2, "It starts with one record."],
+          [2, 6, "Understanding takes context."],
+          [6, 14, "Find what matters."],
+          [14, 19, "Read the details."],
+          [19, 24, "See where consumers stand."],
+          [24, 30, "One workbench."],
+        ];
+        const title = titles.find(([start, stop]) => t >= start && t < stop);
+        heading.textContent = title ? title[2] : "";
+        heading.style.top = (t < 2 ? 650 : 64) + "px";
+        heading.style.opacity = title
+          ? String(Math.min(ease((t - title[0]) / 0.15), ease((title[1] - t) / 0.15)))
+          : "0";
+        end.style.opacity = String(dissolve);
+      }
+      window.__timelines = {};
+      window.__timelines["option-a-animatic"] = {
+        duration: () => 36,
+        totalDuration: () => 36,
+        pause() {},
+        seek,
+        time(t) {
+          if (t !== undefined) seek(t);
+          return current;
+        },
+      };
+      window.animatic = { seek };
+      seek(0);
+    </script>
+  </body>
+</html>

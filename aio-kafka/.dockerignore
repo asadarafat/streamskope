@@ -1,0 +1,9 @@
+# Ignore everything outside build context and common large/dev files
+**/.git
+**/.github
+**/.gitignore
+**/node_modules
+**/dist
+**/.cache
+**/.vscode
+**/.DS_Store

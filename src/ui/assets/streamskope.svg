@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">StreamSkope — connected stream</title>
+<desc id="desc">A dimensional blue seven-sided badge containing a solid white S-shaped stream with three open event nodes. Inspired by orchestration and event-stream topology, with a transparent exterior.</desc>
+<defs>
+ <linearGradient id="badge" x1="109" y1="89" x2="398" y2="456" gradientUnits="userSpaceOnUse"><stop stop-color="#2898ED"/><stop offset=".46" stop-color="#326CE5"/><stop offset="1" stop-color="#5835BC"/></linearGradient>
+ <linearGradient id="edge" x1="99" y1="93" x2="390" y2="448" gradientUnits="userSpaceOnUse"><stop stop-color="#A0F0FF" stop-opacity=".55"/><stop offset=".5" stop-color="#66B5FF" stop-opacity=".08"/><stop offset="1" stop-color="#B0A1FF" stop-opacity=".35"/></linearGradient>
+ <mask id="open-nodes" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+  <rect width="512" height="512" fill="white"/>
+  <g fill="black"><circle cx="333" cy="170" r="14"/><circle cx="256" cy="256" r="15"/><circle cx="179" cy="342" r="14"/></g>
+ </mask>
+</defs>
+<!-- Seven-sided shell; transparent outside, no rectangular app tile. -->
+<polygon id="shell" points="256.00,34.00 429.57,117.59 472.43,305.40 352.32,456.02 159.68,456.02 39.57,305.40 82.43,117.59" fill="url(#badge)" stroke="url(#edge)" stroke-width="3" stroke-linejoin="round"/>
+<!-- Broad, restrained facets echo the folded ribbon and cube references. -->
+<path d="M256 34L429.57 117.58L256 199L82.43 117.58Z" fill="#74DBFF" opacity=".1"/>
+<path d="M472.43 305.40L352.33 456.02L256 402V256Z" fill="#302280" opacity=".15"/>
+<path d="M159.67 456.02L39.57 305.40L179 342L256 402Z" fill="#143AA4" opacity=".13"/>
+<!-- One continuous S path; open rings are part of the same stream. -->
+<g id="stream-monogram" mask="url(#open-nodes)">
+ <path d="M333 170L256 126L179 170V219L333 293V342L256 386L179 342" stroke="#FFFFFF" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/>
+ <g fill="#FFFFFF"><circle cx="333" cy="170" r="28"/><circle cx="256" cy="256" r="29"/><circle cx="179" cy="342" r="28"/></g>
+</g>
+</svg>
