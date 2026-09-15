@@ -39,10 +39,14 @@ it("resolves compiler source coverage and caches against the repository, not con
   const tests = project("config/typescript/test.json");
   expect(host.fileNames).toContain(resolve(root, "src/main/electron-entry.ts"));
   expect(host.fileNames).not.toContain(resolve(root, "src/renderer/main.tsx"));
+  expect(host.fileNames).not.toContain(resolve(root, "tools/capture-docs.ts"));
+  expect(host.options.lib).not.toContain("lib.dom.d.ts");
   expect(renderer.fileNames).toContain(resolve(root, "src/renderer/main.tsx"));
   expect(renderer.fileNames).not.toContain(resolve(root, "src/main/electron-entry.ts"));
   expect(tests.fileNames).toContain(resolve(root, "config/playwright.config.ts"));
   expect(tests.fileNames).toContain(resolve(root, "test/unit/tool-configuration.test.ts"));
+  expect(tests.fileNames).toContain(resolve(root, "tools/capture-docs.ts"));
+  expect(tests.options.lib).toContain("lib.dom.d.ts");
   for (const [name, config] of [
     ["host", host],
     ["renderer", renderer],

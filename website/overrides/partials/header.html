@@ -1,50 +1,73 @@
 <header class="md-header sk-header" data-md-component="header">
   <div class="sk-masthead md-grid">
     <a class="sk-brand" href="{{ nav.homepage.url | url }}" aria-label="StreamSkope home">
-      <img src="{{ config.theme.logo | url }}" alt="" width="28" height="28">
+      <img src="{{ config.theme.logo | url }}" alt="" width="28" height="28" />
       <span>StreamSkope<small>Docs</small></span>
     </a>
     <details class="sk-directory">
-      <summary role="button" aria-label="Browse docs">Browse docs <span aria-hidden="true">＋</span></summary>
+      <summary role="button" aria-label="Browse docs">
+        Browse docs <span aria-hidden="true">＋</span>
+      </summary>
       <div class="sk-directory-panel">
         <nav aria-label="Documentation directory">
-          <div class="sk-directory-intro"><p>Find your next step</p><a href="{{ nav.homepage.url | url }}"{% if page.is_homepage %} aria-current="page"{% endif %}>Home <span aria-hidden="true">↗</span></a></div>
+          <div class="sk-directory-intro">
+            <p>Find your next step</p>
+            <a
+              href="{{ nav.homepage.url | url }}"
+              {%
+              if
+              page.is_homepage
+              %}
+              aria-current="page"
+              {%
+              endif
+              %}
+              >Home <span aria-hidden="true">↗</span></a
+            >
+          </div>
           <div class="sk-directory-grid">
-            {% for section in nav.items %}
-              {% if section.children %}
-                <section aria-labelledby="directory-section-{{ loop.index }}">
-                  <h2 id="directory-section-{{ loop.index }}">{{ section.title }}</h2>
-                  <ul>
-                    {% for entry in section.children %}
-                      <li><a href="{{ entry.url | url }}"{% if entry.active %} aria-current="page"{% endif %}>{{ entry.title }}<span aria-hidden="true">↗</span></a></li>
-                    {% endfor %}
-                  </ul>
-                </section>
-              {% endif %}
-            {% endfor %}
+            {% for section in nav.items %} {% if section.children %}
+            <section aria-labelledby="directory-section-{{ loop.index }}">
+              <h2 id="directory-section-{{ loop.index }}">{{ section.title }}</h2>
+              <ul>
+                {% for entry in section.children %}
+                <li>
+                  <a
+                    href="{{ entry.url | url }}"
+                    {%
+                    if
+                    entry.active
+                    %}
+                    aria-current="page"
+                    {%
+                    endif
+                    %}
+                    >{{ entry.title }}<span aria-hidden="true">↗</span></a
+                  >
+                </li>
+                {% endfor %}
+              </ul>
+            </section>
+            {% endif %} {% endfor %}
           </div>
           <div class="sk-directory-footer">
-            {% for entry in nav.items %}
-              {% if not entry.children and entry.url != nav.homepage.url %}<a href="{{ entry.url | url }}"{% if entry.active %} aria-current="page"{% endif %}>{{ entry.title }} <span aria-hidden="true">↗</span></a>{% endif %}
-            {% endfor %}
+            {% for entry in nav.items %} {% if not entry.children and entry.url != nav.homepage.url
+            %}<a href="{{ entry.url | url }}" {% if entry.active %} aria-current="page" {% endif %}
+              >{{ entry.title }} <span aria-hidden="true">↗</span></a
+            >{% endif %} {% endfor %}
           </div>
         </nav>
       </div>
     </details>
     <div class="sk-header-tools">
-      {% if config.theme.palette and not config.theme.palette is mapping %}
-        {% include "partials/palette.html" %}
-        {% include "partials/javascripts/palette.html" %}
-      {% endif %}
-      {% if "search" in config.plugins %}
-        {% set search = config.plugins["search"] | attr("config") %}
-        {% if search.enabled %}
-          <label class="md-header__button md-icon" for="__search" aria-label="{{ lang.t('search') }}">
-            {% include ".icons/material/magnify.svg" %}
-          </label>
-          {% include "partials/search.html" %}
-        {% endif %}
-      {% endif %}
+      {% if config.theme.palette and not config.theme.palette is mapping %} {% include
+      "partials/palette.html" %} {% include "partials/javascripts/palette.html" %} {% endif %} {% if
+      "search" in config.plugins %} {% set search = config.plugins["search"] | attr("config") %} {%
+      if search.enabled %}
+      <label class="md-header__button md-icon" for="__search" aria-label="{{ lang.t('search') }}">
+        {% include ".icons/material/magnify.svg" %}
+      </label>
+      {% include "partials/search.html" %} {% endif %} {% endif %}
     </div>
   </div>
 </header>
