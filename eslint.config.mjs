@@ -24,6 +24,7 @@ export default [
       "website/.site/**",
       "website/.preview/**",
       "website/.cache/**",
+      "website/docs/launch/assets/**",
       "openspec/**",
       "playwright-report/**",
       "test-results/**",
@@ -271,7 +272,8 @@ export default [
             },
             {
               regex: "(^|/)platform/(?!desktop(?:/|$)|ui(?:/|$))",
-              message: "Renderer code may use only declared desktop and shared UI platform contracts.",
+              message:
+                "Renderer code may use only declared desktop and shared UI platform contracts.",
             },
           ],
         },

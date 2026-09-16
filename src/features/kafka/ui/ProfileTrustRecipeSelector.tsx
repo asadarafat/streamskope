@@ -9,7 +9,12 @@ import type {
 } from "../contracts/trust-recipe-types";
 import type { AcceptedSshIdentity } from "../contracts/remote-trust-types";
 import { validateTrustRecipeParameterValue } from "../contracts/trust-recipe-validation";
-import { StudioAlert, StudioButton, StudioMenuItem, StudioTextField } from "../../../platform/ui/controls";
+import {
+  StudioAlert,
+  StudioButton,
+  StudioMenuItem,
+  StudioTextField,
+} from "../../../platform/ui/controls";
 
 export interface ProfileTrustRecipeSelection {
   readonly apiCaPresent?: boolean;

@@ -14,7 +14,10 @@ import {
   StudioButton as Button,
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
-import { StudioInventoryCellAction, StudioInventoryGrid } from "../../../platform/ui/StudioInventoryGrid";
+import {
+  StudioInventoryCellAction,
+  StudioInventoryGrid,
+} from "../../../platform/ui/StudioInventoryGrid";
 
 import { ConsumerGroupWorkspace } from "./ConsumerGroupWorkspace";
 import { ResourcePageHeader, resourcePageGutter } from "./ResourcePageHeader";

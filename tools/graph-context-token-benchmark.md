@@ -26,18 +26,18 @@ The runner writes generated graphs and raw results under `.cache/graph-benchmark
 
 ## Index Results
 
-| Tool | Command shape | Indexed surface | Nodes | Edges | Elapsed |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Graphify 0.9.62 | `graphify extract . --code-only --no-cluster --no-viz --out .cache/graph-benchmark/graphify-output` | 591 code files | 5,370 at extract; 5,478 in benchmark | 19,087 | 13s |
-| codebase-memory-mcp 0.11.0 | `CBM_CACHE_DIR=.cache/graph-benchmark/cbm-cache npx -y codebase-memory-mcp@latest cli index_repository --repo-path "$PWD"` | Repo minus `.git`, `.cache`, `node_modules`, fixture ownership/runtime | 8,082 | 32,190 | 24s |
+| Tool                       | Command shape                                                                                                              |                                                        Indexed surface |                                Nodes |  Edges | Elapsed |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------: | -----------------------------------: | -----: | ------: |
+| Graphify 0.9.62            | `graphify extract . --code-only --no-cluster --no-viz --out .cache/graph-benchmark/graphify-output`                        |                                                         591 code files | 5,370 at extract; 5,478 in benchmark | 19,087 |     13s |
+| codebase-memory-mcp 0.11.0 | `CBM_CACHE_DIR=.cache/graph-benchmark/cbm-cache npx -y codebase-memory-mcp@latest cli index_repository --repo-path "$PWD"` | Repo minus `.git`, `.cache`, `node_modules`, fixture ownership/runtime |                                8,082 | 32,190 |     24s |
 
 ## Graphify Built-In Benchmark
 
-| Metric | Value |
-| --- | ---: |
-| Naive corpus tokens | `~365,200` |
-| Average query cost | `~70,536` |
-| Reduction | `5.2x` fewer tokens/query |
+| Metric              |                     Value |
+| ------------------- | ------------------------: |
+| Naive corpus tokens |                `~365,200` |
+| Average query cost  |                 `~70,536` |
+| Reduction           | `5.2x` fewer tokens/query |
 
 Per built-in question reductions: `3.6x`, `46.0x`, `1.6x`, `51.9x`, `24.9x`.
 
@@ -49,11 +49,11 @@ Per built-in question reductions: `3.6x`, `46.0x`, `1.6x`, `51.9x`, `24.9x`.
 4. What is the blast radius of changing profile trust acquisition?
 5. How does Schema Registry support connect from profile configuration to engine HTTP calls?
 
-| Tool/query mode | Q1 | Q2 | Q3 | Q4 | Q5 | Avg tokens | Reduction vs naive corpus |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Graphify `query --budget 2000` | 1,653 | 1,676 | 1,632 | 1,629 | 2,689 | 1,856 | `196.8x` |
-| CBM `search_graph semantic_query max_output_tokens=2000` | 1,987 | 1,862 | 1,928 | 1,825 | 1,941 | 1,909 | `191.3x` |
-| CBM `search_graph --query max-output-tokens=2000` | 1,999 | 1,692 | 1,772 | 1,991 | 1,883 | 1,867 | `195.6x` |
+| Tool/query mode                                          |    Q1 |    Q2 |    Q3 |    Q4 |    Q5 | Avg tokens | Reduction vs naive corpus |
+| -------------------------------------------------------- | ----: | ----: | ----: | ----: | ----: | ---------: | ------------------------: |
+| Graphify `query --budget 2000`                           | 1,653 | 1,676 | 1,632 | 1,629 | 2,689 |      1,856 |                  `196.8x` |
+| CBM `search_graph semantic_query max_output_tokens=2000` | 1,987 | 1,862 | 1,928 | 1,825 | 1,941 |      1,909 |                  `191.3x` |
+| CBM `search_graph --query max-output-tokens=2000`        | 1,999 | 1,692 | 1,772 | 1,991 | 1,883 |      1,867 |                  `195.6x` |
 
 ## Relevance Notes
 

@@ -2,7 +2,10 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
 import type { BackendAvailability, ConnectionState } from "../contracts";
-import { streamSkopeGeometry, streamSkopeSpacing } from "../../../platform/ui/createStreamSkopeTheme";
+import {
+  streamSkopeGeometry,
+  streamSkopeSpacing,
+} from "../../../platform/ui/createStreamSkopeTheme";
 import { StudioButton as Button } from "../../../platform/ui/controls";
 
 import { connectionStateLabel } from "./state";

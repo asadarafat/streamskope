@@ -1,4 +1,7 @@
-import { HostContractValidationError, parseTrustRecipeJson } from "../../../features/kafka/contracts";
+import {
+  HostContractValidationError,
+  parseTrustRecipeJson,
+} from "../../../features/kafka/contracts";
 import {
   HTTPS_TRUST_LIMITS as limits,
   type HttpsTrustMaterialExtraction,

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { KafkaRulePredicate } from "../../src/features/kafka/application";
-import { KafkaRuleExpressionError, StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
+import {
+  KafkaRuleExpressionError,
+  StreamSkopeKafkaRuleEvaluator,
+} from "../../src/features/kafka/engine";
 
 interface PredicateCase {
   readonly expression: string;

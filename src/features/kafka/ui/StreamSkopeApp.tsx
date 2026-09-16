@@ -2,10 +2,7 @@ import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import type { StreamSkopeHost } from "../contracts";
 import { StreamSkopeThemeProvider } from "../../../platform/ui/StreamSkopeThemeProvider";
 
-import {
-  StreamSkopeWorkbench,
-  type StreamSkopeWorkbenchProperties,
-} from "./StreamSkopeWorkbench";
+import { StreamSkopeWorkbench, type StreamSkopeWorkbenchProperties } from "./StreamSkopeWorkbench";
 import "./application.css";
 
 export interface StreamSkopeAppProperties {

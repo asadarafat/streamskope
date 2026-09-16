@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, type HostCommand, type HostEvent } from "../../src/features/kafka/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  type HostCommand,
+  type HostEvent,
+} from "../../src/features/kafka/contracts";
 import type {
   KafkaApplicationSession,
   KafkaClusterServiceContext,

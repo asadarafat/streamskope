@@ -9,7 +9,10 @@ import {
   type ActiveFacadeConsumption,
   type QueuedFacadeMessage,
 } from "../../src/features/kafka/facade/facade-support";
-import { appendFacadeMessage, takeFacadeMessageBatch } from "../../src/features/kafka/facade/message-queue";
+import {
+  appendFacadeMessage,
+  takeFacadeMessageBatch,
+} from "../../src/features/kafka/facade/message-queue";
 import {
   createStreamMonitoring,
   streamMetricsEvent,

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, kafkaAclIdentity, type HostEvent } from "../../src/features/kafka/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  kafkaAclIdentity,
+  type HostEvent,
+} from "../../src/features/kafka/contracts";
 import type { KafkaApplicationSession } from "../../src/features/kafka/application";
 import { AclFacadeController } from "../../src/features/kafka/facade/acl-facade";
 

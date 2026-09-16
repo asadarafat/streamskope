@@ -4,6 +4,10 @@
 
 # StreamSkope
 
+[![CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
+[![Documentation](https://github.com/asadarafat/streamskope/actions/workflows/docs.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/docs.yml)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/asadarafat/streamskope)
+
 A desktop workbench for exploring and troubleshooting Kafka.
 
 Inspect messages, investigate consumer lag, and manage cluster resources from
@@ -29,21 +33,24 @@ Redpanda; they are not a standard Kafka capability.
 ## Get started
 
 [Download for macOS, Windows or Linux](https://github.com/asadarafat/streamskope/releases/latest) ·
-[Install StreamSkope](website/docs/start/installation.md) ·
-[Try it with local Kafka](website/docs/start/quickstart.md) ·
-[Connect your cluster](website/docs/guide/connections.md)
+[Documentation](https://asadarafat.github.io/streamskope/) ·
+[Install StreamSkope](https://asadarafat.github.io/streamskope/start/installation/) ·
+[Try it with local Kafka](https://asadarafat.github.io/streamskope/start/quickstart/) ·
+[Connect your cluster](https://asadarafat.github.io/streamskope/guide/connections/)
 
 ## Documentation
 
-- [Messages and filtering](website/docs/guide/messages.md)
-- [Consumer lag](website/docs/guide/operations.md)
-- [Schema Registry](website/docs/guide/schema-registry.md)
-- [Optional secret retrieval](website/docs/guide/secret-retrieval.md)
-- [Troubleshooting and profile recovery](website/docs/guide/troubleshooting.md)
+- [Messages and filtering](https://asadarafat.github.io/streamskope/guide/messages/)
+- [Consumer lag](https://asadarafat.github.io/streamskope/guide/operations/)
+- [Schema Registry](https://asadarafat.github.io/streamskope/guide/schema-registry/)
+- [Optional secret retrieval](https://asadarafat.github.io/streamskope/guide/secret-retrieval/)
+- [Troubleshooting and profile recovery](https://asadarafat.github.io/streamskope/guide/troubleshooting/)
 
 ## Support StreamSkope
 
-If StreamSkope helps your work, [buy me a coffee](https://buymeacoffee.com/asadarafat).
+If StreamSkope helps your work, you can support its continued development.
+
+<script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="asadarafat" data-color="#FFDD00" data-emoji="" data-font="Inter" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
 
 ## License
 

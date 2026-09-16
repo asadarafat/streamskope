@@ -6,7 +6,10 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { KafkaExploredMessage, KafkaLiveRuleEvaluation } from "../../src/features/kafka/contracts";
+import type {
+  KafkaExploredMessage,
+  KafkaLiveRuleEvaluation,
+} from "../../src/features/kafka/contracts";
 import { MessageDataGrid } from "../../src/features/kafka/ui/MessageDataGrid";
 import { MessageInspector } from "../../src/features/kafka/ui/MessageInspector";
 import { StreamSkopeThemeProvider } from "../../src/platform/ui/StreamSkopeThemeProvider";

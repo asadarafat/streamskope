@@ -6,7 +6,10 @@ import {
   type HostEvent,
   type KafkaFetchRequest,
 } from "../../src/features/kafka/contracts";
-import { type KafkaActiveConnection, type SchemaRegistryPort } from "../../src/features/kafka/application";
+import {
+  type KafkaActiveConnection,
+  type SchemaRegistryPort,
+} from "../../src/features/kafka/application";
 import { KafkaEngineFailure } from "../../src/features/kafka/engine";
 import {
   command,

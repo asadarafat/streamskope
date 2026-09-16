@@ -9,7 +9,10 @@ import {
   createStreamSkopeDesktop,
   type DesktopPreloadIpcRenderer,
 } from "../../src/platform/electron/preload/desktop-bridge";
-import { DESKTOP_ACTION_CHANNEL, DESKTOP_DOCUMENT_SAVE_CHANNEL } from "../../src/platform/electron/preload/channels";
+import {
+  DESKTOP_ACTION_CHANNEL,
+  DESKTOP_DOCUMENT_SAVE_CHANNEL,
+} from "../../src/platform/electron/preload/channels";
 
 type Listener = (event: unknown, value: unknown) => void;
 

@@ -2,7 +2,10 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import type { KafkaClusterProfileContext, SecureConnectionInput } from "../../src/features/kafka/contracts";
+import type {
+  KafkaClusterProfileContext,
+  SecureConnectionInput,
+} from "../../src/features/kafka/contracts";
 import {
   KafkaApplicationSession,
   KafkaClusterDiagnosticsService,

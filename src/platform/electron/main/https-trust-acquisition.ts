@@ -1,5 +1,8 @@
 import { HTTPS_TRUST_LIMITS as limits } from "../../../features/kafka/contracts/https-trust-types";
-import { parseTrustRecipeHttps, resolveHttpsGet } from "../../../features/kafka/contracts/https-trust-validation";
+import {
+  parseTrustRecipeHttps,
+  resolveHttpsGet,
+} from "../../../features/kafka/contracts/https-trust-validation";
 import {
   HttpsTrustTransportError,
   type HttpsTrustAcquisitionPort,

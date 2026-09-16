@@ -11,7 +11,10 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 import { StudioTechnicalText } from "../../../platform/ui/StudioCodeBlock";
-import { StudioInventoryCellAction, StudioInventoryGrid } from "../../../platform/ui/StudioInventoryGrid";
+import {
+  StudioInventoryCellAction,
+  StudioInventoryGrid,
+} from "../../../platform/ui/StudioInventoryGrid";
 
 import { ResourcePageHeader, resourcePageGutter } from "./ResourcePageHeader";
 import { formatUtcTimestamp } from "./timestamp-presentation";

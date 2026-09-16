@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { KafkaExploredMessage, KafkaLiveRuleEvaluation } from "../../src/features/kafka/contracts";
+import type {
+  KafkaExploredMessage,
+  KafkaLiveRuleEvaluation,
+} from "../../src/features/kafka/contracts";
 import {
   KAFKA_MESSAGE_OPERATION_LIMITS,
   KafkaMessageOperationError,

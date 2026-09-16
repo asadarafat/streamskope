@@ -69,7 +69,10 @@ describe("application identity assets", () => {
   it("uses one identity source and the standard Settings icon across shells", async () => {
     const index = await readFile(new URL("index.html", root), "utf8");
     expect(index).toContain('href="/src/platform/ui/assets/streamskope.svg"');
-    const presenter = await readFile(new URL("src/platform/ui/StreamSkopeAppIcon.tsx", root), "utf8");
+    const presenter = await readFile(
+      new URL("src/platform/ui/StreamSkopeAppIcon.tsx", root),
+      "utf8",
+    );
     expect(presenter).toContain('"./assets/streamskope.svg"');
     const source = await readFile(
       new URL("src/features/kafka/ui/WorkbenchApplicationBar.tsx", root),

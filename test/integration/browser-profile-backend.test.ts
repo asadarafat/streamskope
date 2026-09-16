@@ -9,7 +9,10 @@ import {
   type HostEvent,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { createKafkaBackend, createBrowserKafkaProfileStore } from "../../src/platform/electron/main";
+import {
+  createKafkaBackend,
+  createBrowserKafkaProfileStore,
+} from "../../src/platform/electron/main";
 import { trustRecipeInput } from "../support/trust-recipe";
 import { startDevelopmentHost, type RunningDevelopmentHost } from "../../src/platform/dev-host";
 

@@ -3,7 +3,12 @@ import { InputAdornment, Stack, Typography } from "@mui/material";
 
 import { REMOTE_TRUST_ACQUISITION_LIMITS } from "../contracts";
 import type { RemoteSshAuthentication } from "../contracts/remote-trust-types";
-import { StudioAlert, StudioButton, StudioMenuItem, StudioTextField } from "../../../platform/ui/controls";
+import {
+  StudioAlert,
+  StudioButton,
+  StudioMenuItem,
+  StudioTextField,
+} from "../../../platform/ui/controls";
 
 export function RemoteSshCredentials({
   authentication,

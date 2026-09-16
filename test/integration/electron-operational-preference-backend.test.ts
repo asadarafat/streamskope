@@ -8,7 +8,10 @@ import {
   HOST_PROTOCOL_VERSION,
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
 } from "../../src/features/kafka/contracts";
-import { createElectronKafkaBackend, type ElectronSafeStoragePort } from "../../src/platform/electron/main";
+import {
+  createElectronKafkaBackend,
+  type ElectronSafeStoragePort,
+} from "../../src/platform/electron/main";
 
 class ReversibleSafeStorage implements ElectronSafeStoragePort {
   decryptStringAsync(

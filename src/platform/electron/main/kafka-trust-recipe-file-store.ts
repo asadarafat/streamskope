@@ -7,7 +7,10 @@ import {
   type ConnectionTemplateStoreCapability,
   type TrustAcquisitionRecipeDocument,
 } from "../../../features/kafka/contracts";
-import { KafkaTrustRecipeError, type KafkaTrustRecipeStore } from "../../../features/kafka/application";
+import {
+  KafkaTrustRecipeError,
+  type KafkaTrustRecipeStore,
+} from "../../../features/kafka/application";
 
 import {
   createAtomicPrivateFileTempId,

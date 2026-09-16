@@ -6,7 +6,12 @@ import type { TrustAcquisitionRecipe } from "../contracts/trust-recipe-types";
 import { resolveHttpsGet } from "../contracts/https-trust-validation";
 import type { HttpsProfileAccess } from "../contracts/https-profile-access";
 import type { ProfileCreateInput } from "../contracts/profile-types";
-import { StudioAlert, StudioButton, StudioMenuItem, StudioTextField } from "../../../platform/ui/controls";
+import {
+  StudioAlert,
+  StudioButton,
+  StudioMenuItem,
+  StudioTextField,
+} from "../../../platform/ui/controls";
 
 import { readTrustFile } from "./profile-dialog-model";
 

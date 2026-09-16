@@ -12,7 +12,10 @@ import {
   type HostEventListener,
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
-import { createBrowserDevelopmentHost, resolveStreamSkopeHost } from "../../src/platform/electron/renderer/host";
+import {
+  createBrowserDevelopmentHost,
+  resolveStreamSkopeHost,
+} from "../../src/platform/electron/renderer/host";
 
 const RUNBOOK_URL = "https://runbooks.example.test/kafka/latency?cluster=local#recovery";
 const GATEWAY_ORIGIN = "http://127.0.0.1/__streamskope_host";

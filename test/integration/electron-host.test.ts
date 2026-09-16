@@ -14,7 +14,10 @@ import {
   type StreamSkopeBackend,
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
-import { createElectronShell, ElectronShellStartupError } from "../../src/platform/electron/main/electron-shell";
+import {
+  createElectronShell,
+  ElectronShellStartupError,
+} from "../../src/platform/electron/main/electron-shell";
 import { createKafkaBackend } from "../../src/platform/electron/main/kafka-backend";
 import { DESKTOP_PLATFORM_VERSION, DesktopPlatformContractError } from "../../src/platform/desktop";
 import {

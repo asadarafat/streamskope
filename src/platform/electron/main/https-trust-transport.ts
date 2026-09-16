@@ -2,7 +2,10 @@ import type { ClientRequest, IncomingMessage } from "node:http";
 import { Agent, request } from "node:https";
 
 import { HTTPS_TRUST_LIMITS as limits } from "../../../features/kafka/contracts/https-trust-types";
-import { parseHttpsUrl, validateHttpsHeader } from "../../../features/kafka/contracts/https-trust-validation";
+import {
+  parseHttpsUrl,
+  validateHttpsHeader,
+} from "../../../features/kafka/contracts/https-trust-validation";
 import {
   HttpsTrustTransportError,
   type HttpsTrustFailureCategory,

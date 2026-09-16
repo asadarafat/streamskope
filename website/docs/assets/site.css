@@ -254,14 +254,6 @@
   font-size: 0.95rem;
   line-height: 1.25;
 }
-.sk-brand small {
-  display: block;
-  font-size: 0.55rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  margin-top: 0.25rem;
-  color: var(--launch-muted);
-}
 .sk-directory {
   margin-left: auto;
 }

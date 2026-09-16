@@ -9,7 +9,10 @@ import {
   type HostEvent,
   type KafkaRuleDefinition,
 } from "../../src/features/kafka/contracts";
-import { createElectronKafkaBackend, type ElectronSafeStoragePort } from "../../src/platform/electron/main";
+import {
+  createElectronKafkaBackend,
+  type ElectronSafeStoragePort,
+} from "../../src/platform/electron/main";
 
 const rule: KafkaRuleDefinition = {
   cooldownMs: 5_000,

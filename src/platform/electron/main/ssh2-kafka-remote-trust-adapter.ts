@@ -1,4 +1,7 @@
-import { REMOTE_TRUST_ACQUISITION_LIMITS, type RemoteSshTargetInput } from "../../../features/kafka/contracts";
+import {
+  REMOTE_TRUST_ACQUISITION_LIMITS,
+  type RemoteSshTargetInput,
+} from "../../../features/kafka/contracts";
 import type {
   KafkaRemoteMaterialRequest,
   KafkaRemoteHostKeyRequest,

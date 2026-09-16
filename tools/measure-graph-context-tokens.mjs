@@ -9,8 +9,7 @@ const cacheRoot = join(root, ".cache", "graph-benchmark");
 const resultsRoot = join(cacheRoot, "results");
 const graphifyOut = join(cacheRoot, "graphify-output");
 const cbmCache = join(cacheRoot, "cbm-cache");
-const graphifyBin =
-  process.env.GRAPHIFY_BIN ?? join(cacheRoot, "graphify-venv", "bin", "graphify");
+const graphifyBin = process.env.GRAPHIFY_BIN ?? join(cacheRoot, "graphify-venv", "bin", "graphify");
 const cbmBin = process.env.CBM_BIN ?? "npx";
 const corpusTokens = Number(process.env.GRAPH_BENCHMARK_CORPUS_TOKENS ?? 365_200);
 const queryBudget = Number(process.env.GRAPH_BENCHMARK_QUERY_TOKENS ?? 2_000);
