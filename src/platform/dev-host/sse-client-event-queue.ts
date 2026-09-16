@@ -2,7 +2,7 @@ import {
   kafkaMessageRetainedBytes,
   type HostEvent,
   type KafkaExploredMessage,
-} from "../../kafka/contracts";
+} from "../../features/kafka/contracts";
 
 export interface SseClientEventQueueOptions {
   readonly maxEvents: number;

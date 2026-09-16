@@ -13,11 +13,11 @@ import {
   type HostCommandResponse,
   type KafkaAclBinding,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { AclPage } from "../../src/kafka/ui/AclPage";
-import { SchemaRegistryPage } from "../../src/kafka/ui/SchemaRegistryPage";
-import { TransformsPage } from "../../src/kafka/ui/TransformsPage";
-import { StreamSkopeThemeProvider } from "../../src/ui/StreamSkopeThemeProvider";
+} from "../../src/features/kafka/contracts";
+import { AclPage } from "../../src/features/kafka/ui/AclPage";
+import { SchemaRegistryPage } from "../../src/features/kafka/ui/SchemaRegistryPage";
+import { TransformsPage } from "../../src/features/kafka/ui/TransformsPage";
+import { StreamSkopeThemeProvider } from "../../src/platform/ui/StreamSkopeThemeProvider";
 
 class PageHost implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];

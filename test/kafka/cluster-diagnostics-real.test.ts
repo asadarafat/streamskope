@@ -2,12 +2,12 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import type { KafkaClusterProfileContext, SecureConnectionInput } from "../../src/kafka/contracts";
+import type { KafkaClusterProfileContext, SecureConnectionInput } from "../../src/features/kafka/contracts";
 import {
   KafkaApplicationSession,
   KafkaClusterDiagnosticsService,
-} from "../../src/kafka/application";
-import { StreamSkopeKafkaEngine } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import {
   loadFixtureConfig,
   loadFixtureConnection,

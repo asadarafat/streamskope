@@ -4,17 +4,17 @@ import {
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
   type KafkaStreamPreferences,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   type ActiveFacadeConsumption,
   type QueuedFacadeMessage,
-} from "../../src/kafka/facade/facade-support";
-import { appendFacadeMessage, takeFacadeMessageBatch } from "../../src/kafka/facade/message-queue";
+} from "../../src/features/kafka/facade/facade-support";
+import { appendFacadeMessage, takeFacadeMessageBatch } from "../../src/features/kafka/facade/message-queue";
 import {
   createStreamMonitoring,
   streamMetricsEvent,
-} from "../../src/kafka/facade/stream-monitor-facade";
-import { initialKafkaUiState, reduceKafkaUiState } from "../../src/kafka/ui/state";
+} from "../../src/features/kafka/facade/stream-monitor-facade";
+import { initialKafkaUiState, reduceKafkaUiState } from "../../src/features/kafka/ui/state";
 
 interface Measurement {
   readonly maximumMs: number;

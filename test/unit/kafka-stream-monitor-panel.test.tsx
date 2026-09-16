@@ -11,14 +11,14 @@ import {
   KAFKA_MESSAGE_LIMITS,
   type HostError,
   type KafkaStreamMonitorSnapshot,
-} from "../../src/kafka/contracts";
-import { StreamMonitorPanel } from "../../src/kafka/ui/StreamMonitorPanel";
+} from "../../src/features/kafka/contracts";
+import { StreamMonitorPanel } from "../../src/features/kafka/ui/StreamMonitorPanel";
 import type {
   RendererStreamMonitorObserver,
   RendererStreamMonitorSnapshot,
-} from "../../src/kafka/ui/stream-monitor-observer";
-import { streamSkopeTheme } from "../../src/ui/createStreamSkopeTheme";
-import { streamSkopeTypography } from "../../src/ui/typographyContract";
+} from "../../src/features/kafka/ui/stream-monitor-observer";
+import { streamSkopeTheme } from "../../src/platform/ui/createStreamSkopeTheme";
+import { streamSkopeTypography } from "../../src/platform/ui/typographyContract";
 
 const unavailableRenderer: RendererStreamMonitorSnapshot = {
   eventBacklog: 0,

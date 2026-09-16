@@ -7,12 +7,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   type KafkaOperationalPreferences,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   AtomicKafkaOperationalPreferenceFileStore,
   KafkaOperationalPreferenceFileCorruptError,
   KafkaOperationalPreferenceFileWriteError,
-} from "../../src/main/kafka-operational-preference-file-store";
+} from "../../src/platform/electron/main/kafka-operational-preference-file-store";
 
 const temporaryDirectories: string[] = [];
 

@@ -7,17 +7,17 @@ const outputDirectory = resolve(repositoryRoot, "dist/electron");
 const entries = [
   {
     emptyOutDir: true,
-    input: resolve(repositoryRoot, "src/main/electron-entry.ts"),
+    input: resolve(repositoryRoot, "src/platform/electron/main/electron-entry.ts"),
     name: "main",
   },
   {
     emptyOutDir: false,
-    input: resolve(repositoryRoot, "src/preload/index.ts"),
+    input: resolve(repositoryRoot, "src/platform/electron/preload/index.ts"),
     name: "preload",
   },
   {
     emptyOutDir: false,
-    input: resolve(repositoryRoot, "src/kafka/engine/trust-material-worker.ts"),
+    input: resolve(repositoryRoot, "src/features/kafka/engine/trust-material-worker.ts"),
     name: "trust-material-worker",
   },
 ];

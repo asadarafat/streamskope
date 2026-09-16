@@ -5,8 +5,8 @@ import {
   deferred,
   scopedMaterialInput,
 } from "../support/trust-acquisition-application-fixture";
-import type { HttpsTrustMaterialFetchInput } from "../../src/kafka/contracts/remote-trust-types";
-import { parseRemoteTrustAcquisitionSummary } from "../../src/kafka/contracts/remote-trust-validation";
+import type { HttpsTrustMaterialFetchInput } from "../../src/features/kafka/contracts/remote-trust-types";
+import { parseRemoteTrustAcquisitionSummary } from "../../src/features/kafka/contracts/remote-trust-validation";
 
 async function input(
   harness: ReturnType<typeof createHarness>,

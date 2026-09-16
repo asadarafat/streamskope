@@ -9,7 +9,7 @@ import {
   type KafkaMessage,
   type ProfileStoreCapability,
   type SecureConnectionInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaConnectionTemplateStore,
   InMemoryKafkaProfileStore,
@@ -28,9 +28,9 @@ import {
   type KafkaMessageStream,
   type KafkaProfileRecord,
   type KafkaProfileTrustDecoder,
-} from "../../src/kafka/application";
-import { KafkaBackendFacade } from "../../src/kafka/facade";
-import { KafkaEngineFailure, StreamSkopeKafkaRuleEvaluator } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { KafkaBackendFacade } from "../../src/features/kafka/facade";
+import { KafkaEngineFailure, StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
 
 const connection: SecureConnectionInput = {
   brokers: ["127.0.0.1:19093"],

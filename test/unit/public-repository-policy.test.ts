@@ -55,7 +55,7 @@ it("ignores local credentials and recordings without hiding required public sour
     ".github/workflows/ci.yml",
     "aio-kafka/fixture.config.json",
     "aio-kafka/make-certs.sh",
-    "src/ui/assets/streamskope.svg",
+    "src/platform/ui/assets/streamskope.svg",
     "assets/icons/streamskope.icns",
     "test/unit/public-repository-policy.test.ts",
   ];

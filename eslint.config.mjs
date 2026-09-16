@@ -5,10 +5,9 @@ import tseslint from "typescript-eslint";
 
 const typedFiles = ["**/*.ts", "**/*.tsx"];
 const rendererFiles = [
-  "src/app/**/*.{ts,tsx}",
-  "src/kafka/ui/**/*.{ts,tsx}",
-  "src/renderer/**/*.{ts,tsx}",
-  "src/ui/**/*.{ts,tsx}",
+  "src/features/kafka/ui/**/*.{ts,tsx}",
+  "src/platform/electron/renderer/**/*.{ts,tsx}",
+  "src/platform/ui/**/*.{ts,tsx}",
   "test/architecture/fixtures/renderer/**/*.{ts,tsx}",
 ];
 
@@ -16,8 +15,10 @@ export default [
   {
     ignores: [
       ".codex/**",
+      ".cache/**",
       "coverage/**",
       "dist/**",
+      "graphify-out/**",
       "node_modules/**",
       "**/node_modules/**",
       "website/.site/**",
@@ -52,19 +53,18 @@ export default [
     },
     settings: {
       "boundaries/elements": [
-        { pattern: "src/app/**", type: "app" },
-        { pattern: "src/kafka/contracts/**", type: "kafka-contracts" },
-        { pattern: "src/kafka/application/**", type: "kafka-application" },
-        { pattern: "src/kafka/facade/**", type: "kafka-facade" },
-        { pattern: "src/kafka/engine/**", type: "kafka-engine" },
-        { pattern: "src/kafka/ui/**", type: "kafka-renderer" },
+        { pattern: "src/features/kafka/contracts/**", type: "kafka-contracts" },
+        { pattern: "src/features/kafka/application/**", type: "kafka-application" },
+        { pattern: "src/features/kafka/facade/**", type: "kafka-facade" },
+        { pattern: "src/features/kafka/engine/**", type: "kafka-engine" },
+        { pattern: "src/features/kafka/ui/**", type: "kafka-renderer" },
         { pattern: "src/platform/desktop/**", type: "platform-desktop" },
         { pattern: "src/platform/activity/**", type: "platform-activity" },
         { pattern: "src/platform/dev-host/**", type: "platform-dev-host" },
-        { pattern: "src/main/**", type: "main" },
-        { pattern: "src/preload/**", type: "preload" },
-        { pattern: "src/renderer/**", type: "renderer" },
-        { pattern: "src/ui/**", type: "ui" },
+        { pattern: "src/platform/electron/main/**", type: "main" },
+        { pattern: "src/platform/electron/preload/**", type: "preload" },
+        { pattern: "src/platform/electron/renderer/**", type: "renderer" },
+        { pattern: "src/platform/ui/**", type: "ui" },
         { pattern: "test/architecture/fixtures/renderer/**", type: "renderer" },
       ],
     },
@@ -150,18 +150,6 @@ export default [
               from: { element: { type: "kafka-renderer" } },
             },
             {
-              allow: {
-                to: {
-                  element: {
-                    types: {
-                      anyOf: ["kafka-contracts", "kafka-renderer", "platform-desktop", "ui"],
-                    },
-                  },
-                },
-              },
-              from: { element: { type: "app" } },
-            },
-            {
               allow: { to: { element: { type: "ui" } } },
               from: { element: { type: "ui" } },
             },
@@ -226,7 +214,6 @@ export default [
                   element: {
                     types: {
                       anyOf: [
-                        "app",
                         "kafka-contracts",
                         "kafka-renderer",
                         "platform-desktop",
@@ -283,8 +270,8 @@ export default [
               message: "Renderer code must depend only on renderer modules and contracts.",
             },
             {
-              regex: "(^|/)platform/(?!desktop(?:/|$))",
-              message: "Renderer code may use only the declared desktop platform contract.",
+              regex: "(^|/)platform/(?!desktop(?:/|$)|ui(?:/|$))",
+              message: "Renderer code may use only declared desktop and shared UI platform contracts.",
             },
           ],
         },

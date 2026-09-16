@@ -9,7 +9,7 @@ import {
 } from "@playwright/test";
 import { build } from "vite";
 
-import { PACKAGED_RENDERER_URL } from "../../src/main/packaged-renderer-origin";
+import { PACKAGED_RENDERER_URL } from "../../src/platform/electron/main/packaged-renderer-origin";
 
 import type { FixtureConfig, FixtureConnection } from "./kafka-fixture";
 
@@ -31,12 +31,12 @@ export async function buildElectronSmoke(outputDirectory: string): Promise<void>
     },
     {
       emptyOutDir: false,
-      input: resolve(repositoryRoot, "src/preload/index.ts"),
+      input: resolve(repositoryRoot, "src/platform/electron/preload/index.ts"),
       name: "preload",
     },
     {
       emptyOutDir: false,
-      input: resolve(repositoryRoot, "src/kafka/engine/trust-material-worker.ts"),
+      input: resolve(repositoryRoot, "src/features/kafka/engine/trust-material-worker.ts"),
       name: "trust-material-worker",
     },
   ] as const;

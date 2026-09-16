@@ -4,12 +4,12 @@ import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
   type RemoteTrustAcquisitionSummary,
-} from "../../src/kafka/contracts";
-import type { KafkaTrustAcquisitionServicePort } from "../../src/kafka/application";
+} from "../../src/features/kafka/contracts";
+import type { KafkaTrustAcquisitionServicePort } from "../../src/features/kafka/application";
 import {
   executeTrustAcquisitionCommand,
   type TrustAcquisitionFacadeBindings,
-} from "../../src/kafka/facade/trust-acquisition-facade";
+} from "../../src/features/kafka/facade/trust-acquisition-facade";
 import { createFacade, RecordingConnectionPort } from "../support/kafka-backend-facade-fixture";
 
 const target = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KAFKA_MESSAGE_LIMITS } from "../../src/kafka/contracts";
+import { KAFKA_MESSAGE_LIMITS } from "../../src/features/kafka/contracts";
 import { measureRendererMessageRetention } from "../support/renderer-message-retention-measurement";
 
 describe("renderer message retention measurement", () => {

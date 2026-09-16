@@ -4,15 +4,15 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ProfileStoreCapability } from "../../src/kafka/contracts";
-import type { KafkaProfileRecord } from "../../src/kafka/application";
+import type { ProfileStoreCapability } from "../../src/features/kafka/contracts";
+import type { KafkaProfileRecord } from "../../src/features/kafka/application";
 import { trustRecipeInput } from "../support/trust-recipe";
 import {
   AtomicKafkaProfileFileStore,
   KafkaProfileFileCorruptError,
   KafkaProfileFileWriteError,
   type KafkaProfileProtector,
-} from "../../src/main/kafka-profile-file-store";
+} from "../../src/platform/electron/main/kafka-profile-file-store";
 
 const capability: ProfileStoreCapability = {
   durability: "durable",

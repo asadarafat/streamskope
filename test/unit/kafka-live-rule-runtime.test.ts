@@ -7,7 +7,7 @@ import {
   type KafkaMessage,
   type KafkaRuleDefinition,
   type KafkaRuleStoreCapability,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaRuleStore,
   KafkaLiveRuleRuntime,
@@ -16,8 +16,8 @@ import {
   type KafkaRuleEvaluator,
   type KafkaRulePredicate,
   type KafkaRuleStore,
-} from "../../src/kafka/application";
-import { StreamSkopeKafkaRuleEvaluator } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
 
 const sessionCapability: KafkaRuleStoreCapability = {
   durability: "session",

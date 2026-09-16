@@ -11,11 +11,11 @@ import {
   type HostTextDocument,
   type KafkaClusterDiagnosticsSnapshot,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   ClusterDetailsDialog,
   type ClusterDetailsTransferPort,
-} from "../../src/kafka/ui/ClusterDetailsDialog";
+} from "../../src/features/kafka/ui/ClusterDetailsDialog";
 
 const profile = {
   brokers: ["127.0.0.1:19093"],

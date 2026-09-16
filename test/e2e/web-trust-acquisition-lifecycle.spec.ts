@@ -9,8 +9,8 @@ import { utils } from "ssh2";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { HOST_PROTOCOL_VERSION } from "../../src/kafka/contracts";
-import { createKafkaBackend } from "../../src/main";
+import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 import { loadFixtureConnection } from "../support/kafka-fixture";
 import { startControlledSshServer } from "../support/ssh-fixture";

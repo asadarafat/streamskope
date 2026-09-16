@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { NodeHttpsTrustTransport } from "../../src/main/https-trust-transport";
+import { NodeHttpsTrustTransport } from "../../src/platform/electron/main/https-trust-transport";
 import {
   extractHttpsTrustMaterial,
   extractHttpsTrustPassword,
-} from "../../src/main/https-trust-extraction";
-import { parsePemTrustMaterial } from "../../src/kafka/engine/trust-material-shared";
+} from "../../src/platform/electron/main/https-trust-extraction";
+import { parsePemTrustMaterial } from "../../src/features/kafka/engine/trust-material-shared";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 
 describe("verified bounded HTTPS trust transport", () => {

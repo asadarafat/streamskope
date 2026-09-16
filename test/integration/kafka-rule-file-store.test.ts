@@ -4,13 +4,13 @@ import { basename, dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { KafkaRuleDefinition } from "../../src/kafka/contracts";
-import type { KafkaRuleDocument } from "../../src/kafka/application";
+import type { KafkaRuleDefinition } from "../../src/features/kafka/contracts";
+import type { KafkaRuleDocument } from "../../src/features/kafka/application";
 import {
   AtomicKafkaRuleFileStore,
   KafkaRuleFileCorruptError,
   KafkaRuleFileWriteError,
-} from "../../src/main/kafka-rule-file-store";
+} from "../../src/platform/electron/main/kafka-rule-file-store";
 
 const rule: KafkaRuleDefinition = {
   cooldownMs: 5_000,

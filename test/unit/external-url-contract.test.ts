@@ -5,7 +5,7 @@ import {
   HostContractValidationError,
   parseExternalUrlOpenRequest,
   parseExternalUrlOpenResult,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const RUNBOOK_URL = "https://runbooks.example.test/kafka/latency?cluster=local#recovery";
 

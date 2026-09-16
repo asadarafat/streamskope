@@ -14,12 +14,12 @@ describe("application identity assets", () => {
       source: string;
       sha256: Record<string, string>;
     };
-    expect(evidence.source).toBe("src/ui/assets/streamskope.svg");
+    expect(evidence.source).toBe("src/platform/ui/assets/streamskope.svg");
     expect(Object.keys(evidence.sha256).sort()).toEqual([
       "assets/icons/streamskope.icns",
       "assets/icons/streamskope.ico",
       "assets/icons/streamskope.png",
-      "src/ui/assets/streamskope.svg",
+      "src/platform/ui/assets/streamskope.svg",
     ]);
     for (const [file, hash] of Object.entries(evidence.sha256)) {
       expect(
@@ -68,11 +68,11 @@ describe("application identity assets", () => {
 
   it("uses one identity source and the standard Settings icon across shells", async () => {
     const index = await readFile(new URL("index.html", root), "utf8");
-    expect(index).toContain('href="/src/ui/assets/streamskope.svg"');
-    const presenter = await readFile(new URL("src/ui/StreamSkopeAppIcon.tsx", root), "utf8");
+    expect(index).toContain('href="/src/platform/ui/assets/streamskope.svg"');
+    const presenter = await readFile(new URL("src/platform/ui/StreamSkopeAppIcon.tsx", root), "utf8");
     expect(presenter).toContain('"./assets/streamskope.svg"');
     const source = await readFile(
-      new URL("src/kafka/ui/WorkbenchApplicationBar.tsx", root),
+      new URL("src/features/kafka/ui/WorkbenchApplicationBar.tsx", root),
       "utf8",
     );
     expect(source).toContain("<StreamSkopeAppIcon");

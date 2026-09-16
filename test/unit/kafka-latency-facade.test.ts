@@ -5,9 +5,9 @@ import {
   type HostCommand,
   type HostEvent,
   type KafkaLatencyProbeEvidence,
-} from "../../src/kafka/contracts";
-import type { KafkaLatencyProbeServicePort } from "../../src/kafka/application";
-import { executeLatencyCommand } from "../../src/kafka/facade";
+} from "../../src/features/kafka/contracts";
+import type { KafkaLatencyProbeServicePort } from "../../src/features/kafka/application";
+import { executeLatencyCommand } from "../../src/features/kafka/facade";
 
 const request = {
   acknowledgements: -1,

@@ -13,9 +13,9 @@ import {
   type HostEvent,
   type StreamSkopeBackend,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { createElectronShell, ElectronShellStartupError } from "../../src/main/electron-shell";
-import { createKafkaBackend } from "../../src/main/kafka-backend";
+} from "../../src/features/kafka/contracts";
+import { createElectronShell, ElectronShellStartupError } from "../../src/platform/electron/main/electron-shell";
+import { createKafkaBackend } from "../../src/platform/electron/main/kafka-backend";
 import { DESKTOP_PLATFORM_VERSION, DesktopPlatformContractError } from "../../src/platform/desktop";
 import {
   DESKTOP_ACTION_CHANNEL,
@@ -25,12 +25,12 @@ import {
   HOST_EVENT_CHANNEL,
   HOST_EVENT_ACK_CHANNEL,
   HOST_SUBSCRIBE_CHANNEL,
-} from "../../src/preload/channels";
+} from "../../src/platform/electron/preload/channels";
 import {
   createStreamSkopePreloadHost,
   exposeStreamSkopeHost,
   type PreloadIpcRenderer,
-} from "../../src/preload/host-bridge";
+} from "../../src/platform/electron/preload/host-bridge";
 
 type UnknownListener = (...arguments_: unknown[]) => void;
 type InvokeHandler = (event: unknown, value: unknown) => Promise<unknown>;

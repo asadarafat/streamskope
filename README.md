@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/ui/assets/streamskope.svg" width="72" height="72" alt="StreamSkope logo">
+  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" alt="StreamSkope logo">
 </p>
 
 # StreamSkope

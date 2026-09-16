@@ -2,7 +2,7 @@ import { createServer, type RequestListener, type Server } from "node:http";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { NodeBoundedJsonHttp } from "../../src/kafka/engine/bounded-json-http";
+import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
 
 const servers = new Set<Server>();
 

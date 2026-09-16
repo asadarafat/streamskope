@@ -7,7 +7,7 @@ import {
   parseHostCommand,
   parseHostCommandResponse,
   parseHostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const replace = (value: string): Readonly<Record<string, string>> => ({
   mode: "replace",

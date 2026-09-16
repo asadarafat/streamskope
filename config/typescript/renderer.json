@@ -9,15 +9,13 @@
   },
   "files": [],
   "include": [
-    "../../src/app/**/*.ts",
-    "../../src/app/**/*.tsx",
-    "../../src/kafka/contracts/**/*.ts",
-    "../../src/kafka/ui/**/*.ts",
-    "../../src/kafka/ui/**/*.tsx",
+    "../../src/features/kafka/contracts/**/*.ts",
+    "../../src/features/kafka/ui/**/*.ts",
+    "../../src/features/kafka/ui/**/*.tsx",
     "../../src/platform/desktop/**/*.ts",
-    "../../src/renderer/**/*.ts",
-    "../../src/renderer/**/*.tsx",
-    "../../src/ui/**/*.ts",
-    "../../src/ui/**/*.tsx"
+    "../../src/platform/electron/renderer/**/*.ts",
+    "../../src/platform/electron/renderer/**/*.tsx",
+    "../../src/platform/ui/**/*.ts",
+    "../../src/platform/ui/**/*.tsx"
   ]
 }

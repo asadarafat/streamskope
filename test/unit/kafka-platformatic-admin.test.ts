@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   KAFKA_TOPIC_CONFIGURATION_REDACTION,
   type KafkaTopicConfigurationChange,
-} from "../../src/kafka/contracts";
-import { PlatformaticAdminPort } from "../../src/kafka/engine/platformatic-admin";
+} from "../../src/features/kafka/contracts";
+import { PlatformaticAdminPort } from "../../src/features/kafka/engine/platformatic-admin";
 
 class RecordingPlatformaticAdmin {
   readonly aclCreateCalls: unknown[] = [];

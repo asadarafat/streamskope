@@ -3,8 +3,8 @@ import {
   KAFKA_MESSAGE_LIMITS,
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
-} from "../../src/kafka/contracts";
-import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/kafka/ui/state";
+} from "../../src/features/kafka/contracts";
+import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/features/kafka/ui/state";
 import { ELECTRON_RUNTIME_EFFICIENCY_POLICY } from "../../tools/electron-runtime-efficiency-policy";
 
 export interface RendererMessageRetentionMeasurementOptions {

@@ -4,12 +4,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ProfileStoreCapability } from "../../src/kafka/contracts";
+import type { ProfileStoreCapability } from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaProfileStore,
   KafkaProfileService,
   type KafkaProfileRecord,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 import { prepareLocalAioDevelopmentProfile } from "../../tools/kafka-fixture/development-profile";
 
 const capability: ProfileStoreCapability = {

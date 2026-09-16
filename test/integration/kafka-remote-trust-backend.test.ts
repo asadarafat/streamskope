@@ -7,14 +7,14 @@ import {
   HOST_PROTOCOL_VERSION,
   type HostEvent,
   type RemoteSshTargetInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import type {
   KafkaRemoteHostKeyRequest,
   KafkaRemoteMaterialRequest,
   KafkaRemotePasswordRequest,
   KafkaRemoteTrustPort,
-} from "../../src/kafka/application";
-import { createKafkaBackend } from "../../src/main";
+} from "../../src/features/kafka/application";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 
 const target = {
   host: "kafka-lab.example.test",
@@ -26,7 +26,7 @@ const target = {
 
 async function openEditor(
   backend: ReturnType<typeof createKafkaBackend>,
-): Promise<import("../../src/kafka/contracts/remote-trust-types").TrustAcquisitionEditor> {
+): Promise<import("../../src/features/kafka/contracts/remote-trust-types").TrustAcquisitionEditor> {
   const response = await backend.execute({
     command: "trustAcquisition.editor.open",
     id: "open-editor",

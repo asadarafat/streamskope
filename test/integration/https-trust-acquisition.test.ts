@@ -3,10 +3,10 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { HttpsTrustGetDefinition } from "../../src/kafka/contracts/https-trust-types";
-import type { HttpsTrustAcquisitionRequest } from "../../src/kafka/application/https-trust-port";
-import { NodeHttpsTrustAcquisition } from "../../src/main/https-trust-acquisition";
-import { createHostTrustMaterialDecoder } from "../../src/main/trust-material-decoder";
+import type { HttpsTrustGetDefinition } from "../../src/features/kafka/contracts/https-trust-types";
+import type { HttpsTrustAcquisitionRequest } from "../../src/features/kafka/application/https-trust-port";
+import { NodeHttpsTrustAcquisition } from "../../src/platform/electron/main/https-trust-acquisition";
+import { createHostTrustMaterialDecoder } from "../../src/platform/electron/main/trust-material-decoder";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 
 describe("HTTPS material and password stages", () => {

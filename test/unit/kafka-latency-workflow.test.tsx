@@ -16,11 +16,11 @@ import {
   type KafkaLatencyProbeEvidence,
   type KafkaLatencySnapshot,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   LatencyWorkspace,
   type LatencyWorkspaceTransferPort,
-} from "../../src/kafka/ui/LatencyWorkspace";
+} from "../../src/features/kafka/ui/LatencyWorkspace";
 
 const request = {
   acknowledgements: -1,

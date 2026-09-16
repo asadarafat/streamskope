@@ -5,7 +5,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MetricPlot } from "../../src/kafka/ui/MetricPlot";
+import { MetricPlot } from "../../src/features/kafka/ui/MetricPlot";
 
 afterEach(() => {
   cleanup();

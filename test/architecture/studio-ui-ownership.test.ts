@@ -4,20 +4,20 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
-const rendererUiRoot = fileURLToPath(new URL("../../src/kafka/ui/", import.meta.url));
-const applicationRoot = fileURLToPath(new URL("../../src/app/", import.meta.url));
+const rendererUiRoot = fileURLToPath(new URL("../../src/features/kafka/ui/", import.meta.url));
+const applicationRoot = rendererUiRoot;
 
 const sharedUiOwners = [
-  "src/ui/colorContract.ts",
-  "src/ui/controls.tsx",
-  "src/ui/createStreamSkopeTheme.ts",
-  "src/ui/spacingContract.ts",
-  "src/ui/StudioCodeBlock.tsx",
-  "src/ui/StudioInventoryGrid.tsx",
-  "src/ui/StudioPanel.tsx",
-  "src/ui/StudioPropertyRow.tsx",
-  "src/ui/studioTokens.ts",
-  "src/ui/typographyContract.ts",
+  "src/platform/ui/colorContract.ts",
+  "src/platform/ui/controls.tsx",
+  "src/platform/ui/createStreamSkopeTheme.ts",
+  "src/platform/ui/spacingContract.ts",
+  "src/platform/ui/StudioCodeBlock.tsx",
+  "src/platform/ui/StudioInventoryGrid.tsx",
+  "src/platform/ui/StudioPanel.tsx",
+  "src/platform/ui/StudioPropertyRow.tsx",
+  "src/platform/ui/studioTokens.ts",
+  "src/platform/ui/typographyContract.ts",
 ] as const;
 
 const interactiveMaterialOwners = new Set([
@@ -85,19 +85,22 @@ function directInteractiveMaterialImports(source: string): readonly string[] {
 }
 
 describe("TopoViewer Studio frontend ownership", () => {
-  it("keeps application composition above Kafka features and shared UI", async () => {
+  it("keeps application composition inside the Kafka feature and shared UI in platform", async () => {
     const applicationSource = await readFile(`${applicationRoot}/StreamSkopeApp.tsx`, "utf8");
     const workbenchSource = await readFile(`${rendererUiRoot}/StreamSkopeWorkbench.tsx`, "utf8");
-    const rendererEntrySource = await readFile(`${repositoryRoot}/src/renderer/main.tsx`, "utf8");
+    const rendererEntrySource = await readFile(
+      `${repositoryRoot}/src/platform/electron/renderer/main.tsx`,
+      "utf8",
+    );
 
-    expect(applicationSource).toContain("../kafka/ui/StreamSkopeWorkbench");
-    expect(applicationSource).toContain("../ui/StreamSkopeThemeProvider");
+    expect(applicationSource).toContain("./StreamSkopeWorkbench");
+    expect(applicationSource).toContain("../../../platform/ui/StreamSkopeThemeProvider");
     expect(workbenchSource).not.toContain("StreamSkopeThemeProvider");
-    expect(rendererEntrySource).toContain("../app/StreamSkopeApp");
-    expect(rendererEntrySource).not.toContain("../kafka/ui");
+    expect(rendererEntrySource).toContain("../../../features/kafka/ui/StreamSkopeApp");
+    expect(rendererEntrySource).not.toContain("../../../features/kafka/ui/StreamSkopeWorkbench");
   });
 
-  it("keeps shared presentation knowledge in src/ui instead of the Kafka feature", async () => {
+  it("keeps shared presentation knowledge in src/platform/ui instead of the Kafka feature", async () => {
     await expect(
       Promise.all(sharedUiOwners.map((path) => access(`${repositoryRoot}/${path}`))),
     ).resolves.toHaveLength(sharedUiOwners.length);

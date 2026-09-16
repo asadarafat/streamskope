@@ -14,7 +14,7 @@ import {
   parseHostCommandResponse,
   parseHostEvent,
   parseKafkaOperationalPreferenceSnapshot,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const sessionStore = {
   durability: "session",

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { KafkaProfileStore } from "../../src/kafka/application";
+import type { KafkaProfileStore } from "../../src/features/kafka/application";
 
 import { DEFAULT_OWNED_FIXTURE_NAME } from "./defaults";
 import { FileFixtureOwnershipStore } from "./file-ownership-store";

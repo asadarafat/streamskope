@@ -7,9 +7,9 @@ import { expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
-it("exposes Kafka layers directly without a redundant feature container", () => {
-  expect(readdirSync(resolve(root, "src"))).toContain("kafka");
-  expect(readdirSync(resolve(root, "src/kafka")).sort()).toEqual([
+it("exposes feature and platform layers as the source roots", () => {
+  expect(readdirSync(resolve(root, "src")).sort()).toEqual(["features", "platform"]);
+  expect(readdirSync(resolve(root, "src/features/kafka")).sort()).toEqual([
     "application",
     "contracts",
     "engine",
@@ -41,9 +41,9 @@ it("keeps source modules imported or explicitly launched by a runtime", () => {
 
   // These process/worker entries are launched by the Electron build, not imported.
   const entries = [
-    "src/main/electron-entry.ts",
-    "src/preload/index.ts",
-    "src/kafka/engine/trust-material-worker.ts",
+    "src/platform/electron/main/electron-entry.ts",
+    "src/platform/electron/preload/index.ts",
+    "src/features/kafka/engine/trust-material-worker.ts",
   ];
   const build = readFileSync(resolve(root, "tools/build-electron.mjs"), "utf8");
   for (const entry of entries) expect(build).toContain(entry);

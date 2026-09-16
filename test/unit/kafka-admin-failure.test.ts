@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mapKafkaAdminFailure } from "../../src/kafka/engine/failure";
+import { mapKafkaAdminFailure } from "../../src/features/kafka/engine/failure";
 
 describe("Kafka administration failure mapping", () => {
   it("reports an unsupported broker API distinctly from empty data", () => {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, type HostCommand, type HostEvent } from "../../src/kafka/contracts";
-import { createKafkaBackend } from "../../src/main";
+import { HOST_PROTOCOL_VERSION, type HostCommand, type HostEvent } from "../../src/features/kafka/contracts";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { startDevelopmentHost, type RunningDevelopmentHost } from "../../src/platform/dev-host";
 import { trustRecipeInput } from "../support/trust-recipe";
 

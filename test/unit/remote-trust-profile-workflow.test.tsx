@@ -17,8 +17,8 @@ import {
   type RemoteTrustAcquisitionSummary,
   type StreamSkopeHost,
   type TrustAcquisitionRecipe,
-} from "../../src/kafka/contracts";
-import { ProfileDialog } from "../../src/kafka/ui/ProfileDialog";
+} from "../../src/features/kafka/contracts";
+import { ProfileDialog } from "../../src/features/kafka/ui/ProfileDialog";
 
 const recipe: TrustAcquisitionRecipe = {
   id: "generic-jks",

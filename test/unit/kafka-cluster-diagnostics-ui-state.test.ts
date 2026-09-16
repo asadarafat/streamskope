@@ -5,8 +5,8 @@ import {
   type HostError,
   type HostEvent,
   type KafkaClusterDiagnosticsSnapshot,
-} from "../../src/kafka/contracts";
-import { initialKafkaUiState, reduceKafkaUiState } from "../../src/kafka/ui/state";
+} from "../../src/features/kafka/contracts";
+import { initialKafkaUiState, reduceKafkaUiState } from "../../src/features/kafka/ui/state";
 
 const profile = {
   brokers: ["127.0.0.1:19093"],

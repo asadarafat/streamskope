@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { KafkaClusterServiceContext } from "../../src/kafka/application";
+import type { KafkaClusterServiceContext } from "../../src/features/kafka/application";
 import type {
   BoundedJsonHttpPort,
   BoundedJsonHttpRequest,
   BoundedJsonHttpResponse,
-} from "../../src/kafka/engine/bounded-json-http";
-import { RedpandaTransformHttpAdapter } from "../../src/kafka/engine/redpanda-transform-http";
+} from "../../src/features/kafka/engine/bounded-json-http";
+import { RedpandaTransformHttpAdapter } from "../../src/features/kafka/engine/redpanda-transform-http";
 
 class ScriptedHttp implements BoundedJsonHttpPort {
   readonly requests: BoundedJsonHttpRequest[] = [];

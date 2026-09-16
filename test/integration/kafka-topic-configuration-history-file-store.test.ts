@@ -8,13 +8,13 @@ import {
   KAFKA_TOPIC_CONFIGURATION_LIMITS,
   KAFKA_TOPIC_CONFIGURATION_REDACTION,
   type KafkaTopicConfigurationHistoryEntry,
-} from "../../src/kafka/contracts";
-import type { KafkaTopicConfigurationHistoryDocument } from "../../src/kafka/application";
+} from "../../src/features/kafka/contracts";
+import type { KafkaTopicConfigurationHistoryDocument } from "../../src/features/kafka/application";
 import {
   AtomicKafkaTopicConfigurationHistoryFileStore,
   KafkaTopicConfigurationHistoryFileCorruptError,
   KafkaTopicConfigurationHistoryFileWriteError,
-} from "../../src/main/kafka-topic-configuration-history-file-store";
+} from "../../src/platform/electron/main/kafka-topic-configuration-history-file-store";
 
 const temporaryDirectories: string[] = [];
 

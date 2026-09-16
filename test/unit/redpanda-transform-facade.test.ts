@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, type HostEvent } from "../../src/kafka/contracts";
-import type { KafkaApplicationSession, RedpandaTransformPort } from "../../src/kafka/application";
-import { TransformFacadeController } from "../../src/kafka/facade/transform-facade";
+import { HOST_PROTOCOL_VERSION, type HostEvent } from "../../src/features/kafka/contracts";
+import type { KafkaApplicationSession, RedpandaTransformPort } from "../../src/features/kafka/application";
+import { TransformFacadeController } from "../../src/features/kafka/facade/transform-facade";
 
 function failure(name: string, status: number | null): Error & { readonly status: number | null } {
   return Object.assign(new Error("safe fixture failure"), { name, status });

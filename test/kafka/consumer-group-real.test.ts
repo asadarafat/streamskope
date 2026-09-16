@@ -4,9 +4,9 @@ import { readFile } from "node:fs/promises";
 import { Admin } from "@platformatic/kafka";
 import { describe, expect, it } from "vitest";
 
-import type { SecureConnectionInput } from "../../src/kafka/contracts";
-import { KafkaApplicationSession } from "../../src/kafka/application";
-import { StreamSkopeKafkaEngine } from "../../src/kafka/engine";
+import type { SecureConnectionInput } from "../../src/features/kafka/contracts";
+import { KafkaApplicationSession } from "../../src/features/kafka/application";
+import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import {
   fixtureClientOptions,
   loadFixtureConnection,

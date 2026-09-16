@@ -8,8 +8,8 @@ import {
   type HostCommandResponse,
   type HostEventListener,
   type StreamSkopeBackend,
-} from "../../src/kafka/contracts";
-import { createElectronShell } from "../../src/main/electron-shell";
+} from "../../src/features/kafka/contracts";
+import { createElectronShell } from "../../src/platform/electron/main/electron-shell";
 
 class ElectronSmokeBackend implements StreamSkopeBackend {
   private readonly listeners = new Set<HostEventListener>();

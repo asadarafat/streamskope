@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Ssh2KafkaRemoteTrustAdapter } from "../../src/main/ssh2-kafka-remote-trust-adapter";
+import { Ssh2KafkaRemoteTrustAdapter } from "../../src/platform/electron/main/ssh2-kafka-remote-trust-adapter";
 import { startControlledSshServer } from "../support/ssh-fixture";
 
 describe("Real SSH acquisition termination", () => {

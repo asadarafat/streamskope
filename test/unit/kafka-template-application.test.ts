@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ConnectionTemplateSnapshot,
   type ConnectionTemplateStoreCapability,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   DEFAULT_CONNECTION_TEMPLATE_DOCUMENT,
   DuplicateKafkaConnectionTemplateError,
@@ -15,7 +15,7 @@ import {
   KafkaConnectionTemplateValidationError,
   type KafkaConnectionTemplateDocument,
   type KafkaConnectionTemplateStore,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 const sessionCapability: ConnectionTemplateStoreCapability = {
   durability: "session",

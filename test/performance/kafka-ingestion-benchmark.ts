@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { Admin, Producer } from "@platformatic/kafka";
 
-import { StreamSkopeKafkaEngine } from "../../src/kafka/engine";
+import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import {
   fixtureClientOptions,
   loadFixtureConfig,

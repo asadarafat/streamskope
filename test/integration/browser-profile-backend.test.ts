@@ -8,8 +8,8 @@ import {
   type HostCommand,
   type HostEvent,
   type StreamSkopeBackend,
-} from "../../src/kafka/contracts";
-import { createKafkaBackend, createBrowserKafkaProfileStore } from "../../src/main";
+} from "../../src/features/kafka/contracts";
+import { createKafkaBackend, createBrowserKafkaProfileStore } from "../../src/platform/electron/main";
 import { trustRecipeInput } from "../support/trust-recipe";
 import { startDevelopmentHost, type RunningDevelopmentHost } from "../../src/platform/dev-host";
 

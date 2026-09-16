@@ -7,8 +7,8 @@ import type {
   KafkaConsumerGroupDetails,
   OAuthConnectionInput,
   SecureConnectionInput,
-} from "../../src/kafka/contracts";
-import { KAFKA_MESSAGE_LIMITS, utf8ByteLength } from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
+import { KAFKA_MESSAGE_LIMITS, utf8ByteLength } from "../../src/features/kafka/contracts";
 import {
   KafkaEngineFailure,
   StreamSkopeKafkaEngine,
@@ -17,7 +17,7 @@ import {
   type KafkaAdminPort,
   type OAuthToken,
   type OAuthTokenRequest,
-} from "../../src/kafka/engine";
+} from "../../src/features/kafka/engine";
 
 const oauthConnection: OAuthConnectionInput = {
   clientId: "admin",

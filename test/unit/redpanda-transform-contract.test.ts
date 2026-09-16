@@ -6,7 +6,7 @@ import {
   parseHostCommand,
   parseHostEvent,
   summarizeRedpandaTransformStatuses,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 describe("Redpanda transform host contract", () => {
   it("parses bounded inventory, detail, logs, and exact-delete commands", () => {

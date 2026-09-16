@@ -5,9 +5,9 @@ import {
   type HostCommand,
   type HostEvent,
   type KafkaConsumerGroupDetails,
-} from "../../src/kafka/contracts";
-import type { KafkaConsumerGroupInventory } from "../../src/kafka/application";
-import { KafkaEngineFailure } from "../../src/kafka/engine";
+} from "../../src/features/kafka/contracts";
+import type { KafkaConsumerGroupInventory } from "../../src/features/kafka/application";
+import { KafkaEngineFailure } from "../../src/features/kafka/engine";
 import {
   RecordingActiveConnection,
   RecordingConnectionPort,

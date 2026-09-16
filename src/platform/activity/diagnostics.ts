@@ -1,4 +1,4 @@
-import type { HostError, HostErrorCode, HostErrorStage } from "../../kafka/contracts";
+import type { HostError, HostErrorCode, HostErrorStage } from "../../features/kafka/contracts";
 
 import { ACTIVITY_DETAIL_CHARACTER_LIMIT, redactSensitiveText } from "./redaction";
 

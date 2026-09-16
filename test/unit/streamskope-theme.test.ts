@@ -7,8 +7,8 @@ import {
   streamSkopeMaterialSchemes,
   streamSkopeMuiMonospaceTypography,
   streamSkopeTheme,
-} from "../../src/ui/createStreamSkopeTheme";
-import { streamSkopeGeometry } from "../../src/ui/studioTokens";
+} from "../../src/platform/ui/createStreamSkopeTheme";
+import { streamSkopeGeometry } from "../../src/platform/ui/studioTokens";
 
 describe("StreamSkope semantic theme", () => {
   it.each(["light", "dark"] as const)(

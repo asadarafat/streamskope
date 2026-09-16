@@ -11,8 +11,8 @@ import {
   type HostCommandResponse,
   type HostEventListener,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/app/StreamSkopeApp";
+} from "../../src/features/kafka/contracts";
+import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/features/kafka/ui/StreamSkopeApp";
 import {
   DESKTOP_PLATFORM_VERSION,
   type DesktopAction,

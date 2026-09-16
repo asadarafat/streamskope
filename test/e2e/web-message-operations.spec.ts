@@ -14,7 +14,7 @@ import {
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
   type StreamSkopeBackend,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 import { expectWorkbenchReady } from "../support/workbench-browser";
 

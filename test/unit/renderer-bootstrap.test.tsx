@@ -11,7 +11,7 @@ it("starts the workbench from a clean browser-development address", async () => 
   vi.stubGlobal("fetch", fetchMock);
   document.body.innerHTML = '<div id="root"></div>';
 
-  await import("../../src/renderer/main");
+  await import("../../src/platform/electron/renderer/main");
 
   expect(await screen.findByRole("navigation", { name: "StreamSkope resources" })).toBeVisible();
   expect(screen.getByRole("banner", { name: "StreamSkope application bar" })).toHaveTextContent(

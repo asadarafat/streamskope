@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   KafkaLatencyProbeMeasurement,
   KafkaLatencyProbeSessionPort,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 import {
   KafkaLatencyProbeService,
   KafkaLatencyProbeValidationError,
   NoActiveKafkaConnectionError,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 const request = {
   acknowledgements: -1,

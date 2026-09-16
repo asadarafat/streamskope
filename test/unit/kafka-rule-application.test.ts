@@ -4,7 +4,7 @@ import {
   KAFKA_RULE_LIMITS,
   type KafkaRuleDefinition,
   type KafkaRuleStoreCapability,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   DuplicateKafkaRuleError,
   InMemoryKafkaRuleStore,
@@ -16,8 +16,8 @@ import {
   KafkaRuleValidationError,
   type KafkaRuleDocument,
   type KafkaRuleStore,
-} from "../../src/kafka/application";
-import { StreamSkopeKafkaRuleEvaluator } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
 
 const sessionCapability: KafkaRuleStoreCapability = {
   durability: "session",

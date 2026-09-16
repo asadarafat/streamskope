@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { expect, it } from "vitest";
 
-import { readTrustFile } from "../../src/kafka/ui/profile-dialog-model";
+import { readTrustFile } from "../../src/features/kafka/ui/profile-dialog-model";
 
 it("cancels an obsolete authorized file read without publishing its contents", async () => {
   const controller = new AbortController();

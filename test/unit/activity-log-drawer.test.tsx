@@ -6,8 +6,8 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ActivityEntry, HostTextDocument } from "../../src/kafka/contracts";
-import { ActivityLogDrawer } from "../../src/kafka/ui/ActivityLogDrawer";
+import type { ActivityEntry, HostTextDocument } from "../../src/features/kafka/contracts";
+import { ActivityLogDrawer } from "../../src/features/kafka/ui/ActivityLogDrawer";
 
 const failedTrust: ActivityEntry = {
   correlationId: "correlation-trust-1",

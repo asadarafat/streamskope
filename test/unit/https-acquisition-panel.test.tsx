@@ -8,10 +8,10 @@ import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { RemoteTrustAcquisitionPanel } from "../../src/kafka/ui/RemoteTrustAcquisitionPanel";
+} from "../../src/features/kafka/contracts";
+import { RemoteTrustAcquisitionPanel } from "../../src/features/kafka/ui/RemoteTrustAcquisitionPanel";
 import { trustRecipeInput } from "../support/trust-recipe";
-import type { ProfileTrustRecipeSelection } from "../../src/kafka/ui/ProfileTrustRecipeSelector";
+import type { ProfileTrustRecipeSelection } from "../../src/features/kafka/ui/ProfileTrustRecipeSelector";
 
 afterEach(cleanup);
 it("acquires HTTPS directly and uses the shared candidate review without SSH controls", async () => {

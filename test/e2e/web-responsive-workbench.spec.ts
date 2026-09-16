@@ -17,7 +17,7 @@ import {
   type KafkaExploredMessage,
   type ProfileSummary,
   type StreamSkopeBackend,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 import {
   expectNoHorizontalOverflow,

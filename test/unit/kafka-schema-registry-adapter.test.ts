@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { SchemaRegistryHttpAdapter } from "../../src/kafka/engine/schema-registry-http";
+import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import type {
   BoundedJsonHttpPort,
   BoundedJsonHttpRequest,
   BoundedJsonHttpResponse,
-} from "../../src/kafka/engine/bounded-json-http";
-import type { KafkaClusterServiceContext } from "../../src/kafka/application";
+} from "../../src/features/kafka/engine/bounded-json-http";
+import type { KafkaClusterServiceContext } from "../../src/features/kafka/application";
 
 class ScriptedHttp implements BoundedJsonHttpPort {
   readonly requests: BoundedJsonHttpRequest[] = [];

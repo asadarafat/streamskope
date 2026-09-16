@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KafkaRuleSampleError, parseKafkaRuleSample } from "../../src/kafka/engine";
+import { KafkaRuleSampleError, parseKafkaRuleSample } from "../../src/features/kafka/engine";
 
 function capturedError(operation: () => unknown): unknown {
   try {

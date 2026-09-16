@@ -9,7 +9,7 @@ import {
   KAFKA_STREAM_MONITOR_STATUSES,
   HostContractValidationError,
   parseHostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const request = {
   maxMessages: 100,

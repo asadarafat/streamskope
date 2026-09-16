@@ -15,9 +15,9 @@ import {
   type KafkaTopicConfigurationHistorySnapshot,
   type KafkaTopicConfigurationSnapshot,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { TopicConfigurationWorkspace } from "../../src/kafka/ui/TopicConfigurationWorkspace";
-import { streamSkopeGeometry } from "../../src/ui/studioTokens";
+} from "../../src/features/kafka/contracts";
+import { TopicConfigurationWorkspace } from "../../src/features/kafka/ui/TopicConfigurationWorkspace";
+import { streamSkopeGeometry } from "../../src/platform/ui/studioTokens";
 
 class RecordingHost implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];

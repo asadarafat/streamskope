@@ -1,4 +1,4 @@
-import type { TrustAcquisitionRecipeInput } from "../../src/kafka/contracts";
+import type { TrustAcquisitionRecipeInput } from "../../src/features/kafka/contracts";
 
 export function trustRecipeInput(): Extract<TrustAcquisitionRecipeInput, { method: "ssh" }> {
   return {

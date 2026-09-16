@@ -14,7 +14,7 @@ it("uses the Node process trust store without changing system trust or accepting
   try {
     const caPath = join(directory, "fixture.pem");
     await writeFile(caPath, fixture.caPem, { mode: 0o600 });
-    const script = `import { NodeHttpsTrustTransport } from './src/main/https-trust-transport.ts';
+    const script = `import { NodeHttpsTrustTransport } from './src/platform/electron/main/https-trust-transport.ts';
       const result = await new NodeHttpsTrustTransport().get({ url: process.argv[1], authentication: { mode: 'bearer', token: 'fixture-token' }, tls: { mode: 'system' }, headers: [], maximumBytes: 64, signal: new AbortController().signal });
       process.stdout.write(new TextDecoder().decode(result));`;
     const { stdout } = await promisify(execFile)(

@@ -2,9 +2,9 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createKafkaBackend } from "../../src/main";
-import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../../src/kafka/contracts";
-import { useTrustAcquisitionEditor } from "../../src/kafka/ui/use-trust-acquisition-editor";
+import { createKafkaBackend } from "../../src/platform/electron/main";
+import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../../src/features/kafka/contracts";
+import { useTrustAcquisitionEditor } from "../../src/features/kafka/ui/use-trust-acquisition-editor";
 
 afterEach(cleanup);
 

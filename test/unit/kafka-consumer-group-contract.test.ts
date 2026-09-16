@@ -7,7 +7,7 @@ import {
   HostContractValidationError,
   parseHostCommand,
   parseHostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const inventory = {
   connectionName: "Local Kafka",

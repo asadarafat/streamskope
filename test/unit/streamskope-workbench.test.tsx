@@ -18,9 +18,9 @@ import {
   type KafkaLiveRuleCapability,
   type KafkaLiveRuleEvaluation,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/app/StreamSkopeApp";
-import { createRendererStreamMonitorObserver } from "../../src/kafka/ui/stream-monitor-observer";
+} from "../../src/features/kafka/contracts";
+import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/features/kafka/ui/StreamSkopeApp";
+import { createRendererStreamMonitorObserver } from "../../src/features/kafka/ui/stream-monitor-observer";
 
 class FakeHost implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];

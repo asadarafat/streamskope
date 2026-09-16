@@ -8,8 +8,8 @@ import {
   type HostCommand,
   type HostEvent,
   type SecureConnectionInput,
-} from "../../src/kafka/contracts";
-import { createKafkaBackend } from "../../src/main";
+} from "../../src/features/kafka/contracts";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { startDevelopmentHost } from "../../src/platform/dev-host";
 import { loadFixtureConfig, loadFixtureConnection } from "../support/kafka-fixture";
 

@@ -6,8 +6,8 @@ import {
   type KafkaLatencyHistorySnapshot,
   type KafkaLatencyProbeEvidence,
   type KafkaLatencySnapshot,
-} from "../../src/kafka/contracts";
-import { initialKafkaUiState, reduceKafkaUiState } from "../../src/kafka/ui/state";
+} from "../../src/features/kafka/contracts";
+import { initialKafkaUiState, reduceKafkaUiState } from "../../src/features/kafka/ui/state";
 
 const request = {
   acknowledgements: -1,

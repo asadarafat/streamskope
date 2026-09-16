@@ -15,9 +15,9 @@ import {
   type HostEventListener,
   type KafkaRuleDefinition,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/app/StreamSkopeApp";
-import { streamSkopeGeometry } from "../../src/ui/studioTokens";
+} from "../../src/features/kafka/contracts";
+import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/features/kafka/ui/StreamSkopeApp";
+import { streamSkopeGeometry } from "../../src/platform/ui/studioTokens";
 
 const highPriority: KafkaRuleDefinition = {
   cooldownMs: 5_000,

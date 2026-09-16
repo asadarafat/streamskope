@@ -5,8 +5,8 @@ import {
   type HostCommand,
   type HostEvent,
   type KafkaRuleDefinition,
-} from "../../src/kafka/contracts";
-import { createKafkaBackend } from "../../src/main";
+} from "../../src/features/kafka/contracts";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { startDevelopmentHost, type RunningDevelopmentHost } from "../../src/platform/dev-host";
 
 const rendererOrigin = "http://127.0.0.1:4173";

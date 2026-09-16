@@ -46,7 +46,7 @@ import {
   PACKAGED_RENDERER_URL,
   installPackagedRendererProtocol,
   registerPackagedRendererScheme,
-} from "../../src/main/packaged-renderer-protocol";
+} from "../../src/platform/electron/main/packaged-renderer-protocol";
 
 const temporaryDirectories: string[] = [];
 

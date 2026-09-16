@@ -5,14 +5,14 @@ import {
   utf8ByteLength,
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   KAFKA_MESSAGE_OPERATION_LIMITS,
   createKafkaMessageExportDocument,
   initialKafkaMessageFilters,
   selectFilteredKafkaMessages,
   type KafkaMessageFilters,
-} from "../../src/kafka/ui/message-operations";
+} from "../../src/features/kafka/ui/message-operations";
 
 interface Measurement {
   readonly maximumMs: number;

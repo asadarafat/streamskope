@@ -53,7 +53,7 @@ describe("Electron verification package content policy", () => {
     "resources/app/aio-kafka/fixture.config.json",
     "resources/app/docs/roadmap.md",
     "resources/app/openspec/config.yaml",
-    "resources/app/src/main/electron-entry.ts",
+    "resources/app/src/platform/electron/main/electron-entry.ts",
     "resources/app/test/e2e/web-workbench.spec.ts",
     "resources/app/tools/start-web-development.ts",
     "resources/app/.github/workflows/ci.yml",

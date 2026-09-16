@@ -8,7 +8,7 @@ import {
   BROWSER_DEVELOPMENT_GATEWAY_PATH,
   browserDevelopmentSessionCookie,
   HOST_PROTOCOL_VERSION,
-} from "../src/kafka/contracts";
+} from "../src/features/kafka/contracts";
 import {
   launchWebDevelopment,
   type DevelopmentBackend,

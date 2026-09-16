@@ -6,9 +6,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { KafkaExploredMessage, KafkaLiveRuleEvaluation } from "../../src/kafka/contracts";
-import { MessageInspector } from "../../src/kafka/ui/MessageInspector";
-import type { TextDocumentTransferPort } from "../../src/kafka/ui";
+import type { KafkaExploredMessage, KafkaLiveRuleEvaluation } from "../../src/features/kafka/contracts";
+import { MessageInspector } from "../../src/features/kafka/ui/MessageInspector";
+import type { TextDocumentTransferPort } from "../../src/features/kafka/ui";
 
 const evaluated: KafkaLiveRuleEvaluation = {
   activeMatchCount: 0,

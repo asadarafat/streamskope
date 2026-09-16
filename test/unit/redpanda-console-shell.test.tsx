@@ -6,7 +6,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { StreamSkopeApp } from "../../src/app/StreamSkopeApp";
+import { StreamSkopeApp } from "../../src/features/kafka/ui/StreamSkopeApp";
 import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
@@ -14,7 +14,7 @@ import {
   type HostEvent,
   type HostEventListener,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 class ShellHost implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];

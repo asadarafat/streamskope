@@ -4,11 +4,11 @@ import {
   HOST_PROTOCOL_VERSION,
   KAFKA_STREAM_MONITOR_HISTORY_LIMIT,
   type HostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   RENDERER_STREAM_MONITOR_PENDING_EVENT_LIMIT,
   createRendererStreamMonitorObserver,
-} from "../../src/kafka/ui/stream-monitor-observer";
+} from "../../src/features/kafka/ui/stream-monitor-observer";
 
 function hostEvent(sequence: number): HostEvent {
   return {

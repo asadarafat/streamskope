@@ -6,7 +6,7 @@ import {
   type ProfileStoreCapability,
   type ProfileTestInput,
   type ProfileUpdateInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   DuplicateKafkaProfileError,
   ActiveKafkaProfileMutationError,
@@ -20,7 +20,7 @@ import {
   type KafkaProfileRecord,
   type KafkaProfileStore,
   type KafkaProfileTrustDecoder,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 const capability: ProfileStoreCapability = {
   durability: "session",

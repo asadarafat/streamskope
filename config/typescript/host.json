@@ -9,13 +9,15 @@
   "files": [],
   "exclude": ["../../tools/capture-docs.ts"],
   "include": [
-    "../../src/kafka/contracts/**/*.ts",
-    "../../src/kafka/application/**/*.ts",
-    "../../src/kafka/facade/**/*.ts",
-    "../../src/kafka/engine/**/*.ts",
-    "../../src/main/**/*.ts",
-    "../../src/platform/**/*.ts",
-    "../../src/preload/**/*.ts",
+    "../../src/features/kafka/contracts/**/*.ts",
+    "../../src/features/kafka/application/**/*.ts",
+    "../../src/features/kafka/facade/**/*.ts",
+    "../../src/features/kafka/engine/**/*.ts",
+    "../../src/platform/activity/**/*.ts",
+    "../../src/platform/desktop/**/*.ts",
+    "../../src/platform/dev-host/**/*.ts",
+    "../../src/platform/electron/main/**/*.ts",
+    "../../src/platform/electron/preload/**/*.ts",
     "../../tools/**/*.ts"
   ]
 }

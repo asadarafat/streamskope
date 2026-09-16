@@ -6,8 +6,8 @@ import {
   type HostEvent,
   type KafkaConsumerGroupDetailSnapshot,
   type KafkaConsumerGroupInventorySnapshot,
-} from "../../src/kafka/contracts";
-import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/kafka/ui/state";
+} from "../../src/features/kafka/contracts";
+import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/features/kafka/ui/state";
 
 const timeout: HostError = {
   activeStateChanged: false,

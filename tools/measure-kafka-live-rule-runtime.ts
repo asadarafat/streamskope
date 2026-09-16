@@ -9,15 +9,15 @@ import {
   type KafkaMessage,
   type KafkaRuleDefinition,
   type KafkaRuleStoreCapability,
-} from "../src/kafka/contracts";
+} from "../src/features/kafka/contracts";
 import {
   InMemoryKafkaRuleStore,
   KafkaLiveRuleRuntime,
   KafkaRuleService,
-} from "../src/kafka/application";
-import { aggregateFacadeRuleOutputs } from "../src/kafka/facade/rule-output";
-import type { QueuedFacadeMessage } from "../src/kafka/facade/facade-support";
-import { StreamSkopeKafkaRuleEvaluator } from "../src/kafka/engine";
+} from "../src/features/kafka/application";
+import { aggregateFacadeRuleOutputs } from "../src/features/kafka/facade/rule-output";
+import type { QueuedFacadeMessage } from "../src/features/kafka/facade/facade-support";
+import { StreamSkopeKafkaRuleEvaluator } from "../src/features/kafka/engine";
 
 interface Measurement {
   readonly maximumMs: number;

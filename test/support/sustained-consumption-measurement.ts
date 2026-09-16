@@ -1,5 +1,5 @@
-import { KAFKA_MESSAGE_LIMITS, type HostEvent } from "../../src/kafka/contracts";
-import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/kafka/ui/state";
+import { KAFKA_MESSAGE_LIMITS, type HostEvent } from "../../src/features/kafka/contracts";
+import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/features/kafka/ui/state";
 import { ELECTRON_RUNTIME_EFFICIENCY_POLICY } from "../../tools/electron-runtime-efficiency-policy";
 
 import {

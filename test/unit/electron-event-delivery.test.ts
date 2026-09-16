@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, type HostEvent } from "../../src/kafka/contracts";
-import { ElectronEventDelivery } from "../../src/main/electron-event-delivery";
+import { HOST_PROTOCOL_VERSION, type HostEvent } from "../../src/features/kafka/contracts";
+import { ElectronEventDelivery } from "../../src/platform/electron/main/electron-event-delivery";
 import { message } from "../support/kafka-backend-facade-fixture";
 
 const event = (sequence: number): HostEvent => ({

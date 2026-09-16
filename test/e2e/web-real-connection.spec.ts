@@ -6,8 +6,8 @@ import { resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { HOST_PROTOCOL_VERSION } from "../../src/kafka/contracts";
-import { createKafkaBackend } from "../../src/main";
+import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 import {
   PRIVATE_RUNBOOK_ARTIFACT_SENTINEL,

@@ -7,7 +7,7 @@ import {
   type ProfileCreateInput,
   type ProfileBindingInput,
   type TrustAcquisitionRecipe,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaProfileStore,
   KafkaProfileService,
@@ -15,7 +15,7 @@ import {
   InMemoryKafkaConnectionTemplateStore,
   InMemoryKafkaTrustRecipeStore,
   KafkaTrustAcquisitionService,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 async function setup(): Promise<{

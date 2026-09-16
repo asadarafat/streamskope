@@ -10,7 +10,7 @@ import {
   parseHostCommand,
   parseHostCommandResponse,
   parseHostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const localConnection = {
   brokers: ["127.0.0.1:19093"],

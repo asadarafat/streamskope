@@ -4,7 +4,7 @@ import {
   PROFILE_LIMITS,
   REMOTE_TRUST_ACQUISITION_LIMITS,
   type RemoteTrustAcquisitionSummary,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { createHarness, deferred, target } from "../support/trust-acquisition-application-fixture";
 import { trustRecipeInput } from "../support/trust-recipe";
 

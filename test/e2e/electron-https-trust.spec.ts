@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type ElectronApplication } from "@playwright/test";
 
-import { AtomicKafkaTrustRecipeFileStore } from "../../src/main/kafka-trust-recipe-file-store";
+import { AtomicKafkaTrustRecipeFileStore } from "../../src/platform/electron/main/kafka-trust-recipe-file-store";
 import {
   buildElectronSmoke,
   buildRenderer,

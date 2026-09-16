@@ -7,14 +7,14 @@ import {
   type KafkaTopicConfigurationEntry,
   type KafkaTopicConfigurationHistoryStoreCapability,
   type KafkaTopicConfigurationOperationInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaTopicConfigurationHistoryStore,
   KafkaTopicConfigurationService,
   type KafkaTopicConfigurationHistoryDocument,
   type KafkaTopicConfigurationHistoryStore,
   type KafkaTopicConfigurationSessionPort,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 const writableRetention: KafkaTopicConfigurationEntry = {
   documentation: null,

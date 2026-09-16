@@ -4,14 +4,14 @@ import type {
   KafkaClusterDetailsDocument,
   KafkaClusterProfileContext,
   KafkaConfigurationEntry,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   ConnectionAttemptSupersededError,
   KafkaClusterDiagnosticsService,
   KafkaClusterDiagnosticsValidationError,
   type KafkaClusterDiagnosticsSessionPort,
   type KafkaClusterMetadata,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 const profile: KafkaClusterProfileContext = {
   brokers: ["127.0.0.1:19093"],

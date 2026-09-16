@@ -5,11 +5,11 @@ import {
   type HostCommand,
   type HostSecureConnectionInput,
   type SecureConnectionInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import type {
   KafkaResolvedTrustAcquisition,
   KafkaTrustAcquisitionServicePort,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 import {
   createFacade,
   RecordingActiveConnection,

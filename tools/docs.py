@@ -114,7 +114,10 @@ def prepare(url, serving=False):
     configuration = WEBSITE / (".zensical.serve.toml" if serving else ".zensical.local.toml")
     configuration.write_text(source)
     # Logo has one source owner; copied output is ignored, never hand-maintained.
-    shutil.copyfile(ROOT / "src/ui/assets/streamskope.svg", WEBSITE / "docs/assets/streamskope.svg")
+    shutil.copyfile(
+        ROOT / "src/platform/ui/assets/streamskope.svg",
+        WEBSITE / "docs/assets/streamskope.svg",
+    )
     media = WEBSITE / "docs/launch/assets"
     media.mkdir(parents=True, exist_ok=True)
     (media / "destination.js").write_text(
@@ -123,8 +126,8 @@ def prepare(url, serving=False):
     # Export only public design values from their application-owned contracts.
     tokens = json.loads(subprocess.check_output([
         "node", "--input-type=module", "-e",
-        "import {streamSkopeColors as colors} from './src/ui/colorContract.ts';"
-        "import {streamSkopeTypography as type} from './src/ui/typographyContract.ts';"
+        "import {streamSkopeColors as colors} from './src/platform/ui/colorContract.ts';"
+        "import {streamSkopeTypography as type} from './src/platform/ui/typographyContract.ts';"
         "process.stdout.write(JSON.stringify({colors, font: type.family.interface}));",
     ], cwd=ROOT, text=True))
     theme_css = []
