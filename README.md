@@ -50,7 +50,7 @@ Redpanda; they are not a standard Kafka capability.
 
 If StreamSkope helps your work, you can support its continued development.
 
-<script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="asadarafat" data-color="#FFDD00" data-emoji="" data-font="Inter" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+<a href="https://www.buymeacoffee.com/asadarafat"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" width="217" height="60"></a>
 
 ## License
 
