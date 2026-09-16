@@ -16,7 +16,7 @@ describe("macOS installation guidance", () => {
       'xattr -dr com.apple.quarantine "/Applications/StreamSkope.app"',
     );
 
-    expect(guide).toMatch(/not signed or notarized/iu);
+    expect(guide).toMatch(/not (?:Developer ID )?signed or notarized/iu);
     expect(guide).toMatch(/trusted source/iu);
     expect(guide).toMatch(/checksum mismatch/iu);
     expect(checksum).toBeGreaterThanOrEqual(0);

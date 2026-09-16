@@ -1,0 +1,152 @@
+name: Publish unsigned release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streamskope-unsigned-release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Require an explicit version tag
+        run: test "$GITHUB_REF_TYPE" = "tag"
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci
+      - name: Validate version and source identity
+        id: release
+        run: |
+          npm run release:validate-tag
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Refuse to replace an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
+          if grep -Fxq "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-tags"; then
+            echo "This version already has a release; it will not be overwritten."
+            exit 1
+          fi
+
+  qualification:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: [validate, qualification]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+          - runner: windows-2025
+            platform: win32
+            arch: x64
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      EXPECTED_PLATFORM: ${{ matrix.platform }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - run: npm ci
+      - name: Install Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: npx --no-install playwright install-deps chromium
+      - name: Build, inspect and launch the native package
+        run: node tools/verify-native-package-target.mjs && npm run package:verify
+      - name: Assemble the unsigned distribution
+        run: |
+          mkdir -p dist/release/unsigned-assets
+          case "$EXPECTED_PLATFORM" in
+            darwin)
+              npx --no-install tsx tools/package-macos-dmg.ts
+              cp dist/release/unsigned-macos-*/*.dmg "dist/release/unsigned-assets/StreamSkope-$VERSION-darwin-arm64.dmg"
+              ;;
+            win32)
+              npm run package:installer:windows:from-package
+              cp "dist/release/StreamSkope-$VERSION-win32-x64-Setup.exe" dist/release/unsigned-assets/
+              ;;
+            linux)
+              npm run package:appimage:linux:from-package
+              cp "dist/release/StreamSkope-$VERSION-linux-x64.AppImage" dist/release/unsigned-assets/
+              ;;
+            *) exit 1 ;;
+          esac
+          npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Upload the exact native download
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: unsigned-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: dist/release/unsigned-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [validate, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: unsigned-*-${{ github.sha }}-${{ github.run_attempt }}
+          merge-multiple: true
+          path: dist/release/unsigned-assets
+      - name: Verify complete inventory and generate checksums and signing notices
+        run: |
+          npx --no-install tsx tools/prepare-unsigned-release.ts \
+            dist/release/unsigned-assets "$VERSION" "$GITHUB_SHA" dist/release/unsigned-notes.md
+          npx --no-install tsx tools/scan-sensitive-artifacts.ts
+      - name: Stage, download, verify and publish
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/release/unsigned-assets/* \
+            --verify-tag --draft --title "StreamSkope $VERSION" \
+            --notes-file dist/release/unsigned-notes.md
+          downloaded="$(mktemp -d "$RUNNER_TEMP/streamskope-release-XXXXXX")"
+          gh release download "$GITHUB_REF_NAME" --dir "$downloaded"
+          cmp dist/release/unsigned-assets/SHA256SUMS "$downloaded/SHA256SUMS"
+          (cd "$downloaded" && sha256sum -c SHA256SUMS)
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          echo "Published $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" >> "$GITHUB_STEP_SUMMARY"

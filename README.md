@@ -28,6 +28,7 @@ Redpanda; they are not a standard Kafka capability.
 
 ## Get started
 
+[Download for macOS, Windows or Linux](https://github.com/asadarafat/streamskope/releases/latest) ·
 [Install StreamSkope](website/docs/start/installation.md) ·
 [Try it with local Kafka](website/docs/start/quickstart.md) ·
 [Connect your cluster](website/docs/guide/connections.md)

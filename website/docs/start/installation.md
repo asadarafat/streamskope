@@ -1,7 +1,41 @@
 # Install StreamSkope
 
-You can build a desktop package
-on a matching native platform, or [try the browser workbench with local Kafka](quickstart.md).
+Download StreamSkope from [GitHub Releases](https://github.com/asadarafat/streamskope/releases/latest),
+or [try the browser workbench with local Kafka](quickstart.md).
+
+## Download
+
+Choose the file for your operating system and CPU:
+
+| Platform             | Download                                    |
+| -------------------- | ------------------------------------------- |
+| macOS, Apple Silicon | `StreamSkope-<version>-darwin-arm64.dmg`    |
+| Windows x64          | `StreamSkope-<version>-win32-x64-Setup.exe` |
+| Linux x64            | `StreamSkope-<version>-linux-x64.AppImage`  |
+
+These releases are unsigned: macOS builds have no Developer ID signature or
+notarization, Windows installers have no Authenticode signature, and Linux
+downloads have no publisher signature. OS security warnings are expected.
+
+Download `SHA256SUMS` from the same release. Compare your file's digest to its
+entry in that file before installing:
+
+```sh
+# macOS
+shasum -a 256 "StreamSkope-<version>-darwin-arm64.dmg"
+# Linux
+sha256sum "StreamSkope-<version>-linux-x64.AppImage"
+```
+
+```powershell
+# Windows PowerShell
+Get-FileHash ".\StreamSkope-<version>-win32-x64-Setup.exe" -Algorithm SHA256
+```
+
+Replace `<version>` with the downloaded version. If you downloaded all three
+installers, `shasum -a 256 -c SHA256SUMS` (macOS) or
+`sha256sum -c SHA256SUMS` (Linux) checks the complete set.
+On a mismatch, stop and obtain a fresh copy from the trusted release.
 
 ## Build a package
 
@@ -27,11 +61,12 @@ checks the package; it does not establish signing, notarization or production su
 
 ## macOS
 
-The locally built app is not signed or notarized. Verify its source before
+The unsigned release and locally built app are not Developer ID signed or notarized. Verify their source before
 granting a macOS security exception.
 
 1. Obtain the DMG and expected checksum from a trusted source.
-2. In the directory containing both files, verify the checksum:
+2. Verify the release checksum as described above. For a locally built DMG with
+   its individual checksum file, use:
 
     ```sh
     shasum -a 256 -c <filename>.dmg.sha256
