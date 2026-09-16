@@ -7,7 +7,7 @@ import {
   type ProfileCreateInput,
   type ProfileStoreCapability,
   type SecureConnectionInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaConnectionTemplateStore,
   InMemoryKafkaProfileStore,
@@ -24,9 +24,9 @@ import {
   type KafkaConnectionTestResult,
   type KafkaProfileRecord,
   type KafkaProfileTrustDecoder,
-} from "../../src/kafka/application";
-import { KafkaBackendFacade } from "../../src/kafka/facade";
-import { StreamSkopeKafkaRuleEvaluator } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { KafkaBackendFacade } from "../../src/features/kafka/facade";
+import { StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
 
 const capability: ProfileStoreCapability = {
   durability: "session",

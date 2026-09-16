@@ -5,7 +5,7 @@ import {
   formatUtcClockSeconds,
   formatUtcTimestamp,
   formatUtcTimestampStacked,
-} from "../../src/kafka/ui/timestamp-presentation";
+} from "../../src/features/kafka/ui/timestamp-presentation";
 
 describe("technical timestamp presentation", () => {
   it("renders canonical UTC evidence without ISO punctuation noise", () => {

@@ -4,12 +4,12 @@ import { basename, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DEFAULT_CONNECTION_TEMPLATE_DOCUMENT } from "../../src/kafka/application";
+import { DEFAULT_CONNECTION_TEMPLATE_DOCUMENT } from "../../src/features/kafka/application";
 import {
   AtomicKafkaConnectionTemplateFileStore,
   KafkaConnectionTemplateFileCorruptError,
   KafkaConnectionTemplateFileWriteError,
-} from "../../src/main/kafka-connection-template-file-store";
+} from "../../src/platform/electron/main/kafka-connection-template-file-store";
 
 const temporaryDirectories: string[] = [];
 

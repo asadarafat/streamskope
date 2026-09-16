@@ -9,7 +9,7 @@ import {
   type HostCommand,
   type HostCommandResponse,
   type HostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   DEFAULT_CONNECTION_TEMPLATE_DOCUMENT,
   InMemoryKafkaConnectionTemplateStore,
@@ -25,9 +25,9 @@ import {
   type KafkaActiveConnection,
   type KafkaConnectionPort,
   type KafkaConnectionTestResult,
-} from "../../src/kafka/application";
-import { KafkaBackendFacade } from "../../src/kafka/facade";
-import { StreamSkopeKafkaRuleEvaluator } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { KafkaBackendFacade } from "../../src/features/kafka/facade";
+import { StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 class UnusedConnectionPort implements KafkaConnectionPort {

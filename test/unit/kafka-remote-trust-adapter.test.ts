@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   REMOTE_TRUST_ACQUISITION_LIMITS,
   type RemoteSshTargetInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   Ssh2KafkaRemoteTrustAdapter,
   type KafkaSshConnector,
   type KafkaSshSession,
-} from "../../src/main/ssh2-kafka-remote-trust-adapter";
+} from "../../src/platform/electron/main/ssh2-kafka-remote-trust-adapter";
 
 const target = {
   host: "kafka-lab.example.test",

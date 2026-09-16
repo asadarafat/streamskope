@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { installRendererRandomUuid } from "../../src/renderer/crypto-compatibility";
+import { installRendererRandomUuid } from "../../src/platform/electron/renderer/crypto-compatibility";
 
 describe("renderer crypto compatibility", () => {
   it("installs an RFC 4122 version 4 UUID backed by random bytes", () => {

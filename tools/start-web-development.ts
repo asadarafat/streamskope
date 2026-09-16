@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 
-import { createBrowserKafkaProfileStore, createKafkaBackend } from "../src/main";
+import { createBrowserKafkaProfileStore, createKafkaBackend } from "../src/platform/electron/main";
 
 import { FileFixtureOwnershipStore } from "./kafka-fixture/file-ownership-store";
 import { KafkaFixtureLifecycle } from "./kafka-fixture/lifecycle";

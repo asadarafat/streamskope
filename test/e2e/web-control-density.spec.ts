@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { expect, test, type Locator } from "@playwright/test";
 
-import { createKafkaBackend } from "../../src/main";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 
 async function reservePort(): Promise<number> {

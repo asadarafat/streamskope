@@ -1,17 +1,17 @@
 import { getContrastRatio } from "@mui/material/styles";
 import { describe, expect, it } from "vitest";
 
-import { streamSkopeColors } from "../../src/ui/colorContract";
+import { streamSkopeColors } from "../../src/platform/ui/colorContract";
 import {
   interfaceFontFamily,
   monospaceFontFamily,
   streamSkopeMuiMonospaceTypography,
   streamSkopeMuiResourceTypography,
   streamSkopeTheme,
-} from "../../src/ui/createStreamSkopeTheme";
-import { streamSkopeSpacing } from "../../src/ui/spacingContract";
-import { streamSkopeGeometry, streamSkopeRadius } from "../../src/ui/studioTokens";
-import { streamSkopeTypography } from "../../src/ui/typographyContract";
+} from "../../src/platform/ui/createStreamSkopeTheme";
+import { streamSkopeSpacing } from "../../src/platform/ui/spacingContract";
+import { streamSkopeGeometry, streamSkopeRadius } from "../../src/platform/ui/studioTokens";
+import { streamSkopeTypography } from "../../src/platform/ui/typographyContract";
 
 describe("StreamSkope desktop design contract", () => {
   it("owns the bounded interface and technical-evidence roles without a feature-local scale", () => {

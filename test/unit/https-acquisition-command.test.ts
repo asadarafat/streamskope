@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, parseHostCommand } from "../../src/kafka/contracts";
+import { HOST_PROTOCOL_VERSION, parseHostCommand } from "../../src/features/kafka/contracts";
 
 const payload = {
   editor: { id: "editor", generation: 1 },

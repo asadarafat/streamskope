@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { createKafkaBackend } from "../../src/main";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 
 async function reservePort(): Promise<number> {

@@ -8,9 +8,9 @@ import type {
   KafkaFetchRequest,
   KafkaMessage,
   SecureConnectionInput,
-} from "../../src/kafka/contracts";
-import type { KafkaMessageStream } from "../../src/kafka/application";
-import { StreamSkopeKafkaEngine } from "../../src/kafka/engine";
+} from "../../src/features/kafka/contracts";
+import type { KafkaMessageStream } from "../../src/features/kafka/application";
+import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import {
   fetchFixtureToken,
   loadFixtureConfig,

@@ -4,13 +4,13 @@ import {
   HOST_PROTOCOL_VERSION,
   type HostEvent,
   type KafkaRuleDefinition,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   createKafkaRuleSelector,
   initialKafkaRuleUiState,
   reduceKafkaRuleUiState,
   type KafkaRuleUiAction,
-} from "../../src/kafka/ui";
+} from "../../src/features/kafka/ui";
 
 const first: KafkaRuleDefinition = {
   cooldownMs: 5_000,

@@ -7,15 +7,15 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { utils } from "ssh2";
 
-import type { RemoteSshTargetInput } from "../../src/kafka/contracts";
+import type { RemoteSshTargetInput } from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaConnectionTemplateStore,
   KafkaConnectionTemplateService,
   KafkaTrustAcquisitionService,
-} from "../../src/kafka/application";
-import { createHostTrustMaterialDecoder } from "../../src/main";
+} from "../../src/features/kafka/application";
+import { createHostTrustMaterialDecoder } from "../../src/platform/electron/main";
 import { trustRecipeInput } from "../support/trust-recipe";
-import { Ssh2KafkaRemoteTrustAdapter } from "../../src/main/ssh2-kafka-remote-trust-adapter";
+import { Ssh2KafkaRemoteTrustAdapter } from "../../src/platform/electron/main/ssh2-kafka-remote-trust-adapter";
 import { startControlledSshServer, type ControlledSshServer } from "../support/ssh-fixture";
 
 const servers: ControlledSshServer[] = [];

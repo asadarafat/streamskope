@@ -5,9 +5,12 @@ import {
   KAFKA_MESSAGE_LIMITS,
   type HostEvent,
   type KafkaFetchRequest,
-} from "../../src/kafka/contracts";
-import { type KafkaActiveConnection, type SchemaRegistryPort } from "../../src/kafka/application";
-import { KafkaEngineFailure } from "../../src/kafka/engine";
+} from "../../src/features/kafka/contracts";
+import {
+  type KafkaActiveConnection,
+  type SchemaRegistryPort,
+} from "../../src/features/kafka/application";
+import { KafkaEngineFailure } from "../../src/features/kafka/engine";
 import {
   command,
   ControlledMessageStream,

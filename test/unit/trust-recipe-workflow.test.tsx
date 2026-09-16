@@ -5,11 +5,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createKafkaBackend } from "../../src/main";
-import { type HostCommand, type HostEvent, type StreamSkopeHost } from "../../src/kafka/contracts";
-import { TrustRecipeManager } from "../../src/kafka/ui/TrustRecipeManager";
-import type { TextDocumentTransferPort } from "../../src/kafka/ui/text-document-transfer";
-import { InMemoryKafkaTrustRecipeStore } from "../../src/kafka/application";
+import { createKafkaBackend } from "../../src/platform/electron/main";
+import {
+  type HostCommand,
+  type HostEvent,
+  type StreamSkopeHost,
+} from "../../src/features/kafka/contracts";
+import { TrustRecipeManager } from "../../src/features/kafka/ui/TrustRecipeManager";
+import type { TextDocumentTransferPort } from "../../src/features/kafka/ui/text-document-transfer";
+import { InMemoryKafkaTrustRecipeStore } from "../../src/features/kafka/application";
 
 const backends: ReturnType<typeof createKafkaBackend>[] = [];
 afterEach(async () => {

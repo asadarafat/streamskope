@@ -4,8 +4,8 @@ import {
   parseTrustAcquisitionRecipeInput,
   parseTrustAcquisitionRecipeDocument,
   parseTrustAcquisitionRecipeImport,
-} from "../../src/kafka/contracts";
-import { resolveHttpsGet } from "../../src/kafka/contracts/https-trust-validation";
+} from "../../src/features/kafka/contracts";
+import { resolveHttpsGet } from "../../src/features/kafka/contracts/https-trust-validation";
 
 const request = {
   url: "https://{{host}}:8443/cert/{{path}}",

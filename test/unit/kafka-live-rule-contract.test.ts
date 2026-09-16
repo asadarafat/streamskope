@@ -16,7 +16,7 @@ import {
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
   type KafkaMessage,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const rawMessage: KafkaMessage = {
   headers: {},

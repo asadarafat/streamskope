@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.cache/
+graphify-out/
+package-lock.json
+website/promo/package-lock.json
+
+# Large/generated docs and media are not useful for code-navigation graphs.
+website/docs/assets/
+assets/icons/
+*.mp4
+*.mp3
+*.png
+*.ico

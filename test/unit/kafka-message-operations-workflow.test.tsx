@@ -11,8 +11,8 @@ import type {
   KafkaExploredMessage,
   KafkaFetchRequest,
   KafkaLiveRuleEvaluation,
-} from "../../src/kafka/contracts";
-import { MessageWorkspace } from "../../src/kafka/ui/MessageWorkspace";
+} from "../../src/features/kafka/contracts";
+import { MessageWorkspace } from "../../src/features/kafka/ui/MessageWorkspace";
 import {
   initialKafkaMessageFilters,
   selectFilteredKafkaMessages,
@@ -21,7 +21,7 @@ import {
   type KafkaMessageFilters,
   type KafkaMessageTextFilterField,
   type TextDocumentTransferPort,
-} from "../../src/kafka/ui";
+} from "../../src/features/kafka/ui";
 
 const evaluated: KafkaLiveRuleEvaluation = {
   activeMatchCount: 0,

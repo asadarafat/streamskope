@@ -9,8 +9,8 @@ import {
   type HostEvent,
   type KafkaFetchRequest,
   type KafkaLiveRuleEvaluation,
-} from "../../src/kafka/contracts";
-import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/kafka/ui";
+} from "../../src/features/kafka/contracts";
+import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/features/kafka/ui";
 
 const evaluated: KafkaLiveRuleEvaluation = {
   activeMatchCount: 0,

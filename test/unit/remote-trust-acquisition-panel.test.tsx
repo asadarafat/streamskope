@@ -16,8 +16,8 @@ import {
   type HostEventListener,
   type RemoteTrustAcquisitionSummary,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { RemoteTrustAcquisitionPanel } from "../../src/kafka/ui/RemoteTrustAcquisitionPanel";
+} from "../../src/features/kafka/contracts";
+import { RemoteTrustAcquisitionPanel } from "../../src/features/kafka/ui/RemoteTrustAcquisitionPanel";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 const templates: ConnectionTemplateSnapshot = {

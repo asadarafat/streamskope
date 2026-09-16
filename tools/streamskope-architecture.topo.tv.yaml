@@ -1,0 +1,342 @@
+version: "0.2"
+graph:
+  id: streamskope-architecture
+  labels:
+    name: StreamSkope Architecture
+    purpose: Folder-aligned src mental model
+  layers:
+    - id: renderer
+      labels:
+        name: src/platform/electron/renderer
+    - id: ui
+      labels:
+        name: src/platform/ui
+    - id: kafka
+      labels:
+        name: src/features/kafka
+    - id: preload
+      labels:
+        name: src/platform/electron/preload
+    - id: main
+      labels:
+        name: src/platform/electron/main
+    - id: platform
+      labels:
+        name: src/platform
+    - id: tooling
+      labels:
+        name: Project Tooling
+    - id: external
+      labels:
+        name: External Systems
+  nodes:
+    - id: operator
+      labels:
+        name: Operator
+        role: user
+        ownership: external
+      layers: [external]
+      position: [80, 260]
+    - id: renderer-bootstrap
+      labels:
+        name: Renderer Bootstrap
+        role: frontend-entry
+        ownership: src/platform/electron/renderer
+        path: src/platform/electron/renderer
+        note: Renderer process startup, host client setup, browser entry
+      layers: [renderer]
+      position: [280, 120]
+    - id: shared-ui
+      labels:
+        name: Shared UI System
+        role: frontend-shared
+        ownership: src/platform/ui
+        path: src/platform/ui
+        note: Theme, color scheme, spacing, typography, reusable controls
+      layers: [ui]
+      position: [760, 120]
+    - id: kafka-ui
+      labels:
+        name: Kafka App + UI
+        role: frontend-feature
+        ownership: src/features/kafka/ui
+        path: src/features/kafka/ui
+        note: Kafka app composition, workbench pages, dialogs, and UI state
+      layers: [kafka]
+      position: [280, 340]
+    - id: kafka-contracts
+      labels:
+        name: Kafka Contracts
+        role: feature-contract
+        ownership: src/features/kafka/contracts
+        path: src/features/kafka/contracts
+        note: HostCommand, HostEvent, DTOs, and validation
+      layers: [kafka]
+      position: [520, 340]
+    - id: kafka-facade
+      labels:
+        name: Kafka Facade
+        role: feature-facade
+        ownership: src/features/kafka/facade
+        path: src/features/kafka/facade
+        note: Frontend-facing backend boundary
+      layers: [kafka]
+      position: [760, 340]
+    - id: kafka-application
+      labels:
+        name: Kafka Application
+        role: feature-application
+        ownership: src/features/kafka/application
+        path: src/features/kafka/application
+        note: Profiles, sessions, rules, trust, topics, latency workflows
+      layers: [kafka]
+      position: [1000, 340]
+    - id: kafka-engine
+      labels:
+        name: Kafka Engine
+        role: feature-engine
+        ownership: src/features/kafka/engine
+        path: src/features/kafka/engine
+        note: Kafka, OAuth, Schema Registry, trust parsing, rule runtime
+      layers: [kafka]
+      position: [1240, 340]
+    - id: preload-bridge
+      labels:
+        name: Preload Bridge
+        role: electron-bridge
+        ownership: src/platform/electron/preload
+        path: src/platform/electron/preload
+        note: Safe IPC boundary between renderer and main
+      layers: [preload]
+      position: [520, 560]
+    - id: electron-main
+      labels:
+        name: Electron Main
+        role: electron-main
+        ownership: src/platform/electron/main
+        path: src/platform/electron/main
+        note: Electron entry point, backend composition, desktop file stores
+      layers: [main]
+      position: [760, 560]
+    - id: platform-services
+      labels:
+        name: Platform Services
+        role: platform-service
+        ownership: src/platform
+        path: src/platform
+        note: Dev host, desktop contracts, activity history, diagnostics
+      layers: [platform]
+      position: [1000, 560]
+    - id: tools
+      labels:
+        name: Tools
+        role: tooling
+        ownership: tools
+        path: tools
+        note: Build, package, release, docs, and dev harness scripts
+      layers: [tooling]
+      position: [280, 760]
+    - id: fixture
+      labels:
+        name: AIO Kafka Fixture
+        role: fixture
+        ownership: aio-kafka
+        path: aio-kafka
+        note: Containerlab Kafka, OAuth, and Schema Registry fixture
+      layers: [tooling, external]
+      position: [520, 760]
+    - id: tests
+      labels:
+        name: Tests
+        role: testing
+        ownership: test
+        path: test
+        note: Unit, integration, E2E, package, and real Kafka tests
+      layers: [tooling]
+      position: [760, 760]
+    - id: external-systems
+      labels:
+        name: Kafka / OAuth / Registry
+        role: external-system
+        ownership: external
+        note: Real or fixture-backed event-streaming systems
+      layers: [external]
+      position: [1480, 340]
+  regions:
+    - id: src-renderer-folder
+      labels:
+        name: src/platform/electron/renderer
+        responsibility: Renderer process bootstrap
+      members: [renderer-bootstrap]
+      layers: [renderer]
+    - id: src-ui-folder
+      labels:
+        name: src/platform/ui
+        responsibility: Shared frontend design system
+      members: [shared-ui]
+      layers: [ui]
+    - id: src-kafka-folder
+      labels:
+        name: src/features/kafka
+        responsibility: Kafka product slice
+      members: [kafka-ui, kafka-contracts, kafka-facade, kafka-application, kafka-engine]
+      layers: [kafka]
+    - id: src-preload-folder
+      labels:
+        name: src/platform/electron/preload
+        responsibility: Secure renderer-to-main bridge
+      members: [preload-bridge]
+      layers: [preload]
+    - id: src-main-folder
+      labels:
+        name: src/platform/electron/main
+        responsibility: Electron main process and composition root
+      members: [electron-main]
+      layers: [main]
+    - id: src-platform-folder
+      labels:
+        name: src/platform
+        responsibility: Shared platform/runtime services
+      members: [platform-services]
+      layers: [platform]
+    - id: project-tooling-folder
+      labels:
+        name: Project tooling
+        responsibility: Dev harness, fixture, validation, packaging
+      members: [tools, fixture, tests]
+      layers: [tooling]
+    - id: external-systems-folder
+      labels:
+        name: External systems
+        responsibility: Operator and event-streaming endpoints
+      members: [operator, external-systems]
+      layers: [external]
+  links:
+    - id: operator-renderer
+      source: operator
+      target: renderer-bootstrap
+      labels:
+        name: uses
+        flow: interaction
+      layers: [external, renderer]
+    - id: renderer-kafka-ui
+      source: renderer-bootstrap
+      target: kafka-ui
+      labels:
+        name: mounts app
+        flow: frontend
+      layers: [renderer, kafka]
+    - id: shared-ui-kafka-ui
+      source: shared-ui
+      target: kafka-ui
+      labels:
+        name: components
+        flow: frontend
+      layers: [ui, kafka]
+    - id: kafka-ui-contracts
+      source: kafka-ui
+      target: kafka-contracts
+      labels:
+        name: command/event model
+        flow: contract
+      layers: [kafka]
+    - id: contracts-facade
+      source: kafka-contracts
+      target: kafka-facade
+      labels:
+        name: validates boundary
+        flow: contract
+      layers: [kafka]
+    - id: facade-application
+      source: kafka-facade
+      target: kafka-application
+      labels:
+        name: delegates workflows
+        flow: backend
+      layers: [kafka]
+    - id: application-engine
+      source: kafka-application
+      target: kafka-engine
+      labels:
+        name: uses adapters
+        flow: backend
+      layers: [kafka]
+    - id: engine-external
+      source: kafka-engine
+      target: external-systems
+      labels:
+        name: broker/auth/schema IO
+        flow: integration
+      layers: [kafka, external]
+    - id: renderer-preload
+      source: renderer-bootstrap
+      target: preload-bridge
+      labels:
+        name: host bridge
+        flow: ipc
+      layers: [renderer, preload]
+    - id: preload-main
+      source: preload-bridge
+      target: electron-main
+      labels:
+        name: safe IPC
+        flow: ipc
+      layers: [preload, main]
+    - id: main-facade
+      source: electron-main
+      target: kafka-facade
+      labels:
+        name: composes backend
+        flow: composition
+      layers: [main, kafka]
+    - id: main-platform
+      source: electron-main
+      target: platform-services
+      labels:
+        name: uses services
+        flow: platform
+      layers: [main, platform]
+    - id: tools-platform
+      source: tools
+      target: platform-services
+      labels:
+        name: dev host
+        flow: platform
+      layers: [tooling, platform]
+    - id: tools-fixture
+      source: tools
+      target: fixture
+      labels:
+        name: starts
+        flow: development
+      layers: [tooling]
+    - id: fixture-external
+      source: fixture
+      target: external-systems
+      labels:
+        name: local endpoints
+        flow: development
+      layers: [tooling, external]
+    - id: tests-kafka
+      source: tests
+      target: kafka-application
+      labels:
+        name: product coverage
+        flow: verifies
+      layers: [tooling, kafka]
+    - id: tests-main
+      source: tests
+      target: electron-main
+      labels:
+        name: runtime coverage
+        flow: verifies
+      layers: [tooling, main]
+toggles:
+  - id: showRegions
+    default: true
+    labels:
+      name: Show src folder groups
+  - id: showEdgeLabels
+    default: true
+    labels:
+      name: Show link labels

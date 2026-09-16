@@ -13,7 +13,7 @@ import {
   parseHostCommandResponse,
   parseHostEvent,
   parseKafkaLatencyEvidence,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const request = {
   acknowledgements: -1,

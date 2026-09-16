@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   KAFKA_MESSAGE_LIMITS,
   KAFKA_STREAM_MONITOR_HISTORY_LIMIT,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { measureSustainedConsumption } from "../support/sustained-consumption-measurement";
 
 describe("sustained consumption measurement", () => {

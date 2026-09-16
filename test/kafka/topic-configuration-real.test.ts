@@ -4,13 +4,13 @@ import { randomUUID } from "node:crypto";
 import { Admin, type BaseOptions } from "@platformatic/kafka";
 import { describe, expect, it } from "vitest";
 
-import type { SecureConnectionInput } from "../../src/kafka/contracts";
+import type { SecureConnectionInput } from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaTopicConfigurationHistoryStore,
   KafkaApplicationSession,
   KafkaTopicConfigurationService,
-} from "../../src/kafka/application";
-import { StreamSkopeKafkaEngine } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import {
   fetchFixtureToken,
   loadFixtureConfig,

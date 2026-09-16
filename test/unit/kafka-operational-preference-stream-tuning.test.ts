@@ -4,11 +4,11 @@ import {
   KAFKA_MESSAGE_LIMITS,
   type HostEvent,
   type KafkaOperationalPreferences,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaOperationalPreferenceStore,
   KafkaOperationalPreferenceService,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 import {
   ControlledMessageStream,
   RecordingActiveConnection,

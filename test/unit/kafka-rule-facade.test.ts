@@ -6,7 +6,7 @@ import {
   type HostEvent,
   type KafkaRuleDefinition,
   type KafkaRuleStoreCapability,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaConnectionTemplateStore,
   InMemoryKafkaProfileStore,
@@ -23,9 +23,9 @@ import {
   type KafkaConnectionTestResult,
   type KafkaRuleDocument,
   type KafkaRuleStore,
-} from "../../src/kafka/application";
-import { KafkaBackendFacade } from "../../src/kafka/facade";
-import { StreamSkopeKafkaRuleEvaluator } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { KafkaBackendFacade } from "../../src/features/kafka/facade";
+import { StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
 
 const capability: KafkaRuleStoreCapability = {
   durability: "session",

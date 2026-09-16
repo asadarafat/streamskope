@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KAFKA_LATENCY_LIMITS } from "../../src/kafka/contracts";
+import { KAFKA_LATENCY_LIMITS } from "../../src/features/kafka/contracts";
 import type {
   KafkaConsumerInput,
   KafkaLatencyNetworkResult,
   KafkaRawMessage,
   KafkaRawMessageStream,
   PlatformaticLatencyProducer,
-} from "../../src/kafka/engine";
-import { PlatformaticLatencyProbe } from "../../src/kafka/engine";
+} from "../../src/features/kafka/engine";
+import { PlatformaticLatencyProbe } from "../../src/features/kafka/engine";
 
 class RawQueue implements KafkaRawMessageStream {
   private closed = false;

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 import { chromium, expect } from "@playwright/test";
 
-import { createKafkaBackend } from "../src/main";
+import { createKafkaBackend } from "../src/platform/electron/main";
 import { launchWebDevelopment } from "../src/platform/dev-host";
 import { connectLocalProfile } from "../test/support/web-profile-workflow";
 import { openWorkbenchResource } from "../test/support/workbench-browser";

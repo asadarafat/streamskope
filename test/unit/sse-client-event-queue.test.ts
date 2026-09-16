@@ -6,7 +6,7 @@ import {
   type HostEvent,
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { SseClientEventQueue } from "../../src/platform/dev-host/sse-client-event-queue";
 
 const evaluated: KafkaLiveRuleEvaluation = {

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { createKafkaBackend } from "../../src/main";
+import { createKafkaBackend } from "../../src/platform/electron/main";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 import { loadFixtureConfig } from "../support/kafka-fixture";
 import {

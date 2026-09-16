@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { KafkaFetchRequest } from "../../src/kafka/contracts";
-import { PlatformaticConsumerFactory } from "../../src/kafka/engine/platformatic-consumer";
-import type { KafkaConsumerInput, KafkaRawMessage } from "../../src/kafka/engine/types";
+import type { KafkaFetchRequest } from "../../src/features/kafka/contracts";
+import { PlatformaticConsumerFactory } from "../../src/features/kafka/engine/platformatic-consumer";
+import type { KafkaConsumerInput, KafkaRawMessage } from "../../src/features/kafka/engine/types";
 
 interface FetchDiagnosticSubscriber {
   asyncEnd(context: unknown): void;

@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { StreamSkopeApp } from "../../src/app/StreamSkopeApp";
+import { StreamSkopeApp } from "../../src/features/kafka/ui/StreamSkopeApp";
 import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
@@ -15,8 +15,8 @@ import {
   type HostEventListener,
   type ProfileSummary,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { streamSkopeTypography } from "../../src/ui/typographyContract";
+} from "../../src/features/kafka/contracts";
+import { streamSkopeTypography } from "../../src/platform/ui/typographyContract";
 
 class LayoutHost implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];

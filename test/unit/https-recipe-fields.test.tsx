@@ -5,8 +5,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { useState } from "react";
 
 import { trustRecipeInput } from "../support/trust-recipe";
-import { TrustRecipeFields } from "../../src/kafka/ui/TrustRecipeFields";
-import type { TrustAcquisitionRecipeInput } from "../../src/kafka/contracts";
+import { TrustRecipeFields } from "../../src/features/kafka/ui/TrustRecipeFields";
+import type { TrustAcquisitionRecipeInput } from "../../src/features/kafka/contracts";
 
 afterEach(cleanup);
 it("explains stdout and warns about legacy output-file redirection without rewriting commands", () => {

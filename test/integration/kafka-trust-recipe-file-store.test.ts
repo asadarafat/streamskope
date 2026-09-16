@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AtomicKafkaTrustRecipeFileStore } from "../../src/main/kafka-trust-recipe-file-store";
+import { AtomicKafkaTrustRecipeFileStore } from "../../src/platform/electron/main/kafka-trust-recipe-file-store";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 const directories: string[] = [];

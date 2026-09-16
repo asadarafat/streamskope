@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   parseProfileBindingInput,
   parseProfileAcquisitionBinding,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   parseProfileCreateInput,
   parseProfileUpdateInput,
-} from "../../src/kafka/contracts/profile-validation";
+} from "../../src/features/kafka/contracts/profile-validation";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 describe("independent API access binding", () => {

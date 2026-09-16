@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { KafkaFetchRequest } from "../../src/kafka/contracts";
+import type { KafkaFetchRequest } from "../../src/features/kafka/contracts";
 import {
   KAFKA_EARLIEST_OFFSET_TIMESTAMP,
   KAFKA_LATEST_OFFSET_TIMESTAMP,
   resolveKafkaFetchPlan,
   type KafkaOffsetLookup,
-} from "../../src/kafka/engine/fetch-plan";
+} from "../../src/features/kafka/engine/fetch-plan";
 
 class RecordingOffsetLookup implements KafkaOffsetLookup {
   readonly calls: Array<{ readonly timestamp: bigint; readonly topic: string }> = [];

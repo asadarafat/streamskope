@@ -14,7 +14,7 @@ import {
   HostContractValidationError,
   parseHostCommand,
   parseHostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const rule = {
   cooldownMs: 5_000,

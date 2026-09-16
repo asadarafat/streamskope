@@ -16,8 +16,8 @@ import {
   type KafkaLiveRuleCapability,
   type KafkaOperationalPreferenceSnapshot,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/app/StreamSkopeApp";
+} from "../../src/features/kafka/contracts";
+import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/features/kafka/ui/StreamSkopeApp";
 
 type CommandHandler = (
   command: HostCommand,

@@ -1,4 +1,4 @@
-import { HOST_ACTIVITY_DETAIL_CHARACTER_LIMIT } from "../../kafka/contracts";
+import { HOST_ACTIVITY_DETAIL_CHARACTER_LIMIT } from "../../features/kafka/contracts";
 
 export const ACTIVITY_DETAIL_CHARACTER_LIMIT = HOST_ACTIVITY_DETAIL_CHARACTER_LIMIT;
 

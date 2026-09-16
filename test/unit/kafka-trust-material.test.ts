@@ -6,13 +6,13 @@ import { join } from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { PROFILE_LIMITS } from "../../src/kafka/contracts";
+import { PROFILE_LIMITS } from "../../src/features/kafka/contracts";
 import {
   KafkaTrustMaterialError,
   KafkaTruststorePasswordError,
   parseTrustMaterial,
   StreamSkopeTrustMaterialDecoder,
-} from "../../src/kafka/engine";
+} from "../../src/features/kafka/engine";
 
 const actualJksPath = join(process.cwd(), "node_modules/jks-js/examples/assets/truststore.jks");
 const actualJksKeystorePath = join(

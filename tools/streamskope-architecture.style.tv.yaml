@@ -1,0 +1,203 @@
+version: "0.2"
+layout:
+  mode: manual
+  width: 1820
+  height: 820
+icons:
+  user:
+    glyph: U
+    fill: "#232328"
+    stroke: "#9d9da7"
+  frontend:
+    glyph: UI
+    fill: "#6e8bfb"
+    stroke: "#a8b9ff"
+  renderer:
+    glyph: R
+    fill: "#6682ee"
+    stroke: "#a8b9ff"
+  shared-ui:
+    glyph: DS
+    fill: "#6e8bfb"
+    stroke: "#a8b9ff"
+  app-shell:
+    glyph: APP
+    fill: "#6682ee"
+    stroke: "#a8b9ff"
+  kafka-ui:
+    glyph: KUI
+    fill: "#60a5fa"
+    stroke: "#a8b9ff"
+  bridge:
+    glyph: IPC
+    fill: "#6682ee"
+    stroke: "#a8b9ff"
+  backend:
+    glyph: BE
+    fill: "#60a5fa"
+    stroke: "#a8b9ff"
+  contract:
+    glyph: API
+    fill: "#6e8bfb"
+    stroke: "#a8b9ff"
+  main:
+    glyph: M
+    fill: "#e7b341"
+    stroke: "#a8b9ff"
+  platform:
+    glyph: P
+    fill: "#4ade80"
+    stroke: "#a8b9ff"
+  tooling:
+    glyph: DEV
+    fill: "#e7b341"
+    stroke: "#a8b9ff"
+  external:
+    glyph: EXT
+    fill: "#f87171"
+    stroke: "#a8b9ff"
+  testing:
+    glyph: T
+    fill: "#4ade80"
+    stroke: "#a8b9ff"
+labelFields:
+  - labels.name
+stylesheet:
+  - selector: region
+    style:
+      paddingX: 48
+      paddingY: 34
+      headerPadding: 38
+      minWidth: 220
+      minHeight: 150
+      borderWidth: 2
+      draggable: true
+      selectable: true
+      labelColor: "#e6e6ea"
+      labelFontWeight: 900
+      backgroundColor: rgba(35, 35, 40, 0.82)
+      borderColor: rgba(255, 255, 255, 0.08)
+  - selector: region[id = "src-renderer-folder"]
+    style:
+      backgroundColor: rgba(110, 139, 251, 0.10)
+      borderColor: rgba(110, 139, 251, 0.72)
+  - selector: region[id = "src-ui-folder"]
+    style:
+      backgroundColor: rgba(110, 139, 251, 0.10)
+      borderColor: rgba(110, 139, 251, 0.72)
+  - selector: region[id = "src-kafka-folder"]
+    style:
+      backgroundColor: rgba(96, 165, 250, 0.10)
+      borderColor: rgba(96, 165, 250, 0.72)
+  - selector: region[id = "src-preload-folder"]
+    style:
+      backgroundColor: rgba(231, 179, 65, 0.12)
+      borderColor: rgba(231, 179, 65, 0.72)
+  - selector: region[id = "src-main-folder"]
+    style:
+      backgroundColor: rgba(231, 179, 65, 0.12)
+      borderColor: rgba(231, 179, 65, 0.72)
+  - selector: region[id = "src-platform-folder"]
+    style:
+      backgroundColor: rgba(74, 222, 128, 0.10)
+      borderColor: rgba(74, 222, 128, 0.72)
+  - selector: region[id = "project-tooling-folder"]
+    style:
+      backgroundColor: rgba(74, 222, 128, 0.10)
+      borderColor: rgba(74, 222, 128, 0.72)
+  - selector: region[id = "external-systems-folder"]
+    style:
+      backgroundColor: rgba(248, 113, 113, 0.10)
+      borderColor: rgba(248, 113, 113, 0.72)
+  - selector: node
+    style:
+      icon: backend
+      width: 150
+      height: 76
+      borderWidth: 3
+      labelColor: "#e6e6ea"
+      labelFontWeight: 800
+  - selector: '[labels.role = "user"]'
+    style:
+      icon: user
+  - selector: '[labels.role = "frontend-entry"]'
+    style:
+      icon: renderer
+  - selector: '[labels.role = "app-shell"]'
+    style:
+      icon: app-shell
+  - selector: '[labels.role = "frontend-shared"]'
+    style:
+      icon: shared-ui
+  - selector: '[labels.role = "frontend-feature"]'
+    style:
+      icon: kafka-ui
+  - selector: '[labels.role = "electron-bridge"]'
+    style:
+      icon: bridge
+  - selector: '[labels.role = "feature-contract"]'
+    style:
+      icon: contract
+  - selector: '[labels.role = "feature-facade"]'
+    style:
+      icon: backend
+  - selector: '[labels.role = "feature-application"]'
+    style:
+      icon: backend
+  - selector: '[labels.role = "feature-engine"]'
+    style:
+      icon: backend
+  - selector: '[labels.role = "electron-main"]'
+    style:
+      icon: main
+  - selector: '[labels.role = "platform-service"]'
+    style:
+      icon: platform
+  - selector: '[labels.role = "tooling"]'
+    style:
+      icon: tooling
+  - selector: '[labels.role = "fixture"]'
+    style:
+      icon: tooling
+  - selector: '[labels.role = "external-system"]'
+    style:
+      icon: external
+  - selector: '[labels.role = "testing"]'
+    style:
+      icon: testing
+  - selector: link
+    style:
+      label: labels.name
+      lineColor: "#9d9da7"
+      lineWidth: 2
+      targetArrowShape: triangle
+      labelColor: "#e6e6ea"
+      textBackgroundColor: var(--topoviewer-edge-label-bg)
+  - selector: '[labels.flow = "frontend"]'
+    style:
+      lineColor: "#6e8bfb"
+  - selector: '[labels.flow = "ipc"]'
+    style:
+      lineColor: "#6682ee"
+  - selector: '[labels.flow = "contract"]'
+    style:
+      lineColor: "#6e8bfb"
+  - selector: '[labels.flow = "backend"]'
+    style:
+      lineColor: "#60a5fa"
+  - selector: '[labels.flow = "composition"]'
+    style:
+      lineColor: "#e7b341"
+  - selector: '[labels.flow = "platform"]'
+    style:
+      lineColor: "#4ade80"
+  - selector: '[labels.flow = "integration"]'
+    style:
+      lineColor: "#f87171"
+  - selector: '[labels.flow = "development"]'
+    style:
+      lineColor: "#e7b341"
+  - selector: '[labels.flow = "verifies"]'
+    style:
+      lineColor: "#4ade80"
+      lineDasharray: "6 4"

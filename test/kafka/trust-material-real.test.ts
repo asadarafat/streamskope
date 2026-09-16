@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { parseTrustMaterial } from "../../src/kafka/engine";
+import { parseTrustMaterial } from "../../src/features/kafka/engine";
 import { loadFixtureConnection } from "../support/kafka-fixture";
 
 let fixtureTruststore: string;

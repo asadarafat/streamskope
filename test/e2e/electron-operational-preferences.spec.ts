@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 
-import { KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS } from "../../src/kafka/contracts";
+import { KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS } from "../../src/features/kafka/contracts";
 import {
   findSensitiveArtifactPaths,
   PRIVATE_RUNBOOK_ARTIFACT_SENTINEL,

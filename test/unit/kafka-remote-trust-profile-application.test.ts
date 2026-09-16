@@ -4,7 +4,7 @@ import type {
   ProfileCreateInput,
   ProfileStoreCapability,
   ProfileUpdateInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   KafkaProfileService,
   KafkaProfileValidationError,
@@ -14,7 +14,7 @@ import {
   type KafkaProfileTrustDecoder,
   type KafkaResolvedTrustAcquisition,
   type KafkaTrustAcquisitionResolver,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 const capability: ProfileStoreCapability = {
   durability: "session",

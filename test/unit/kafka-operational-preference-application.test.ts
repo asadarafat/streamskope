@@ -4,14 +4,14 @@ import {
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   type KafkaOperationalPreferenceStoreCapability,
   type KafkaOperationalPreferences,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaOperationalPreferenceStore,
   KafkaOperationalPreferenceCorruptError,
   KafkaOperationalPreferenceService,
   KafkaOperationalPreferenceStoreUnavailableError,
   type KafkaOperationalPreferenceStore,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 function changedPreferences(
   overrides: Partial<KafkaOperationalPreferences> = {},

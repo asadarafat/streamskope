@@ -3,15 +3,15 @@ import { isAbsolute, join } from "node:path";
 
 import { app, shell } from "electron";
 
-import type { KafkaBackendFacade } from "../../src/kafka/facade";
-import { createElectronKafkaBackend } from "../../src/main/electron-kafka-backend";
-import type { ElectronSafeStoragePort } from "../../src/main/electron-profile-protection";
-import { createElectronShell } from "../../src/main/electron-shell";
+import type { KafkaBackendFacade } from "../../src/features/kafka/facade";
+import { createElectronKafkaBackend } from "../../src/platform/electron/main/electron-kafka-backend";
+import type { ElectronSafeStoragePort } from "../../src/platform/electron/main/electron-profile-protection";
+import { createElectronShell } from "../../src/platform/electron/main/electron-shell";
 import {
   installPackagedRendererProtocol,
   PACKAGED_RENDERER_URL,
   registerPackagedRendererScheme,
-} from "../../src/main/packaged-renderer-protocol";
+} from "../../src/platform/electron/main/packaged-renderer-protocol";
 
 class DeterministicSafeStorage implements ElectronSafeStoragePort {
   constructor(private readonly available: boolean) {}

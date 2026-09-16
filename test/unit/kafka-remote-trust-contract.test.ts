@@ -10,7 +10,7 @@ import {
   HostContractValidationError,
   parseHostCommand,
   parseHostCommandResponse,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const fingerprint = `SHA256:${"A".repeat(43)}`;
 const target = {

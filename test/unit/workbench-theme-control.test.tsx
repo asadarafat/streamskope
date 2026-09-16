@@ -6,8 +6,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 
-import { WorkbenchApplicationBar } from "../../src/kafka/ui/WorkbenchApplicationBar";
-import { StreamSkopeThemeProvider } from "../../src/ui/StreamSkopeThemeProvider";
+import { WorkbenchApplicationBar } from "../../src/features/kafka/ui/WorkbenchApplicationBar";
+import { StreamSkopeThemeProvider } from "../../src/platform/ui/StreamSkopeThemeProvider";
 
 afterEach(cleanup);
 

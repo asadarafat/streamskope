@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
-import { HTTPS_TRUST_LIMITS } from "../../src/kafka/contracts/https-trust-types";
-import { NodeHttpsTrustTransport } from "../../src/main/https-trust-transport";
+import { HTTPS_TRUST_LIMITS } from "../../src/features/kafka/contracts/https-trust-types";
+import { NodeHttpsTrustTransport } from "../../src/platform/electron/main/https-trust-transport";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 
 it.each([HTTPS_TRUST_LIMITS.materialBytes, HTTPS_TRUST_LIMITS.jsonWireBytes])(

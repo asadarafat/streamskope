@@ -4,9 +4,12 @@ import { join } from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { PROFILE_LIMITS } from "../../src/kafka/contracts";
-import { KafkaTrustMaterialError, StreamSkopeTrustMaterialDecoder } from "../../src/kafka/engine";
-import { createHostTrustMaterialDecoder } from "../../src/main";
+import { PROFILE_LIMITS } from "../../src/features/kafka/contracts";
+import {
+  KafkaTrustMaterialError,
+  StreamSkopeTrustMaterialDecoder,
+} from "../../src/features/kafka/engine";
+import { createHostTrustMaterialDecoder } from "../../src/platform/electron/main";
 
 let actualJks: string;
 

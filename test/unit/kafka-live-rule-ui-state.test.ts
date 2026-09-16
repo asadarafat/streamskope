@@ -6,7 +6,7 @@ import {
   type KafkaExploredMessage,
   type KafkaLiveRuleCapability,
   type KafkaLiveRuleEvaluation,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   highestKafkaRuleSeverity,
   initialKafkaUiState,
@@ -14,7 +14,7 @@ import {
   reduceKafkaUiState,
   selectKafkaMessageById,
   selectVisibleKafkaMessages,
-} from "../../src/kafka/ui";
+} from "../../src/features/kafka/ui";
 
 const ready: KafkaLiveRuleCapability = {
   applicableRules: 4,

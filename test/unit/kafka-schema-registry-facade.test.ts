@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, type HostCommand, type HostEvent } from "../../src/kafka/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  type HostCommand,
+  type HostEvent,
+} from "../../src/features/kafka/contracts";
 import type {
   KafkaApplicationSession,
   KafkaClusterServiceContext,
@@ -8,8 +12,8 @@ import type {
   SchemaRegistryPort,
   SchemaRegistrySubjectDetail,
   SchemaRegistrySubjectInventory,
-} from "../../src/kafka/application";
-import { SchemaRegistryFacadeController } from "../../src/kafka/facade/schema-registry-facade";
+} from "../../src/features/kafka/application";
+import { SchemaRegistryFacadeController } from "../../src/features/kafka/facade/schema-registry-facade";
 
 describe("Schema Registry facade", () => {
   it("does not register a schema when compatibility preflight fails", async () => {
@@ -122,7 +126,7 @@ describe("Schema Registry facade", () => {
     });
     const load = (
       subject: string,
-    ): Promise<import("../../src/kafka/contracts").HostCommandResponse> =>
+    ): Promise<import("../../src/features/kafka/contracts").HostCommandResponse> =>
       controller.execute(
         {
           command: "schemas.load",

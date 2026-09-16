@@ -8,7 +8,7 @@ import { chromium } from "@playwright/test";
 
 // Only regeneration needs Playwright; normal packaging uses the checked-in assets.
 const root = new URL("../", import.meta.url);
-const source = "src/ui/assets/streamskope.svg";
+const source = "src/platform/ui/assets/streamskope.svg";
 const svg = await readFile(new URL(source, root));
 const browser = await chromium.launch();
 const pngs = new Map();

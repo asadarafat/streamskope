@@ -8,20 +8,20 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { createKafkaBackend } from "../../src/main";
-import { createBrowserKafkaProfileStore } from "../../src/main/kafka-backend";
+import { createKafkaBackend } from "../../src/platform/electron/main";
+import { createBrowserKafkaProfileStore } from "../../src/platform/electron/main/kafka-backend";
 import {
   HOST_PROTOCOL_VERSION,
   type StreamSkopeHost,
   type ProfileSummary,
   type HostEventListener,
   type TrustAcquisitionRecipe,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   ProfileTrustRecipeSelector,
   type ProfileTrustRecipeSelection,
-} from "../../src/kafka/ui/ProfileTrustRecipeSelector";
-import { ProfileDialog } from "../../src/kafka/ui/ProfileDialog";
+} from "../../src/features/kafka/ui/ProfileTrustRecipeSelector";
+import { ProfileDialog } from "../../src/features/kafka/ui/ProfileDialog";
 
 afterEach(cleanup);
 

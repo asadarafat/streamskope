@@ -4,8 +4,11 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { HOST_PROTOCOL_VERSION, type HostEvent } from "../../src/kafka/contracts";
-import { createElectronKafkaBackend, type ElectronSafeStoragePort } from "../../src/main";
+import { HOST_PROTOCOL_VERSION, type HostEvent } from "../../src/features/kafka/contracts";
+import {
+  createElectronKafkaBackend,
+  type ElectronSafeStoragePort,
+} from "../../src/platform/electron/main";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 class ReversibleSafeStorage implements ElectronSafeStoragePort {

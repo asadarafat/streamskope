@@ -4,7 +4,7 @@ import {
   HostContractValidationError,
   exportTrustAcquisitionRecipe,
   parseTrustAcquisitionRecipeImport,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 describe("Trust acquisition recipe exchange", () => {

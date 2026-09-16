@@ -16,8 +16,8 @@ import {
   type KafkaLiveRuleCapability,
   type KafkaLiveRuleEvaluation,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/app/StreamSkopeApp";
+} from "../../src/features/kafka/contracts";
+import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/features/kafka/ui/StreamSkopeApp";
 
 class FakeHost implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];

@@ -3,7 +3,7 @@
 The blue badge with a white S-shaped stream identifies the application.
 Its colors do not represent connection state.
 
-Source: [streamskope.svg](../../src/ui/assets/streamskope.svg). The workbench and
+Source: [streamskope.svg](../../src/platform/ui/assets/streamskope.svg). The workbench and
 favicon use that SVG directly. PNG, ICNS and ICO files are generated copies used
 by desktop packaging, not independent artwork. Licensed with the project.
 

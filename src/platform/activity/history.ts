@@ -1,4 +1,4 @@
-import { HOST_ACTIVITY_HISTORY_LIMIT, type ActivityEntry } from "../../kafka/contracts";
+import { HOST_ACTIVITY_HISTORY_LIMIT, type ActivityEntry } from "../../features/kafka/contracts";
 
 import { ACTIVITY_DETAIL_CHARACTER_LIMIT, redactSensitiveText } from "./redaction";
 

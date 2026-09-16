@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { KAFKA_RULE_LIMITS } from "../../src/kafka/contracts";
+import { KAFKA_RULE_LIMITS } from "../../src/features/kafka/contracts";
 import {
   KafkaRuleExpressionError,
   KafkaRuleSampleError,
   evaluateKafkaRuleExpression,
   parseKafkaRuleSample,
   validateKafkaRuleExpression,
-} from "../../src/kafka/engine";
+} from "../../src/features/kafka/engine";
 
 const sample = {
   changes: [

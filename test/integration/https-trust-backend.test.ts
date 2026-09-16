@@ -4,8 +4,11 @@ import {
   HOST_PROTOCOL_VERSION,
   parseHostCommandResponse,
   type HostEvent,
-} from "../../src/kafka/contracts";
-import { createKafkaBackend, createBrowserKafkaProfileStore } from "../../src/main/kafka-backend";
+} from "../../src/features/kafka/contracts";
+import {
+  createKafkaBackend,
+  createBrowserKafkaProfileStore,
+} from "../../src/platform/electron/main/kafka-backend";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 
 it("runs verified HTTPS through the production composition and redacts failure diagnostics", async () => {

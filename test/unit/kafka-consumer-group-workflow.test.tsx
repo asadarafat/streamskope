@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { StreamSkopeApp } from "../../src/app/StreamSkopeApp";
+import { StreamSkopeApp } from "../../src/features/kafka/ui/StreamSkopeApp";
 import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
@@ -18,7 +18,7 @@ import {
   type KafkaConsumerGroupDetailSnapshot,
   type KafkaConsumerGroupInventorySnapshot,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 class ConsumerGroupHost implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];

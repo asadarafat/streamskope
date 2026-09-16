@@ -11,9 +11,9 @@ import {
   HOST_PROTOCOL_VERSION,
   KAFKA_MESSAGE_LIMITS,
   type KafkaMessage,
-} from "../../src/kafka/contracts";
-import type { KafkaMessageStream } from "../../src/kafka/application";
-import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/kafka/ui/state";
+} from "../../src/features/kafka/contracts";
+import type { KafkaMessageStream } from "../../src/features/kafka/application";
+import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/features/kafka/ui/state";
 import {
   command,
   createFacade,

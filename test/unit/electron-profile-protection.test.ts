@@ -4,7 +4,7 @@ import {
   ElectronProfileProtectionError,
   initializeElectronProfileProtection,
   type ElectronSafeStoragePort,
-} from "../../src/main/electron-profile-protection";
+} from "../../src/platform/electron/main/electron-profile-protection";
 
 class FakeSafeStorage implements ElectronSafeStoragePort {
   asyncAvailable = true;

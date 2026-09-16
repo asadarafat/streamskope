@@ -11,7 +11,7 @@ import {
   HostContractValidationError,
   parseHostCommand,
   parseHostEvent,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 
 const writableEntry = {
   documentation: "The retention time in milliseconds.",

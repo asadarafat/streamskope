@@ -4,7 +4,7 @@ import type {
   ProfileTrustKind,
   RemoteSshTargetInput,
   RemoteTrustMaterialFetchInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaConnectionTemplateStore,
   KafkaConnectionTemplateService,
@@ -14,7 +14,7 @@ import {
   type KafkaRemoteMaterialRequest,
   type KafkaRemotePasswordRequest,
   type KafkaRemoteTrustPort,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 export const target = {
   host: "kafka-lab.example.test",
@@ -126,7 +126,7 @@ export function deferred<T>(): {
 export function createHarness(
   options: {
     readonly nowMs?: number;
-    readonly https?: import("../../src/kafka/application/https-trust-port").HttpsTrustAcquisitionPort;
+    readonly https?: import("../../src/features/kafka/application/https-trust-port").HttpsTrustAcquisitionPort;
   } = {},
 ): AcquisitionHarness {
   let nowMs = options.nowMs ?? Date.parse("2026-07-26T13:00:00.000Z");

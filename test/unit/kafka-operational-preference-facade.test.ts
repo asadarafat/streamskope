@@ -7,7 +7,7 @@ import {
   type HostEvent,
   type KafkaOperationalPreferenceStoreCapability,
   type KafkaOperationalPreferences,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaConnectionTemplateStore,
   InMemoryKafkaOperationalPreferenceStore,
@@ -25,9 +25,9 @@ import {
   type KafkaConnectionPort,
   type KafkaConnectionTestResult,
   type KafkaOperationalPreferenceStore,
-} from "../../src/kafka/application";
-import { KafkaBackendFacade } from "../../src/kafka/facade";
-import { StreamSkopeKafkaRuleEvaluator } from "../../src/kafka/engine";
+} from "../../src/features/kafka/application";
+import { KafkaBackendFacade } from "../../src/features/kafka/facade";
+import { StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine";
 
 class UnusedConnectionPort implements KafkaConnectionPort {
   openConnection(): Promise<KafkaActiveConnection> {

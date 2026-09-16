@@ -40,5 +40,5 @@ hide:
 <section class="workbench-section" aria-labelledby="support-title">
   <div class="section-heading"><h2 id="support-title">Support StreamSkope</h2></div>
   <p>If StreamSkope helps your work, you can support its continued development.</p>
-  <a class="md-button" href="https://buymeacoffee.com/asadarafat">Buy me a coffee</a>
+  <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="asadarafat" data-color="#FFDD00" data-emoji="" data-font="Inter" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
 </section>

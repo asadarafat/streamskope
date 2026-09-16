@@ -14,8 +14,8 @@ import {
   type HostEvent,
   type HostEventListener,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/app/StreamSkopeApp";
+} from "../../src/features/kafka/contracts";
+import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/features/kafka/ui/StreamSkopeApp";
 
 const sessionSnapshot: ConnectionTemplateSnapshot = {
   catalogs: [

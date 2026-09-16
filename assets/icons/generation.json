@@ -1,7 +1,7 @@
 {
-  "source": "src/ui/assets/streamskope.svg",
+  "source": "src/platform/ui/assets/streamskope.svg",
   "sha256": {
-    "src/ui/assets/streamskope.svg": "9d243f886576f4a4a7ad7e67d7c0c92d9653aec971738434c8a63011559ef8fa",
+    "src/platform/ui/assets/streamskope.svg": "9d243f886576f4a4a7ad7e67d7c0c92d9653aec971738434c8a63011559ef8fa",
     "assets/icons/streamskope.png": "a0eb4184be7c3ca8678011087a81260d0e316d2da387be5266ac5d56c7f85fab",
     "assets/icons/streamskope.icns": "84f5d18cebb320325e6b82993fe0bd196e6365c53de70561509d7426e08cbba5",
     "assets/icons/streamskope.ico": "08da1a393a3a00da73368dd6716fdaf7608fcef3ebdc046ba12e57e566860c2e"

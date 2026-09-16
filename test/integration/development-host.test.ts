@@ -12,7 +12,7 @@ import {
   type HostCommandResponse,
   type HostEvent,
   type StreamSkopeBackend,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   launchWebDevelopment,
   startDevelopmentHost,

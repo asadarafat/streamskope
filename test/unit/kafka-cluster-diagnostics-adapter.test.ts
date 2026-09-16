@@ -1,7 +1,7 @@
 import type { ClusterMetadata, ConfigDescription } from "@platformatic/kafka";
 import { describe, expect, it } from "vitest";
 
-import { PlatformaticAdminPort } from "../../src/kafka/engine/platformatic-admin";
+import { PlatformaticAdminPort } from "../../src/features/kafka/engine/platformatic-admin";
 
 class RecordingPlatformaticAdmin {
   readonly describeCalls: unknown[] = [];

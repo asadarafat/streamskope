@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { TrustAcquisitionRecipeDocument } from "../../src/kafka/contracts";
+import type { TrustAcquisitionRecipeDocument } from "../../src/features/kafka/contracts";
 import {
   DEFAULT_CONNECTION_TEMPLATE_DOCUMENT,
   InMemoryKafkaConnectionTemplateStore,
   InMemoryKafkaTrustRecipeStore,
   KafkaConnectionTemplateService,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 import { trustRecipeInput } from "../support/trust-recipe";
-import { resolveTrustRecipeExecution } from "../../src/kafka/application/trust-recipe-execution";
+import { resolveTrustRecipeExecution } from "../../src/features/kafka/application/trust-recipe-execution";
 
 const capability = { durability: "session", state: "ready" } as const;
 

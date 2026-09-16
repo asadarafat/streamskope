@@ -107,8 +107,10 @@ describe("Electron runtime efficiency policy", () => {
     expect(report.undeclaredOwners).toEqual([]);
     expect(report.missingOwners).toEqual([]);
     expect(report.ownerFiles).toHaveLength(13);
-    expect(report.ownerFiles).toContain("src/kafka/ui/TrustRecipeManager.tsx");
-    expect(report.ownerFiles).toContain("src/main/electron-event-delivery.ts");
-    expect(report.ownerFiles).toContain("src/kafka/application/trust-acquisition-service.ts");
+    expect(report.ownerFiles).toContain("src/features/kafka/ui/TrustRecipeManager.tsx");
+    expect(report.ownerFiles).toContain("src/platform/electron/main/electron-event-delivery.ts");
+    expect(report.ownerFiles).toContain(
+      "src/features/kafka/application/trust-acquisition-service.ts",
+    );
   });
 });

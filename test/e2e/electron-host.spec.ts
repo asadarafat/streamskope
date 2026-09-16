@@ -12,8 +12,8 @@ import {
   type Locator,
 } from "@playwright/test";
 
-import { HOST_PROTOCOL_VERSION } from "../../src/kafka/contracts";
-import { parseTrustMaterial } from "../../src/kafka/engine";
+import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
+import { parseTrustMaterial } from "../../src/features/kafka/engine";
 import {
   ELECTRON_RUNTIME_EFFICIENCY_POLICY,
   assertElectronProcessEvidence,

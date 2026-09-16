@@ -10,7 +10,7 @@ import {
   parseHostEvent,
   type HostEvent,
   type StreamSkopeBackend,
-} from "../../kafka/contracts";
+} from "../../features/kafka/contracts";
 
 import { SseClientEventQueue } from "./sse-client-event-queue";
 import {

@@ -16,7 +16,7 @@ import {
   parseTrustAcquisitionRecipeDocument,
   previewCommandTemplate,
   validateConnectionTemplateInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 const sessionStore = {

@@ -6,7 +6,7 @@ import type {
   KafkaTopicConfigurationChange,
   KafkaTopicConfigurationEntry,
   SecureConnectionInput,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import {
   ConnectionAttemptSupersededError,
   KafkaApplicationSession,
@@ -14,7 +14,7 @@ import {
   type KafkaConnectionPort,
   type KafkaConnectionTestResult,
   type KafkaMessageStream,
-} from "../../src/kafka/application";
+} from "../../src/features/kafka/application";
 
 const connectionInput: SecureConnectionInput = {
   brokers: ["localhost:19093"],

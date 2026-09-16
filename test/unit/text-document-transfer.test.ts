@@ -2,9 +2,12 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { HostTextDocument } from "../../src/kafka/contracts";
+import type { HostTextDocument } from "../../src/features/kafka/contracts";
 import type { StreamSkopeDesktop } from "../../src/platform/desktop";
-import { browserTextDocumentTransfer, createTextDocumentTransfer } from "../../src/kafka/ui";
+import {
+  browserTextDocumentTransfer,
+  createTextDocumentTransfer,
+} from "../../src/features/kafka/ui";
 
 const documentValue: HostTextDocument = {
   byteSize: 3,

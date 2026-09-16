@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
-import { resolveTrustRecipeExecution } from "../../src/kafka/application/trust-recipe-execution";
+import { resolveTrustRecipeExecution } from "../../src/features/kafka/application/trust-recipe-execution";
 import { trustRecipeInput } from "../support/trust-recipe";
 
 const recipe = { ...trustRecipeInput(), id: "recipe-1", revision: 1 };

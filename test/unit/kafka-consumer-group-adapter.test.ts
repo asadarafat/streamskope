@@ -8,7 +8,7 @@ import type {
 } from "@platformatic/kafka";
 import { describe, expect, it } from "vitest";
 
-import { PlatformaticAdminPort } from "../../src/kafka/engine/platformatic-admin";
+import { PlatformaticAdminPort } from "../../src/features/kafka/engine/platformatic-admin";
 
 class RecordingConsumerGroupAdmin {
   readonly calls: Array<readonly [string, unknown]> = [];

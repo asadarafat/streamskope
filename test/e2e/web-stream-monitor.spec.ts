@@ -12,7 +12,7 @@ import {
   type HostEvent,
   type HostEventListener,
   type StreamSkopeBackend,
-} from "../../src/kafka/contracts";
+} from "../../src/features/kafka/contracts";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 
 class StreamMonitorBackend implements StreamSkopeBackend {

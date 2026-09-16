@@ -17,8 +17,8 @@ import {
   type ProfileStoreCapability,
   type ProfileSummary,
   type StreamSkopeHost,
-} from "../../src/kafka/contracts";
-import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/app/StreamSkopeApp";
+} from "../../src/features/kafka/contracts";
+import { StreamSkopeApp as StreamSkopeWorkbench } from "../../src/features/kafka/ui/StreamSkopeApp";
 
 const sessionStore: ProfileStoreCapability = {
   durability: "session",

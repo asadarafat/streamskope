@@ -7,8 +7,8 @@ import { promisify } from "node:util";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { HOST_PROTOCOL_VERSION } from "../../src/kafka/contracts";
-import { createKafkaBackend } from "../../src/main/kafka-backend";
+import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
+import { createKafkaBackend } from "../../src/platform/electron/main/kafka-backend";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 import { loadFixtureConnection } from "../support/kafka-fixture";

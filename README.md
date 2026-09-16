@@ -1,8 +1,12 @@
 <p align="center">
-  <img src="src/ui/assets/streamskope.svg" width="72" height="72" alt="StreamSkope logo">
+  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" alt="StreamSkope logo">
 </p>
 
 # StreamSkope
+
+[![CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
+[![Documentation](https://github.com/asadarafat/streamskope/actions/workflows/docs.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/docs.yml)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/asadarafat/streamskope)
 
 A desktop workbench for exploring and troubleshooting Kafka.
 
@@ -29,21 +33,24 @@ Redpanda; they are not a standard Kafka capability.
 ## Get started
 
 [Download for macOS, Windows or Linux](https://github.com/asadarafat/streamskope/releases/latest) ·
-[Install StreamSkope](website/docs/start/installation.md) ·
-[Try it with local Kafka](website/docs/start/quickstart.md) ·
-[Connect your cluster](website/docs/guide/connections.md)
+[Documentation](https://asadarafat.github.io/streamskope/) ·
+[Install StreamSkope](https://asadarafat.github.io/streamskope/start/installation/) ·
+[Try it with local Kafka](https://asadarafat.github.io/streamskope/start/quickstart/) ·
+[Connect your cluster](https://asadarafat.github.io/streamskope/guide/connections/)
 
 ## Documentation
 
-- [Messages and filtering](website/docs/guide/messages.md)
-- [Consumer lag](website/docs/guide/operations.md)
-- [Schema Registry](website/docs/guide/schema-registry.md)
-- [Optional secret retrieval](website/docs/guide/secret-retrieval.md)
-- [Troubleshooting and profile recovery](website/docs/guide/troubleshooting.md)
+- [Messages and filtering](https://asadarafat.github.io/streamskope/guide/messages/)
+- [Consumer lag](https://asadarafat.github.io/streamskope/guide/operations/)
+- [Schema Registry](https://asadarafat.github.io/streamskope/guide/schema-registry/)
+- [Optional secret retrieval](https://asadarafat.github.io/streamskope/guide/secret-retrieval/)
+- [Troubleshooting and profile recovery](https://asadarafat.github.io/streamskope/guide/troubleshooting/)
 
 ## Support StreamSkope
 
-If StreamSkope helps your work, [buy me a coffee](https://buymeacoffee.com/asadarafat).
+If StreamSkope helps your work, you can support its continued development.
+
+<a href="https://www.buymeacoffee.com/asadarafat"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" width="217" height="60"></a>
 
 ## License
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractHttpsTrustMaterial,
   extractHttpsTrustPassword,
-} from "../../src/main/https-trust-extraction";
+} from "../../src/platform/electron/main/https-trust-extraction";
 
 const bytes = (text: string): Uint8Array => Buffer.from(text, "utf8");
 

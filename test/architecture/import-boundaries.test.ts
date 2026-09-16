@@ -8,7 +8,7 @@ const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 const forbiddenRendererCases = [
   ...["application", "engine", "facade"].map((layer) => ({
     fileName: `${layer}-import.ts`,
-    source: `import * as host from "../../../../src/kafka/${layer}"; export const access = host;`,
+    source: `import * as host from "../../../../src/features/kafka/${layer}"; export const access = host;`,
   })),
   {
     fileName: "electron-import.ts",
@@ -39,13 +39,13 @@ describe("renderer dependency boundary", () => {
     const [validResult] = await eslint.lintText(
       'import { createElement } from "react"; export const access = createElement;',
       {
-        filePath: "src/renderer/main.tsx",
+        filePath: "src/platform/electron/renderer/main.tsx",
       },
     );
     const forbiddenResults = await Promise.all(
       forbiddenRendererCases.map(async ({ source }) => {
         const [result] = await eslint.lintText(source, {
-          filePath: "src/renderer/main.tsx",
+          filePath: "src/platform/electron/renderer/main.tsx",
         });
 
         return result;

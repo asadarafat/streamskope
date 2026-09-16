@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { KafkaExploredMessage, KafkaLiveRuleEvaluation } from "../../src/kafka/contracts";
+import type {
+  KafkaExploredMessage,
+  KafkaLiveRuleEvaluation,
+} from "../../src/features/kafka/contracts";
 import {
   KAFKA_MESSAGE_OPERATION_LIMITS,
   KafkaMessageOperationError,
   createKafkaMessageExportDocument,
   initialKafkaMessageFilters,
-} from "../../src/kafka/ui";
+} from "../../src/features/kafka/ui";
 
 const evaluated: KafkaLiveRuleEvaluation = {
   activeMatchCount: 0,
