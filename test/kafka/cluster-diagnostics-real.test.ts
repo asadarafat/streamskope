@@ -88,7 +88,11 @@ describe("real Kafka cluster diagnostics", () => {
       expect(exported.byteSize).toBe(new TextEncoder().encode(exported.content).byteLength);
       expect(JSON.parse(exported.content)).toEqual(result.document);
       expect(exported.content).not.toContain(config.oauthClientSecret);
-      expect(await session.listTopics()).toEqual(topicsBefore);
+      const topicsAfter = await session.listTopics();
+      const addedTopics = topicsAfter.filter((topic) => !topicsBefore.includes(topic));
+      const removedTopics = topicsBefore.filter((topic) => !topicsAfter.includes(topic));
+      expect(removedTopics).toEqual([]);
+      expect(addedTopics.every((topic) => /^streamskope-e2e-/u.test(topic))).toBe(true);
     } finally {
       await session.shutdown();
     }

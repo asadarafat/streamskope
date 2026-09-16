@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("macOS installation guidance", () => {
   it("bounds the unsigned-build exception to a verified StreamSkope app", async () => {
     const readme = await readFile(new URL("../../README.md", import.meta.url), "utf8");
-    expect(readme).toContain("(website/docs/start/installation.md)");
+    expect(readme).toContain("(https://asadarafat.github.io/streamskope/start/installation/)");
     const guide = await readFile(
       new URL("../../website/docs/start/installation.md", import.meta.url),
       "utf8",
