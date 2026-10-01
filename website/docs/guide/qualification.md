@@ -4,20 +4,42 @@ Use the exact desktop release and plugin identity when deciding whether a
 procedure has been exercised for your environment. A passing documentation build
 checks the site; it does not establish live integration, permissions or recovery.
 
-## First-release qualification
+## Published release: v0.1.0+build.1
 
-The initial source targets **v0.1.0+build.1**, application **0.1.0**. Release
-packaging and publication are pending. This page does not carry forward results
-from trial releases as evidence for this release.
+The [v0.1.0+build.1 prerelease](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1),
+application **0.1.0**, was published on **2026-10-01** from source
+[`c0f2bfb586709e50027f0a690b8843974f9cc2c5`](https://github.com/asadarafat/streamskope/commit/c0f2bfb586709e50027f0a690b8843974f9cc2c5).
+Its unsigned Linux x64, macOS ARM64 and Windows x64 installers and
+[SHA256SUMS](https://github.com/asadarafat/streamskope/releases/download/v0.1.0%2Bbuild.1/SHA256SUMS)
+are available. Publication establishes download availability; qualification below
+is based on evidence for that exact source.
 
-| Check                                                            | Required evidence                                                                          | Current record                                   |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Static, unit, architecture, non-live integration and docs checks | Successful CI for the exact committed source                                               | To be recorded for the first release             |
-| Linux x64, macOS ARM64 and Windows x64 installers                | Release CI, native launch checks and installer checksums                                   | To be recorded after packaging                   |
-| 60-second performance soak                                       | Local report tied to the exact source                                                      | To be recorded for the first release             |
-| EDA 26.8.2 capture and cleanup                                   | Configured local cluster, API version, received record and verified owned-resource removal | No first-release live result recorded            |
-| NSP 26.4.0 setup and cleanup                                     | Configured target, API version, profile reuse, Kafka access and verified execution removal | No first-release live result recorded            |
-| Native plugin dialogs and credential-backed restore              | Installed desktop, OS/architecture and real credential-service rehearsal                   | No first-release native workflow result recorded |
+### Recorded automated checks
+
+The [release CI run](https://github.com/asadarafat/streamskope/actions/runs/36916274566)
+completed successfully. Its jobs record the following results:
+
+| Check                                                          | Result                                                              | Evidence                                                                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Static, unit, architecture, non-live integration and docs      | Passed: 1,894 tests; documentation browser checks covered 27 routes | [Shared CI job](https://github.com/asadarafat/streamskope/actions/runs/36916274566/job/110550906276) |
+| Linux x64 native build, package inspection and launch checks   | Passed                                                              | [Linux job](https://github.com/asadarafat/streamskope/actions/runs/36916274566/job/110553618086)     |
+| macOS ARM64 native build, package inspection and launch checks | Passed                                                              | [macOS job](https://github.com/asadarafat/streamskope/actions/runs/36916274566/job/110553618088)     |
+| Windows x64 native build, package inspection and launch checks | Passed                                                              | [Windows job](https://github.com/asadarafat/streamskope/actions/runs/36916274566/job/110553618117)   |
+
+Native launch checks exercise the production Electron boundary and packaged app.
+They do not exercise installed plugin onboarding or real credential-service recovery.
+
+### Evidence still to be recorded
+
+These gaps remain after publication. Results from trial releases are not carried
+forward as qualification for this source.
+
+| Check                                               | Required evidence                                                                          | Current record                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 60-second performance soak                          | Local report tied to the exact source                                                      | [Release notes](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1) report a local pass; no source-specific report is linked |
+| EDA 26.8.2 capture and cleanup                      | Configured local cluster, API version, received record and verified owned-resource removal | No live result recorded for this release                                                                                                          |
+| NSP 26.4.0 setup and cleanup                        | Configured target, API version, profile reuse, Kafka access and verified execution removal | No live result recorded for this release                                                                                                          |
+| Native plugin dialogs and credential-backed restore | Installed desktop, OS/architecture and real credential-service rehearsal                   | No installed native workflow result recorded for this release                                                                                     |
 
 CI runs on pull requests, `main` and release tags. The
 [CI workflow](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)

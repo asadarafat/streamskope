@@ -4,9 +4,11 @@
 | ----------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------- |
 | [v0.1.0+build.1](v0.1.0+build.1.md) | 0.1.0                 | First release: Kafka workbench, hot plugin lifecycle, EDA Capture and NSP Capture using plugin API 3 |
 
-The first release is being prepared. Consult
-[GitHub Releases](https://github.com/asadarafat/streamskope/releases) for published
-assets; a source tag or this page alone does not establish download availability.
+The first release was published on **2026-10-01** as an **unsigned prerelease**.
+The [v0.1.0+build.1 release](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1)
+contains installers for macOS ARM64, Windows x64 and Linux x64, plus `SHA256SUMS`.
+The [qualification record](../guide/qualification.md) links the exact automated
+checks and identifies the live and installed-app workflows still lacking evidence.
 
 Record the full download release tag as well as the app version. Build metadata
 can distinguish releases that share app versions and installer filenames. Match
@@ -19,9 +21,9 @@ and may contain changes not yet published. **Published documentation** is the
 qualified site built from current `main`, with release availability verified before
 deployment.
 
-After the first desktop release is published, merging documentation changes to
-`main` qualifies and publishes Pages without another desktop release. Maintainers
-can also run **Pages** manually from `main`. Desktop release publication triggers
+Merging documentation changes to `main` qualifies and publishes Pages without
+another desktop release. Maintainers can also run **Pages** manually from `main`.
+Desktop release publication triggers
 the same current-main build; an old release event cannot replace the site with an
 old checkout. EDA plugin and signed cluster-app publication remain separate.
 
