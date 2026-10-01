@@ -157,6 +157,100 @@ it("installs only on request and immediately activates the plugin", async () => 
   expect(screen.queryByRole("button", { name: "Restart StreamSkope" })).not.toBeInTheDocument();
 });
 
+it.each([2, 3] as const)(
+  "offers a SemVer migration from an installed API %s plugin and displays bounded compatibility",
+  async (apiVersion) => {
+    const legacyCompatibility = {
+      streamskope: { minimum: "v0.1.0+build.1" },
+      target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+    };
+    const legacy: PluginManifest = {
+      ...manifest,
+      apiVersion,
+      version: apiVersion === 2 ? "26.8.2" : formatPluginVersion(legacyCompatibility, 10),
+      ...(apiVersion === 3 ? { compatibility: legacyCompatibility, revision: 10 } : {}),
+    };
+    const available: PluginManifest = {
+      ...manifest,
+      apiVersion: 4,
+      version: "0.1.0",
+      compatibility: {
+        streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        target: legacyCompatibility.target,
+      },
+    };
+    const { host, commands } = fixture({
+      manifest: available,
+      snapshot: {
+        revision: 1,
+        plugins: [
+          {
+            id: legacy.id,
+            installed: legacy,
+            active: legacy,
+            pending: null,
+            restartRequired: false,
+          },
+        ],
+      },
+    });
+    render(<PluginsPanel host={host} />);
+    const update = await screen.findByRole("button", { name: "Update to 0.1.0" });
+    expect(
+      screen.getByText(/Requires StreamSkope 0.2.0 up to, but excluding, 0.3.0/u),
+    ).toHaveTextContent("Supports EDA 26.8.2–26.8.2 (inclusive) · Plugin API 4");
+    await userEvent.setup().click(update);
+    expect(await screen.findByText("Active version 0.1.0")).toBeVisible();
+    expect(commands.some((command) => command.command === "plugins.install")).toBe(true);
+  },
+);
+
+it("does not offer a legacy encoded version to repair a newer SemVer installation", async () => {
+  const compatibility = {
+    streamskope: { minimum: "v0.1.0+build.1" },
+    target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+  };
+  const legacy: PluginManifest = {
+    ...manifest,
+    apiVersion: 3,
+    compatibility,
+    revision: 99,
+    version: formatPluginVersion(compatibility, 99),
+  };
+  const installed: PluginManifest = {
+    ...manifest,
+    apiVersion: 4,
+    version: "0.1.0",
+    compatibility: {
+      streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+      target: compatibility.target,
+    },
+  };
+  const { host } = fixture({
+    manifest: legacy,
+    snapshot: {
+      revision: 1,
+      plugins: [
+        {
+          id: installed.id,
+          installed,
+          pending: null,
+          restartRequired: false,
+          error: "Activation failed.",
+        },
+      ],
+    },
+  });
+  render(<PluginsPanel host={host} />);
+  expect(await screen.findByText(/The catalog offers older version/u)).toHaveTextContent(
+    "Retry requires version 0.1.0 or newer",
+  );
+  expect(
+    screen.queryByRole("button", { name: /Update to|Retry activation/u }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
+});
+
 it("keeps the active version visible and offers retry when an update fails verification", async () => {
   const current = { ...manifest, version: "1.0.0" };
   const { host } = fixture({

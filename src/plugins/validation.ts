@@ -1,6 +1,7 @@
 import {
   formatPluginVersion,
   parsePluginCompatibility,
+  parseReleaseVersion,
   parseSemanticPluginVersion,
 } from "./compatibility";
 import {
@@ -16,9 +17,11 @@ import {
 export {
   compareDesktopReleases,
   comparePluginVersions,
+  comparePluginManifests,
   formatPluginVersion,
   isPluginCompatibleWithHost,
   isTargetVersionCompatible,
+  isPrereleaseVersion,
 } from "./compatibility";
 
 const identifier = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*(?![\s\S])/u;
@@ -45,7 +48,7 @@ function text(value: unknown, name: string, maximum = 256): string {
 }
 
 export function isSupportedPluginApiVersion(value: unknown): value is PluginApiVersion {
-  return value === 2 || value === PLUGIN_API_VERSION;
+  return value === 2 || value === 3 || value === PLUGIN_API_VERSION;
 }
 
 function parseResources(value: unknown): readonly PluginResource[] {
@@ -91,7 +94,8 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     "backend",
     "renderer",
     "styles",
-    ...(input.apiVersion === 2 ? ["targetEdaVersion"] : ["compatibility", "revision", "resources"]),
+    ...(input.apiVersion === 2 ? ["targetEdaVersion"] : ["compatibility", "resources"]),
+    ...(input.apiVersion === 3 ? ["revision"] : []),
   ]);
   if (Object.keys(input).some((key) => !allowed.has(key))) {
     throw new Error("Plugin manifest contains unsupported fields.");
@@ -104,10 +108,14 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     throw new Error("Plugin entrypoints must use the supported package filenames.");
   }
   const compatibility =
-    input.apiVersion === 3 ? parsePluginCompatibility(input.compatibility) : undefined;
+    input.apiVersion === 2
+      ? undefined
+      : parsePluginCompatibility(input.compatibility, input.apiVersion);
   let packageVersion: string;
   if (compatibility === undefined) {
     packageVersion = parseSemanticPluginVersion(input.version);
+  } else if (input.apiVersion === 4) {
+    packageVersion = parseReleaseVersion(input.version);
   } else {
     if (typeof input.revision !== "number")
       throw new Error("Plugin revision must be a positive safe integer.");
@@ -131,7 +139,8 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     ...(input.apiVersion === 2 && input.targetEdaVersion !== undefined
       ? { targetEdaVersion: parseSemanticPluginVersion(input.targetEdaVersion) }
       : {}),
-    ...(compatibility === undefined ? {} : { compatibility, revision: input.revision as number }),
+    ...(compatibility === undefined ? {} : { compatibility }),
+    ...(input.apiVersion === 3 ? { revision: input.revision as number } : {}),
     ...(input.resources === undefined ? {} : { resources: parseResources(input.resources) }),
     ...(input.styles === undefined ? {} : { styles: "renderer.css" as const }),
   };

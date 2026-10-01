@@ -72,19 +72,21 @@ it("refuses invalid identity and never overwrites an assembled set", async () =>
   expect(await readFile(join(directory, "SHA256SUMS"), "utf8")).toBe(original);
 });
 
-it.each([undefined, "v0.1.0+build.2"])(
-  "assembles reviewed notes and checksums through the consolidated package command with tag %s",
-  async (tag) => {
+it.each(["0.1.0", "0.2.0-rc.1"])(
+  "assembles reviewed notes and checksums through the consolidated package command for %s",
+  async (version) => {
+    const tag = `v${version}`;
+    const versionedNames = names.map((name) => name.replace("0.1.0", version));
     const root = await mkdtemp(join(tmpdir(), "streamskope-release-command-"));
     directories.push(root);
     const assets = join(root, "installers");
     await mkdir(assets);
-    for (const name of names) await writeFile(join(assets, name), "abc");
+    for (const name of versionedNames) await writeFile(join(assets, name), "abc");
     const source = join(root, "source.md");
     const output = join(root, "notes.md");
     await writeFile(
       source,
-      `---\nrelease_version: 0.1.0\nrelease_tag: ${tag ?? "v0.1.0"}\n---\n# Reviewed release\n\nReviewed change.\n`,
+      `---\nrelease_version: ${version}\nrelease_tag: ${tag}\n---\n# Reviewed release\n\nReviewed change.\n`,
     );
     const args = [
       "--import",
@@ -92,21 +94,20 @@ it.each([undefined, "v0.1.0+build.2"])(
       "tools/package.ts",
       "release",
       assets,
-      "0.1.0",
+      version,
       commit,
       source,
       output,
-      ...(tag ? [tag] : []),
+      tag,
     ];
     await execute(process.execPath, args, { timeout: 15000 });
     const notes = await readFile(output, "utf8");
     expect(notes).toContain("# Reviewed release\n\nReviewed change.");
     expect(notes).toContain("These downloads are unsigned.");
     expect(notes).toContain(commit);
-    expect(notes).toContain(`# StreamSkope 0.1.0\n`);
-    expect(notes).toContain(`Source: ${commit} (tag ${tag ?? "v0.1.0"}).`);
-    expect(notes).toContain("StreamSkope-0.1.0-linux-x64.AppImage");
-    expect(notes).not.toContain("StreamSkope-0.1.0+build.2-linux-x64.AppImage");
+    expect(notes).toContain(`# StreamSkope ${version}\n`);
+    expect(notes).toContain(`Source: ${commit} (tag ${tag}).`);
+    expect(notes).toContain(`StreamSkope-${version}-linux-x64.AppImage`);
     expect((await readFile(join(assets, "SHA256SUMS"), "utf8")).trim().split("\n")).toHaveLength(3);
     await expect(execute(process.execPath, args, { timeout: 15000 })).rejects.toMatchObject({
       code: 1,
@@ -115,11 +116,14 @@ it.each([undefined, "v0.1.0+build.2"])(
   },
 );
 
-it("rejects a mismatched rebuild tag before writing release checksums", async () => {
-  const assets = await fixture();
-  await expect(prepareUnsignedRelease(assets, "0.1.0", commit, "v0.1.1+build.2")).rejects.toThrow();
-  await expect(readFile(join(assets, "SHA256SUMS"))).rejects.toMatchObject({ code: "ENOENT" });
-});
+it.each(["v0.1.1", "v0.1.0+build.2", "v0.1.0-rc.1"])(
+  "rejects unsupported or mismatched tag %s before writing release checksums",
+  async (tag) => {
+    const assets = await fixture();
+    await expect(prepareUnsignedRelease(assets, "0.1.0", commit, tag)).rejects.toThrow();
+    await expect(readFile(join(assets, "SHA256SUMS"))).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
 
 it("rejects mismatched reviewed notes before writing release checksums", async () => {
   const assets = await fixture();

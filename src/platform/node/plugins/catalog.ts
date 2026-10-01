@@ -1,8 +1,9 @@
 import type { PluginManifest } from "../../../plugins/contracts";
 import { STREAMSKOPE_RELEASE } from "../../../plugins/host-release";
 import {
-  comparePluginVersions,
+  comparePluginManifests,
   isPluginCompatibleWithHost,
+  isPrereleaseVersion,
   isSupportedPluginApiVersion,
   parsePluginManifest,
 } from "../../../plugins/validation";
@@ -258,20 +259,26 @@ export class OfficialPluginCatalog {
         )
           continue;
         const manifest = parsePluginManifest(metadata);
-        if (release.version !== undefined && release.version !== manifest.version)
-          throw new Error(
-            "The plugin filename does not match its declared compatibility identity.",
-          );
-        if (manifest.apiVersion === 3 && release.version === undefined)
-          throw new Error("The plugin release filename must include its compatibility identity.");
-        if (!isPluginCompatibleWithHost(manifest, this.#hostRelease)) continue;
-        if (manifest.apiVersion === 3) {
+        const filenameVersion =
+          manifest.apiVersion === 4 ? `v${manifest.version}` : manifest.version;
+        if (release.version !== undefined && release.version !== filenameVersion)
+          throw new Error("The plugin filename does not match its declared version.");
+        if (manifest.apiVersion >= 3 && release.version === undefined)
+          throw new Error("The plugin release filename must include its version.");
+        if (manifest.apiVersion >= 3) {
           const previousDigest = identities.get(manifest.version);
           if (previousDigest !== undefined && previousDigest !== release.packageAsset.digest)
-            throw new Error("The official plugin revision has conflicting package content.");
+            throw new Error("The official plugin version has conflicting package content.");
           identities.set(manifest.version, release.packageAsset.digest);
         }
-        if (!selected || comparePluginVersions(manifest.version, selected.manifest.version) > 0) {
+        if (!isPluginCompatibleWithHost(manifest, this.#hostRelease)) continue;
+        if (
+          manifest.apiVersion === 4 &&
+          isPrereleaseVersion(manifest.version) &&
+          !isPrereleaseVersion(this.#hostRelease.replace(/^v/u, ""))
+        )
+          continue;
+        if (!selected || comparePluginManifests(manifest, selected.manifest) > 0) {
           selected = {
             manifest,
             sha256: release.packageAsset.digest,

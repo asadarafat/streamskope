@@ -14,7 +14,7 @@ import { HOST_PROTOCOL_VERSION, type HostCommand } from "../../src/features/kafk
 import { translateFacadeFailure } from "../../src/features/kafka/facade/facade-support";
 import type { PluginBackend, PluginBackendHost, PluginBackendModule } from "../../src/plugins/api";
 import type { PluginManifest } from "../../src/plugins/contracts";
-import { formatPluginVersion, parsePluginManifest } from "../../src/plugins/validation";
+import { parsePluginManifest } from "../../src/plugins/validation";
 import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
@@ -38,15 +38,14 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
   return { promise, resolve: complete };
 }
 
-function pluginVersion(revision: number): string {
-  return formatPluginVersion(manifestJson.compatibility, revision);
+function pluginVersion(patch: number): string {
+  return `0.1.${patch}`;
 }
 
-function bundle(revision: number): { readonly bytes: Uint8Array; readonly sha256: string } {
+function bundle(patch: number): { readonly bytes: Uint8Array; readonly sha256: string } {
   const manifest: PluginManifest = {
     ...parsePluginManifest(manifestJson),
-    revision,
-    version: pluginVersion(revision),
+    version: pluginVersion(patch),
   };
   const bytes = encodePluginPackage(
     manifest,

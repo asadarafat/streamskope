@@ -27,7 +27,7 @@ import type {
   PluginSnapshot,
 } from "../../../plugins/contracts";
 import {
-  comparePluginVersions,
+  comparePluginManifests,
   isPluginCompatibleWithHost,
   parsePluginId,
   parsePluginJson,
@@ -290,10 +290,11 @@ export class PluginRuntime implements PluginRuntimePort {
 
   private assertCompatible(manifest: PluginManifest): void {
     const release = this.options.hostRelease ?? STREAMSKOPE_RELEASE;
+    const host = manifest.compatibility?.streamskope;
     if (!isPluginCompatibleWithHost(manifest, release))
       throw problem(
-        `${manifest.name} requires StreamSkope ${manifest.compatibility?.streamskope.minimum} or later; this host is ${release}.`,
-        "Update StreamSkope before installing or activating this plugin. Saved profiles and recovery data are retained.",
+        `${manifest.name} requires StreamSkope ${host?.minimum}${host?.maximumExclusive === undefined ? " or later" : ` up to, but excluding, ${host.maximumExclusive}`}; this host is ${release}.`,
+        "Use a compatible StreamSkope and plugin release. Saved profiles and recovery data are retained.",
       );
   }
 
@@ -645,17 +646,18 @@ export class PluginRuntime implements PluginRuntimePort {
       let candidate: LoadedPlugin | undefined;
       try {
         if (
-          manifest.apiVersion === 3 &&
-          previous?.installation.manifest.version === manifest.version &&
+          manifest.apiVersion >= 3 &&
+          previous !== undefined &&
+          comparePluginManifests(previous.installation.manifest, manifest) === 0 &&
           previous.installation.sha256 !== download.sha256
         )
           throw problem(
-            "This plugin revision has different content from the installed package.",
-            "Refresh the catalog after a new plugin revision is published. The current installation is retained.",
+            "This plugin version has different content from the installed package.",
+            "Refresh the catalog after a new plugin version is published. The current installation is retained.",
           );
         const stored = (await this.options.store.list()).find((entry) => entry.id === pluginId);
         for (const current of [previous?.installation.manifest, stored?.installed]) {
-          if (current !== undefined && comparePluginVersions(manifest.version, current.version) < 0)
+          if (current !== undefined && comparePluginManifests(manifest, current) < 0)
             throw problem(
               `The available plugin version ${manifest.version} is older than installed version ${current.version}.`,
               "Refresh the plugin catalog and wait for a compatible update.",

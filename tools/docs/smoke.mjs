@@ -76,20 +76,24 @@ try {
     const versionNotice = page.getByRole("complementary", { name: "Documentation version" });
     assert(await versionNotice.isVisible(), `${route}: release context is visible`);
     assert.match(await versionNotice.innerText(), /(?:Development|Published) documentation/);
+    const sourcePath = route ? route.replace(/\/$/u, "") : "index";
+    const source = await readFile(`website/docs/${sourcePath}.md`, "utf8").catch(() =>
+      readFile(`website/docs/${route}index.md`, "utf8"),
+    );
+    const metadata = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(source)?.[1] ?? "";
+    const unreleased = /^unreleased:\s*true\s*$/mu.test(metadata);
     const releaseTag = /^releases\/(v[^/]+)\/$/u.exec(route)?.[1];
     const expectedRelease =
-      releaseTag !== undefined && releaseTag !== desktopRelease
+      !unreleased && releaseTag !== undefined && releaseTag !== desktopRelease
         ? `Historical release notes: ${releaseTag}`
         : desktopRelease;
     assert((await versionNotice.innerText()).includes(expectedRelease), route);
+    assert.equal(
+      (await versionNotice.innerText()).includes("Unreleased changes"),
+      unreleased,
+      `${route}: the version notice matches its documented release status`,
+    );
     if (route === "plugins/versioning/") {
-      const source = await readFile("website/docs/plugins/versioning.md", "utf8");
-      const metadata = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(source)?.[1] ?? "";
-      assert.equal(
-        (await versionNotice.innerText()).includes("Unreleased feature"),
-        /^unreleased:\s*true\s*$/mu.test(metadata),
-        "The plugin version notice matches its documented release status",
-      );
       for (const plugin of ["eda", "nsp"]) {
         const manifest = JSON.parse(await readFile(`plugins/${plugin}/manifest.json`, "utf8"));
         assert(
@@ -98,10 +102,6 @@ try {
           ).includes(manifest.version),
         );
       }
-    }
-    if (route === "plugins/nsp/") {
-      assert.match(await versionNotice.innerText(), /Applies to desktop/);
-      assert.doesNotMatch(await versionNotice.innerText(), /Unreleased feature/);
     }
     assert.doesNotMatch(await page.locator("body").innerText(), /Kubus|TopoViewer|FIELD GUIDE/i);
   }

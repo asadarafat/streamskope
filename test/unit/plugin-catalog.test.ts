@@ -32,6 +32,72 @@ const bytes = encodePluginPackage(
 );
 const manifestBytes = Buffer.from(JSON.stringify(manifest));
 
+const semanticManifest: PluginManifest = {
+  id: manifest.id,
+  name: manifest.name,
+  apiVersion: 4,
+  version: "0.1.0",
+  compatibility: {
+    streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+    target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+  },
+  backend: "backend.cjs",
+  renderer: "renderer.js",
+};
+
+function versionedCatalog(
+  entries: readonly PluginManifest[],
+  hostRelease = "v0.2.0",
+  altered = false,
+): OfficialPluginCatalog {
+  const downloads = new Map<string, Uint8Array>();
+  const releases = entries.map((entry, index) => {
+    const names =
+      entry.apiVersion === 2
+        ? OFFICIAL_PLUGINS[0]
+        : officialPluginAssets(OFFICIAL_PLUGINS[0], entry.version);
+    return {
+      ...release(),
+      // GitHub's prerelease flag is separate from the plugin version's release channel.
+      prerelease: true,
+      tag_name: index === 0 ? "v0.2.0" : `plugins/eda/v${entry.version}`,
+      published_at: new Date(Date.UTC(2026, 9, index + 1)).toISOString(),
+      assets: [
+        Buffer.from(JSON.stringify(entry)),
+        encodePluginPackage(
+          entry,
+          new Map([
+            [
+              "backend.cjs",
+              Buffer.from(`exports.activate=()=>({});${altered && index === 1 ? "//changed" : ""}`),
+            ],
+            ["renderer.js", Buffer.from("export default {};")],
+          ]),
+        ),
+      ].map((content, offset) => {
+        const id = index * 2 + offset + 1;
+        downloads.set(`/assets/${id}`, content);
+        return {
+          id,
+          name: offset === 0 ? names.manifestAsset : names.packageAsset,
+          size: content.byteLength,
+          state: "uploaded",
+          digest: `sha256:${pluginPackageSha256(content)}`,
+        };
+      }),
+    };
+  });
+  return new OfficialPluginCatalog(
+    vi.fn<typeof fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/releases?per_page=100")) return Promise.resolve(Response.json(releases));
+      const content = downloads.get(/\/assets\/\d+$/u.exec(url)![0]);
+      return Promise.resolve(new Response(Buffer.from(content!)));
+    }),
+    hostRelease,
+  );
+}
+
 function release(): {
   draft: boolean;
   tag_name: string;
@@ -139,6 +205,83 @@ function multipleReleases(
 }
 
 describe("official plugin downloads", () => {
+  it("selects independently versioned API 4 updates over retained API 2/3 packages and enforces host bounds", async () => {
+    const compatibility = {
+      streamskope: { minimum: "v0.1.0+build.1" },
+      target: semanticManifest.compatibility!.target,
+    };
+    const legacy = {
+      ...semanticManifest,
+      apiVersion: 3 as const,
+      compatibility,
+      revision: 99,
+      version: formatPluginVersion(compatibility, 99),
+    };
+    const entries = [
+      semanticManifest,
+      { ...semanticManifest, version: "0.1.10" },
+      legacy,
+      manifest,
+      { ...semanticManifest, version: "0.1.2" },
+    ];
+    expect(officialPluginAssets(OFFICIAL_PLUGINS[0], "0.1.0").packageAsset).toBe(
+      "streamskope-eda-v0.1.0.skope-plugin",
+    );
+    const catalog = versionedCatalog(entries);
+    expect(await catalog.list()).toMatchObject([
+      { manifest: { apiVersion: 4, version: "0.1.10" } },
+    ]);
+    expect(parsePluginPackage((await catalog.download(manifest.id)).bytes).manifest.version).toBe(
+      "0.1.10",
+    );
+    expect(await versionedCatalog(entries, "v0.1.0+build.1").list()).toMatchObject([
+      { manifest: legacy },
+    ]);
+    expect(await versionedCatalog([semanticManifest], "v0.3.0").list()).toEqual([]);
+  });
+
+  it("keeps prerelease plugin updates out of stable hosts while preview hosts can select them within declared bounds", async () => {
+    const qualified = {
+      ...semanticManifest,
+      compatibility: {
+        ...semanticManifest.compatibility!,
+        streamskope: { minimum: "0.2.0-rc.1", maximumExclusive: "0.3.0" },
+      },
+    };
+    const entries = [
+      qualified,
+      { ...qualified, version: "0.2.0-rc.1" },
+      { ...qualified, version: "0.2.0-rc.10" },
+      { ...qualified, version: "0.2.0-rc.2" },
+    ];
+    expect(await versionedCatalog(entries).list()).toMatchObject([{ manifest: qualified }]);
+    expect(await versionedCatalog(entries, "v0.2.0-rc.2").list()).toMatchObject([
+      { manifest: { version: "0.2.0-rc.10" } },
+    ]);
+    for (const host of ["v0.2.0-rc.0", "v0.2.1-rc.1", "v0.3.0-rc.1"]) {
+      expect(await versionedCatalog(entries, host).list()).toEqual([]);
+    }
+  });
+
+  it("rejects republished API 4 content but accepts identical package copies across desktop/plugin releases", async () => {
+    expect(await versionedCatalog([semanticManifest, semanticManifest]).list()).toMatchObject([
+      { manifest: semanticManifest },
+    ]);
+    await expect(
+      versionedCatalog([semanticManifest, semanticManifest], "v0.2.0", true).list(),
+    ).rejects.toThrow("conflicting package content");
+    const incompatible = {
+      ...semanticManifest,
+      compatibility: {
+        ...semanticManifest.compatibility!,
+        streamskope: { minimum: "0.3.0", maximumExclusive: "0.4.0" },
+      },
+    };
+    await expect(versionedCatalog([semanticManifest, incompatible]).list()).rejects.toThrow(
+      "conflicting package content",
+    );
+  });
+
   it("selects versioned packages by revision only after checking the exact minimum desktop build", async () => {
     const manifests: PluginManifest[] = [
       manifest,

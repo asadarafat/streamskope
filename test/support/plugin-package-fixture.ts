@@ -6,7 +6,7 @@ import {
   officialPluginAssets,
   type OfficialPlugin,
 } from "../../src/platform/node/plugins/official";
-import { formatPluginVersion, parsePluginManifest } from "../../src/plugins/validation";
+import { parsePluginManifest } from "../../src/plugins/validation";
 import {
   encodePluginPackage,
   parsePluginPackage,
@@ -33,9 +33,8 @@ export async function pluginPackageFixtures(): Promise<{
   const current = fixture(await readFile(join("dist/plugin-package", assets.packageAsset)));
   const parsed = parsePluginPackage(current.bytes, current.sha256);
   const revised = (offset: number): typeof parsed.manifest => {
-    const compatibility = parsed.manifest.compatibility!;
-    const revision = parsed.manifest.revision! + offset;
-    return { ...parsed.manifest, revision, version: formatPluginVersion(compatibility, revision) };
+    const [major, minor, patch] = parsed.manifest.version.split(".").map(Number);
+    return { ...parsed.manifest, version: `${major}.${minor}.${patch! + offset}` };
   };
   const update = fixture(encodePluginPackage(revised(1), parsed.files));
   const brokenFiles = new Map(parsed.files);

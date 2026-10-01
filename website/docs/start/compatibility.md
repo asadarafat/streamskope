@@ -1,6 +1,8 @@
 # Check compatibility before connecting
 
-This matrix describes desktop **v0.1.0+build.1** (app **0.1.0**). Implemented means
+The core capabilities below apply to the published desktop **v0.1.0+build.1**
+(app **0.1.0**) and upcoming **0.2.0**. Plugin requirements differ by generation,
+as described below. Implemented means
 the application exposes the capability; it does not qualify every vendor/version.
 See [qualification evidence](../guide/qualification.md) for what was actually exercised.
 
@@ -15,8 +17,8 @@ See [qualification evidence](../guide/qualification.md) for what was actually ex
 | Message reads        | Tail, Newest N, First N and a recent two-minute Time window                      | Bounded retention; no arbitrary historical date picker; see [read semantics](../guide/messages.md#choose-a-read-mode) |
 | Schema Registry      | Confluent-compatible HTTP API; Avro, JSON Schema and Protobuf schema definitions | Browsing/registration is separate from message decoding; auth is none or the profile's OAuth token, not HTTP Basic    |
 | Redpanda transforms  | Redpanda Admin API and transform-log topic                                       | Not an Apache Kafka feature; independent service permissions and connectivity required                                |
-| EDA capture          | EDA Capture, plugin API 3                                                        | Requires exactly EDA 26.8.2 and the separate matching cluster app                                                     |
-| NSP capture          | NSP Capture, plugin API 3                                                        | Requires exactly NSP 26.4.0 and the workflow/mounted-trust layout                                                     |
+| EDA capture          | EDA Capture, API 3 (published), API 4 (upcoming)                                 | Requires exactly EDA 26.8.2 and the separate matching cluster app                                                     |
+| NSP capture          | NSP Capture, API 3 (published), API 4 (upcoming)                                 | Requires exactly NSP 26.4.0 and the workflow/mounted-trust layout                                                     |
 
 TLS failures do not fall back to plaintext. HTTP service authentication and Kafka
 broker authentication must each be accepted by their destination. A valid Kafka
@@ -40,13 +42,17 @@ not part of the installation procedure.
 
 ## Plugin compatibility declarations
 
-Both connection plugins use API **3** and require desktop **v0.1.0+build.1** or
-later. Their package identities declare the minimum desktop release, target system,
-inclusive minimum/maximum target versions and package revision.
+| Package generation             | Desktop requirement      | Plugin versioning                                                                           |
+| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------- |
+| Published API 3 packages       | Minimum `v0.1.0+build.1` | Original combined compatibility/revision labels, preserved unchanged                        |
+| Upcoming API 4 EDA / NSP 0.1.0 | `>=0.2.0, <0.3.0`        | Independent Semantic Versions; supported host/target intervals are separate manifest fields |
 
-The [manifest-derived declarations](../plugins/versioning.md#declared-packages)
-are the single reference for package identities, host minimums and target
-intervals. Package availability is established by the official release catalog.
+StreamSkope 0.2.0 preserves installed API 2 and API 3 packages. The
+[manifest-derived declarations](../plugins/versioning.md#declared-packages)
+show the current source's API 4 requirements; they do not claim those packages are
+published. The official catalog establishes download availability and selects a
+compatible package. Follow the [generation migration steps](../plugins/versioning.md#upgrade-from-the-original-packages)
+when upgrading from the original release.
 
 Equal bounds permit one exact product release. They are not a vendor-wide
 support claim or an automatic promise for later patch releases. The host checks

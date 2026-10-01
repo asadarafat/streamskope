@@ -12,11 +12,19 @@ describe("versioned release notes source", () => {
     ).toBe(body);
   });
 
-  it("rejects notes for a different build sharing the same app version", () => {
+  it("rejects legacy rebuild identities for new release preparation", () => {
     const source = "---\nrelease_version: 0.1.0\nrelease_tag: v0.1.0+build.2\n---\n# Build 2\n";
-    expect(releaseNotesBody(source, "0.1.0", "v0.1.0+build.2")).toBe("# Build 2\n");
+    expect(() => releaseNotesBody(source, "0.1.0", "v0.1.0+build.2")).toThrow(/exact release tag/);
     expect(() => releaseNotesBody(source, "0.1.0", "v0.1.0")).toThrow(/exact release tag/);
     expect(() => releaseNotesBody(source, "0.1.0", "v0.1.0+build.3")).toThrow(/exact release tag/);
+  });
+
+  it("uses an exact prerelease version and tag for a release candidate", () => {
+    const source = "---\nrelease_version: 0.2.0-rc.1\nrelease_tag: v0.2.0-rc.1\n---\n# Candidate\n";
+    expect(releaseNotesBody(source, "0.2.0-rc.1")).toBe("# Candidate\n");
+    expect(() => releaseNotesBody(source, "0.2.0-rc.1", "v0.2.0-rc.2")).toThrow(
+      /exact release tag/,
+    );
   });
 
   it("rejects a version mismatch or empty release body", () => {

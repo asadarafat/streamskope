@@ -2,7 +2,9 @@
 
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -54,7 +56,8 @@ class DesktopDownloadTests(unittest.TestCase):
 
     def test_changing_documented_release_updates_every_download(self):
         for tag, version, encoded in (("v0.1.0+build.5", "0.1.0", "v0.1.0%2Bbuild.5"),
-                                      ("v1.2.3", "1.2.3", "v1.2.3")):
+                                      ("v1.2.3", "1.2.3", "v1.2.3"),
+                                      ("v0.2.0-rc.1", "0.2.0-rc.1", "v0.2.0-rc.1")):
             with self.subTest(tag=tag):
                 self.write_release(tag)
                 links = downloads.desktop_downloads(self.root)
@@ -67,7 +70,8 @@ class DesktopDownloadTests(unittest.TestCase):
                     self.assertIn(f"/{encoded}/StreamSkope-{version}-", asset["url"])
 
     def test_rejects_floating_or_malformed_release_identity(self):
-        for tag in ("latest", "v0.1.0+build.0", "0.1.0", "v0.1.0/other"):
+        for tag in ("latest", "v0.1.0+build.0", "0.1.0", "v0.1.0/other", "v0.01.0",
+                    "v0.2.0-rc.01", "v0.2.0+commit.deadbeef"):
             with self.subTest(tag=tag):
                 self.write_release(tag)
                 with self.assertRaisesRegex(ValueError, "exact documented release"):
@@ -122,6 +126,25 @@ class DesktopDownloadTests(unittest.TestCase):
             "gh", "release", "view", "v0.1.0+build.4", "--repo", "asadarafat/streamskope",
             "--json", "tagName,isDraft,url,assets",
         ], cwd=self.root, text=True)
+
+    def test_pages_can_invoke_download_verification_as_a_standalone_script(self):
+        # A child process has no tools/ sys.path inherited from this test module.
+        # Mock only gh's response, preserving the exact workflow's script entrypoint.
+        script = Path(downloads.__file__).resolve()
+        links = downloads.desktop_downloads(downloads.ROOT)
+        release = {"tagName": links["tag"], "isDraft": False, "url": links["release_url"],
+                   "assets": [{**asset, "state": "uploaded", "size": 123}
+                              for asset in links["assets"]] + [
+                       {"name": "SHA256SUMS", "url": links["checksum_url"],
+                        "state": "uploaded", "size": 100}]}
+        (self.root / "sitecustomize.py").write_text(
+            "import subprocess\n"
+            f"subprocess.check_output = lambda *args, **kwargs: {json.dumps(release)!r}\n")
+        result = subprocess.run([sys.executable, str(script)], cwd=self.root,
+                                env={**os.environ, "PYTHONPATH": str(self.root)},
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Desktop downloads verified: {links['tag']}", result.stdout)
 
 
 if __name__ == "__main__":

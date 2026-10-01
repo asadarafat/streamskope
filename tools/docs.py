@@ -204,6 +204,7 @@ def prepare(url, serving=False):
         target = manifest["compatibility"]["target"]
         fields = {"name": manifest["name"], "version": manifest["version"],
                   "api": manifest["apiVersion"], "minimum_host": manifest["compatibility"]["streamskope"]["minimum"],
+                  "maximum_host_exclusive": manifest["compatibility"]["streamskope"]["maximumExclusive"],
                   "system": target["system"], "minimum": target["minimum"], "maximum": target["maximum"]}
         source += "\n[[project.extra.source_plugins]]\n" + "".join(
             f"{key} = {json.dumps(value)}\n" for key, value in fields.items())

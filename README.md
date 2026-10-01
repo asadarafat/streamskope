@@ -19,12 +19,15 @@ one application.
 
 ## Download
 
-The first release is **v0.1.0+build.1** (app version **0.1.0**), targeting macOS
+The published release is **v0.1.0+build.1** (app version **0.1.0**), targeting macOS
 **ARM64**, Windows **x64** and Linux **x64**. Download it from
-[GitHub Releases](https://github.com/asadarafat/streamskope/releases) once published.
+[GitHub Releases](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1).
 Desktop packages are **unsigned prereleases**. Verify the installer against its release's
 `SHA256SUMS` and follow the [platform installation instructions](website/docs/start/installation.md).
 Kafka is a separate service; the desktop installer does not require Node or Docker.
+
+This checkout prepares **0.2.0**, which is not yet published. See the
+[upcoming release notes](website/docs/releases/v0.2.0.md).
 
 ## What you can do
 

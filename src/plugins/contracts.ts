@@ -1,8 +1,12 @@
-export const PLUGIN_API_VERSION = 3 as const;
-export type PluginApiVersion = 2 | typeof PLUGIN_API_VERSION;
+export const PLUGIN_API_VERSION = 4 as const;
+export type PluginApiVersion = 2 | 3 | typeof PLUGIN_API_VERSION;
 
 export interface PluginCompatibility {
-  readonly streamskope: { readonly minimum: string };
+  readonly streamskope: {
+    readonly minimum: string;
+    /** Required for API 4; legacy API 3 declares only its minimum desktop build. */
+    readonly maximumExclusive?: string;
+  };
   readonly target: {
     readonly system: string;
     readonly minimum: string;
@@ -34,8 +38,9 @@ export interface PluginManifest {
   readonly version: string;
   readonly targetEdaVersion?: string;
   readonly apiVersion: PluginApiVersion;
-  /** Required for API 3; absent from legacy API 2 packages. */
+  /** Required for API 3/4; absent from legacy API 2 packages. */
   readonly compatibility?: PluginCompatibility;
+  /** Legacy API 3 identity only. API 4 uses independent Semantic Versions. */
   readonly revision?: number;
   readonly resources?: readonly PluginResource[];
   readonly backend: "backend.cjs";

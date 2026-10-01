@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { EDA_TARGET_VERSION } from "../../plugins/eda/contracts/eda-capture-types";
+import { PLUGIN_API_VERSION } from "../../src/plugins/contracts";
 import { parsePluginManifest } from "../../src/plugins/validation";
 import {
   OFFICIAL_PLUGINS,
@@ -20,8 +21,11 @@ async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<vo
   );
   if (manifest.id !== plugin.id)
     throw new Error("The desktop plugin manifest does not match its official identity.");
-  if (manifest.apiVersion !== 3 || manifest.compatibility?.target.system !== plugin.directory) {
-    throw new Error("Official plugins must declare their API 3 host and target compatibility.");
+  if (
+    manifest.apiVersion !== PLUGIN_API_VERSION ||
+    manifest.compatibility?.target.system !== plugin.directory
+  ) {
+    throw new Error("Official plugins must declare current API host and target compatibility.");
   }
   if (
     plugin.directory === "eda" &&

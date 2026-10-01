@@ -146,15 +146,23 @@ it("loads the packaged NSP backend independently with no network or repository d
   expect(result.stdout.trim()).toBe("standalone-nsp-backend-ok");
 });
 
-it("publishes compatibility identities and the exact immutable NSP workflow as a hashed resource and separate download", async () => {
+it("publishes independent semantic versions and the exact NSP workflow as a hashed resource and separate download", async () => {
   const files = (await readdir("dist/plugin-package")).sort();
   expect(files).toEqual([
-    "streamskope-eda-v0.1.0+build.1--eda-26.8.2-26.8.2--r1-plugin.json",
-    "streamskope-eda-v0.1.0+build.1--eda-26.8.2-26.8.2--r1.skope-plugin",
-    "streamskope-nsp-v0.1.0+build.1--nsp-26.4.0-26.4.0--r1-nsp-capture.workflow.yaml",
-    "streamskope-nsp-v0.1.0+build.1--nsp-26.4.0-26.4.0--r1-plugin.json",
-    "streamskope-nsp-v0.1.0+build.1--nsp-26.4.0-26.4.0--r1.skope-plugin",
+    "streamskope-eda-v0.1.0-plugin.json",
+    "streamskope-eda-v0.1.0.skope-plugin",
+    "streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml",
+    "streamskope-nsp-v0.1.0-plugin.json",
+    "streamskope-nsp-v0.1.0.skope-plugin",
   ]);
+  for (const packaged of [plugin, nspPlugin]) {
+    expect(packaged.manifest).toMatchObject({
+      version: "0.1.0",
+      apiVersion: 4,
+      compatibility: { streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" } },
+    });
+    expect(packaged.manifest).not.toHaveProperty("revision");
+  }
   const resource = nspPlugin.files.get("nsp-capture.workflow.yaml")!;
   expect(Buffer.from(resource).toString("utf8")).toBe(NSP_WORKFLOW_DEFINITION);
   expect(NSP_WORKFLOW_FINGERPRINT).toBe(

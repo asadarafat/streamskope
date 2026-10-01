@@ -4,20 +4,32 @@ Use the exact desktop release and plugin identity when deciding whether a
 procedure has been exercised for your environment. A passing documentation build
 checks the site; it does not establish live integration, permissions or recovery.
 
-## First-release qualification
+## Current qualification
 
-The initial source targets **v0.1.0+build.1**, application **0.1.0**. Release
-packaging and publication are pending. This page does not carry forward results
-from trial releases as evidence for this release.
+The source prepares **StreamSkope 0.2.0** and **API 4 plugins 0.1.0**. These are
+unreleased. No published 0.2.0 installer, live-cluster qualification or installed
+legacy-to-API-4 upgrade rehearsal is recorded yet. Results from the original
+release do not qualify the changed source.
 
-| Check                                                            | Required evidence                                                                          | Current record                                   |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Static, unit, architecture, non-live integration and docs checks | Successful CI for the exact committed source                                               | To be recorded for the first release             |
-| Linux x64, macOS ARM64 and Windows x64 installers                | Release CI, native launch checks and installer checksums                                   | To be recorded after packaging                   |
-| 60-second performance soak                                       | Local report tied to the exact source                                                      | To be recorded for the first release             |
-| EDA 26.8.2 capture and cleanup                                   | Configured local cluster, API version, received record and verified owned-resource removal | No first-release live result recorded            |
-| NSP 26.4.0 setup and cleanup                                     | Configured target, API version, profile reuse, Kafka access and verified execution removal | No first-release live result recorded            |
-| Native plugin dialogs and credential-backed restore              | Installed desktop, OS/architecture and real credential-service rehearsal                   | No first-release native workflow result recorded |
+| Check                                                     | Required evidence                                                        | Current record for 0.2.0 / API 4           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ |
+| Static, unit, architecture, non-live integration and docs | Successful CI for exact committed source                                 | Pending source qualification               |
+| Three native installers                                   | Release CI, launch checks and installer checksums                        | Pending packaging                          |
+| 60-second performance soak                                | Local report tied to exact source                                        | Pending source qualification               |
+| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal         | No current live result recorded            |
+| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and verified execution removal  | No current live result recorded            |
+| API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup | No installed native rehearsal recorded     |
+| Native dialogs and credential-backed restore              | Installed desktop and real credential-service rehearsal                  | No current native workflow result recorded |
+
+## Original published release
+
+**v0.1.0+build.1**, app **0.1.0**, was published as an unsigned prerelease on
+**2026-10-01** from source `c0f2bfb586709e50027f0a690b8843974f9cc2c5`.
+[Release CI](https://github.com/asadarafat/streamskope/actions/runs/36916274566)
+passed shared checks and Linux x64, macOS ARM64 and Windows x64 packaging/launch
+checks. [The immutable release](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1)
+contains installers and checksums. This records package/CI evidence only; no
+first-release live EDA/NSP or installed credential-backed workflow result is claimed.
 
 CI runs on pull requests, `main` and release tags. The
 [CI workflow](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)

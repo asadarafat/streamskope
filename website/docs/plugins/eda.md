@@ -1,3 +1,7 @@
+---
+unreleased: true
+---
+
 # EDA Capture
 
 <span id="capture-from-eda"></span>
@@ -105,9 +109,10 @@ is measured from the last successful renewal, not from the next app launch.
 Keeping a capture does not preserve messages overnight. A new session cannot
 restore the old broker's temporary data.
 
-Plugin packages use explicit revisions, so a higher compatible revision appears
+Plugin packages use independent Semantic Versions, so a newer compatible version appears
 as an update in **Preferences → Plugins**. Confirm cleanup of active captures
-first. Upgrade the desktop when the package requires a newer minimum release.
+first. Check both desktop bounds before upgrading: a newer host can also fall
+outside a plugin's supported interval.
 
 The cluster app treats removal of a confirmed absent session as success, so an
 expired or previously removed capture can be cleared locally. Authentication
@@ -167,7 +172,7 @@ conflicts require administrator investigation.
 | Symptom                              | Next check                                                                                     |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | EDA version mismatch                 | Compare the API product version with the exact plugin target; install matching components      |
-| Package requires a newer desktop     | Check its declared minimum StreamSkope release and plugin API before updating                  |
+| Package requires a newer desktop     | Check its supported StreamSkope interval and plugin API before updating                        |
 | Catalog/key conflict or app absent   | Inspect the existing catalog, trust key and signed publication before authorizing installation |
 | Broker pending or image pull failure | Inspect pod events, node capacity and registry access                                          |
 | Another capture is active            | Identify the unexpired session and coordinate with its operator                                |
@@ -193,12 +198,13 @@ development artifact, separate from the signed App Store publication.
 
 ### Compatibility package
 
-The API 3 package targets **EDA 26.8.2** and requires desktop
-**v0.1.0+build.1** or later. Its exact identity and inclusive target range come from
+The upcoming API 4 package, **EDA Capture 0.1.0**, targets **EDA 26.8.2**
+and supports desktop **>=0.2.0, <0.3.0**. Its independent plugin version,
+desktop bounds and inclusive target range come from
 the [manifest-derived declarations](versioning.md#declared-packages). The official
 release catalog establishes which packages are available to install.
 
-A desktop package revision does not rename the running EDA product or cluster
+A desktop plugin version does not rename the running EDA product or cluster
 app. A compatible desktop plugin still requires the matching signed cluster app
 and its readiness check.
 

@@ -10,19 +10,42 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# New release identities use SemVer precedence. Historical +build.N tags remain
+# valid download destinations, but cannot identify a new release from source.
+SEMVER = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+
+
+def release_version(tag, historical=False):
+    """Return the installer version for an exact supported desktop tag."""
+    suffix = r"(?:\+build\.[1-9][0-9]*)?" if historical else ""
+    match = re.fullmatch(r"v(" + SEMVER + r")" + suffix, tag)
+    return match.group(1) if match else None
+
+
+def validate_notes(root, tag, version):
+    notes = root / "website/docs/releases" / f"{tag}.md"
+    content = notes.read_text() if notes.is_file() else ""
+    metadata = re.match(r"---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)", content)
+    fields = metadata.group(1) if metadata else ""
+    if not all(re.findall(r"^" + name + r":\s*([^\r\n]*)$", fields, re.M) == [value]
+               for name, value in (("release_tag", tag), ("release_version", version))):
+        raise ValueError("Release needs notes for its exact tag and application version")
+
 def documentation_context(root=ROOT, environment=None):
-    """Validate the documented build and reject mismatched desktop release tags."""
+    """Keep published downloads usable while validating the upcoming source release."""
     root = Path(root)
     environment = os.environ if environment is None else environment
     project = tomllib.loads((root / "website/zensical.toml").read_text())["project"]
     release = project["extra"]["desktop_release"]
-    if not re.fullmatch(r"v\d+\.\d+\.\d+(?:\+build\.[1-9]\d*)?", release):
+    version = release_version(release, historical=True)
+    if not version:
         raise ValueError("Documented desktop release must be an exact release identity")
-    notes = root / "website/docs/releases" / f"{release}.md"
-    if not notes.is_file() or not re.search(
-        r"^release_tag: " + re.escape(release) + r"$", notes.read_text(), re.M,
-    ):
-        raise ValueError("Documented release needs notes for its exact tag")
+    validate_notes(root, release, version)
+    source_version = json.loads((root / "package.json").read_text())["version"]
+    source_release = "v" + source_version
+    if not release_version(source_release):
+        raise ValueError("Source application version must be SemVer without build metadata")
+    validate_notes(root, source_release, source_version)
     tag = environment.get("GITHUB_REF_NAME", "")
     desktop_tag = tag.startswith("v") and (
         environment.get("GITHUB_EVENT_NAME") == "release"
@@ -31,10 +54,11 @@ def documentation_context(root=ROOT, environment=None):
     )
     # Shared tag CI must reject this before native packaging, not after publication.
     published = environment.get("STREAMSKOPE_DOCS_PUBLISH") == "1"
-    if desktop_tag and tag != release and not published:
-        raise ValueError("Desktop release tag differs from the documented desktop release")
+    if desktop_tag and tag != source_release and not published:
+        raise ValueError("Desktop release tag differs from the source application version")
     return {
         "status": "Published documentation" if published else "Development documentation",
+        "source_release": source_release,
     }
 
 

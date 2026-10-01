@@ -8,7 +8,7 @@ import type {
   PluginManifest,
   PluginSnapshot,
 } from "../../../plugins/contracts";
-import { comparePluginVersions } from "../../../plugins/validation";
+import { comparePluginManifests } from "../../../plugins/validation";
 import {
   StudioAlert as Alert,
   StudioButton as Button,
@@ -185,7 +185,7 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
   }
   for (const manifest of catalog.plugins) {
     const current = manifests.get(manifest.id);
-    if (current === undefined || comparePluginVersions(manifest.version, current.version) > 0) {
+    if (current === undefined || comparePluginManifests(manifest, current) > 0) {
       manifests.set(manifest.id, manifest);
     }
   }
@@ -255,18 +255,18 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
         const installation = snapshot.plugins.find((entry) => entry.id === manifest.id);
         const available = catalog.plugins.find((entry) => entry.id === manifest.id);
         const installed = installation?.installed;
-        const currentVersion = [installed?.version, installation?.active?.version]
-          .filter((version): version is string => version !== undefined)
-          .sort(comparePluginVersions)
+        const currentManifest = [installed, installation?.active]
+          .filter((entry): entry is PluginManifest => entry !== undefined)
+          .sort(comparePluginManifests)
           .at(-1);
         const catalogIsOlder =
           available !== undefined &&
-          currentVersion !== undefined &&
-          comparePluginVersions(available.version, currentVersion) < 0;
+          currentManifest !== undefined &&
+          comparePluginManifests(available, currentManifest) < 0;
         const updateAvailable =
           installed !== undefined &&
           available !== undefined &&
-          comparePluginVersions(available.version, installed.version) > 0;
+          comparePluginManifests(available, installed) > 0;
         const error = installation?.error ?? rendererErrors[manifest.id];
         return (
           <Box
@@ -295,11 +295,15 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
                   {installed !== undefined && installed.version !== manifest.version
                     ? "Available update: "
                     : ""}
-                  Requires StreamSkope {manifest.compatibility.streamskope.minimum} or later
+                  Requires StreamSkope {manifest.compatibility.streamskope.minimum}
+                  {manifest.compatibility.streamskope.maximumExclusive === undefined
+                    ? " or later"
+                    : ` up to, but excluding, ${manifest.compatibility.streamskope.maximumExclusive}`}
                   {" · "}
                   Supports {manifest.compatibility.target.system.toUpperCase()}{" "}
                   {manifest.compatibility.target.minimum}–{manifest.compatibility.target.maximum}
-                  {" (inclusive)"}
+                  {" (inclusive) · Plugin API "}
+                  {manifest.apiVersion}
                 </Typography>
               )}
               <Typography variant="body2">
@@ -313,7 +317,8 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
               {error === undefined || !catalogIsOlder ? null : (
                 <Alert severity="warning">
                   The catalog offers older version {available?.version}. Retry requires version{" "}
-                  {currentVersion} or newer. Refresh plugins when that version is available.
+                  {currentManifest?.version} or newer. Refresh plugins when that version is
+                  available.
                 </Alert>
               )}
               <Stack direction="row" spacing={1}>

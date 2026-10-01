@@ -95,11 +95,21 @@ class DocumentationVersionTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / "website/docs/releases").mkdir(parents=True)
-        (self.root / "package.json").write_text('{"version":"0.1.0"}')
+        (self.root / "package.json").write_text('{"version":"0.2.0"}')
         (self.root / "website/zensical.toml").write_text(
-            '[project.extra]\ndesktop_release = "v0.1.0+build.2"\n')
-        (self.root / "website/docs/releases/v0.1.0+build.2.md").write_text(
-            '---\nrelease_tag: v0.1.0+build.2\n---\n# Build 2\n')
+            '[project.extra]\ndesktop_release = "v0.1.0+build.1"\n')
+        self.notes("v0.1.0+build.1", "0.1.0")
+        self.notes("v0.2.0", "0.2.0")
+
+    def notes(self, tag, version):
+        (self.root / f"website/docs/releases/{tag}.md").write_text(
+            f"---\nrelease_version: {version}\nrelease_tag: {tag}\n---\n# Release\n")
+
+    def context(self, tag, **values):
+        return docs.documentation_context(self.root, {
+            "GITHUB_EVENT_NAME": "push", "GITHUB_REF_TYPE": "tag",
+            "GITHUB_REF_NAME": tag, **values,
+        })
 
     def test_distinguishes_preview_and_current_main_publication(self):
         self.assertEqual(docs.documentation_context(self.root, {})["status"],
@@ -108,43 +118,56 @@ class DocumentationVersionTests(unittest.TestCase):
             "GITHUB_EVENT_NAME": "push", "GITHUB_REF_NAME": "main",
             "STREAMSKOPE_DOCS_PUBLISH": "1",
         })
-        self.assertEqual(context["status"], "Published documentation")
-        self.assertEqual(set(context), {"status"})
+        self.assertEqual(context, {"status": "Published documentation", "source_release": "v0.2.0"})
 
-    def test_rejects_publication_for_another_build_of_the_same_version(self):
-        with self.assertRaisesRegex(ValueError, "Desktop release tag differs"):
-            docs.documentation_context(self.root, {
-                "GITHUB_EVENT_NAME": "release", "GITHUB_REF_NAME": "v0.1.0+build.3",
-            })
+    def test_source_tag_qualification_keeps_published_download_baseline(self):
+        context = self.context("v0.2.0")
+        self.assertEqual(context["source_release"], "v0.2.0")
+        self.assertIn('desktop_release = "v0.1.0+build.1"',
+                      (self.root / "website/zensical.toml").read_text())
 
-    def test_tag_push_rejects_mismatch_before_packaging(self):
-        with self.assertRaisesRegex(ValueError, "Desktop release tag differs"):
-            docs.documentation_context(self.root, {
-                "GITHUB_EVENT_NAME": "push", "GITHUB_REF_TYPE": "tag",
-                "GITHUB_REF_NAME": "v0.1.0+build.3",
-            })
+    def test_tag_push_rejects_wrong_source_and_new_build_metadata_before_packaging(self):
+        for tag in ("v0.1.0+build.1", "v0.2.0+build.1", "v0.2.1"):
+            with self.subTest(tag=tag), self.assertRaisesRegex(ValueError, "tag differs"):
+                self.context(tag)
 
-    def test_matching_tag_and_plugin_only_tags_are_valid(self):
-        for tag in ("v0.1.0+build.2", "plugins/nsp/v0.1.0+build.5--nsp-26.4.0-26.4.0--r1"):
-            docs.documentation_context(self.root, {
-                "GITHUB_EVENT_NAME": "push", "GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": tag,
-            })
+    def test_release_candidate_requires_exact_version_and_notes(self):
+        (self.root / "package.json").write_text('{"version":"0.2.0-rc.1"}')
+        self.notes("v0.2.0-rc.1", "0.2.0-rc.1")
+        self.assertEqual(self.context("v0.2.0-rc.1")["source_release"], "v0.2.0-rc.1")
+        with self.assertRaisesRegex(ValueError, "tag differs"):
+            self.context("v0.2.0")
+
+    def test_plugin_only_tags_do_not_change_the_desktop_release(self):
+        for tag in ("plugins/nsp/v0.1.0", "plugins/eda/v0.1.0-rc.1"):
+            self.assertEqual(self.context(tag)["source_release"], "v0.2.0")
 
     def test_pages_release_event_uses_current_main_not_the_old_event_tag(self):
-        result = docs.documentation_context(self.root, {
-            "GITHUB_EVENT_NAME": "release", "GITHUB_REF_NAME": "v0.1.0",
-            "STREAMSKOPE_DOCS_PUBLISH": "1",
-        })
+        result = self.context("v0.1.0+build.1", GITHUB_EVENT_NAME="release",
+                              STREAMSKOPE_DOCS_PUBLISH="1")
         self.assertEqual(result["status"], "Published documentation")
 
-    def test_development_can_document_published_semver_while_app_moves_forward(self):
-        (self.root / "package.json").write_text('{"version":"0.2.0"}')
-        docs.documentation_context(self.root, {"GITHUB_EVENT_NAME": "pull_request"})
+    def test_requires_exact_notes_for_both_published_and_source_versions(self):
+        for tag in ("v0.1.0+build.1", "v0.2.0"):
+            path = self.root / f"website/docs/releases/{tag}.md"
+            content = path.read_text()
+            for invalid in ("", content.replace("release_version:", "wrong_version:"),
+                            content.replace("release_tag:", "wrong_tag:"),
+                            content.replace("release_tag:", "release_tag: v9.9.9\nrelease_tag:"),
+                            content.replace("release_version:", "release_version: 9.9.9\nrelease_version:"),
+                            content.replace(f"release_tag: {tag}", f"release_tag: {tag}\nrelease_tag: {tag}")):
+                with self.subTest(tag=tag, invalid=invalid):
+                    path.write_text(invalid)
+                    with self.assertRaisesRegex(ValueError, "exact tag and application version"):
+                        docs.documentation_context(self.root, {})
+            path.write_text(content)
 
-    def test_requires_notes_for_the_exact_documented_tag(self):
-        (self.root / "website/docs/releases/v0.1.0+build.2.md").unlink()
-        with self.assertRaisesRegex(ValueError, "exact tag"):
-            docs.documentation_context(self.root, {})
+    def test_new_source_rejects_non_semver_and_build_metadata(self):
+        for version in ("0.2.0+build.1", "0.02.0", "0.2.0-rc.01", "v0.2.0"):
+            with self.subTest(version=version):
+                (self.root / "package.json").write_text(json.dumps({"version": version}))
+                with self.assertRaisesRegex(ValueError, "SemVer without build metadata"):
+                    docs.documentation_context(self.root, {})
 
 
 class DocumentationArtifactTests(unittest.TestCase):
