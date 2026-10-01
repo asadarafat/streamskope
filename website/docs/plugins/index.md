@@ -1,3 +1,7 @@
+---
+unreleased: true
+---
+
 # Plugins
 
 Plugins add connection setup and management for a particular platform to
@@ -84,11 +88,13 @@ EDA's cluster app or delete NSP's shared helper workflow.
 
 ## Versioning and compatibility
 
-The API 3 package format uses one convention for all connection plugins:
-minimum desktop release, target system, inclusive target version bounds and
-package revision. The [manifest-derived source declarations](versioning.md#declared-packages)
-show the current identities without maintaining another copy here.
+The upcoming API 4 format gives each plugin an independent Semantic Version.
+Its manifest separately declares an inclusive minimum/exclusive maximum desktop
+interval, plugin API, target system and inclusive target versions. The
+[manifest-derived source declarations](versioning.md#declared-packages) show these
+requirements. The original published release retains API 3 packages; see the
+[migration steps](versioning.md#upgrade-from-the-original-packages).
 
-Read [Versioning and compatibility](versioning.md) to interpret an identity,
+Read [Versioning and compatibility](versioning.md) to interpret requirements,
 plan a target upgrade and distinguish component versions. For desktop and
 plugin requirements, use the [compatibility matrix](../start/compatibility.md).

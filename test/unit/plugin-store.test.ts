@@ -49,6 +49,59 @@ async function install(store: PluginStore, bytes = bundle()): Promise<void> {
 }
 
 describe("plugin installation storage", () => {
+  it("protects inactive retained API 4 versions from changed content, including when extracted code is damaged", async () => {
+    const { store, root } = await setup();
+    const descriptor: PluginManifest = {
+      id: manifest.id,
+      name: manifest.name,
+      version: "0.1.0",
+      apiVersion: 4,
+      backend: "backend.cjs",
+      renderer: "renderer.js",
+      compatibility: {
+        streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+      },
+    };
+    const packaged = (version: string, code: string): Uint8Array =>
+      encodePluginPackage(
+        { ...descriptor, version },
+        new Map([
+          ["backend.cjs", Buffer.from(code)],
+          ["renderer.js", Buffer.from("export default {};")],
+        ]),
+      );
+    const original = packaged("0.1.0", "original code");
+    await install(store, original);
+    const [active] = await store.activatePending();
+    await writeFile(active!.backendPath, "corrupt extracted code");
+    const changed = packaged("0.1.0", "changed published code");
+    await expect(store.prepareInstall(changed, pluginPackageSha256(changed))).rejects.toThrow(
+      "different content",
+    );
+    await expect(install(store, changed)).rejects.toThrow("different content");
+    await expect(
+      store.prepareInstall(original, pluginPackageSha256(original)),
+    ).resolves.toMatchObject({ manifest: descriptor });
+    expect(await readFile(active!.backendPath, "utf8")).toBe("original code");
+    // A corrupted retained envelope cannot prevent installing a verified newer version.
+    await writeFile(
+      join(root, manifest.id, pluginPackageSha256(original), "package.skope-plugin"),
+      "corrupt package envelope",
+    );
+    const update = packaged("0.1.1", "new code");
+    const prepared = await store.prepareInstall(update, pluginPackageSha256(update));
+    await store.commitInstall(manifest.id, prepared.sha256);
+    expect((await store.getActive(manifest.id))?.manifest.version).toBe("0.1.1");
+    const restored = (await store.list())[0]!;
+    expect(restored.installed?.version).toBe("0.1.1");
+    expect(restored.error).toBeUndefined();
+    expect(restored.previous).toBeUndefined();
+    await store.prepareInstall(update, pluginPackageSha256(update));
+    await store.commitInstall(manifest.id, prepared.sha256);
+    expect((await store.list())[0]).toEqual(restored);
+  });
+
   it("repairs corrupt extracted files by explicitly reinstalling the same verified package", async () => {
     const { store, root } = await setup();
     await install(store);

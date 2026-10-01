@@ -26,8 +26,8 @@ if ((relation !== ".." && !relation.startsWith(`..${sep}`)) || destination === s
 if (existsSync(destination))
   throw new Error("The destination must not exist; exports never overwrite files.");
 const manifest = JSON.parse(readFileSync("package.json", "utf8"));
-if (manifest.version !== "0.1.0")
-  throw new Error("The first public snapshot must be version 0.1.0.");
+if (typeof manifest.version !== "string" || manifest.version.length === 0)
+  throw new Error("The source snapshot must declare its desktop version.");
 const files = execFileSync(
   "git",
   ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
@@ -61,7 +61,7 @@ writeFileSync(
     {
       sourceHead: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       files: exportFiles.length,
-      desktopVersion: "0.1.0",
+      desktopVersion: manifest.version,
     },
     null,
     2,

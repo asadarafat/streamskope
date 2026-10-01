@@ -1,3 +1,7 @@
+---
+unreleased: true
+---
+
 # NSP Capture
 
 <span id="connect-to-nsp-kafka"></span>
@@ -89,7 +93,7 @@ confirming no clients depend on it.
 
 | Failure                                | Next check                                                                                                  |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| NSP Capture absent from the catalog    | Check the minimum desktop release, then refresh the official catalog                                        |
+| NSP Capture absent from the catalog    | Check the supported desktop interval, then refresh the official catalog                                     |
 | API sign-in or certificate failure     | Verify the HTTPS origin, account permissions and API CA trust                                               |
 | Target version unknown or unsupported  | Check `/sdn/api/v4/system/version` and the manifest's inclusive target range; cleanup is still available    |
 | Helper name conflict                   | Have the administrator inspect the existing definition; do not overwrite it to bypass the ownership check   |
@@ -113,12 +117,13 @@ states which environment and operations were actually exercised.
 
 ### Compatibility package
 
-The API 3 package targets **NSP 26.4.0** and requires desktop
-**v0.1.0+build.1** or later. Its exact identity and inclusive target range come from
+The upcoming API 4 package, **NSP Capture 0.1.0**, targets **NSP 26.4.0**
+and supports desktop **>=0.2.0, <0.3.0**. Its independent plugin version,
+desktop bounds and inclusive target range come from
 the [manifest-derived declarations](versioning.md#declared-packages). The official
 release catalog establishes which packages are available to install.
 
-The API 3 package reads `GET /sdn/api/v4/system/version` before creating,
+The plugin reads `GET /sdn/api/v4/system/version` before creating,
 adopting or executing its helper for setup or credential refresh. For example,
 `NSP-CN-26.4.0-rel.200` means product **26.4.0**, build **200**; `v4` is the API
 version. An unknown format, unreadable version or product outside the declared
@@ -135,15 +140,15 @@ are not modified.
 
 ### Review the packaged workflow
 
-The API 3 package includes **`nsp-capture.workflow.yaml`** as a declared
+The API 4 package includes **`nsp-capture.workflow.yaml`** as a declared
 resource inside its downloadable `.skope-plugin`. Packaging also exports the
 same YAML beside the package and manifest for review:
 
 | File                                                          | Purpose                                                  |
 | ------------------------------------------------------------- | -------------------------------------------------------- |
-| `streamskope-nsp-<package-version>.skope-plugin`              | Installable plugin, including the workflow resource      |
-| `streamskope-nsp-<package-version>-plugin.json`               | Compatibility declarations and workflow resource SHA-256 |
-| `streamskope-nsp-<package-version>-nsp-capture.workflow.yaml` | Readable copy of the same workflow                       |
+| `streamskope-nsp-v<plugin-version>.skope-plugin`              | Installable plugin, including the workflow resource      |
+| `streamskope-nsp-v<plugin-version>-plugin.json`               | Compatibility declarations and workflow resource SHA-256 |
+| `streamskope-nsp-v<plugin-version>-nsp-capture.workflow.yaml` | Readable copy of the same workflow                       |
 
 For source builds, `npm run package -- plugin nsp` writes these files to
 `dist/plugin-package/`. Download the YAML and manifest from the same official
@@ -188,7 +193,7 @@ User: NSP URL + API credentials
 Desktop plugin/host
   | Authenticate
   | Reconcile cleanup
-  | Read/check NSP version (API 3)
+  | Read/check NSP product version
   v
 NSP API: get/create helper
   | Verify exact definition

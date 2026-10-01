@@ -5,7 +5,8 @@
   <p>{{ config.extra.documentation.status }}</p>
   {% if page.meta.unreleased %}
   <p>
-    Unreleased feature: not included in published desktop
+    Unreleased changes for desktop
+    <strong>{{ config.extra.documentation.source_release }}</strong>. Published desktop:
     <strong>{{ config.extra.desktop_release }}</strong>.
     <a href="{{ 'start/compatibility/' | url }}">Compatibility</a> ·
     <a href="{{ 'releases/' | url }}">Release history</a>.

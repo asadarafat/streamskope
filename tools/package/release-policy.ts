@@ -3,11 +3,14 @@ import { createReadStream } from "node:fs";
 import { lstat, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { parseReleaseVersion } from "../../src/plugins/compatibility";
+
 export function isDesktopReleaseTag(tag: string | undefined, version: string): boolean {
-  const match = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:\+build\.[1-9]\d*)?$/u.exec(
-    tag ?? "",
-  );
-  return match?.[0] === tag && match?.[1] === version;
+  try {
+    return tag === `v${parseReleaseVersion(version)}`;
+  } catch {
+    return false;
+  }
 }
 
 export async function prepareUnsignedRelease(
@@ -81,7 +84,7 @@ export function releaseNotesBody(source: string, version: string, tag = `v${vers
   const tagLines = match[1].match(/^release_tag:.*$/gmu) ?? [];
   const pageTag = /^release_tag:\s*['"]?([^'"\s]+)['"]?\s*$/mu.exec(match[1])?.[1];
   if (!isDesktopReleaseTag(tag, version) || tagLines.length !== 1 || pageTag !== tag) {
-    throw new Error("Release notes must identify the exact release tag, including build suffix.");
+    throw new Error("Release notes must identify the exact release tag.");
   }
   const body = match[2];
   if (!body.trim() || !/^#\s+.+/mu.test(body)) {

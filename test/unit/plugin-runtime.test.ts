@@ -188,53 +188,191 @@ describe("optional installed plugin runtime", () => {
     expect((await upgraded.list()).plugins[0]?.active?.version).toBe(future.version);
   });
 
-  it("retains an active API 3 revision when a download changes its bytes, while allowing exact-byte retry", async () => {
-    const compatibility = {
-      streamskope: { minimum: "v0.1.0+build.5" },
-      target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
-    };
-    const current: PluginManifest = {
-      ...manifest,
-      apiVersion: 3,
-      compatibility,
-      revision: 1,
-      version: formatPluginVersion(compatibility, 1),
-    };
-    const packaged = (code: string): Uint8Array =>
-      encodePluginPackage(
+  it.each([3, 4] as const)(
+    "retains an active API %s version when a download changes its bytes, while allowing exact-byte retry",
+    async (apiVersion) => {
+      const compatibility = {
+        streamskope:
+          apiVersion === 3
+            ? { minimum: "v0.1.0+build.5" }
+            : { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+      };
+      const current: PluginManifest = {
+        ...manifest,
+        apiVersion,
+        compatibility,
+        ...(apiVersion === 3 ? { revision: 1 } : {}),
+        version: apiVersion === 3 ? formatPluginVersion(compatibility, 1) : "0.1.0",
+      };
+      const packaged = (code: string): Uint8Array =>
+        encodePluginPackage(
+          current,
+          new Map([
+            ["backend.cjs", Buffer.from(code)],
+            ["renderer.js", Buffer.from("export default {};")],
+          ]),
+        );
+      const original = packaged(backendCode);
+      let available = original;
+      const store = new PluginStore(await directory());
+      const host = new PluginRuntime({
+        store,
+        hostRelease: compatibility.streamskope.minimum,
+        catalog: {
+          list: (): Promise<[]> => Promise.resolve([]),
+          download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>
+            Promise.resolve({ bytes: available, sha256: pluginPackageSha256(available) }),
+        },
+      });
+      host.bindHost(bindings());
+      runtimes.push(host);
+      await host.install(manifest.id);
+      const before = (await host.list()).plugins[0]!;
+      available = packaged(
+        `${backendCode}\n// Different code cannot reuse the published identity.`,
+      );
+      await expect(host.install(manifest.id)).rejects.toThrow("version has different content");
+      expect((await host.list()).plugins[0]?.activationId).toBe(before.activationId);
+      expect((await store.list())[0]?.active).toEqual(current);
+      await expect(execute(host, "echo", "still active")).resolves.toBe("still active");
+      available = original;
+      await expect(host.install(manifest.id)).resolves.toMatchObject({
+        plugins: [{ active: current }],
+      });
+      await expect(execute(host, "echo", "retried")).resolves.toBe("retried");
+    },
+  );
+
+  it.each([2, 3] as const)(
+    "hot-migrates API %s installations to independent SemVer, retains recovery, and refuses a legacy catalog downgrade",
+    async (apiVersion) => {
+      const compatibility = {
+        streamskope: { minimum: "v0.1.0+build.1" },
+        target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+      };
+      const legacy: PluginManifest =
+        apiVersion === 2
+          ? { ...manifest, version: "26.8.2" }
+          : {
+              ...manifest,
+              apiVersion,
+              compatibility,
+              revision: 99,
+              version: formatPluginVersion(compatibility, 99),
+            };
+      const semantic: PluginManifest = {
+        ...manifest,
+        apiVersion: 4,
+        version: "0.1.0",
+        compatibility: {
+          ...compatibility,
+          streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        },
+      };
+      const packed = (entry: PluginManifest, code = backendCode): Uint8Array =>
+        encodePluginPackage(
+          entry,
+          new Map([
+            ["backend.cjs", Buffer.from(code)],
+            ["renderer.js", Buffer.from(`export default {apiVersion:${entry.apiVersion}};`)],
+          ]),
+        );
+      const store = new PluginStore(await directory());
+      const original = packed(legacy);
+      await store.install(original, pluginPackageSha256(original));
+      await store.activatePending();
+      const recovery = { sessionId: "retained-session", workflowId: "retained-workflow" };
+      await store.writeRecoveryState(manifest.id, recovery);
+      let available = packed(semantic);
+      const host = new PluginRuntime({
+        store,
+        hostRelease: "v0.2.0",
+        catalog: {
+          list: (): Promise<[]> => Promise.resolve([]),
+          download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>
+            Promise.resolve({ bytes: available, sha256: pluginPackageSha256(available) }),
+        },
+      });
+      host.bindHost(bindings());
+      runtimes.push(host);
+      const before = (await host.list()).plugins[0]!;
+      expect(before.active).toEqual(legacy);
+      await expect(host.install(manifest.id)).resolves.toMatchObject({
+        plugins: [{ active: semantic, previous: legacy, restartRequired: false }],
+      });
+      const activation = (await host.list()).plugins[0]!.activationId;
+      expect(activation).not.toBe(before.activationId);
+      await expect(execute(host, "echo", "migrated")).resolves.toBe("migrated");
+      expect(await store.readRecoveryState(manifest.id)).toEqual(recovery);
+      available = original;
+      await expect(host.install(manifest.id)).rejects.toThrow("older than installed");
+      expect((await host.list()).plugins[0]!.activationId).toBe(activation);
+      // A newer candidate whose code fails activation cannot replace the working migration.
+      available = packed(
+        { ...semantic, version: "0.1.1" },
+        'exports.activate=()=>{throw new Error("candidate failed");};',
+      );
+      await expect(host.install(manifest.id)).rejects.toThrow("candidate failed");
+      expect((await host.list()).plugins[0]!.active).toEqual(semantic);
+      expect(await store.readRecoveryState(manifest.id)).toEqual(recovery);
+    },
+  );
+
+  it.each(["v0.1.0+build.1", "v0.3.0"])(
+    "rejects API 4 installation and activation outside its host range (%s) while retaining the package for a compatible host",
+    async (hostRelease) => {
+      const current: PluginManifest = {
+        ...manifest,
+        version: "0.1.0",
+        apiVersion: 4,
+        compatibility: {
+          streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+          target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+        },
+      };
+      const bytes = encodePluginPackage(
         current,
         new Map([
-          ["backend.cjs", Buffer.from(code)],
+          ["backend.cjs", Buffer.from(backendCode)],
           ["renderer.js", Buffer.from("export default {};")],
         ]),
       );
-    const original = packaged(backendCode);
-    let available = original;
-    const store = new PluginStore(await directory());
-    const host = new PluginRuntime({
-      store,
-      hostRelease: compatibility.streamskope.minimum,
-      catalog: {
-        list: (): Promise<[]> => Promise.resolve([]),
-        download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>
-          Promise.resolve({ bytes: available, sha256: pluginPackageSha256(available) }),
-      },
-    });
-    host.bindHost(bindings());
-    runtimes.push(host);
-    await host.install(manifest.id);
-    const before = (await host.list()).plugins[0]!;
-    available = packaged(`${backendCode}\n// Different code cannot reuse the published identity.`);
-    await expect(host.install(manifest.id)).rejects.toThrow("revision has different content");
-    expect((await host.list()).plugins[0]?.activationId).toBe(before.activationId);
-    expect((await store.list())[0]?.active).toEqual(current);
-    await expect(execute(host, "echo", "still active")).resolves.toBe("still active");
-    available = original;
-    await expect(host.install(manifest.id)).resolves.toMatchObject({
-      plugins: [{ active: current }],
-    });
-    await expect(execute(host, "echo", "retried")).resolves.toBe("retried");
-  });
+      const store = new PluginStore(await directory());
+      const loadModule = vi.fn();
+      const host = new PluginRuntime({
+        store,
+        hostRelease,
+        loadModule,
+        catalog: {
+          list: (): Promise<[]> => Promise.resolve([]),
+          download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>
+            Promise.resolve({ bytes, sha256: pluginPackageSha256(bytes) }),
+        },
+      });
+      host.bindHost(bindings());
+      runtimes.push(host);
+      await expect(host.install(manifest.id)).rejects.toThrow(
+        "requires StreamSkope 0.2.0 up to, but excluding, 0.3.0",
+      );
+      expect(await store.list()).toEqual([]);
+      expect(loadModule).not.toHaveBeenCalled();
+      await host.close();
+      await store.install(bytes, pluginPackageSha256(bytes));
+      await store.activatePending();
+      const incompatible = new PluginRuntime({ store, hostRelease, loadModule });
+      incompatible.bindHost(bindings());
+      runtimes.push(incompatible);
+      expect((await incompatible.list()).plugins[0]?.error).toContain("requires StreamSkope 0.2.0");
+      expect((await store.list())[0]?.installed).toEqual(current);
+      expect(loadModule).not.toHaveBeenCalled();
+      await incompatible.close();
+      const compatible = new PluginRuntime({ store, hostRelease: "v0.2.5" });
+      compatible.bindHost(bindings());
+      runtimes.push(compatible);
+      expect((await compatible.list()).plugins[0]?.active).toEqual(current);
+    },
+  );
 
   it("starts without any installed code and preserves an unavailable profile's metadata", async () => {
     const host = runtime(new PluginStore(await directory()));

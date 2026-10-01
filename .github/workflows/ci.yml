@@ -118,7 +118,7 @@ jobs:
           retention-days: 7
 
   plugin:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/plugins/')
     needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -133,12 +133,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Package release plugins
         run: |
-          if [[ "$GITHUB_REF_NAME" == plugins/* ]]; then
-            plugin="${GITHUB_REF_NAME#plugins/}"
-            npm run package -- plugin "${plugin%%/*}"
-          else
-            npm run package -- plugin
-          fi
+          plugin="${GITHUB_REF_NAME#plugins/}"
+          npm run package -- plugin "${plugin%%/*}"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: desktop-plugins
@@ -148,7 +144,7 @@ jobs:
 
   draft-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [checks, desktop, eda, plugin]
+    needs: [checks, desktop, eda]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -166,10 +162,6 @@ jobs:
           pattern: desktop-*-*
           merge-multiple: true
           path: dist/installers
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: desktop-plugins
-          path: dist/plugin-package
       - name: Assemble checksums and reviewed release notes
         env:
           VERSION: ${{ steps.release.outputs.version }}
@@ -178,8 +170,11 @@ jobs:
       - name: Create a draft for maintainer review
         env:
           GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/installers/* dist/plugin-package/* --verify-tag --draft --prerelease --latest=false \
+          latest_options=()
+          if [[ "$PRERELEASE" == true ]]; then latest_options+=(--latest=false); fi
+          gh release create "$GITHUB_REF_NAME" dist/installers/* --verify-tag --draft --prerelease="$PRERELEASE" "${latest_options[@]}" \
             --title "StreamSkope $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
 
   plugin-draft-release:
@@ -207,20 +202,21 @@ jobs:
           const notes = [
             `${manifest.name} desktop plugin ${manifest.version}.`,
             `Install from StreamSkope Preferences > Plugins; activation is immediate. Requires plugin API ${manifest.apiVersion}.`,
-            `Requires StreamSkope ${manifest.compatibility.streamskope.minimum} or later with a compatible plugin API.`,
-            `Supports ${manifest.compatibility.target.system.toUpperCase()} ${manifest.compatibility.target.minimum} through ${manifest.compatibility.target.maximum} (inclusive). Plugin revision ${manifest.revision}.`,
+            `Requires StreamSkope >=${manifest.compatibility.streamskope.minimum} and <${manifest.compatibility.streamskope.maximumExclusive}, with plugin API ${manifest.apiVersion}.`,
+            `Supports ${manifest.compatibility.target.system.toUpperCase()} ${manifest.compatibility.target.minimum} through ${manifest.compatibility.target.maximum} (inclusive).`,
             ...(manifest.compatibility.target.system === 'eda' ? ['The EDA cluster application is installed separately through the capture workflow.'] : []),
             ...(manifest.resources ?? []).map(resource => `Included resource: ${resource.path} (SHA256 ${resource.sha256}). The identical resource is available as a separate download.`),
             `Source commit: ${process.env.GITHUB_SHA}.`,
           ].join('\n\n');
           await writeFile(join(process.env.RUNNER_TEMP, 'plugin-notes.md'), `${notes}\n`);
-          await appendFile(process.env.GITHUB_OUTPUT, `title=${manifest.name} ${manifest.version}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `title=${manifest.name} ${manifest.version}\nprerelease=${manifest.version.includes('-')}\n`);
           NODE
       - name: Create a plugin draft without rebuilding desktop installers
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PLUGIN_TITLE: ${{ steps.plugin.outputs.title }}
+          PRERELEASE: ${{ steps.plugin.outputs.prerelease }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/plugin-package/* --verify-tag --draft --prerelease --latest=false \
+          gh release create "$GITHUB_REF_NAME" dist/plugin-package/* --verify-tag --draft --prerelease="$PRERELEASE" --latest=false \
             --title "$PLUGIN_TITLE" --notes-file "$RUNNER_TEMP/plugin-notes.md"

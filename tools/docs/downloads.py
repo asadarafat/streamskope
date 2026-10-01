@@ -2,11 +2,15 @@
 
 import json
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tomllib
 from urllib.parse import quote
+
+if not __package__:
+    # Pages invokes this file directly; module imports use tools/ as their root.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from docs.publication import release_version
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,13 +28,12 @@ def desktop_downloads(root=ROOT):
     root = Path(root)
     project = tomllib.loads((root / "website/zensical.toml").read_text())["project"]
     tag = project["extra"]["desktop_release"]
-    match = re.fullmatch(r"v(\d+\.\d+\.\d+)(?:\+build\.[1-9]\d*)?", tag)
-    if not match:
+    version = release_version(tag, historical=True)
+    if not version:
         raise ValueError("Desktop downloads require an exact documented release identity")
     installation = (root / "website/docs/start/installation.md").read_text()
     if installation.count(DOWNLOAD_MARKER) != 1:
         raise ValueError("Installation page requires exactly one desktop download marker")
-    version = match.group(1)
     release_root = f"https://github.com/{REPOSITORY}/releases"
     encoded_tag = quote(tag, safe="")
     download_root = f"{release_root}/download/{encoded_tag}"

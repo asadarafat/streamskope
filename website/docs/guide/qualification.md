@@ -4,6 +4,24 @@ Use the exact desktop release and plugin identity when deciding whether a
 procedure has been exercised for your environment. A passing documentation build
 checks the site; it does not establish live integration, permissions or recovery.
 
+## Current qualification
+
+The source prepares **StreamSkope 0.2.0** and **API 4 plugins 0.1.0**. These are
+unreleased. No published 0.2.0 installer, live-cluster qualification or installed
+legacy-to-API-4 upgrade rehearsal is recorded yet. Results from the original
+release do not qualify the changed source. The shared CI result below belongs
+to the linked pre-merge revision; it does not establish native or live qualification.
+
+| Check                                                     | Required evidence                                                        | Current record for 0.2.0 / API 4                                                                |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Static, unit, architecture, non-live integration and docs | Successful CI for exact committed source                                 | [Passed for source 2250217](https://github.com/asadarafat/streamskope/actions/runs/36924058229) |
+| Three native installers                                   | Release CI, launch checks and installer checksums                        | Pending packaging                                                                               |
+| 60-second performance soak                                | Local report tied to exact source                                        | No source-specific local report linked                                                          |
+| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal         | No current live result recorded                                                                 |
+| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and verified execution removal  | No current live result recorded                                                                 |
+| API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup | No installed native rehearsal recorded                                                          |
+| Native dialogs and credential-backed restore              | Installed desktop and real credential-service rehearsal                  | No current native workflow result recorded                                                      |
+
 ## Published release: v0.1.0+build.1
 
 The [v0.1.0+build.1 prerelease](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1),

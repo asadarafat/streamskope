@@ -1,7 +1,6 @@
 {
   "name": "streamskope",
-  "version": "0.1.0",
-  "streamskopeRelease": "v0.1.0+build.1",
+  "version": "0.2.0",
   "private": true,
   "description": "A desktop workbench for exploring and operating event-streaming systems.",
   "license": "Apache-2.0",

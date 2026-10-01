@@ -5,6 +5,7 @@ import type { PluginCompatibility } from "../../src/plugins/contracts";
 import { STREAMSKOPE_RELEASE } from "../../src/plugins/host-release";
 import {
   compareDesktopReleases,
+  comparePluginManifests,
   comparePluginVersions,
   formatPluginVersion,
   isPluginCompatibleWithHost,
@@ -38,7 +39,8 @@ describe("plugin compatibility declarations", () => {
     ]);
     expect(isSupportedPluginApiVersion(2)).toBe(true);
     expect(isSupportedPluginApiVersion(3)).toBe(true);
-    expect(isSupportedPluginApiVersion(4)).toBe(false);
+    expect(isSupportedPluginApiVersion(4)).toBe(true);
+    expect(isSupportedPluginApiVersion(5)).toBe(false);
     expect(isSupportedPluginApiVersion("3")).toBe(false);
   });
 
@@ -94,11 +96,12 @@ describe("plugin compatibility declarations", () => {
     }
   });
 
-  it("orders desktop builds numerically and applies the minimum host inclusively", () => {
-    expect(compareDesktopReleases("v0.1.0+build.10", "v0.1.0+build.2")).toBeGreaterThan(0);
+  it("uses SemVer desktop precedence while preserving legacy API 3 minimum-build requirements", () => {
+    expect(compareDesktopReleases("v0.1.0+build.10", "v0.1.0+build.2")).toBe(0);
     expect(compareDesktopReleases("v0.1.1", "v0.1.0+build.99")).toBeGreaterThan(0);
-    expect(compareDesktopReleases("v0.1.0", "v0.1.0+build.1")).toBeLessThan(0);
-    expect(() => compareDesktopReleases("v0.1.0", "v0.1.0+build.0")).toThrow(/release/u);
+    expect(compareDesktopReleases("v0.1.0", "v0.1.0+build.1")).toBe(0);
+    expect(compareDesktopReleases("v0.2.0-rc.2", "v0.2.0-rc.10")).toBeLessThan(0);
+    expect(compareDesktopReleases("v0.2.0-rc.10", "v0.2.0")).toBeLessThan(0);
     expect(() =>
       comparePluginVersions("v0.1.0+build.0--eda-26.8.2-27.4.1--r1", manifest.version),
     ).toThrow();
@@ -106,16 +109,17 @@ describe("plugin compatibility declarations", () => {
     expect(isPluginCompatibleWithHost(parsed, "v0.1.0+build.4")).toBe(false);
     expect(isPluginCompatibleWithHost(parsed, "v0.1.0+build.5")).toBe(true);
     expect(isPluginCompatibleWithHost(parsed, "v0.1.0+build.10")).toBe(true);
+    expect(isPluginCompatibleWithHost(parsed, "v0.1.0+git.abc")).toBe(false);
     expect(isPluginCompatibleWithHost(parsed, "v0.1.1")).toBe(true);
-    expect(() => compareDesktopReleases("v0.1.0+build.x", "v0.1.0")).toThrow(/release/u);
-    expect(() => compareDesktopReleases("v0.1.0+build.5\n", "v0.1.0")).toThrow(/release/u);
+    expect(isPluginCompatibleWithHost(parsed, "v0.2.0-rc.1")).toBe(true);
+    expect(() => compareDesktopReleases("v0.1.0+build..x", "v0.1.0")).toThrow(/semantic/u);
+    expect(() => compareDesktopReleases("v0.1.0+build.5\n", "v0.1.0")).toThrow(/semantic/u);
     expect(() => comparePluginVersions("26.8.2\n", "26.8.2")).toThrow(/semantic/u);
     expect(() => comparePluginVersions(`${manifest.version}\n`, manifest.version)).toThrow();
-    expect(STREAMSKOPE_RELEASE).toBe(packageMetadata.streamskopeRelease);
-    expect(STREAMSKOPE_RELEASE.split("+")[0]).toBe(`v${packageMetadata.version}`);
+    expect(STREAMSKOPE_RELEASE).toBe(`v${packageMetadata.version}`);
   });
 
-  it("orders new packages by monotonically increasing revision instead of host or target versions", () => {
+  it("retains the immutable legacy API 3 revision ordering", () => {
     const older = formatPluginVersion(compatibility, 2);
     const newer = formatPluginVersion(compatibility, 10);
     expect(comparePluginVersions(newer, older)).toBeGreaterThan(0);
@@ -132,6 +136,138 @@ describe("plugin compatibility declarations", () => {
     );
     expect(comparePluginVersions(newer, "26.8.999")).toBeGreaterThan(0);
     expect(comparePluginVersions("999.0.0", newer)).toBeLessThan(0);
+  });
+
+  describe("independent API 4 Semantic Versions", () => {
+    const current = {
+      id: manifest.id,
+      name: manifest.name,
+      backend: manifest.backend,
+      renderer: manifest.renderer,
+      apiVersion: 4,
+      version: "0.1.0",
+      compatibility: {
+        streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        target: compatibility.target,
+      },
+    };
+
+    it("keeps package, host, and target versions independent with explicit bounds", () => {
+      const parsed = parsePluginManifest({ ...current, resources: [resource] });
+      expect(parsed).toEqual({ ...current, resources: [resource] });
+      for (const version of ["v0.2.0", "v0.2.1", "0.2.99", "v0.2.0+git.abc"]) {
+        expect(isPluginCompatibleWithHost(parsed, version)).toBe(true);
+      }
+      for (const version of [
+        "v0.1.0+build.999",
+        "v0.2.0-rc.1",
+        "v0.2.1-rc.1",
+        "v0.3.0-rc.1",
+        "v0.3.0",
+        "v1.0.0",
+      ]) {
+        expect(isPluginCompatibleWithHost(parsed, version)).toBe(false);
+      }
+      expect(isTargetVersionCompatible(parsed, "26.8.2")).toBe(true);
+      expect(isTargetVersionCompatible(parsed, "27.4.2")).toBe(false);
+      expect(parsePluginManifest({ ...current, version: "0.1.1" }).compatibility).toEqual(
+        current.compatibility,
+      );
+    });
+
+    it("requires explicit qualification of a preview host's exact core version", () => {
+      const preview = parsePluginManifest({
+        ...current,
+        compatibility: {
+          ...current.compatibility,
+          streamskope: { minimum: "0.2.0-rc.1", maximumExclusive: "0.3.0" },
+        },
+      });
+      for (const release of ["v0.2.0-rc.1", "v0.2.0-rc.2", "v0.2.0", "v0.2.99"]) {
+        expect(isPluginCompatibleWithHost(preview, release)).toBe(true);
+      }
+      for (const release of [
+        "v0.2.0-beta.1",
+        "v0.2.0-rc.0",
+        "v0.2.1-rc.1",
+        "v0.3.0-rc.1",
+        "v0.3.0",
+      ]) {
+        expect(isPluginCompatibleWithHost(preview, release)).toBe(false);
+      }
+    });
+
+    it.each([
+      { version: "v0.1.0" },
+      { version: "0.1.0+build.2" },
+      { version: manifest.version },
+      { revision: 1 },
+      { compatibility: undefined },
+      { compatibility: { ...current.compatibility, streamskope: { minimum: "0.2.0" } } },
+      {
+        compatibility: {
+          ...current.compatibility,
+          streamskope: { minimum: "v0.2.0", maximumExclusive: "0.3.0" },
+        },
+      },
+      {
+        compatibility: {
+          ...current.compatibility,
+          streamskope: { minimum: "0.2.0+build.1", maximumExclusive: "0.3.0" },
+        },
+      },
+      {
+        compatibility: {
+          ...current.compatibility,
+          streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0+build.1" },
+        },
+      },
+      {
+        compatibility: {
+          ...current.compatibility,
+          streamskope: { minimum: "0.2.0", maximumExclusive: "0.2.0" },
+        },
+      },
+      {
+        compatibility: {
+          ...current.compatibility,
+          streamskope: { minimum: "0.3.0", maximumExclusive: "0.2.0" },
+        },
+      },
+      {
+        compatibility: {
+          ...current.compatibility,
+          streamskope: { minimum: "0.2.0", maximumExclusive: "0.2.x" },
+        },
+      },
+    ])("rejects ambiguous API 4 publication or compatibility metadata: %j", (patch) => {
+      expect(() => parsePluginManifest({ ...current, ...patch })).toThrow();
+    });
+
+    it("orders API 4 releases by SemVer and migrates forward from both legacy generations", () => {
+      const parsed = parsePluginManifest(current);
+      const patch = parsePluginManifest({ ...current, version: "0.1.1" });
+      const candidate = parsePluginManifest({ ...current, version: "0.2.0-rc.1" });
+      expect(comparePluginManifests(patch, parsed)).toBeGreaterThan(0);
+      expect(comparePluginManifests(candidate, patch)).toBeGreaterThan(0);
+      for (const legacy of [
+        parsePluginManifest(manifest),
+        parsePluginManifest({
+          id: manifest.id,
+          name: manifest.name,
+          backend: manifest.backend,
+          renderer: manifest.renderer,
+          apiVersion: 2,
+          version: "26.8.999",
+        }),
+      ]) {
+        expect(comparePluginManifests(parsed, legacy)).toBeGreaterThan(0);
+        expect(comparePluginManifests(legacy, parsed)).toBeLessThan(0);
+      }
+      expect(() => comparePluginManifests(parsed, { ...parsed, id: "another.plugin" })).toThrow(
+        "different plugins",
+      );
+    });
   });
 
   it("retains strict legacy API 2 parsing and target declarations", () => {

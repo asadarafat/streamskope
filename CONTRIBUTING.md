@@ -89,8 +89,9 @@ file stores. Browser development and Electron use these same modules. Electron
 windows, IPC, exit prompts and operating-system secret protection stay in
 `src/platform/electron`; shared Node modules cannot import Electron code.
 
-`src/plugins` owns plugin API version 3, compatibility identities and bounded
-JSON/manifest validation. API 2 remains supported for existing published packages.
+`src/plugins` owns plugin API version 4, independent SemVer, compatibility intervals
+and bounded JSON/manifest validation. API 2 and API 3 remain supported for existing
+installed and published packages.
 `plugins/eda` owns EDA schemas, API/tunnel/session lifecycle and capture UI.
 `plugins/nsp` owns NSP workflow definitions, API execution/cleanup, profile onboarding
 and its UI. The NSP workflow source is
@@ -120,7 +121,7 @@ trust and bindings; `KafkaProfileService` owns profile persistence and mutations
 The internal host protocol is version **28**. EDA-specific commands/events now
 belong to the plugin's own protocol and travel through generic `plugin.execute`
 and `plugin.event` envelopes. `plugins.*` commands manage installation and exit.
-Upgrade the host, preload and renderer together. Plugin API version 3 is separate
+Upgrade the host, preload and renderer together. Plugin API version 4 is separate
 from this internal protocol; the host bridge supplies its current protocol number.
 Changes to public plugin capabilities still require explicit compatibility review.
 
@@ -198,25 +199,34 @@ the cluster version before starting a capture.
 EDA packaging needs Linux and Docker; native desktop packaging needs its matching OS.
 Local soak and live EDA/NSP results should be reported in the PR, including skips.
 
-A desktop tag must exactly match `package.json.streamskopeRelease`, and its
-`vMAJOR.MINOR.PATCH` portion must match `package.json.version`. A positive integer
-`+build.N` identifies another desktop build without changing the app version.
-The release-tag check rejects missing release metadata and mismatched build
-numbers before packaging. The embedded release identity also governs plugin
-compatibility in the catalog and runtime.
+A desktop tag is exactly `v` plus `package.json.version`, such as `v0.2.0` or
+`v0.2.0-rc.1`. The app, installer and embedded release identity all derive from
+that one version. New release versions reject build metadata; CI run IDs and Git
+commits provide traceability. Historical `+build.N` tags remain readable but are
+not reused or created by the new release process.
 
-The tag creates a **draft prerelease** with three unsigned installers, SHA256SUMS,
-both versioned desktop plugin packages/manifests, the readable NSP workflow YAML
-and reviewed release notes from `website/docs/releases/TAG.md`. Review and publish
-the draft on GitHub.
-No custom candidate registry, promotion manifest or release-evidence service is required.
-For example, preparing `v0.1.0+build.1` requires
-`"streamskopeRelease": "v0.1.0+build.1"`, keeps the app and installer version at
-`0.1.0`, and uses `website/docs/releases/v0.1.0+build.1.md`. Each page must declare both
-`release_version: 0.1.0` and its exact `release_tag`; a different build's notes are rejected.
-Keep historical notes intact and update `project.extra.desktop_release` in
-`website/zensical.toml` for the release being documented.
-Published immutable tags and assets cannot be replaced; use a new tag for a new build.
+After checks and native/unsigned EDA packaging pass, the desktop tag creates a
+**draft release** with three unsigned installers, `SHA256SUMS` and reviewed notes
+from `website/docs/releases/TAG.md`. A SemVer prerelease tag marks the GitHub
+release as a prerelease; an ordinary version does not. Signing is a separate
+property: these desktop installers remain unsigned. Desktop releases no longer
+republish plugin packages. Review and publish the draft on GitHub.
+When publishing a stable desktop draft, select **Set as the latest release** or
+run `gh release edit v0.2.0 --draft=false --latest` for that reviewed version.
+Publish release candidates with `--prerelease --latest=false` and plugin releases
+with `--latest=false`. Drafts cannot themselves be GitHub's latest release;
+independent plugin publications must not replace the desktop download destination.
+
+For example, preparing `v0.2.0` requires `"version": "0.2.0"` in `package.json`
+and `website/docs/releases/v0.2.0.md` declaring `release_version: 0.2.0` and
+`release_tag: v0.2.0`. An RC requires its own exact version/tag/notes. Do not alter
+a published version's contents. Keep historical notes intact and mark pending
+features/notes `unreleased: true`. The website's `project.extra.desktop_release`
+continues to identify an actually published installer, not the upcoming source
+version. Update that download baseline and applicable unreleased notices through
+a PR after publication. Source-tag qualification validates the new version's notes
+without requiring unpublished download assets to exist.
+
 The **Pages** workflow qualifies current `main` on documentation-related pushes,
 manual dispatch from `main`, and desktop release publication. PRs qualify locally
 built artifacts without deployment. Every deployment uses current `main`, even
@@ -228,8 +238,8 @@ Set Pages source to **GitHub Actions** and allow `main` plus desktop release tag
 (`v*`) in the `github-pages` environment's deployment rules. A manual run can retry
 a failed deployment without a desktop release. Post-deployment failure requires
 inspection of the reported URL/revision; retry only after establishing the cause.
-Tag-push CI rejects a docs/build mismatch before packaging. Development docs may
-retain the published desktop baseline and label source-only features as unreleased.
+Tag-push CI rejects a source version/tag/notes mismatch before packaging. Docs
+retain the published download baseline and label source-only changes as unreleased.
 Current source plugin declarations are rendered directly from their manifests;
 keep published and historical package facts in the compatibility/release references.
 Installation links and its release identity are generated from
@@ -263,15 +273,15 @@ checks the package; it does not establish signing, notarization or production su
 
 `npm run build` builds core and plugin bundles separately. `npm run package -- plugin`
 creates both EDA and NSP artifacts under `dist/plugin-package/`. Each has a
-`streamskope-NAME-IDENTITY.skope-plugin` bundle and
-`streamskope-NAME-IDENTITY-plugin.json` manifest, where `NAME` is `eda` or `nsp`
-and `IDENTITY` is the canonical compatibility version described in
+`streamskope-NAME-vVERSION.skope-plugin` bundle and
+`streamskope-NAME-vVERSION-plugin.json` manifest, where `NAME` is `eda` or `nsp`
+and `VERSION` is the independent plugin SemVer described in
 [Plugin versioning](website/docs/plugins/versioning.md). For example:
 
 ```text
-streamskope-nsp-v0.1.0+build.1--nsp-26.4.0-26.4.0--r1.skope-plugin
-streamskope-nsp-v0.1.0+build.1--nsp-26.4.0-26.4.0--r1-plugin.json
-streamskope-nsp-v0.1.0+build.1--nsp-26.4.0-26.4.0--r1-nsp-capture.workflow.yaml
+streamskope-nsp-v0.1.0.skope-plugin
+streamskope-nsp-v0.1.0-plugin.json
+streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml
 ```
 
 The NSP bundle contains `nsp-capture.workflow.yaml` as a declared SHA256-verified
@@ -292,7 +302,7 @@ renderer in Chromium. Browser installation coverage is available through
 
 Release users install through **Preferences → Plugins**, using published assets from
 `asadarafat/streamskope`. The installer verifies GitHub asset SHA256 digests and
-the manifest/API contract and minimum desktop release, then writes immutable files
+the manifest/API contract and supported desktop interval, then writes immutable files
 and atomically selects the active version. This verifies official repository
 provenance and integrity; it does not
 claim publisher cryptographic signing. Installed plugins work offline; catalog
@@ -306,11 +316,13 @@ cleanup. Cleanup failure leaves the current plugin available for retry. Successf
 removal deletes its installation files while retaining saved profile metadata.
 Failed backend or renderer activation restores the previous verified version when
 available; a stopped capture must be resumed explicitly. Unrelated Kafka sessions
-remain available. API 2 introduced these lifecycle hooks; API 3 adds the explicit
-compatibility
-identity and resources. Host protocol 28 carries activation identities and
-versioned snapshots. Existing API 2 packages retain their legacy versions and
-asset names and remain loadable on the new host. Earlier unreleased API 1 packages
+remain available. API 2 introduced these lifecycle hooks; API 3 added explicit
+compatibility identities and resources. API 4 uses independent SemVer and an
+inclusive minimum/exclusive maximum desktop interval. Host protocol 28 carries
+activation identities and versioned snapshots. Existing API 2 and API 3 packages
+retain their legacy versions and asset names and remain loadable on the new host.
+A compatible API 4 package supersedes either legacy generation; within API 4,
+updates follow SemVer precedence. Earlier unreleased API 1 packages
 must be rebuilt; profile metadata stays at version 1.
 
 NSP follows the same hot lifecycle. It retains a reusable shared helper workflow
@@ -321,20 +333,20 @@ for each plugin independently and verifies each manifest/package digest. The cur
 catalog examines the first 100 GitHub releases, with at most 16 manifest candidates
 per plugin within that window.
 
-To release a desktop plugin independently, update `plugins/NAME/manifest.json`
-and push the exact `plugins/NAME/IDENTITY` tag. `IDENTITY` already begins with `v`;
-do not add another one. For example:
-`plugins/nsp/v0.1.0+build.1--nsp-26.4.0-26.4.0--r1`.
-The existing CI workflow validates the tag against the manifest, runs shared checks,
-packages only the selected plugin and creates a draft plugin release. Review and
-publish it; native desktop/EDA OCI packaging and Pages do not run for that tag.
+To release a desktop plugin, update its independent `version` in
+`plugins/NAME/manifest.json` and push `plugins/NAME/vVERSION`, for example
+`plugins/nsp/v0.1.0`. Keep its supported desktop interval and target bounds explicit;
+changing plugin contents, workflow bytes or compatibility declarations requires a
+new plugin version. The CI workflow validates the tag, runs shared checks,
+packages only that plugin and creates its draft release. Review and publish it;
+native desktop/EDA OCI packaging and Pages do not run for that tag. A desktop
+release is not required for a plugin fix supported by the current host API.
 
-A plugin-only release cannot add new plugin APIs to an older desktop. The initial
-release pairs desktop **v0.1.0+build.1** with API **3** EDA and NSP packages.
-Keep each package minimum aligned with the host API it requires, and verify
-release availability before documenting installation as available. Future
-source-only features should be marked as unreleased until their compatible
-desktop and plugin packages are published.
+The source prepares desktop **0.2.0**, plugin API **4** and independent **0.1.0**
+EDA/NSP plugins, each declaring **>=0.2.0, <0.3.0**. Publish the supporting desktop
+before announcing API 4 plugins as usable. The original **v0.1.0+build.1** and its
+API **3** assets remain published and immutable. Keep source-only changes marked
+unreleased until their supporting desktop and plugin releases are available.
 
 Desktop plugin packaging does not require cluster access. It validates the
 manifest and includes the declared compatibility range, but does not prove that
@@ -365,32 +377,45 @@ produces the signed EDA Store application.
 
 ## Versions and clean public history
 
-The app and installer follow SemVer and currently remain **0.1.0**.
-`package.json.streamskopeRelease` declares the initial desktop build prepared by
-this source, **v0.1.0+build.1**. Release preparation must update that field, release notes and docs
-metadata together. The exact-tag guard prevents a tag for a new build from shipping
-an older embedded plugin compatibility identity.
+The app and installer share `package.json.version`, currently **0.2.0**. Each
+plugin declares its own SemVer in `plugins/NAME/manifest.json`, currently **0.1.0**
+for EDA and NSP. The equality of their initial numbers does not couple releases.
+A plugin bug fix can become **0.1.1** without changing the app or other plugin.
 
-Every new desktop plugin uses:
+API 4 manifests separate identity from requirements:
 
-```text
-vHOST_MAJOR.HOST_MINOR.HOST_PATCH+build.N--SYSTEM-MIN_TARGET-MAX_TARGET--rREVISION
+```json
+{
+  "version": "0.1.0",
+  "apiVersion": 4,
+  "compatibility": {
+    "streamskope": { "minimum": "0.2.0", "maximumExclusive": "0.3.0" },
+    "target": { "system": "eda", "minimum": "26.8.2", "maximum": "26.8.2" }
+  }
+}
 ```
 
-The host component is the minimum required StreamSkope release, the two numeric
-`major.minor.patch` target versions form an inclusive supported interval, and the
-revision is a positive integer. Build suffixes are optional for normal desktop
-SemVer releases; target bounds never use `x` or `y` placeholders in real artifacts.
-Increment the revision globally for each plugin ID on every new publication,
-including changes to its host minimum or target range. Never reset it for another
-range or reuse a revision with different compatibility or content. Comparison uses
-numeric revisions, so `r10` follows `r9`; newer identities supersede legacy API 2
-versions. The host filters and checks its own minimum release separately.
+There is no API 4 `revision` or duplicated desktop release field. Use SemVer
+patch/minor/major changes according to compatibility; below **1.0.0**, put breaking
+changes in a new minor version and compatible fixes in a patch. Removing a supported
+host or target release is a breaking change. A qualified wider target interval can
+ship as a minor release. Keep `-rc.N` prereleases distinct; do not create new
+`+build.N` release identities. Immutable plugin identity is its ID plus version,
+including compatibility and resource declarations: never reuse it with new bytes.
 
-The current source declares EDA **26.8.2–26.8.2**, NSP **26.4.0–26.4.0** and revision
-**1** for each plugin. These bounds declare the supported product interval;
-record live qualification for the release before claiming observed compatibility. See [Plugin versioning](website/docs/plugins/versioning.md)
-for manifests, selection, migration and release examples.
+Preview hosts require an explicit prerelease minimum with the same core version,
+such as `0.2.0-rc.1` for host `0.2.0-rc.2`. A stable interval ending before `0.3.0`
+does not implicitly support `0.3.0-rc.1`. Stable desktop catalogs exclude prerelease
+plugins; preview desktops can select them when explicitly compatible. Update the
+manifest for a qualified RC before packaging it.
+
+The current source targets EDA **26.8.2–26.8.2** and NSP **26.4.0–26.4.0**. Host
+bounds are inclusive/exclusive; target bounds remain inclusive/inclusive and exact
+numeric versions. Record live qualification before claiming observed support.
+Read [Plugin versioning](website/docs/plugins/versioning.md) for selection,
+legacy-generation migration and component responsibilities. Installed API 2/3
+packages and original release names remain unchanged; do not rewrite their version
+strings or compare their numeric values directly with API 4 SemVer.
 
 The **EDA cluster application is a separate artifact** and retains the exact full
 target EDA version: **EDA 26.8.2 → app v26.8.2**. `EDA_TARGET_VERSION` in
@@ -408,14 +433,14 @@ unused tag there.
 
 ```bash
 npm run check
-node tools/maintenance/export-source.mjs /absolute/path/to/streamskope-public-v0.1.0
-cd /absolute/path/to/streamskope-public-v0.1.0
+node tools/maintenance/export-source.mjs /absolute/path/to/streamskope-public
+cd /absolute/path/to/streamskope-public
 npm ci
 npm run check
 # Review the source before creating the first public commit and tag.
 git add .
 git diff --cached --stat
-git commit -m "Initial StreamSkope v0.1.0 source"
+git commit -m "chore: initialize StreamSkope source"
 # Select an unused release tag before publication.
 ```
 

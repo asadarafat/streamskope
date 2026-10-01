@@ -73,7 +73,8 @@ A saved profile does not guarantee that its temporary capture still exists.
 
 Install NSP Capture, then use your NSP API URL and credentials to create a tested
 Kafka profile. Follow [Connect to NSP Kafka](../plugins/nsp.md) for the workflow,
-permissions and cleanup behavior. Requires desktop v0.1.0+build.1 or later.
+permissions and cleanup behavior. Check each plugin's [desktop and target requirements](../plugins/versioning.md); the original
+v0.1.0+build.1 packages and upcoming API 4 packages have different host requirements.
 
 ## Next: inspect a message
 

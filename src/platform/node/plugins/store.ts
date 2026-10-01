@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/p
 import { join, resolve } from "node:path";
 
 import type { JsonValue, PluginInstallation, PluginManifest } from "../../../plugins/contracts";
-import { parsePluginJson } from "../../../plugins/validation";
+import { comparePluginManifests, parsePluginJson } from "../../../plugins/validation";
 import {
   createAtomicPrivateFileTempId,
   writeAtomicPrivateTextFile,
@@ -309,6 +309,7 @@ export class PluginStore {
       const plugin = parsePluginPackage(bytes, expectedSha256);
       validId(plugin.manifest.id);
       const state = await this.#state();
+      await this.#assertUnchangedVersion(plugin, state.plugins[plugin.manifest.id]);
       if (
         !Object.hasOwn(state.plugins, plugin.manifest.id) &&
         Object.keys(state.plugins).length >= 32
@@ -330,6 +331,7 @@ export class PluginStore {
       const plugin = parsePluginPackage(bytes, expectedSha256);
       validId(plugin.manifest.id);
       const state = await this.#state();
+      await this.#assertUnchangedVersion(plugin, state.plugins[plugin.manifest.id]);
       if (
         !Object.hasOwn(state.plugins, plugin.manifest.id) &&
         Object.keys(state.plugins).length >= 32
@@ -340,6 +342,38 @@ export class PluginStore {
     });
   }
 
+  /** Protect retained identities even when their backend could not activate in this host. */
+  async #assertUnchangedVersion(
+    plugin: VerifiedPluginPackage,
+    entry: InstallationState | undefined,
+  ): Promise<void> {
+    if (plugin.manifest.apiVersion < 3 || entry === undefined) return;
+    for (const digest of new Set([entry.active, entry.previous, entry.pending])) {
+      if (!digest || digest === plugin.sha256) continue;
+      let retained: VerifiedPluginPackage;
+      try {
+        const parent = join(this.#root, plugin.manifest.id);
+        const path = join(parent, digest);
+        for (const item of [this.#root, parent, path]) await directory(item, false);
+        retained = parsePluginPackage(
+          await readBoundedFile(join(path, "package.skope-plugin"), MAX_PLUGIN_PACKAGE_BYTES, {
+            rejectSymlinks: true,
+          }),
+          digest,
+        );
+      } catch {
+        // Corrupt or missing cache bytes cannot establish a trusted version claim.
+        // A verified catalog download may repair them; never execute the old bytes.
+        continue;
+      }
+      if (comparePluginManifests(plugin.manifest, retained.manifest) === 0) {
+        throw new Error(
+          "This plugin version has different content from a retained package. Publish a new plugin version.",
+        );
+      }
+    }
+  }
+
   /** Publish only this installation after activation and previous-backend cleanup succeed. */
   commitInstall(id: string, digest: string): Promise<string | undefined> {
     return this.#serial(async () => {
@@ -348,7 +382,18 @@ export class PluginStore {
       const entry = state.plugins[id] ?? {};
       if (!Object.hasOwn(state.plugins, id) && Object.keys(state.plugins).length >= 32)
         throw new Error("At most 32 plugin installations can be retained.");
-      if (entry.active && entry.active !== digest) entry.previous = entry.active;
+      const retained = new Set([entry.active, entry.previous]);
+      delete entry.previous;
+      for (const candidate of retained) {
+        if (!candidate || candidate === digest) continue;
+        try {
+          await this.#verified(id, candidate);
+          entry.previous = candidate;
+          break;
+        } catch {
+          // An unreadable old cache must not become this working version's rollback package.
+        }
+      }
       entry.active = digest;
       delete entry.pending;
       delete entry.error;

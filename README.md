@@ -28,6 +28,9 @@ Kafka is a separate service; the desktop installer does not require Node or Dock
 The [qualification record](website/docs/guide/qualification.md) links the release's
 automated checks and identifies workflows that still need recorded evidence.
 
+This checkout prepares **0.2.0**, which is not yet published. See the
+[upcoming release notes](website/docs/releases/v0.2.0.md).
+
 ## What you can do
 
 - Browse topics, read and filter messages, inspect payloads and export filtered JSON.

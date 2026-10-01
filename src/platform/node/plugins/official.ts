@@ -16,12 +16,12 @@ export const OFFICIAL_PLUGINS = [
 
 export type OfficialPlugin = (typeof OFFICIAL_PLUGINS)[number];
 
-/** Published filenames carry compatibility; fixed names above remain for API 2 releases. */
+/** Versioned filenames for current and legacy packages; fixed names remain for API 2. */
 export function officialPluginAssets(
   plugin: OfficialPlugin,
   version: string,
 ): { readonly packageAsset: string; readonly manifestAsset: string; readonly prefix: string } {
-  const prefix = `streamskope-${plugin.directory}-${version}`;
+  const prefix = `streamskope-${plugin.directory}-${version.startsWith("v") ? version : `v${version}`}`;
   return {
     prefix,
     packageAsset: `${prefix}.skope-plugin`,

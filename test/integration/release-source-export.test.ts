@@ -83,9 +83,18 @@ describe("first public source export", () => {
     expect(existsSync(join(source, "public"))).toBe(false);
   });
 
-  it("refuses a different first-release version", () => {
+  it("records the actual source version without pinning exports to the first release", () => {
     const { source, destination } = fixture();
-    writeFileSync(join(source, "package.json"), '{"version":"0.1.1"}\n');
+    writeFileSync(join(source, "package.json"), '{"version":"0.2.0-rc.1"}\n');
+    expect(run(source, destination).status).toBe(0);
+    expect(
+      JSON.parse(readFileSync(join(destination, ".git/streamskope-export.json"), "utf8")),
+    ).toMatchObject({ desktopVersion: "0.2.0-rc.1" });
+  });
+
+  it("refuses a snapshot without a declared desktop version", () => {
+    const { source, destination } = fixture();
+    writeFileSync(join(source, "package.json"), "{}\n");
     expect(run(source, destination).status).not.toBe(0);
     expect(existsSync(destination)).toBe(false);
   });

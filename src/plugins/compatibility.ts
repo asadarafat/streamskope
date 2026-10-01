@@ -21,6 +21,17 @@ export function parseSemanticPluginVersion(value: unknown): string {
   return value;
 }
 
+/** New publications use precedence-bearing versions; metadata cannot identify a new release. */
+export function parseReleaseVersion(value: unknown): string {
+  const version = parseSemanticPluginVersion(value);
+  if (version.includes("+")) {
+    throw new Error(
+      "Release versions must not use build metadata; publish a new semantic version.",
+    );
+  }
+  return version;
+}
+
 function object(value: unknown, keys: readonly string[]): Record<string, unknown> {
   if (
     value === null ||
@@ -55,9 +66,20 @@ function compareNumbers(left: readonly bigint[], right: readonly bigint[]): numb
   return 0;
 }
 
-/** Desktop build identity is ordered numerically, unlike SemVer build metadata. */
+/** Desktop releases now follow SemVer, including prereleases and metadata precedence. */
 export function compareDesktopReleases(left: string, right: string): number {
-  return compareNumbers(releaseParts(left), releaseParts(right));
+  return compareSemanticVersions(left.replace(/^v/u, ""), right.replace(/^v/u, ""));
+}
+
+/** Preserve the original minimum-build requirement of immutable API 3 packages. */
+function compareLegacyDesktopReleases(left: string, right: string): number {
+  const host = `v${left.replace(/^v/u, "")}`;
+  if (desktopRelease.test(host) && desktopRelease.test(right)) {
+    return compareNumbers(releaseParts(host), releaseParts(right));
+  }
+  const order = compareDesktopReleases(left, right);
+  // Arbitrary SemVer metadata cannot establish a legacy minimum build number.
+  return order === 0 && releaseParts(right)[3]! > 0n ? -1 : order;
 }
 
 function compareTargetVersions(left: string, right: string): number {
@@ -71,13 +93,29 @@ function compareTargetVersions(left: string, right: string): number {
   );
 }
 
-export function parsePluginCompatibility(value: unknown): PluginCompatibility {
+export function parsePluginCompatibility(
+  value: unknown,
+  apiVersion: 3 | 4 = 3,
+): PluginCompatibility {
   const input = object(value, ["streamskope", "target"]);
-  const streamskope = object(input.streamskope, ["minimum"]);
+  const streamskope = object(
+    input.streamskope,
+    apiVersion === 3 ? ["minimum"] : ["minimum", "maximumExclusive"],
+  );
   const target = object(input.target, ["system", "minimum", "maximum"]);
   if (typeof streamskope.minimum !== "string")
     throw new Error("Missing StreamSkope minimum release.");
-  releaseParts(streamskope.minimum);
+  let maximumExclusive: string | undefined;
+  if (apiVersion === 3) releaseParts(streamskope.minimum);
+  else {
+    parseReleaseVersion(streamskope.minimum);
+    maximumExclusive = parseReleaseVersion(streamskope.maximumExclusive);
+    if (compareSemanticVersions(streamskope.minimum, maximumExclusive) >= 0) {
+      throw new Error(
+        "Plugin host compatibility must have an inclusive minimum below its exclusive maximum.",
+      );
+    }
+  }
   if (
     typeof target.system !== "string" ||
     target.system.length > 32 ||
@@ -91,7 +129,10 @@ export function parsePluginCompatibility(value: unknown): PluginCompatibility {
     throw new Error("Plugin target compatibility range is reversed.");
   }
   return {
-    streamskope: { minimum: streamskope.minimum },
+    streamskope: {
+      minimum: streamskope.minimum,
+      ...(maximumExclusive === undefined ? {} : { maximumExclusive }),
+    },
     target: { system: target.system, minimum, maximum },
   };
 }
@@ -103,7 +144,7 @@ function parseRevision(value: unknown): number {
   return value;
 }
 
-/** Package identity records minimum host, inclusive target interval and immutable revision. */
+/** Legacy API 3 identity. New API 4 packages use independent Semantic Versions. */
 export function formatPluginVersion(compatibility: PluginCompatibility, revision: number): string {
   const parsed = parsePluginCompatibility(compatibility);
   const { system, minimum, maximum } = parsed.target;
@@ -130,7 +171,7 @@ function parseIdentity(
   return result;
 }
 
-/** Legacy SemVer precedence ignores build metadata; new identities use monotonic revisions. */
+/** Compare legacy API 2/3 versions; API 4 migration must use comparePluginManifests. */
 export function comparePluginVersions(left: string, right: string): number {
   const aIdentity = parseIdentity(left);
   const bIdentity = parseIdentity(right);
@@ -149,6 +190,11 @@ export function comparePluginVersions(left: string, right: string): number {
     }
     return aIdentity.revision < bIdentity.revision ? -1 : 1;
   }
+  return compareSemanticVersions(left, right);
+}
+
+/** SemVer 2.0 precedence, without imposing JavaScript's safe-integer limit on identifiers. */
+export function compareSemanticVersions(left: string, right: string): number {
   function parts(value: string): { core: readonly bigint[]; prerelease: readonly string[] } {
     const validated = parseSemanticPluginVersion(value).split("+")[0]!;
     const separator = validated.indexOf("-");
@@ -179,12 +225,38 @@ export function comparePluginVersions(left: string, right: string): number {
   return 0;
 }
 
+/** A one-way API 4 migration is independent of legacy target numbers or revision counters. */
+export function comparePluginManifests(left: PluginManifest, right: PluginManifest): number {
+  if (left.id !== right.id) throw new Error("Cannot compare versions of different plugins.");
+  if (left.apiVersion === 4 || right.apiVersion === 4) {
+    if (left.apiVersion !== right.apiVersion) return left.apiVersion === 4 ? 1 : -1;
+    return compareSemanticVersions(left.version, right.version);
+  }
+  return comparePluginVersions(left.version, right.version);
+}
+
+export function isPrereleaseVersion(version: string): boolean {
+  return parseSemanticPluginVersion(version).split("+")[0]!.includes("-");
+}
+
 export function isPluginCompatibleWithHost(manifest: PluginManifest, release: string): boolean {
   // Legacy API 2 has no host-build declaration; its original API compatibility remains valid.
   if (manifest.apiVersion === 2) return true;
+  const host = manifest.compatibility?.streamskope;
+  if (host === undefined) return false;
+  if (manifest.apiVersion === 3) return compareLegacyDesktopReleases(release, host.minimum) >= 0;
+  const version = release.replace(/^v/u, "");
+  // Preview hosts need an explicitly qualified preview minimum for that same core release.
+  // A numeric upper bound alone must not admit an untested future-minor release candidate.
+  if (
+    isPrereleaseVersion(version) &&
+    (!isPrereleaseVersion(host.minimum) || version.split("-")[0] !== host.minimum.split("-")[0])
+  )
+    return false;
   return (
-    manifest.compatibility !== undefined &&
-    compareDesktopReleases(release, manifest.compatibility.streamskope.minimum) >= 0
+    host.maximumExclusive !== undefined &&
+    compareDesktopReleases(release, host.minimum) >= 0 &&
+    compareDesktopReleases(release, host.maximumExclusive) < 0
   );
 }
 

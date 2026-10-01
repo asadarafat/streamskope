@@ -63,7 +63,7 @@ function EdaPluginView({
 }
 
 const renderer: PluginRenderer = {
-  apiVersion: 3,
+  apiVersion: 4,
   id: EDA_PLUGIN_ID,
   connectionActions: [{ id: "capture", label: "Capture from EDA" }],
   profileLabel: (source) =>

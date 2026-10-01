@@ -2,8 +2,8 @@
 
 Use this procedure before replacing the desktop app or downgrading it. Record the
 release tag as well as the app version: `v0.1.0+build.1` identifies the first
-release, while `0.1.0` is the app version. The shared app version does not establish identical plugin
-behavior or profile compatibility between builds.
+release, while `0.1.0` is the app version. From 0.2.0 the app version identifies the desktop release, while plugins
+version independently. Record each installed plugin version and its requirements.
 
 The [qualification record](qualification.md) separates recorded results from
 platforms and migration scenarios that still need verification.
@@ -58,9 +58,10 @@ recovered. Never attach a full backup to an issue report.
    Confirm that protected values are available; do not overwrite failed profiles
    with empty values to dismiss an error.
 4. Open **Preferences → Plugins**. Install the compatible plugin if a saved EDA
-   or NSP profile reports it missing. This release uses plugin API 3 packages;
-   check the minimum desktop and target version. A stopped EDA capture needs an
-   explicit resume.
+   or NSP profile reports it missing. The original release uses API 3 packages;
+   0.2.0 introduces API 4 and preserves installed API 2/3 packages. Check the
+   [migration instructions](../plugins/versioning.md#upgrade-from-the-original-packages),
+   desktop interval and target version. A stopped EDA capture needs an explicit resume.
 5. Test a reviewed profile, read a known topic and confirm the expected result.
    Retain the backup until the workflows you use have been verified.
 
@@ -68,6 +69,7 @@ recovered. Never attach a full backup to an issue report.
 
 | Situation                                                   | Snapshot to preserve and use                                                                  |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Downgrade from API 4 plugins                                | Complete pre-upgrade backup containing the older desktop-compatible plugin packages           |
 | Routine downgrade                                           | Your complete backup made with the target release before upgrading                            |
 | Downgrade across explicit TLS/plaintext transport migration | The exact profile filename recorded by `rollbackGeneration` in the version-3 profile document |
 | Earlier protected-schema migration                          | `kafka-profiles.json.pre-upgrade.bak`, only when it matches that migration and target build   |
