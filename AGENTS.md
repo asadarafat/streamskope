@@ -1,0 +1,8 @@
+# StreamSkope development
+
+- Keep each PR to one reviewable outcome. State that outcome and executed checks in the PR body; use the repository PR template.
+- Run focused tests while editing. Local `npm run check` runs shared static/unit/integration and documentation checks plus a 60-second soak and configured live EDA/NSP tests. GitHub runs `npm run check -- --ci` on PRs, main and release tags. Release tags also build Linux/macOS/Windows native packages and the complete unsigned EDA application. Pages independently qualifies current main on docs changes, manual dispatch and desktop release publication, then verifies the public revision. Signed EDA publication remains manual. Record executed checks; do not report an unexecuted or skipped check as passed.
+- Add an independent regression test when observable behavior changes. For behavior-neutral edits, use a relevant validator or inspection instead of a fabricated failing test.
+- Preserve the renderer → typed host contract → backend facade → application behavior → Kafka adapter boundary. Renderer code must not access Node, Electron, files, secrets, or Kafka libraries directly.
+- OpenSpec is private and Git-ignored here. Use the installed OpenSpec tooling only for durable contracts or consequential cross-layer changes; keep release operations and repository cleanup in separate changes. Public PRs must carry their own concise acceptance evidence.
+- Do not infer live Kafka, EDA, package-signing, registry, or publication success from unit or workflow-text tests. Record real-system evidence for those claims.

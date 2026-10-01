@@ -1,0 +1,20 @@
+{
+  "id": "streamskope.eda",
+  "name": "EDA Capture",
+  "description": "Capture EDA event streams and explore them in StreamSkope.",
+  "version": "v0.1.0+build.1--eda-26.8.2-26.8.2--r1",
+  "apiVersion": 3,
+  "backend": "backend.cjs",
+  "renderer": "renderer.js",
+  "revision": 1,
+  "compatibility": {
+    "streamskope": {
+      "minimum": "v0.1.0+build.1"
+    },
+    "target": {
+      "system": "eda",
+      "minimum": "26.8.2",
+      "maximum": "26.8.2"
+    }
+  }
+}

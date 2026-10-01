@@ -1,0 +1,226 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*", "plugins/eda/v*", "plugins/nsp/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      STREAMSKOPE_DOCS_URL: https://asadarafat.github.io/streamskope/
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: 1.24.0
+          cache-dependency-path: vendors/streamskope/apps/capture/agent/go.mod
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: website/requirements.txt
+      - run: npm ci --no-audit --no-fund
+      - if: startsWith(github.ref, 'refs/tags/')
+        run: node --import tsx tools/package/release-tag.ts
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run check -- --ci
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: qualification
+          path: |
+            .artifacts/ci/vitest.json
+            .artifacts/website
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  desktop:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x64
+          - os: macos-15
+            target: darwin-arm64
+          - os: windows-2025
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - if: runner.os == 'Linux'
+        run: npx --no-install playwright install-deps chromium
+      - run: npm run package
+        env:
+          EXPECTED_PLATFORM: ${{ runner.os == 'Windows' && 'win32' || runner.os == 'macOS' && 'darwin' || 'linux' }}
+          EXPECTED_ARCH: ${{ runner.os == 'macOS' && 'arm64' || 'x64' }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: desktop-${{ matrix.target }}
+          path: dist/installers/*
+          if-no-files-found: error
+          retention-days: 7
+
+  eda:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run package -- eda
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: eda-package
+          path: dist/eda-package/*
+          if-no-files-found: error
+          retention-days: 7
+
+  plugin:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Package release plugins
+        run: |
+          if [[ "$GITHUB_REF_NAME" == plugins/* ]]; then
+            plugin="${GITHUB_REF_NAME#plugins/}"
+            npm run package -- plugin "${plugin%%/*}"
+          else
+            npm run package -- plugin
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: desktop-plugins
+          path: dist/plugin-package/*
+          if-no-files-found: error
+          retention-days: 7
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [checks, desktop, eda, plugin]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - id: release
+        run: node --import tsx tools/package/release-tag.ts
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: desktop-*-*
+          merge-multiple: true
+          path: dist/installers
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: desktop-plugins
+          path: dist/plugin-package
+      - name: Assemble checksums and reviewed release notes
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          npm run package -- release dist/installers "$VERSION" "$GITHUB_SHA" "website/docs/releases/$GITHUB_REF_NAME.md" "$RUNNER_TEMP/notes.md" "$GITHUB_REF_NAME"
+      - name: Create a draft for maintainer review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/installers/* dist/plugin-package/* --verify-tag --draft --prerelease --latest=false \
+            --title "StreamSkope $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+
+  plugin-draft-release:
+    if: startsWith(github.ref, 'refs/tags/plugins/')
+    needs: [checks, plugin]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: desktop-plugins
+          path: dist/plugin-package
+      - name: Prepare plugin installation notes
+        id: plugin
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile, readdir, writeFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          const directory = 'dist/plugin-package';
+          const manifests = (await readdir(directory)).filter(name => name.endsWith('-plugin.json'));
+          if (manifests.length !== 1) throw new Error('A plugin release must contain exactly one plugin.');
+          const manifest = JSON.parse(await readFile(join(directory, manifests[0]), 'utf8'));
+          const notes = [
+            `${manifest.name} desktop plugin ${manifest.version}.`,
+            `Install from StreamSkope Preferences > Plugins; activation is immediate. Requires plugin API ${manifest.apiVersion}.`,
+            `Requires StreamSkope ${manifest.compatibility.streamskope.minimum} or later with a compatible plugin API.`,
+            `Supports ${manifest.compatibility.target.system.toUpperCase()} ${manifest.compatibility.target.minimum} through ${manifest.compatibility.target.maximum} (inclusive). Plugin revision ${manifest.revision}.`,
+            ...(manifest.compatibility.target.system === 'eda' ? ['The EDA cluster application is installed separately through the capture workflow.'] : []),
+            ...(manifest.resources ?? []).map(resource => `Included resource: ${resource.path} (SHA256 ${resource.sha256}). The identical resource is available as a separate download.`),
+            `Source commit: ${process.env.GITHUB_SHA}.`,
+          ].join('\n\n');
+          await writeFile(join(process.env.RUNNER_TEMP, 'plugin-notes.md'), `${notes}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `title=${manifest.name} ${manifest.version}\n`);
+          NODE
+      - name: Create a plugin draft without rebuilding desktop installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PLUGIN_TITLE: ${{ steps.plugin.outputs.title }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/plugin-package/* --verify-tag --draft --prerelease --latest=false \
+            --title "$PLUGIN_TITLE" --notes-file "$RUNNER_TEMP/plugin-notes.md"

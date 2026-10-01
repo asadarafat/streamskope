@@ -1,0 +1,54 @@
+{
+  "description": "A bounded StreamSkope Kafka capture session managed inside EDA.",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "type": "string" },
+    "kind": { "type": "string" },
+    "metadata": { "type": "object" },
+    "spec": {
+      "title": "Specification",
+      "type": "object",
+      "required": ["leaseExpiresAt", "leaseSeconds", "localPort", "source"],
+      "properties": {
+        "leaseExpiresAt": { "type": "string", "format": "date-time", "title": "Lease expiry" },
+        "leaseSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 900,
+          "title": "Lease duration"
+        },
+        "localPort": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535,
+          "title": "Desktop port"
+        },
+        "source": {
+          "type": "object",
+          "title": "EDA Kafka exporter",
+          "required": ["apiVersion", "kind", "name", "namespace"],
+          "properties": {
+            "apiVersion": {
+              "type": "string",
+              "enum": ["kafka.eda.nokia.com/v1", "kafka.eda.nokia.com/v1alpha1"]
+            },
+            "kind": { "type": "string", "enum": ["Producer", "ClusterProducer"] },
+            "name": { "type": "string", "minLength": 1, "maxLength": 253 },
+            "namespace": { "type": "string", "minLength": 1, "maxLength": 63 }
+          }
+        }
+      },
+      "x-eda-nokia-com": { "ui-order-priority": 30 }
+    },
+    "status": {
+      "title": "Status",
+      "type": "object",
+      "readOnly": true,
+      "properties": {
+        "phase": { "type": "string", "enum": ["Pending", "Ready", "Failed", "Stopping"] },
+        "reason": { "type": "string", "maxLength": 512 }
+      },
+      "x-eda-nokia-com": { "ui-order-priority": 20 }
+    }
+  }
+}

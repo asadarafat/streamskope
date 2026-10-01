@@ -1,0 +1,30 @@
+{% extends "base.html" %} {% block extrahead %} {{ super() }}
+<meta name="streamskope-docs-revision" content="{{ config.extra.documentation.revision }}" />
+{% endblock %} {% block content %}
+<aside class="sk-version" aria-label="Documentation version">
+  <p>{{ config.extra.documentation.status }}</p>
+  {% if page.meta.unreleased %}
+  <p>
+    Unreleased feature: not included in published desktop
+    <strong>{{ config.extra.desktop_release }}</strong>.
+    <a href="{{ 'start/compatibility/' | url }}">Compatibility</a> ·
+    <a href="{{ 'releases/' | url }}">Release history</a>.
+  </p>
+  {% elif page.meta.release_tag and page.meta.release_tag != config.extra.desktop_release %}
+  <p>
+    Historical release notes: <strong>{{ page.meta.release_tag }}</strong>.
+    <a href="{{ 'releases/' | url }}">Compare desktop releases</a>.
+  </p>
+  {% else %}
+  <p>
+    Applies to desktop <strong>{{ config.extra.desktop_release }}</strong>.
+    <a href="{{ 'plugins/' | url }}">Plugin requirements</a> ·
+    <a href="{{ 'start/compatibility/' | url }}">Compatibility</a> ·
+    <a href="{{ 'releases/' | url }}">Release history</a>.
+  </p>
+  {% endif %}
+</aside>
+{% set content = super() %} {% if page.meta.desktop_downloads %} {% set downloads %}{% include
+"partials/desktop-downloads.html" %}{% endset %} {{ content | replace("<!-- desktop-downloads -->",
+downloads) }} {% else %}{{ content }}{% endif %} {% if page.meta.plugin_compatibility %} {% include
+"partials/plugin-compatibility.html" %} {% endif %} {% endblock %}

@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./config/typescript/host.json"
+    },
+    {
+      "path": "./config/typescript/renderer.json"
+    },
+    {
+      "path": "./config/typescript/test.json"
+    }
+  ]
+}

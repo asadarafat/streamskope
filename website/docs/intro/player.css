@@ -1,0 +1,41 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: var(--film-canvas);
+  color: var(--film-text);
+  font-family: var(--film-font);
+}
+.film-shell {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+video {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  object-fit: contain;
+  background: var(--film-canvas);
+}
+#media-status {
+  position: absolute;
+  bottom: 48px;
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--film-canvas);
+  font-size: 13px;
+  color: var(--film-muted);
+}
+#media-status:empty {
+  display: none;
+}

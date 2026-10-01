@@ -1,0 +1,2 @@
+# Preserve the deployed helper fingerprint on Windows checkouts as well as Unix.
+plugins/nsp/resources/nsp-capture.workflow.yaml text eol=lf

@@ -1,0 +1,50 @@
+version: '2.0'
+streamskopeNspCaptureV1:
+  type: direct
+  description: StreamSkope NSP capture helper v1 - export mounted Kafka CA trust only
+  tags: [streamskope, nsp-capture-v1]
+  output:
+    result: <% task('export_kafka_trust').result %>
+  tasks:
+    export_kafka_trust:
+      action: nsp.python
+      input:
+        script: |
+          import base64
+          import hashlib
+          import re
+          import subprocess
+          from pathlib import Path
+
+          base = Path('/opt/nsp/os/ssl/certsmanager')
+          store = base / 'nsp_internal.truststore'
+          password_file = base / '.trustpass'
+          if store.stat().st_size > 2097152:
+              raise RuntimeError('Mounted truststore exceeds the export size limit')
+          data = store.read_bytes()
+          if len(data) < 12 or data[:4] != bytes.fromhex('feedfeed'):
+              raise RuntimeError('Expected a JKS truststore')
+          check = subprocess.run(
+              ['keytool', '-J-Duser.language=en', '-J-Duser.country=US',
+               '-list', '-v', '-storetype', 'JKS', '-keystore', str(store),
+               '-storepass:file', str(password_file)],
+              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE, text=True, timeout=15)
+          if check.returncode != 0:
+              raise RuntimeError('Mounted truststore validation failed')
+          entries = re.findall(r'^Entry type: ([A-Za-z]+)$', check.stdout, re.MULTILINE)
+          if not entries or any(entry != 'trustedCertEntry' for entry in entries):
+              raise RuntimeError('Refusing export of a truststore containing private keys')
+          password_lines = password_file.read_text().splitlines()
+          if not password_lines or not password_lines[0] or len(password_lines[0]) > 4096:
+              raise RuntimeError('Mounted truststore password is invalid')
+          if store.read_bytes() != data:
+              raise RuntimeError('Mounted truststore changed during export; retry')
+          return {
+              'store_type': 'JKS', 'encoding': 'base64',
+              'size_bytes': len(data),
+              'sha256': hashlib.sha256(data).hexdigest(),
+              'certificate_count': len(entries),
+              'truststore_base64': base64.b64encode(data).decode('ascii'),
+              'truststore_password': password_lines[0]
+          }

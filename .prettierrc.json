@@ -1,0 +1,17 @@
+{
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "printWidth": 100,
+  "semi": true,
+  "singleQuote": false,
+  "tabWidth": 2,
+  "trailingComma": "all",
+  "overrides": [
+    {
+      "files": "website/docs/**/*.md",
+      "options": {
+        "tabWidth": 4
+      }
+    }
+  ]
+}

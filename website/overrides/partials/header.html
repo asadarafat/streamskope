@@ -1,0 +1,31 @@
+<header class="md-header sk-header" data-md-component="header">
+  <div class="sk-masthead md-grid">
+    <button
+      type="button"
+      class="md-header__button md-icon sk-nav-trigger"
+      aria-label="Open navigation"
+      aria-controls="documentation-navigation"
+      aria-expanded="false"
+    >
+      {% include ".icons/material/menu.svg" %}
+    </button>
+    <a class="sk-brand" href="{{ nav.homepage.url | url }}" aria-label="StreamSkope home">
+      <img src="{{ config.theme.logo | url }}" alt="" width="28" height="28" />
+      <span>StreamSkope</span>
+    </a>
+    <div class="sk-header-tools">
+      {% if config.theme.palette and not config.theme.palette is mapping %} {% include
+      "partials/palette.html" %} {% include "partials/javascripts/palette.html" %} {% endif %} {% if
+      "search" in config.plugins %} {% set search = config.plugins["search"] | attr("config") %} {%
+      if search.enabled %}
+      <button
+        type="button"
+        class="md-header__button md-icon sk-search-trigger"
+        aria-label="{{ lang.t('search') }}"
+      >
+        {% include ".icons/material/magnify.svg" %}
+      </button>
+      {% include "partials/search.html" %} {% endif %} {% endif %}
+    </div>
+  </div>
+</header>

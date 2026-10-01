@@ -1,0 +1,54 @@
+<section aria-label="Source plugin declarations">
+  <div class="sk-plugin-compatibility">
+    <table aria-label="Source plugin compatibility">
+      <thead>
+        <tr>
+          <th scope="col">Requirement</th>
+          {% for plugin in config.extra.source_plugins %}
+          <th scope="col" id="{{ plugin.system }}-source-package">{{ plugin.name }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">Minimum desktop</th>
+          {% for plugin in config.extra.source_plugins %}
+          <td><code>{{ plugin.minimum_host }}</code></td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <th scope="row">Plugin API</th>
+          {% for plugin in config.extra.source_plugins %}
+          <td>{{ plugin.api }}</td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <th scope="row">Target system</th>
+          {% for plugin in config.extra.source_plugins %}
+          <td>{{ plugin.system | upper }}</td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <th scope="row">Target versions (inclusive)</th>
+          {% for plugin in config.extra.source_plugins %}
+          <td>
+            {% if plugin.minimum == plugin.maximum %} {{ plugin.minimum }} only {% else %} {{
+            plugin.minimum }} – {{ plugin.maximum }} {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <th scope="row">Package identity</th>
+          {% for plugin in config.extra.source_plugins %}
+          <td><code>{{ plugin.version }}</code></td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Generated from the plugin manifests in this documentation's source revision. Publication and
+    live qualification are separate:
+    <a href="{{ 'guide/qualification/' | url }}">check the qualification record</a>.
+  </p>
+</section>

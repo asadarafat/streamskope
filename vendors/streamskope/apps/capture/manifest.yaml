@@ -1,0 +1,49 @@
+apiVersion: core.eda.nokia.com/v1
+kind: Manifest
+metadata:
+  name: capture
+spec:
+  image: ghcr.io/asadarafat/streamskope-eda-app:v26.8.2
+  group: capture.streamskope.io
+  version: v1alpha1
+  title: StreamSkope Capture
+  description: >-
+    Creates explicitly authorized, bounded Kafka capture sessions for inspecting
+    EDA event streams in StreamSkope.
+  author: StreamSkope
+  supportedCoreVersions:
+    - v6.0.0
+  appInfo:
+    readme: capture/README.md
+    documentation: capture/docs
+    license: capture/LICENSE
+    categories:
+      - integrations
+    ociSpecVersion: v1.0.0
+  components:
+    - crd:
+        path: capture/crds/capture.streamskope.io_capturesessions.yaml
+        schema: capture/openapiv3/eda_oas_capture.streamskope.io_capturesessions.json
+        namespaced: true
+        api:
+          expose: readWrite
+        kubernetes:
+          exportPolicy: all
+          importPolicy: spec
+        names:
+          plural: capturesessions
+          singular: capturesession
+          kind: CaptureSession
+          listKind: CaptureSessionList
+    - cr:
+        path: capture/agent/config/deployment.yaml
+  dependencies:
+    - file:
+        path: capture/README.md
+    - file:
+        path: capture/LICENSE
+    - file:
+        path: capture/docs
+    - container:
+        name: streamskope-capture-agent
+        image: localhost/streamskope-eda-app-agent:v26.8.2

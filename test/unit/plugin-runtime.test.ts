@@ -1,0 +1,390 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { HOST_PROTOCOL_VERSION, type HostCommand } from "../../src/features/kafka/contracts";
+import type { PluginHostBindings } from "../../src/plugins/api";
+import type { JsonValue, PluginEvent, PluginManifest } from "../../src/plugins/contracts";
+import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
+import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
+import { PluginStore } from "../../src/platform/node/plugins/store";
+import { testHostExecute } from "../support/host-response";
+import { formatPluginVersion } from "../../src/plugins/validation";
+
+const manifest: PluginManifest = {
+  id: "example.capture",
+  name: "Example capture",
+  version: "1.0.0",
+  apiVersion: 2,
+  backend: "backend.cjs",
+  renderer: "renderer.js",
+};
+
+// A standalone installed module: it cannot resolve source files or project dependencies.
+const backendCode = `exports.activate = (host) => {
+  let pending = false;
+  return {
+    async execute(request) {
+      if (request.method === "start") pending = true;
+      if (request.method === "core") return host.execute({command:"connection.disconnect",id:"core",version:1,payload:{}});
+      if (request.method === "delete") { await host.deleteProfile(request.input.id); return null; }
+      host.publish("changed",request.input);
+      return request.input;
+    },
+    async validateProfile(data, brokers) { if (!pending || data.broker !== brokers[0]) throw new Error("No matching session"); },
+    async beforeExit() { return pending ? {title:"Pending work",message:"Keep or clean up?",detail:"Recovery is retained.",cancelAction:"cancel",actions:[{id:"cancel",label:"Cancel"},{id:"keep",label:"Keep"},{id:"cleanup",label:"Clean up"}]} : undefined; },
+    async resolveExit(action) { return action !== "cancel"; },
+    async beforeChange() { return pending ? {message:"Pending capture",detail:"Capture is running"} : undefined; },
+    async prepareUnload() { pending = false; },
+    async close() { pending = false; }
+  };
+};`;
+
+function packageBytes(version = "1.0.0", code = backendCode, id = manifest.id): Uint8Array {
+  return encodePluginPackage(
+    { ...manifest, id, version },
+    new Map([
+      ["backend.cjs", Buffer.from(code)],
+      ["renderer.js", Buffer.from("export default {apiVersion:2};")],
+    ]),
+  );
+}
+
+function bindings(overrides: Partial<PluginHostBindings> = {}): PluginHostBindings {
+  return {
+    execute: testHostExecute((command) =>
+      Promise.resolve({
+        command: command.command,
+        id: command.id,
+        version: HOST_PROTOCOL_VERSION,
+        ok: true,
+        result: { correlationId: "fixture" },
+      }),
+    ),
+    connectionActive: () => false,
+    profiles: () => Promise.resolve([]),
+    deleteProfile: () => Promise.resolve(),
+    disconnectPluginConnection: () => Promise.resolve(),
+    recordActivity: () => undefined,
+    failure: (_error, context) => ({
+      activeStateChanged: false,
+      code: "BACKEND_UNAVAILABLE",
+      correlationId: context.correlationId,
+      recovery: "Retry",
+      retryable: false,
+      stage: "backend",
+      summary: "Unavailable",
+    }),
+    ...overrides,
+  };
+}
+
+const directories: string[] = [];
+const runtimes: PluginRuntime[] = [];
+async function directory(): Promise<string> {
+  const path = await mkdtemp(join(tmpdir(), "streamskope-plugin-runtime-"));
+  directories.push(path);
+  return path;
+}
+function runtime(store: PluginStore, host = bindings(), bytes = packageBytes()): PluginRuntime {
+  const value = new PluginRuntime({
+    store,
+    catalog: {
+      list: (): Promise<{ manifest: typeof manifest; sha256: string; downloadUrl: string }[]> =>
+        Promise.resolve([
+          {
+            manifest,
+            sha256: pluginPackageSha256(bytes),
+            downloadUrl: "https://api.github.com/fixture",
+          },
+        ]),
+      download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>
+        Promise.resolve({ bytes, sha256: pluginPackageSha256(bytes) }),
+    },
+  });
+  value.bindHost(host);
+  runtimes.push(value);
+  return value;
+}
+async function execute(
+  host: PluginRuntime,
+  method: string,
+  input: JsonValue = {},
+): Promise<JsonValue> {
+  return host.execute({
+    pluginId: manifest.id,
+    activationId: (await host.list()).plugins[0]?.activationId ?? "",
+    method,
+    input,
+    requestId: "request",
+    correlationId: "correlation",
+  });
+}
+
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map((value) => value.close()));
+  await Promise.all(
+    directories.splice(0).map((path) => rm(path, { force: true, recursive: true })),
+  );
+});
+
+describe("optional installed plugin runtime", () => {
+  it("rejects a future host requirement before installation or loading code on startup", async () => {
+    const compatibility = {
+      streamskope: { minimum: "v0.1.0+build.10" },
+      target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+    };
+    const future: PluginManifest = {
+      ...manifest,
+      apiVersion: 3,
+      compatibility,
+      revision: 1,
+      version: formatPluginVersion(compatibility, 1),
+    };
+    const bytes = encodePluginPackage(
+      future,
+      new Map([
+        ["backend.cjs", Buffer.from(backendCode)],
+        ["renderer.js", Buffer.from("export default {};")],
+      ]),
+    );
+    const store = new PluginStore(await directory());
+    const loadModule = vi.fn();
+    const host = new PluginRuntime({
+      store,
+      hostRelease: "v0.1.0+build.5",
+      loadModule,
+      catalog: {
+        list: (): Promise<[]> => Promise.resolve([]),
+        download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>
+          Promise.resolve({ bytes, sha256: pluginPackageSha256(bytes) }),
+      },
+    });
+    host.bindHost(bindings());
+    runtimes.push(host);
+    await expect(host.install(manifest.id)).rejects.toThrow("requires StreamSkope v0.1.0+build.10");
+    expect(await store.list()).toEqual([]);
+    expect(loadModule).not.toHaveBeenCalled();
+    await host.close();
+
+    // Simulate opening stored data with an older desktop after a host downgrade.
+    await store.install(bytes, pluginPackageSha256(bytes));
+    await store.activatePending();
+    const older = new PluginRuntime({ store, hostRelease: "v0.1.0+build.5", loadModule });
+    older.bindHost(bindings());
+    runtimes.push(older);
+    await older.start();
+    expect((await older.list()).plugins[0]?.error).toContain(
+      "requires StreamSkope v0.1.0+build.10",
+    );
+    expect(loadModule).not.toHaveBeenCalled();
+    expect((await store.list())[0]?.installed?.version).toBe(future.version);
+    await older.close();
+    const upgraded = new PluginRuntime({ store, hostRelease: "v0.1.0+build.10" });
+    upgraded.bindHost(bindings());
+    runtimes.push(upgraded);
+    expect((await upgraded.list()).plugins[0]?.active?.version).toBe(future.version);
+  });
+
+  it("retains an active API 3 revision when a download changes its bytes, while allowing exact-byte retry", async () => {
+    const compatibility = {
+      streamskope: { minimum: "v0.1.0+build.5" },
+      target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+    };
+    const current: PluginManifest = {
+      ...manifest,
+      apiVersion: 3,
+      compatibility,
+      revision: 1,
+      version: formatPluginVersion(compatibility, 1),
+    };
+    const packaged = (code: string): Uint8Array =>
+      encodePluginPackage(
+        current,
+        new Map([
+          ["backend.cjs", Buffer.from(code)],
+          ["renderer.js", Buffer.from("export default {};")],
+        ]),
+      );
+    const original = packaged(backendCode);
+    let available = original;
+    const store = new PluginStore(await directory());
+    const host = new PluginRuntime({
+      store,
+      hostRelease: compatibility.streamskope.minimum,
+      catalog: {
+        list: (): Promise<[]> => Promise.resolve([]),
+        download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>
+          Promise.resolve({ bytes: available, sha256: pluginPackageSha256(available) }),
+      },
+    });
+    host.bindHost(bindings());
+    runtimes.push(host);
+    await host.install(manifest.id);
+    const before = (await host.list()).plugins[0]!;
+    available = packaged(`${backendCode}\n// Different code cannot reuse the published identity.`);
+    await expect(host.install(manifest.id)).rejects.toThrow("revision has different content");
+    expect((await host.list()).plugins[0]?.activationId).toBe(before.activationId);
+    expect((await store.list())[0]?.active).toEqual(current);
+    await expect(execute(host, "echo", "still active")).resolves.toBe("still active");
+    available = original;
+    await expect(host.install(manifest.id)).resolves.toMatchObject({
+      plugins: [{ active: current }],
+    });
+    await expect(execute(host, "echo", "retried")).resolves.toBe("retried");
+  });
+
+  it("starts without any installed code and preserves an unavailable profile's metadata", async () => {
+    const host = runtime(new PluginStore(await directory()));
+    await host.start();
+    expect(await host.list()).toEqual({ revision: 0, plugins: [] });
+    const source = {
+      kind: "plugin",
+      pluginId: manifest.id,
+      version: 1,
+      data: { broker: "localhost:9092", session: "recoverable" },
+    } as const;
+    await expect(host.validateProfile(source, ["localhost:9092"])).rejects.toThrow(/not active/u);
+    expect(source.data.session).toBe("recoverable");
+  });
+
+  it("loads verified standalone code, routes events, and exposes only its active renderer", async () => {
+    const store = new PluginStore(await directory());
+    const bytes = packageBytes();
+    const digest = pluginPackageSha256(bytes);
+    await store.install(bytes, digest);
+    const host = runtime(store);
+    const events: PluginEvent[] = [];
+    host.subscribe((event) => events.push(event));
+    await expect(execute(host, "echo", { hello: "world" })).resolves.toEqual({ hello: "world" });
+    expect(events).toEqual([{ pluginId: manifest.id, name: "changed", data: { hello: "world" } }]);
+    const rendererUrl = (await host.list()).plugins[0]!.rendererUrl!;
+    const asset = await host.rendererAsset(rendererUrl);
+    expect(Buffer.from(asset!.content).toString()).toContain("export default");
+    for (const path of [
+      `/plugins/${manifest.id}/${digest}/backend.cjs`,
+      `/plugins/${manifest.id}/${"0".repeat(64)}/renderer.js`,
+      `/plugins/${manifest.id}/${digest}/../backend.cjs`,
+    ])
+      expect(await host.rendererAsset(path)).toBeUndefined();
+  });
+
+  it("normalizes the core protocol for an independently compiled plugin", async () => {
+    const store = new PluginStore(await directory());
+    const bytes = packageBytes();
+    await store.install(bytes, pluginPackageSha256(bytes));
+    const dispatch = vi.fn((command: HostCommand) =>
+      Promise.resolve({
+        command: command.command,
+        id: command.id,
+        version: command.version,
+        ok: true,
+        result: { correlationId: "core" },
+      }),
+    );
+    const host = runtime(store, bindings({ execute: testHostExecute(dispatch) }));
+    await execute(host, "core");
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ version: HOST_PROTOCOL_VERSION }),
+    );
+  });
+
+  it("installs immediately and persists the active version without restart", async () => {
+    const store = new PluginStore(await directory());
+    const host = runtime(store);
+    const installed = await host.install(manifest.id);
+    expect(installed.plugins[0]).toMatchObject({
+      installed: manifest,
+      active: manifest,
+      pending: null,
+      restartRequired: false,
+    });
+    await expect(execute(host, "echo", "installed now")).resolves.toBe("installed now");
+    await host.close();
+    const restarted = runtime(new PluginStore(directories[0]!));
+    expect((await restarted.list()).plugins[0]).toMatchObject({
+      active: manifest,
+      pending: null,
+      restartRequired: false,
+    });
+  });
+
+  it("restores the previous working version when an installed update cannot activate", async () => {
+    const path = await directory();
+    const store = new PluginStore(path);
+    const initial = packageBytes();
+    await store.install(initial, pluginPackageSha256(initial));
+    const host = runtime(
+      store,
+      bindings(),
+      packageBytes("1.1.0", 'exports.activate = () => { throw new Error("Activation failed"); };'),
+    );
+    await host.start();
+    await expect(host.install(manifest.id)).rejects.toThrow("Activation failed");
+    await expect(execute(host, "echo", "still working")).resolves.toBe("still working");
+    await host.close();
+    const restarted = runtime(new PluginStore(path));
+    const snapshot = await restarted.list();
+    expect(snapshot.plugins[0]?.active?.version).toBe("1.0.0");
+    expect(snapshot.plugins[0]?.error).toBeUndefined();
+    await expect(execute(restarted, "echo", "recovered")).resolves.toBe("recovered");
+  });
+
+  it("rejects an older downloaded version before changing the running backend", async () => {
+    const store = new PluginStore(await directory());
+    const newer = packageBytes("1.1.0");
+    await store.install(newer, pluginPackageSha256(newer));
+    const host = runtime(store, bindings(), packageBytes("1.0.0"));
+    const before = (await host.list()).plugins[0]!;
+    await expect(host.install(manifest.id)).rejects.toThrow(/older than installed version/u);
+    expect((await host.list()).plugins[0]).toMatchObject({
+      active: { version: "1.1.0" },
+      activationId: before.activationId,
+      pending: null,
+    });
+    await expect(execute(host, "echo", "still working")).resolves.toBe("still working");
+  });
+
+  it("requires confirmation for active work and removes the plugin immediately", async () => {
+    const path = await directory();
+    const store = new PluginStore(path);
+    const bytes = packageBytes();
+    await store.install(bytes, pluginPackageSha256(bytes));
+    const host = runtime(store);
+    await execute(host, "start");
+    await expect(host.remove(manifest.id)).rejects.toThrow(/confirmation/u);
+    expect(await host.prepareExit()).toMatchObject({
+      pluginId: manifest.id,
+      title: "Pending work",
+    });
+    expect(await host.resolveExit(manifest.id, "cancel")).toBe(false);
+    expect(await host.prepareExit()).not.toBeNull();
+    const prompt = await host.prepareChange(manifest.id, "remove");
+    expect(prompt).toMatchObject({ pluginId: manifest.id });
+    expect((await host.remove(manifest.id, prompt!.token)).plugins).toEqual([]);
+    expect(await host.prepareExit()).toBeNull();
+    await expect(execute(host, "echo")).rejects.toThrow(/not active/u);
+    await host.close();
+    expect((await runtime(new PluginStore(path)).list()).plugins).toEqual([]);
+  });
+
+  it("isolates corrupt installation state from core startup", async () => {
+    const path = await directory();
+    await writeFile(join(path, "state.json"), "not JSON");
+    const host = runtime(new PluginStore(path));
+    await expect(host.start()).resolves.toBeUndefined();
+    const snapshot = await host.list();
+    expect(snapshot.plugins).toEqual([]);
+    expect(snapshot.error).toEqual(expect.any(String));
+    await expect(execute(host, "echo")).rejects.toThrow(/not active/u);
+  });
+
+  it("rejects a mismatched downloaded identity before staging any installation", async () => {
+    const store = new PluginStore(await directory());
+    const host = runtime(store, bindings(), packageBytes("1.0.0", backendCode, "different.plugin"));
+    await expect(host.install(manifest.id)).rejects.toThrow(/identity/u);
+    expect(await store.list()).toEqual([]);
+  });
+});

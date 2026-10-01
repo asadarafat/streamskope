@@ -1,0 +1,132 @@
+name: Publish EDA application
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eda-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  EDABUILDER_VERSION: v26.8.2
+  EDA_APPLICATION_IMAGE: ghcr.io/asadarafat/streamskope-eda-app
+  EDA_CATALOG_REPOSITORY: https://github.com/asadarafat/streamskope.git
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: eda-production
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: 1.24.0
+          cache-dependency-path: vendors/streamskope/apps/capture/agent/go.mod
+      - run: npm ci --no-audit --no-fund
+      - run: go test -race ./...
+        working-directory: vendors/streamskope/apps/capture/agent
+      - run: node tools/check/eda-source.mjs
+      - name: Read the EDA version and reject existing release identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(node --input-type=module -e 'import { EDA_CAPTURE_APPLICATION } from "./plugins/eda/contracts/eda-capture-types.ts"; process.stdout.write(EDA_CAPTURE_APPLICATION.version)')"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          refs="$(git ls-remote origin "refs/tags/apps/capture.streamskope.io/$VERSION" "refs/tags/vendors/streamskope/apps/capture/$VERSION" "refs/heads/streamskope/eda/$VERSION")"
+          test -z "$refs" || { echo "EDA catalog version already exists; inspect it before recovering. App versions must match the target EDA version."; exit 1; }
+          endpoint="users/$GITHUB_REPOSITORY_OWNER/packages/container/streamskope-eda-app/versions"
+          if gh api --paginate --slurp "$endpoint" > "$RUNNER_TEMP/versions.json" 2> "$RUNNER_TEMP/registry-error"; then
+            VERSION="$VERSION" node -e 'const fs=require("node:fs"); const versions=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(versions.flat().some(v=>v.metadata.container.tags.includes(process.env.VERSION))) throw Error("EDA image version already exists.")' "$RUNNER_TEMP/versions.json"
+          else
+            grep -q 'HTTP 404' "$RUNNER_TEMP/registry-error" || { cat "$RUNNER_TEMP/registry-error"; exit 1; }
+          fi
+      - name: Install checksum-verified EDABuilder
+        run: |
+          asset="edabuilder-$EDABUILDER_VERSION-linux-amd64"
+          base="https://github.com/nokia-eda/edabuilder/releases/download/$EDABUILDER_VERSION"
+          curl -fsSL "$base/$asset" -o "$RUNNER_TEMP/$asset"
+          curl -fsSL "$base/$asset.sha256sum" -o "$RUNNER_TEMP/$asset.sha256sum"
+          (cd "$RUNNER_TEMP" && sha256sum --check "$asset.sha256sum")
+          chmod 0755 "$RUNNER_TEMP/$asset"
+          mv "$RUNNER_TEMP/$asset" "$RUNNER_TEMP/edabuilder"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and sign the application
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EDA_APP_SIGNING_KEY_B64: ${{ secrets.EDA_APP_SIGNING_KEY_B64 }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.EDA_APP_SIGNING_KEY_PASSWORD }}
+          COSIGN_PASSWORD: ${{ secrets.EDA_APP_SIGNING_KEY_PASSWORD }}
+          EDABUILDER_AUTH_CONFIG: ${{ runner.temp }}/edabuilder-auth.json
+        run: |
+          test -n "$EDA_APP_SIGNING_KEY_B64" && test -n "$SIGNING_KEY_PASSWORD"
+          key="$RUNNER_TEMP/eda-signing.key"
+          trap 'rm -f "$key" "$EDABUILDER_AUTH_CONFIG"' EXIT
+          printf '%s' "$EDA_APP_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 0600 "$key"
+          cosign public-key --key "$key" > "$RUNNER_TEMP/public.key"
+          cmp "$RUNNER_TEMP/public.key" vendors/streamskope/apps/capture/signing/streamskope-eda.pub
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_REPOSITORY_OWNER" --password-stdin
+          edabuilder login registry -u "$GITHUB_REPOSITORY_OWNER" -p "$GH_TOKEN" ghcr.io
+          edabuilder login git -u "$GITHUB_ACTOR" -p "$GH_TOKEN" "$EDA_CATALOG_REPOSITORY"
+          agent_image="$EDA_APPLICATION_IMAGE:agent-$GITHUB_SHA"
+          docker buildx build --platform linux/amd64,linux/arm64 --provenance=false --push \
+            --file vendors/streamskope/apps/capture/agent/Dockerfile \
+            --tag "$agent_image" vendors/streamskope/apps
+          docker buildx imagetools inspect --raw "$agent_image" > "$RUNNER_TEMP/agent-index.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const index = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/agent-index.json`, 'utf8'));
+          assert.deepEqual(index.manifests.map(({ platform }) => `${platform.os}/${platform.architecture}`).sort(), ['linux/amd64', 'linux/arm64']);
+          NODE
+          agent_digest="$(docker buildx imagetools inspect "$agent_image" | awk '/^Digest:/ {print $2; exit}')"
+          [[ "$agent_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          AGENT_IMAGE="$EDA_APPLICATION_IMAGE@$agent_digest" node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = 'vendors/streamskope/apps/capture/manifest.yaml';
+          const source = readFileSync(path, 'utf8');
+          const original = `image: localhost/streamskope-eda-app-agent:${process.env.VERSION}`;
+          assert.equal(source.split(original).length, 2);
+          writeFileSync(path, source.replace(original, `image: ${process.env.AGENT_IMAGE}`));
+          NODE
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cd vendors/streamskope/apps
+          edabuilder build-push --sign --sign-key "$key" --sign-data-dir "$RUNNER_TEMP/sign" \
+            --app "manifest=capture/manifest.yaml,context=.,image=$EDA_APPLICATION_IMAGE:$VERSION"
+          digest="$(docker buildx imagetools inspect "$EDA_APPLICATION_IMAGE:$VERSION" | awk '/^Digest:/ {print $2; exit}')"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          cosign verify-attestation --insecure-ignore-tlog --key capture/signing/streamskope-eda.pub \
+            --type https://sigstore.dev/cosign/sign/v1 "$EDA_APPLICATION_IMAGE@$digest" > "$RUNNER_TEMP/attestation.json"
+          git push origin "$GITHUB_SHA:refs/heads/streamskope/eda/$VERSION"
+          edabuilder publish app "$EDA_CATALOG_REPOSITORY" --sign-data-dir "$RUNNER_TEMP/sign" \
+            --git-branch "streamskope/eda/$VERSION" \
+            --app "manifest=capture/manifest.yaml,context=.,version=$VERSION,image=$EDA_APPLICATION_IMAGE@$digest"
+          git fetch --no-tags origin "refs/tags/apps/capture.streamskope.io/$VERSION"
+          catalog_commit="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          git merge-base --is-ancestor "$GITHUB_SHA" "$catalog_commit"
+          git show "$catalog_commit:apps/capture.streamskope.io/manifest.yaml" | grep -Fx "  image: $EDA_APPLICATION_IMAGE@$digest"
+          git tag -a "vendors/streamskope/apps/capture/$VERSION" "$catalog_commit" -m "StreamSkope EDA $VERSION"
+          git push origin "refs/tags/vendors/streamskope/apps/capture/$VERSION"

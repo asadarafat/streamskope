@@ -1,0 +1,97 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "tools/docs.py"
+      - "tools/docs/**"
+      - "test/docs/**"
+      - "plugins/*/manifest.json"
+      - "src/platform/ui/**"
+      - "src/features/kafka/contracts/types.ts"
+      - "src/features/kafka/ui/message-operations.ts"
+      - "package*.json"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      STREAMSKOPE_DOCS_URL: https://asadarafat.github.io/streamskope/
+      STREAMSKOPE_DOCS_PUBLISH: "1"
+    outputs:
+      revision: ${{ steps.identity.outputs.revision }}
+      release: ${{ steps.identity.outputs.release }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          # Always publish current main, including when an older release event arrives.
+          ref: main
+          fetch-depth: 2
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: website/requirements.txt
+      - run: npm ci --no-audit --no-fund
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run docs -- qualify
+      - id: identity
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          identity = json.loads(Path("dist/site/documentation.json").read_text())
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"revision={identity['revision']}\nrelease={identity['desktop_release']}\n")
+          PY
+      - name: Verify documented desktop downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/docs/downloads.py
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: dist/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ needs.build.outputs.revision }}
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        id: deployment
+      - name: Verify published documentation
+        env:
+          DOCS_URL: ${{ steps.deployment.outputs.page_url }}
+          DOCS_REVISION: ${{ needs.build.outputs.revision }}
+          DOCS_RELEASE: ${{ needs.build.outputs.release }}
+        run: python3 tools/docs.py verify --url "$DOCS_URL" --revision "$DOCS_REVISION" --release "$DOCS_RELEASE"

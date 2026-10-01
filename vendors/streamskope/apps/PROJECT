@@ -1,0 +1,6 @@
+builderVersion: v26.8.2
+catalog: https://github.com/asadarafat/streamskope.git
+domain: streamskope.io
+name: streamskope
+registry: ghcr.io/asadarafat
+vendor: streamskope

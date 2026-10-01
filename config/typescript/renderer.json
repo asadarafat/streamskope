@@ -1,0 +1,33 @@
+{
+  "extends": "./base.json",
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "../../.cache/typescript/renderer.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"]
+  },
+  "files": [],
+  "include": [
+    "../../src/features/kafka/contracts/**/*.ts",
+    "../../src/features/kafka/ui/**/*.ts",
+    "../../src/features/kafka/ui/**/*.tsx",
+    "../../src/platform/desktop/**/*.ts",
+    "../../src/platform/electron/renderer/**/*.ts",
+    "../../src/platform/electron/renderer/**/*.tsx",
+    "../../src/platform/ui/**/*.ts",
+    "../../src/platform/ui/**/*.tsx",
+    "../../src/plugins/contracts.ts",
+    "../../src/plugins/renderer-api.ts",
+    "../../src/plugins/validation.ts",
+    "../../src/plugins/compatibility.ts",
+    "../../src/plugins/host-release.ts",
+    "../../package.json",
+    "../../plugins/eda/contracts/**/*.ts",
+    "../../plugins/eda/ui/**/*.ts",
+    "../../plugins/eda/ui/**/*.tsx",
+    "../../plugins/nsp/contracts/**/*.ts",
+    "../../plugins/nsp/ui/**/*.ts",
+    "../../plugins/nsp/ui/**/*.tsx"
+  ]
+}

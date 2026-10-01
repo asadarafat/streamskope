@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "composite": true,
+    "tsBuildInfoFile": "../../.cache/typescript/packaging.tsbuildinfo"
+  },
+  "files": ["../../tools/package.ts", "../../tools/package/macos-dmg.ts"]
+}

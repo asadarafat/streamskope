@@ -1,0 +1,32 @@
+{% set downloads = config.extra.desktop_downloads %}
+<div
+  class="sk-downloads"
+  data-desktop-release="{{ downloads.tag }}"
+  data-app-version="{{ downloads.version }}"
+>
+  <p>
+    Desktop release <strong>{{ downloads.tag }}</strong>; app and installer version
+    <strong>{{ downloads.version }}</strong>.
+    <a href="{{ downloads.notes_path | url }}">Read the release notes</a> or
+    <a href="{{ downloads.release_url }}">view all release assets</a>.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Platform</th>
+        <th scope="col">Download installer</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for asset in downloads.assets %}
+      <tr>
+        <th scope="row">{{ asset.platform }}</th>
+        <td>
+          <a href="{{ asset.url }}"><code>{{ asset.name }}</code></a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p><a href="{{ downloads.checksum_url }}">Download SHA256SUMS</a> for these installers.</p>
+</div>

@@ -1,0 +1,107 @@
+export const PLUGIN_API_VERSION = 3 as const;
+export type PluginApiVersion = 2 | typeof PLUGIN_API_VERSION;
+
+export interface PluginCompatibility {
+  readonly streamskope: { readonly minimum: string };
+  readonly target: {
+    readonly system: string;
+    readonly minimum: string;
+    readonly maximum: string;
+  };
+}
+
+export interface PluginResource {
+  readonly path: string;
+  readonly sha256: string;
+}
+
+export type JsonValue = null | boolean | number | string | JsonObject | readonly JsonValue[];
+export interface JsonObject {
+  readonly [key: string]: JsonValue;
+}
+
+export interface PluginProfileSource {
+  readonly kind: "plugin";
+  readonly pluginId: string;
+  readonly version: 1;
+  readonly data: JsonObject;
+}
+
+export interface PluginManifest {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly version: string;
+  readonly targetEdaVersion?: string;
+  readonly apiVersion: PluginApiVersion;
+  /** Required for API 3; absent from legacy API 2 packages. */
+  readonly compatibility?: PluginCompatibility;
+  readonly revision?: number;
+  readonly resources?: readonly PluginResource[];
+  readonly backend: "backend.cjs";
+  readonly renderer: "renderer.js";
+  readonly styles?: "renderer.css";
+}
+
+export interface PluginInstallation {
+  readonly id: string;
+  readonly activationId?: string;
+  readonly installed?: PluginManifest;
+  readonly active?: PluginManifest;
+  readonly previous?: PluginManifest;
+  readonly pending: "install" | "remove" | null;
+  readonly restartRequired: boolean;
+  readonly error?: string;
+  readonly rendererUrl?: string;
+  readonly stylesUrl?: string;
+}
+
+export interface PluginSnapshot {
+  readonly revision: number;
+  readonly plugins: readonly PluginInstallation[];
+  readonly error?: string;
+}
+
+export type PluginChangeOperation = "install" | "remove";
+
+export interface PluginChangeWarning {
+  readonly message: string;
+  readonly detail: string;
+  readonly stateKey?: string;
+}
+
+export interface PluginChangePrompt extends PluginChangeWarning {
+  readonly pluginId: string;
+  readonly token: string;
+  readonly title: string;
+  readonly confirmLabel: string;
+}
+
+export interface PluginCatalogSnapshot {
+  readonly plugins: readonly PluginManifest[];
+  readonly error?: string;
+}
+
+export interface PluginExitPrompt {
+  readonly pluginId: string;
+  readonly title: string;
+  readonly message: string;
+  readonly detail: string;
+  readonly actions: readonly { readonly id: string; readonly label: string }[];
+  readonly cancelAction: string;
+}
+
+export interface PluginEvent {
+  readonly pluginId: string;
+  readonly name: string;
+  readonly data: JsonValue;
+}
+
+export interface PluginRequest {
+  readonly pluginId: string;
+  readonly activationId: string;
+  readonly method: string;
+  readonly input: JsonValue;
+  readonly requestId: string;
+  readonly correlationId: string;
+}
