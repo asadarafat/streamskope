@@ -5,7 +5,7 @@
 # StreamSkope
 
 [![CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/asadarafat/streamskope)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/asadarafat/streamskope)
 
 A desktop workbench for exploring and troubleshooting Kafka.
 
