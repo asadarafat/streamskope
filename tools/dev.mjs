@@ -6,6 +6,8 @@ import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs
 import { delimiter, join } from "node:path";
 import process from "node:process";
 
+import { applyForgePatch } from "./check/forge-patch.ts";
+
 // Native health runs in an isolated child before loading tsx or the application.
 if (process.argv[2] === "--health") {
   const require = createRequire(import.meta.url);
@@ -64,6 +66,7 @@ if (process.argv[2] === "--health") {
         throw new Error(`Missing ${name}. Run npm ci before npm run dev.`);
       }
     }
+    await applyForgePatch(root);
     const defaultEnv = process.env;
     if (healthy(defaultEnv)) return defaultEnv;
     if (!process.env.npm_execpath)
@@ -90,6 +93,7 @@ if (process.argv[2] === "--health") {
     await mkdir(directory, { recursive: true });
     try {
       await access(cache);
+      await applyForgePatch(cache);
       if (!healthy(env))
         throw new Error(
           `Native cache is unhealthy: ${cache}. Move it aside and retry npm run dev.`,
@@ -123,6 +127,7 @@ if (process.argv[2] === "--health") {
         throw new Error(
           `Native dependency preparation stopped (exit ${code}). Retry npm run dev; the shared installation is unchanged.`,
         );
+      await applyForgePatch(staging);
       if (!healthy(environment(staging)))
         throw new Error(
           "Prepared dependencies failed the native runtime check. Shared installation is unchanged.",

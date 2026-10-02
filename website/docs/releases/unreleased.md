@@ -5,6 +5,14 @@ unreleased: true
 
 # Unreleased changes
 
+## Truststore dependency security backport
+
+Builds include the RSA signature-validation fix for
+[GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv) in
+the Forge dependency while its upstream release is pending. CI and native
+packaging verify the exact patched code. JKS and PKCS12 truststore support is
+preserved.
+
 ## Release versions assigned in CI
 
 Maintainers start **Actions → Release → Run workflow** from `main`, select the

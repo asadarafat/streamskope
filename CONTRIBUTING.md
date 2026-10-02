@@ -173,6 +173,38 @@ and `execute()` inference enforce the existing wire result shapes; this type ref
 did not increment protocol 26. Runtime validation still checks result shapes and
 request identifiers at host boundaries.
 
+## Temporary Forge security backport
+
+`node-forge@1.4.0` has no published fix for
+[GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv).
+StreamSkope applies the narrow RSA validation change from
+[upstream PR #1152](https://github.com/digitalbazaar/forge/pull/1152), pinned to
+commit `ceba34402e329f0365134f23fe19898756527d65`. This is a local backport of an
+unmerged upstream patch, not a new upstream version. Registry versions, lockfile
+integrity, and the dependency's existing licenses remain unchanged.
+
+The `dev`, `build`, `check`, and `package` entry points apply the backport before
+using application dependencies. This also covers development dependency caches
+and the fresh production install used by native packaging. Packaging verifies the
+patched bytes again after extracting the final ASAR and records the hash in its
+verification report. `tools/check/forge-patch.ts` pins the entire original and
+patched RSA file hashes; unknown versions, changed files, missing copies, or
+unlisted dependency resolutions fail verification. No install lifecycle script
+or additional public npm command is needed.
+
+Raw `npm audit` still reports the upstream advisory because the package retains
+its real version. `tools/check/audit.ts` runs the registry audit and accepts this
+specific advisory only after checking every installed affected copy against the
+backport hash. Indirect findings are accepted only when all their underlying
+advisories are accounted for. Other high/critical findings, malformed reports,
+and audit-service failures still fail CI. Signature regression tests demonstrate
+that stock Forge accepts the malformed signature and the patched copy rejects it;
+existing JKS/PKCS12 tests continue to qualify truststore handling.
+
+When a fixed upstream release is available, review and upgrade both direct and
+transitive Forge dependencies, remove the temporary patch hooks and advisory
+handling, restore the direct audit command, and retain the signature regression.
+
 ## GitHub builds
 
 The **CI** workflow runs the required **CI** source/docs check on every PR and push

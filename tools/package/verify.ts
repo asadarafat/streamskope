@@ -17,6 +17,8 @@ import { basename, join, relative, resolve } from "node:path";
 
 import { packager } from "@electron/packager";
 
+import { applyForgePatch, FORGE_BACKPORT } from "../check/forge-patch";
+
 import {
   assertVerificationApplicationContents,
   assertVerificationBundleContents,
@@ -43,6 +45,11 @@ interface VerificationReport {
   readonly bundlePath: string;
   readonly check: "verification-package";
   readonly command: string;
+  readonly dependencyBackport: {
+    readonly advisory: string;
+    readonly installedPaths: readonly string[];
+    readonly sha256: string;
+  };
   readonly electronVersion: string;
   readonly executablePath: string;
   readonly localeFiles: readonly string[];
@@ -172,7 +179,7 @@ async function stageApplication(
   stagingDirectory: string,
   manifest: ProjectManifest,
   npmCli: string,
-): Promise<void> {
+): Promise<readonly string[]> {
   await cp(resolve(repositoryRoot, "LICENSE"), join(stagingDirectory, "LICENSE"));
   await cp(resolve(repositoryRoot, "package.json"), join(stagingDirectory, "package.json"));
   await cp(
@@ -184,6 +191,7 @@ async function stageApplication(
     [npmCli, "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
     stagingDirectory,
   );
+  const patchedDependencies = await applyForgePatch(stagingDirectory);
   await rm(join(stagingDirectory, "node_modules", "jks-js", "examples"), {
     force: true,
     recursive: true,
@@ -231,6 +239,7 @@ async function stageApplication(
     "utf8",
   );
   await rm(join(stagingDirectory, "package-lock.json"));
+  return patchedDependencies;
 }
 
 async function main(): Promise<void> {
@@ -257,7 +266,7 @@ async function main(): Promise<void> {
   let localePruningEvidence: ElectronLocalePruningEvidence | undefined;
 
   try {
-    await stageApplication(stagingDirectory, manifest, npmCli);
+    const patchedDependencies = await stageApplication(stagingDirectory, manifest, npmCli);
     await rm(packageOutput, { force: true, recursive: true });
     await mkdir(packageOutput, { recursive: true });
     const bundlePaths = await packager({
@@ -319,6 +328,12 @@ async function main(): Promise<void> {
       [npmCli, "exec", "--no", "--", "asar", "extract", archivePath, inspectionDirectory],
       repositoryRoot,
     );
+    for (const path of patchedDependencies) {
+      const bytes = await readFile(join(inspectionDirectory, path, "lib/rsa.js"));
+      if (createHash("sha256").update(bytes).digest("hex") !== FORGE_BACKPORT.patchedSha256) {
+        throw new Error(`Packaged dependency is missing its verified security backport: ${path}`);
+      }
+    }
     const applicationFiles = await filesBelow(inspectionDirectory);
     const applicationRelativePaths = applicationFiles.map((path) =>
       relative(inspectionDirectory, path),
@@ -350,6 +365,11 @@ async function main(): Promise<void> {
       command: productionRelease
         ? "node --import tsx tools/package/verify.ts --release"
         : "npm run package",
+      dependencyBackport: {
+        advisory: FORGE_BACKPORT.advisoryUrl,
+        installedPaths: patchedDependencies,
+        sha256: FORGE_BACKPORT.patchedSha256,
+      },
       electronVersion,
       executablePath: packagedExecutable,
       localeFiles: localePruningEvidence.localeFiles,
