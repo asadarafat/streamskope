@@ -89,7 +89,7 @@ try {
         : desktopRelease;
     assert((await versionNotice.innerText()).includes(expectedRelease), route);
     assert.equal(
-      (await versionNotice.innerText()).includes("Unreleased changes"),
+      (await versionNotice.innerText()).includes("Unreleased source changes"),
       unreleased,
       `${route}: the version notice matches its documented release status`,
     );
@@ -99,7 +99,7 @@ try {
         assert(
           (
             await page.getByRole("region", { name: "Source plugin declarations" }).innerText()
-          ).includes(manifest.version),
+          ).includes(manifest.version === "0.0.0-dev" ? "Development" : manifest.version),
         );
       }
     }

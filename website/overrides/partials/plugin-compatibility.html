@@ -42,7 +42,11 @@
         <tr>
           <th scope="row">Plugin version</th>
           {% for plugin in config.extra.source_plugins %}
-          <td><code>{{ plugin.version }}</code></td>
+          <td>
+            {% if plugin.version == "0.0.0-dev" %}Development{% else %}<code
+              >{{ plugin.version }}</code
+            >{% endif %}
+          </td>
           {% endfor %}
         </tr>
       </tbody>

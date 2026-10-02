@@ -1,4 +1,11 @@
-import type { PluginCompatibility, PluginManifest } from "./contracts";
+import { PLUGIN_API_VERSION, type PluginCompatibility, type PluginManifest } from "./contracts";
+
+export const DEVELOPMENT_VERSION = "0.0.0-dev";
+
+/** Source packages have no release identity; numbered builds keep local updates immutable. */
+export function isDevelopmentPluginVersion(version: string): boolean {
+  return /^0\.0\.0-dev(?:\.(?:0|[1-9]\d*))?(?![\s\S])/u.test(version);
+}
 
 const numericVersion = "(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)";
 const targetVersion = new RegExp(`^${numericVersion}(?![\\s\\S])`, "u");
@@ -240,12 +247,19 @@ export function isPrereleaseVersion(version: string): boolean {
 }
 
 export function isPluginCompatibleWithHost(manifest: PluginManifest, release: string): boolean {
+  const version = release.replace(/^v/u, "");
+  if (isDevelopmentPluginVersion(version) || isDevelopmentPluginVersion(manifest.version)) {
+    return (
+      version === DEVELOPMENT_VERSION &&
+      isDevelopmentPluginVersion(manifest.version) &&
+      manifest.apiVersion === PLUGIN_API_VERSION
+    );
+  }
   // Legacy API 2 has no host-build declaration; its original API compatibility remains valid.
   if (manifest.apiVersion === 2) return true;
   const host = manifest.compatibility?.streamskope;
   if (host === undefined) return false;
   if (manifest.apiVersion === 3) return compareLegacyDesktopReleases(release, host.minimum) >= 0;
-  const version = release.replace(/^v/u, "");
   // Preview hosts need an explicitly qualified preview minimum for that same core release.
   // A numeric upper bound alone must not admit an untested future-minor release candidate.
   if (

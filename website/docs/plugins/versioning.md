@@ -10,17 +10,19 @@ A plugin version identifies its code and bundled resources; its manifest separat
 declares the supported desktop versions, plugin API and target-system versions.
 You do not need to infer compatibility from a filename.
 
-This convention starts with the upcoming **StreamSkope 0.2.0** and **plugin API 4**.
+This convention is implemented by the unreleased host and **plugin API 4**.
+Its final desktop and plugin versions are assigned only when a maintainer starts
+release CI; source versions remain `0.0.0-dev`.
 The published [v0.1.0+build.1 release](../releases/v0.1.0+build.1.md) retains its
 original API 3 packages. Source declarations below do not mean the new packages
 are already published.
 
 ## Read the version and requirements
 
-The first independent EDA Capture and NSP Capture versions are each **0.1.0**.
-Their equal numbers do not couple their releases. An EDA-only fix can publish
-EDA Capture **0.1.1** while NSP Capture remains **0.1.0** and the desktop remains
-**0.2.0**.
+Each plugin has its own release sequence. For example, an EDA-only fix could
+publish EDA Capture **0.1.1** while NSP Capture remains **0.1.0** and the desktop
+remains **0.2.0**. These numbers illustrate independent versioning; they do not
+reserve future versions or establish publication.
 
 | Field            | Example                   | Meaning                                                                 |
 | ---------------- | ------------------------- | ----------------------------------------------------------------------- |
@@ -70,6 +72,12 @@ preview desktops can receive them when their declared host requirements match.
 | NSP Capture plugin  | `plugins/nsp/v0.1.0` / `streamskope-nsp-v0.1.0.skope-plugin`                 |
 | NSP helper download | `streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml` in the NSP plugin release |
 
+The tags above are release outputs, not triggers. A maintainer selects **desktop**,
+**eda** or **nsp** and enters its version in **Actions → Release → Run workflow**
+from `main`. Release CI qualifies the exact source, assigns the version in a
+disposable build checkout and creates a draft to review and publish. PR and
+`main` checks only qualify source; a merge never assigns a final version.
+
 Plugins publish independently. A desktop release does not republish them, and a
 plugin release does not rebuild the desktop. The catalog compares versions within
 each plugin ID; EDA's version is never compared with NSP's version. It also enforces
@@ -105,8 +113,9 @@ not extend a plugin's target interval.
 
 The original release used custom API 3 labels such as
 `v0.1.0+build.1--eda-26.8.2-26.8.2--r1`. They remain historical identifiers and are
-not renamed. API 2 used still earlier version labels. StreamSkope 0.2.0 retains
-loading support for installed API 2 and API 3 packages and their saved profiles.
+not renamed. API 2 used still earlier version labels. Release builds supporting
+API 4 retain loading support for installed API 2 and API 3 packages and their
+saved profiles.
 
 1. [Back up the application data](../guide/recovery.md#back-up-before-upgrading).
 2. Upgrade the desktop to a release supporting API 4.
@@ -114,7 +123,7 @@ loading support for installed API 2 and API 3 packages and their saved profiles.
 4. Complete any active-work cleanup prompt, then resume a stopped capture explicitly.
 
 The catalog treats a compatible API 4 package as the successor to the old package
-generation. Its `0.1.0` version is not numerically compared with a legacy target
+generation. Its Semantic Version is not numerically compared with a legacy target
 version or custom revision label. Subsequent API 4 updates use SemVer ordering.
 Failed activation retains the previous verified plugin for recovery. Older desktop
 releases cannot load API 4; preserve a complete pre-upgrade backup for rollback.
@@ -125,14 +134,30 @@ original support declaration.
 
 | Component                     | Version responsibility                                                                                                                    |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| StreamSkope app and installer | One SemVer from `package.json.version`; release tag adds `v`.                                                                             |
-| EDA / NSP connection plugin   | Independent SemVer in its manifest; compatibility fields declare requirements.                                                            |
+| StreamSkope app and installer | Release CI stamps one chosen SemVer into the app and installer; tag adds `v`.                                                             |
+| EDA / NSP connection plugin   | Release CI stamps an independent SemVer into its manifest; compatibility fields declare requirements.                                     |
 | Plugin API                    | Separate host contract version, currently `4`; a plugin patch does not increment it.                                                      |
 | EDA cluster app               | Separate artifact aligned exactly with its EDA target, currently `26.8.2`. A desktop/plugin update does not rename or republish it.       |
 | NSP helper workflow           | Bundled and digest-verified in the NSP plugin. Changes require a new plugin version and review of the immutable deployed helper identity. |
 
 Continue with the [plugin overview](index.md), [EDA Capture](eda.md) or
 [NSP Capture](nsp.md) for setup and cleanup call flows.
+
+## Development packages
+
+Source desktop and plugin versions are `0.0.0-dev`, a development marker with no
+release availability claim. Local plugin packaging assigns
+`0.0.0-dev.<numeric timestamp>` so a rebuild can be installed without reusing an
+immutable identity. Only development hosts load current-API development packages;
+released desktops reject them. Test published packages with a compatible released
+desktop. The declared `>=0.2.0, <0.3.0` host interval remains the requirement for
+released API 4 packages; it does not assign the desktop's next release number.
+
+The browser development host offers locally built packages through the same
+**Preferences → Plugins** controls. Follow the [source plugin testing steps](../start/development.md#test-a-development-plugin).
+Preserve existing development data and cleanup state; use the previous compatible
+build to clean up and remove an older release-versioned development installation
+before installing a development package.
 
 ## Declared packages
 

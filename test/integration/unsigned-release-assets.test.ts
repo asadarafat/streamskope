@@ -143,6 +143,17 @@ it("rejects mismatched reviewed notes before writing release checksums", async (
   await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
+it.each(["0.0.0", "0.0.0-dev", "0.0.0-dev.123"])(
+  "refuses development identity %s even when release assembly is invoked directly",
+  async (version) => {
+    const assets = await fixture();
+    await expect(prepareUnsignedRelease(assets, version, commit)).rejects.toThrow(
+      /Invalid unsigned release/u,
+    );
+    await expect(readFile(join(assets, "SHA256SUMS"))).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
+
 it("refuses the wrong native runner before starting packaging checks or a build", async () => {
   const result = execute(process.execPath, ["--import", "tsx", "tools/package.ts"], {
     env: { ...process.env, EXPECTED_PLATFORM: "different-platform" },

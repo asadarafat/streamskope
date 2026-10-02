@@ -4,4 +4,4 @@
 
 ## Verification
 
-<!-- List checks actually run and their results; identify any important unverified behavior. Run `npm run check` locally and report its result, including any live EDA/NSP skip. GitHub repeats shared source/docs checks on every PR; desktop release tags also verify native packages and the unsigned EDA application build; plugin tags qualify and package the selected plugin. -->
+<!-- List checks actually run and their results; identify any important unverified behavior. Run `npm run check` locally and report its result, including any live EDA/NSP skip. GitHub qualifies source/docs on every PR and main push. The separate manual Release workflow assigns the selected component/version in its build checkout, then verifies native desktop packages plus the unsigned EDA application, or the selected plugin. -->

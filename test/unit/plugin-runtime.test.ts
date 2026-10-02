@@ -91,6 +91,7 @@ async function directory(): Promise<string> {
 function runtime(store: PluginStore, host = bindings(), bytes = packageBytes()): PluginRuntime {
   const value = new PluginRuntime({
     store,
+    hostRelease: "v0.2.0",
     catalog: {
       list: (): Promise<{ manifest: typeof manifest; sha256: string; downloadUrl: string }[]> =>
         Promise.resolve([
@@ -188,9 +189,10 @@ describe("optional installed plugin runtime", () => {
     expect((await upgraded.list()).plugins[0]?.active?.version).toBe(future.version);
   });
 
-  it.each([3, 4] as const)(
-    "retains an active API %s version when a download changes its bytes, while allowing exact-byte retry",
-    async (apiVersion) => {
+  it.each([3, 4, "development"] as const)(
+    "retains an active %s version when a download changes its bytes, while allowing exact-byte retry",
+    async (channel) => {
+      const apiVersion = channel === "development" ? 4 : channel;
       const compatibility = {
         streamskope:
           apiVersion === 3
@@ -203,7 +205,12 @@ describe("optional installed plugin runtime", () => {
         apiVersion,
         compatibility,
         ...(apiVersion === 3 ? { revision: 1 } : {}),
-        version: apiVersion === 3 ? formatPluginVersion(compatibility, 1) : "0.1.0",
+        version:
+          channel === "development"
+            ? "0.0.0-dev.1790928000000"
+            : apiVersion === 3
+              ? formatPluginVersion(compatibility, 1)
+              : "0.1.0",
       };
       const packaged = (code: string): Uint8Array =>
         encodePluginPackage(
@@ -218,7 +225,7 @@ describe("optional installed plugin runtime", () => {
       const store = new PluginStore(await directory());
       const host = new PluginRuntime({
         store,
-        hostRelease: compatibility.streamskope.minimum,
+        hostRelease: channel === "development" ? "v0.0.0-dev" : compatibility.streamskope.minimum,
         catalog: {
           list: (): Promise<[]> => Promise.resolve([]),
           download: (): Promise<{ bytes: Uint8Array; sha256: string }> =>

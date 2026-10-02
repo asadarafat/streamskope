@@ -6,6 +6,8 @@ import {
 } from "../../src/platform/node/kafka-backend";
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
+import { DEVELOPMENT_VERSION } from "../../src/plugins/compatibility";
+import { STREAMSKOPE_RELEASE } from "../../src/plugins/host-release";
 
 import { FileFixtureOwnershipStore } from "./kafka-fixture/file-ownership-store";
 import { KafkaFixtureLifecycle } from "./kafka-fixture/lifecycle";
@@ -16,6 +18,7 @@ import {
   type LocalAioDevelopmentProfilePreparation,
 } from "./kafka-fixture/development-profile";
 import { startWebDevelopmentCommand, type RunningWebDevelopmentCommand } from "./session";
+import { DevelopmentPluginCatalog } from "./plugin-catalog";
 
 let launch: RunningWebDevelopmentCommand | undefined;
 let closing: Promise<void> | undefined;
@@ -55,6 +58,11 @@ async function start(): Promise<void> {
       });
       const plugins = new PluginRuntime({
         store: new PluginStore(join(repositoryRoot, ".cache", "development-plugins")),
+        ...(STREAMSKOPE_RELEASE === `v${DEVELOPMENT_VERSION}`
+          ? {
+              catalog: new DevelopmentPluginCatalog(join(repositoryRoot, "dist", "plugin-package")),
+            }
+          : {}),
       });
       const backend = createKafkaBackend(
         profileStore,
@@ -88,6 +96,11 @@ async function start(): Promise<void> {
         : `The browser did not open automatically: ${launch.browserOpenError}`
     }\n${profileStatus}Manual launch URL:\n${launch.browserUrl}\n`,
   );
+  if (STREAMSKOPE_RELEASE === `v${DEVELOPMENT_VERSION}`) {
+    process.stdout.write(
+      "Development plugins use local packages. Run npm run package -- plugin, then Preferences > Plugins > Refresh plugins > Install or Update.\n",
+    );
+  }
   if (launch.reused) {
     return;
   }

@@ -1,7 +1,7 @@
 # Check compatibility before connecting
 
 The core capabilities below apply to the published desktop **v0.1.0+build.1**
-(app **0.1.0**) and upcoming **0.2.0**. Plugin requirements differ by generation,
+(app **0.1.0**) and current development source. Plugin requirements differ by generation,
 as described below. Implemented means
 the application exposes the capability; it does not qualify every vendor/version.
 See [qualification evidence](../guide/qualification.md) for what was actually exercised.
@@ -42,12 +42,14 @@ not part of the installation procedure.
 
 ## Plugin compatibility declarations
 
-| Package generation             | Desktop requirement      | Plugin versioning                                                                           |
-| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------- |
-| Published API 3 packages       | Minimum `v0.1.0+build.1` | Original combined compatibility/revision labels, preserved unchanged                        |
-| Upcoming API 4 EDA / NSP 0.1.0 | `>=0.2.0, <0.3.0`        | Independent Semantic Versions; supported host/target intervals are separate manifest fields |
+| Package generation          | Desktop requirement      | Plugin versioning                                                                           |
+| --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
+| Published API 3 packages    | Minimum `v0.1.0+build.1` | Original combined compatibility/revision labels, preserved unchanged                        |
+| Development API 4 EDA / NSP | `>=0.2.0, <0.3.0`        | Independent Semantic Versions; supported host/target intervals are separate manifest fields |
 
-StreamSkope 0.2.0 preserves installed API 2 and API 3 packages. The
+Release builds supporting API 4 preserve installed API 2 and API 3 packages.
+The declared desktop interval is a compatibility bound, not a scheduled release
+version. Development builds use isolated development plugin packages. The
 [manifest-derived declarations](../plugins/versioning.md#declared-packages)
 show the current source's API 4 requirements; they do not claim those packages are
 published. The official catalog establishes download availability and selects a

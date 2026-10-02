@@ -97,6 +97,7 @@ async function setup(
   await store.install(bytes, sha256);
   const runtime = new PluginRuntime({
     store,
+    hostRelease: "v0.2.0",
     loadModule: (): Promise<PluginBackendModule> => Promise.resolve({ activate: backend }),
     ...options,
   });

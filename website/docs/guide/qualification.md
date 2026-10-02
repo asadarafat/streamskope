@@ -6,13 +6,14 @@ checks the site; it does not establish live integration, permissions or recovery
 
 ## Current qualification
 
-The source prepares **StreamSkope 0.2.0** and **API 4 plugins 0.1.0**. These are
-unreleased. No published 0.2.0 installer, live-cluster qualification or installed
-legacy-to-API-4 upgrade rehearsal is recorded yet. Results from the original
+The source contains unreleased **plugin API 4** and release-process changes. Its
+`0.0.0-dev` identity is a development marker; maintainers assign component versions
+when starting release CI. No release of these changes, live-cluster qualification
+or installed legacy-to-API-4 upgrade rehearsal is recorded yet. Results from the original
 release do not qualify the changed source. The shared CI result below belongs
 to the linked pre-merge revision; it does not establish native or live qualification.
 
-| Check                                                     | Required evidence                                                        | Current record for 0.2.0 / API 4                                                                |
+| Check                                                     | Required evidence                                                        | Record for unreleased source / API 4                                                            |
 | --------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | Static, unit, architecture, non-live integration and docs | Successful CI for exact committed source                                 | [Passed for source 2250217](https://github.com/asadarafat/streamskope/actions/runs/36924058229) |
 | Three native installers                                   | Release CI, launch checks and installer checksums                        | Pending packaging                                                                               |
@@ -59,7 +60,8 @@ forward as qualification for this source.
 | NSP 26.4.0 setup and cleanup                        | Configured target, API version, profile reuse, Kafka access and verified execution removal | No live result recorded for this release                                                                                                          |
 | Native plugin dialogs and credential-backed restore | Installed desktop, OS/architecture and real credential-service rehearsal                   | No installed native workflow result recorded for this release                                                                                     |
 
-CI runs on pull requests, `main` and release tags. The
+Qualification CI runs on pull requests and `main`. The manual Release workflow
+qualifies its selected source again before assigning a version and packaging. The
 [CI workflow](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
 is a place to find results, not a substitute for linking the exact successful run.
 Local `npm run check` also runs the soak and configured live checks. An unconfigured

@@ -15,11 +15,14 @@ import {
   type VerifiedPluginPackage,
 } from "../../src/platform/node/plugins/package";
 import { PluginStore } from "../../src/platform/node/plugins/store";
+import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import {
   NSP_WORKFLOW_DEFINITION,
   NSP_WORKFLOW_FINGERPRINT,
 } from "../../plugins/nsp/backend/workflow";
 import { builtPluginAssets } from "../support/plugin-package-fixture";
+import { compareSemanticVersions } from "../../src/plugins/compatibility";
+import { DevelopmentPluginCatalog } from "../../tools/dev/plugin-catalog";
 
 const execute = promisify(execFile);
 let directory: string;
@@ -146,22 +149,34 @@ it("loads the packaged NSP backend independently with no network or repository d
   expect(result.stdout.trim()).toBe("standalone-nsp-backend-ok");
 });
 
-it("publishes independent semantic versions and the exact NSP workflow as a hashed resource and separate download", async () => {
+it("packages distinct development identities without changing source and includes the exact NSP workflow", async () => {
   const files = (await readdir("dist/plugin-package")).sort();
-  expect(files).toEqual([
-    "streamskope-eda-v0.1.0-plugin.json",
-    "streamskope-eda-v0.1.0.skope-plugin",
-    "streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml",
-    "streamskope-nsp-v0.1.0-plugin.json",
-    "streamskope-nsp-v0.1.0.skope-plugin",
-  ]);
+  const edaAssets = await builtPluginAssets("eda");
+  const nspAssets = await builtPluginAssets("nsp");
+  expect(files).toEqual(
+    [
+      edaAssets.manifestAsset,
+      edaAssets.packageAsset,
+      `${nspAssets.prefix}-nsp-capture.workflow.yaml`,
+      nspAssets.manifestAsset,
+      nspAssets.packageAsset,
+    ].sort(),
+  );
   for (const packaged of [plugin, nspPlugin]) {
     expect(packaged.manifest).toMatchObject({
-      version: "0.1.0",
       apiVersion: 4,
       compatibility: { streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" } },
     });
+    expect(packaged.manifest.version).toMatch(/^0\.0\.0-dev\.[1-9]\d*$/u);
     expect(packaged.manifest).not.toHaveProperty("revision");
+  }
+  expect(
+    compareSemanticVersions(nspPlugin.manifest.version, plugin.manifest.version),
+  ).toBeGreaterThan(0);
+  for (const name of ["eda", "nsp"]) {
+    expect(
+      JSON.parse(await readFile(join("plugins", name, "manifest.json"), "utf8")),
+    ).toHaveProperty("version", "0.0.0-dev");
   }
   const resource = nspPlugin.files.get("nsp-capture.workflow.yaml")!;
   expect(Buffer.from(resource).toString("utf8")).toBe(NSP_WORKFLOW_DEFINITION);
@@ -437,3 +452,54 @@ it("installs and removes the verified package through Preferences across applica
     },
   );
 }, 125_000);
+
+it("hot-updates a second local build in the same store without losing recovery state", async () => {
+  const catalog = new DevelopmentPluginCatalog("dist/plugin-package");
+  const store = new PluginStore(join(directory, "development-update"));
+  const runtime = new PluginRuntime({
+    store,
+    catalog,
+  });
+  runtime.bindHost({
+    execute: () => Promise.reject(new Error("Update must not execute core commands")),
+    connectionActive: () => false,
+    profiles: () => Promise.resolve([]),
+    deleteProfile: () => Promise.reject(new Error("Update must not delete profiles")),
+    disconnectPluginConnection: () => Promise.resolve(),
+    recordActivity: () => undefined,
+    failure: (error) => {
+      throw error;
+    },
+  });
+  try {
+    const original = (await runtime.install(plugin.manifest.id)).plugins[0]!;
+    const recovery = { fixture: "retained ownership" };
+    await store.writeRecoveryState(plugin.manifest.id, recovery);
+    await execute(process.execPath, ["--import", "tsx", "tools/package.ts", "plugin"], {
+      timeout: 90_000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    const refreshed = (await catalog.list()).find(
+      (entry) => entry.manifest.id === plugin.manifest.id,
+    )!;
+    const { bytes } = await catalog.download(plugin.manifest.id);
+    const rebuilt = parsePluginPackage(bytes);
+    expect(refreshed.manifest).toEqual(rebuilt.manifest);
+    expect(refreshed.sha256).toBe(rebuilt.sha256);
+    expect(
+      compareSemanticVersions(rebuilt.manifest.version, original.active!.version),
+    ).toBeGreaterThan(0);
+    const updated = (await runtime.install(plugin.manifest.id)).plugins[0]!;
+    expect(updated.active?.version).toBe(rebuilt.manifest.version);
+    expect(updated.activationId).not.toBe(original.activationId);
+    expect(updated.previous?.version).toBe(original.active?.version);
+    expect(updated.restartRequired).toBe(false);
+    expect(await store.readRecoveryState(plugin.manifest.id)).toEqual(recovery);
+    expect(JSON.parse(await readFile("plugins/eda/manifest.json", "utf8"))).toHaveProperty(
+      "version",
+      "0.0.0-dev",
+    );
+  } finally {
+    await runtime.close();
+  }
+}, 95_000);

@@ -142,7 +142,7 @@ function fixture(
     if (url.endsWith("/assets/2")) return Promise.resolve(new Response(Buffer.from(download)));
     throw new Error(`Unexpected URL: ${url}`);
   });
-  return { catalog: new OfficialPluginCatalog(fetcher), fetcher };
+  return { catalog: new OfficialPluginCatalog(fetcher, "v0.2.0"), fetcher };
 }
 
 function multipleReleases(
@@ -201,10 +201,23 @@ function multipleReleases(
     if (!content) throw new Error(`Unexpected URL: ${url}`);
     return Promise.resolve(new Response(Buffer.from(content)));
   });
-  return { catalog: new OfficialPluginCatalog(fetcher), fetcher, metadata };
+  return { catalog: new OfficialPluginCatalog(fetcher, "v0.2.0"), fetcher, metadata };
 }
 
 describe("official plugin downloads", () => {
+  it("keeps development builds separate from published plugin compatibility", async () => {
+    const development = { ...semanticManifest, version: "0.0.0-dev.1790928000000" };
+    const update = { ...development, version: "0.0.0-dev.1790928000001" };
+    const entries = [semanticManifest, development, update, manifest];
+    expect(await versionedCatalog(entries, "v0.0.0-dev").list()).toMatchObject([
+      { manifest: update },
+    ]);
+    expect(await versionedCatalog(entries, "v0.2.0").list()).toMatchObject([
+      { manifest: semanticManifest },
+    ]);
+    expect(await versionedCatalog([semanticManifest, manifest], "v0.0.0-dev").list()).toEqual([]);
+  });
+
   it("selects independently versioned API 4 updates over retained API 2/3 packages and enforces host bounds", async () => {
     const compatibility = {
       streamskope: { minimum: "v0.1.0+build.1" },

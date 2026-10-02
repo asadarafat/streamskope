@@ -1,0 +1,256 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component to release
+        required: true
+        type: choice
+        options: [desktop, eda, nsp]
+      version:
+        description: Bare SemVer (for example 0.2.0 or 0.2.0-rc.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.component }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RELEASE_COMPONENT: ${{ inputs.component }}
+  RELEASE_VERSION: ${{ inputs.version }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    outputs:
+      component: ${{ steps.identity.outputs.component }}
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+      prerelease: ${{ steps.identity.outputs.prerelease }}
+    steps:
+      - name: Require a main-branch release
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "Start Release from main; other branches and tags are not release sources." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - id: identity
+        run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION"
+      - name: Require an unused release identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          node --input-type=module <<'NODE'
+          const { GITHUB_API_URL, GITHUB_REPOSITORY, GH_TOKEN, RELEASE_TAG } = process.env;
+          for (const resource of ['git/ref/tags', 'releases/tags']) {
+            const response = await fetch(`${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/${resource}/${encodeURIComponent(RELEASE_TAG)}`, {
+              headers: { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+              signal: AbortSignal.timeout(30_000),
+            });
+            if (response.status === 200) throw new Error(`Release identity ${RELEASE_TAG} already exists; choose a new version.`);
+            if (response.status !== 404) throw new Error(`Cannot establish whether ${RELEASE_TAG} is unused: GitHub returned HTTP ${response.status}.`);
+          }
+          NODE
+
+  checks:
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+
+  desktop:
+    if: needs.prepare.outputs.component == 'desktop'
+    needs: [prepare, checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x64
+          - os: macos-15
+            target: darwin-arm64
+          - os: windows-2025
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
+      - if: runner.os == 'Linux'
+        run: npx --no-install playwright install-deps chromium
+      - run: npm run package
+        env:
+          EXPECTED_PLATFORM: ${{ runner.os == 'Windows' && 'win32' || runner.os == 'macOS' && 'darwin' || 'linux' }}
+          EXPECTED_ARCH: ${{ runner.os == 'macOS' && 'arm64' || 'x64' }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: desktop-${{ matrix.target }}
+          path: dist/installers/*
+          if-no-files-found: error
+          retention-days: 7
+
+  eda:
+    if: needs.prepare.outputs.component == 'desktop'
+    needs: [prepare, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
+      - run: npm run package -- eda
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: eda-package
+          path: dist/eda-package/*
+          if-no-files-found: error
+          retention-days: 7
+
+  plugin:
+    if: needs.prepare.outputs.component != 'desktop'
+    needs: [prepare, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
+      - run: npm run package -- plugin "$RELEASE_COMPONENT"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: desktop-plugins
+          path: dist/plugin-package/*
+          if-no-files-found: error
+          retention-days: 7
+
+  draft-release:
+    if: needs.prepare.outputs.component == 'desktop'
+    needs: [prepare, checks, desktop, eda]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: desktop-*-*
+          merge-multiple: true
+          path: dist/installers
+      - name: Assemble checksums and reviewed release notes
+        run: npm run package -- release dist/installers "$RELEASE_VERSION" "$GITHUB_SHA" "website/docs/releases/$RELEASE_TAG.md" "$RUNNER_TEMP/notes.md" "$RELEASE_TAG"
+      - name: Reserve the tag and create a draft for maintainer review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          latest_options=()
+          if [[ "$PRERELEASE" == true ]]; then latest_options+=(--latest=false); fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" --silent
+          gh release create "$RELEASE_TAG" dist/installers/* --verify-tag --target "$GITHUB_SHA" --draft --prerelease="$PRERELEASE" "${latest_options[@]}" \
+            --title "StreamSkope $RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md"
+
+  plugin-draft-release:
+    if: needs.prepare.outputs.component != 'desktop'
+    needs: [prepare, checks, plugin]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: desktop-plugins
+          path: dist/plugin-package
+      - name: Prepare plugin installation notes
+        id: plugin
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile, readdir, writeFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          const directory = 'dist/plugin-package';
+          const manifests = (await readdir(directory)).filter(name => name.endsWith('-plugin.json'));
+          if (manifests.length !== 1) throw new Error('A plugin release must contain exactly one plugin.');
+          const manifest = JSON.parse(await readFile(join(directory, manifests[0]), 'utf8'));
+          if (manifest.id !== `streamskope.${process.env.RELEASE_COMPONENT}` || manifest.version !== process.env.RELEASE_VERSION) {
+            throw new Error('Packaged plugin does not match the requested release.');
+          }
+          const notes = [
+            `${manifest.name} desktop plugin ${manifest.version}.`,
+            `Install from StreamSkope Preferences > Plugins; activation is immediate. Requires plugin API ${manifest.apiVersion}.`,
+            `Requires StreamSkope >=${manifest.compatibility.streamskope.minimum} and <${manifest.compatibility.streamskope.maximumExclusive}, with plugin API ${manifest.apiVersion}.`,
+            `Supports ${manifest.compatibility.target.system.toUpperCase()} ${manifest.compatibility.target.minimum} through ${manifest.compatibility.target.maximum} (inclusive).`,
+            ...(manifest.compatibility.target.system === 'eda' ? ['The EDA cluster application is installed separately through the capture workflow.'] : []),
+            ...(manifest.resources ?? []).map(resource => `Included resource: ${resource.path} (SHA256 ${resource.sha256}). The identical resource is available as a separate download.`),
+            `Source commit: ${process.env.GITHUB_SHA}.`,
+          ].join('\n\n');
+          await writeFile(join(process.env.RUNNER_TEMP, 'plugin-notes.md'), `${notes}\n`);
+          await appendFile(process.env.GITHUB_OUTPUT, `title=${manifest.name} ${manifest.version}\n`);
+          NODE
+      - name: Reserve the tag and create a plugin draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PLUGIN_TITLE: ${{ steps.plugin.outputs.title }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" --silent
+          gh release create "$RELEASE_TAG" dist/plugin-package/* --verify-tag --target "$GITHUB_SHA" --draft --prerelease="$PRERELEASE" --latest=false \
+            --title "$PLUGIN_TITLE" --notes-file "$RUNNER_TEMP/plugin-notes.md"

@@ -2,7 +2,7 @@
   "id": "streamskope.nsp",
   "name": "NSP Capture",
   "description": "Connect to NSP Kafka using your NSP API credentials.",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "apiVersion": 4,
   "backend": "backend.cjs",
   "renderer": "renderer.js",

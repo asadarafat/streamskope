@@ -31,8 +31,21 @@ def validate_notes(root, tag, version):
                for name, value in (("release_tag", tag), ("release_version", version))):
         raise ValueError("Release needs notes for its exact tag and application version")
 
+
+def validate_unreleased_notes(root):
+    """Development notes must not assign an application release identity."""
+    notes = root / "website/docs/releases/unreleased.md"
+    content = notes.read_text() if notes.is_file() else ""
+    metadata = re.match(r"---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)", content)
+    fields = metadata.group(1) if metadata else ""
+    if (re.findall(r"^unreleased:\s*([^\r\n]*)$", fields, re.M) != ["true"]
+            or re.search(r"^release_(?:tag|version):", fields, re.M)
+            or not re.search(r"^# Unreleased changes\s*$", content, re.M)):
+        raise ValueError("Development source needs unversioned unreleased notes")
+
+
 def documentation_context(root=ROOT, environment=None):
-    """Keep published downloads usable while validating the upcoming source release."""
+    """Keep published downloads separate from development or CI-stamped source."""
     root = Path(root)
     environment = os.environ if environment is None else environment
     project = tomllib.loads((root / "website/zensical.toml").read_text())["project"]
@@ -42,17 +55,22 @@ def documentation_context(root=ROOT, environment=None):
         raise ValueError("Documented desktop release must be an exact release identity")
     validate_notes(root, release, version)
     source_version = json.loads((root / "package.json").read_text())["version"]
-    source_release = "v" + source_version
-    if not release_version(source_release):
-        raise ValueError("Source application version must be SemVer without build metadata")
-    validate_notes(root, source_release, source_version)
+    if source_version == "0.0.0-dev":
+        validate_unreleased_notes(root)
+        source_release = "development"
+    else:
+        source_release = "v" + source_version
+        if not release_version(source_release):
+            raise ValueError("Source application version must be SemVer without build metadata")
+        validate_notes(root, source_release, source_version)
     tag = environment.get("GITHUB_REF_NAME", "")
     desktop_tag = tag.startswith("v") and (
         environment.get("GITHUB_EVENT_NAME") == "release"
         or environment.get("GITHUB_REF_TYPE") == "tag"
         or environment.get("GITHUB_REF", "").startswith("refs/tags/")
     )
-    # Shared tag CI must reject this before native packaging, not after publication.
+    # A stamped build must retain its exact identity. Pages always uses main,
+    # even when publication of a historical release triggers the deployment.
     published = environment.get("STREAMSKOPE_DOCS_PUBLISH") == "1"
     if desktop_tag and tag != source_release and not published:
         raise ValueError("Desktop release tag differs from the source application version")

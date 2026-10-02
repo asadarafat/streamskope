@@ -198,10 +198,11 @@ development artifact, separate from the signed App Store publication.
 
 ### Compatibility package
 
-The upcoming API 4 package, **EDA Capture 0.1.0**, targets **EDA 26.8.2**
-and supports desktop **>=0.2.0, <0.3.0**. Its independent plugin version,
-desktop bounds and inclusive target range come from
-the [manifest-derived declarations](versioning.md#declared-packages). The official
+The development API 4 package targets **EDA 26.8.2** and declares desktop
+**>=0.2.0, <0.3.0**. These are compatibility bounds, not a promised release
+number; the plugin version is assigned when its release workflow starts. See
+the [manifest-derived declarations](versioning.md#declared-packages) for its
+development identity, desktop bounds and inclusive target range. The official
 release catalog establishes which packages are available to install.
 
 A desktop plugin version does not rename the running EDA product or cluster

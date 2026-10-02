@@ -117,10 +117,11 @@ states which environment and operations were actually exercised.
 
 ### Compatibility package
 
-The upcoming API 4 package, **NSP Capture 0.1.0**, targets **NSP 26.4.0**
-and supports desktop **>=0.2.0, <0.3.0**. Its independent plugin version,
-desktop bounds and inclusive target range come from
-the [manifest-derived declarations](versioning.md#declared-packages). The official
+The development API 4 package targets **NSP 26.4.0** and declares desktop
+**>=0.2.0, <0.3.0**. These are compatibility bounds, not a promised release
+number; the plugin version is assigned when its release workflow starts. See
+the [manifest-derived declarations](versioning.md#declared-packages) for its
+development identity, desktop bounds and inclusive target range. The official
 release catalog establishes which packages are available to install.
 
 The plugin reads `GET /sdn/api/v4/system/version` before creating,
