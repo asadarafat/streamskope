@@ -65,6 +65,7 @@ import {
 export interface StreamSkopeWorkbenchProperties {
   readonly desktop?: StreamSkopeDesktop | undefined;
   readonly host: StreamSkopeHost;
+  readonly initialQueryImport?: string | undefined;
   readonly streamMonitorObserver?: RendererStreamMonitorObserver;
 }
 
@@ -72,8 +73,10 @@ export function StreamSkopeWorkbench({
   desktop,
   host,
   streamMonitorObserver,
+  initialQueryImport,
 }: StreamSkopeWorkbenchProperties): React.JSX.Element {
-  const [queriesOpen, setQueriesOpen] = useState(false);
+  const [queriesOpen, setQueriesOpen] = useState(initialQueryImport !== undefined);
+  const [queryImport, setQueryImport] = useState(initialQueryImport);
   const [state, dispatch] = useReducer(reduceKafkaUiState, initialKafkaUiState);
   const [rendererStreamMonitor] = useState(
     () => streamMonitorObserver ?? createRendererStreamMonitorObserver(),
@@ -730,6 +733,8 @@ export function StreamSkopeWorkbench({
       {queriesOpen ? (
         <SavedQueriesDialog
           host={host}
+          transfer={textDocumentTransfer}
+          initialImport={queryImport}
           profiles={state.profiles}
           currentTopic={selectedTopic}
           readActive={
@@ -737,7 +742,10 @@ export function StreamSkopeWorkbench({
             (state.consumptionState === "empty" && state.consumptionRequest?.mode === "tail")
           }
           captureCurrent={captureQuery}
-          onClose={() => setQueriesOpen(false)}
+          onClose={() => {
+            setQueriesOpen(false);
+            setQueryImport(undefined);
+          }}
           onRestore={(query, profileId) => {
             const profile = state.profiles.find((entry) => entry.id === profileId);
             const needsConnection =
@@ -750,6 +758,7 @@ export function StreamSkopeWorkbench({
             if (profile !== undefined) setSelectedProfileId(profile.id);
             setNavigation(needsConnection ? "profiles" : "topics");
             setQueriesOpen(false);
+            setQueryImport(undefined);
           }}
         />
       ) : null}

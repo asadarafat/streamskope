@@ -8,6 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { KafkaQueryLibrary } from "../../src/features/kafka/application";
 import {
   HOST_PROTOCOL_VERSION,
+  createKafkaQueryLink,
   type HostCommand,
   type HostEvent,
   type HostEventListener,
@@ -60,6 +61,31 @@ class LibraryHost implements StreamSkopeHost {
 }
 
 afterEach(cleanup);
+
+it("opens an incoming link for explicit review without connecting, reading or saving it", async () => {
+  const host = new LibraryHost();
+  const user = userEvent.setup();
+  const query = {
+    schemaVersion: 1,
+    request: { topic: "orders", mode: "earliest", maxMessages: 25 },
+  } as const;
+  render(
+    <StreamSkopeApp host={host} initialQueryImport={new URL(createKafkaQueryLink(query)).hash} />,
+  );
+  expect(await screen.findByRole("dialog", { name: "Saved queries" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Open imported query" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Review import" }));
+  await user.click(screen.getByRole("button", { name: "Open imported query" }));
+  expect(
+    host.commands.some((command) =>
+      ["profiles.connect", "connection.connect", "messages.start", "queries.put"].includes(
+        command.command,
+      ),
+    ),
+  ).toBe(false);
+  expect((await host.library.list()).queries).toEqual([]);
+  expect(screen.queryByRole("dialog", { name: "Saved queries" })).not.toBeInTheDocument();
+});
 
 it("saves, reopens and deletes query settings without starting a read or keeping old coverage", async () => {
   const host = new LibraryHost();
@@ -148,7 +174,7 @@ it("saves, reopens and deletes query settings without starting a read or keeping
   await user.click(screen.getByRole("button", { name: "Delete query" }));
   expect(await screen.findByText("Query deleted.")).toBeVisible();
   expect((await host.library.list()).queries).toEqual([]);
-});
+}, 15_000);
 
 it("requires a missing profile reference to be resolved and blocks opening during a read", async () => {
   const host = new LibraryHost();

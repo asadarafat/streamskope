@@ -16,6 +16,12 @@ starting a read. Deleted profile references require reassignment, and unreadable
 query files are preserved for recovery. Host protocol **31** adds typed query
 library commands; bundled host and renderer must be upgraded together.
 
+Versioned query JSON files and links can now be shared without local profile
+references or message records. Imports require review and an explicit open action;
+neither importing nor opening starts a connection or read. Browser links open a
+review dialog. Desktop links are pasted into **Queries**, without an operating-system
+launch handler. Filter text remains visible to recipients; encoding is not encryption.
+
 ## Custom historical investigations
 
 Time window reads now accept explicit start and end times with UTC or a stated

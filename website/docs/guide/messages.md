@@ -122,6 +122,34 @@ only until the development host restarts. An unreadable, oversized or unsupporte
 library is preserved and reported as unavailable; restore a valid backup before
 retrying. StreamSkope does not silently replace that file with an empty library.
 
+### Share query settings
+
+1. Open **Queries** and select a saved query, or leave the selection empty to use
+   the current topic settings. Review your filter text before sharing it.
+2. Choose **Export query JSON** for a configuration file, or **Copy query link**.
+3. The recipient opens **Queries → Import and share**, chooses **Import query file**,
+   or pastes the link into **Query JSON or link** and clicks **Review import**.
+4. Review the displayed topic, absolute time bounds, filters and limits. Choose a
+   local connection if appropriate, then **Open imported query**. Connect and run
+   separately. Save the restored settings in the library to keep them.
+
+Browser links open the development application at its original address and show
+the review dialog; that development host must be reachable. The fragment is removed
+from the visible address when loaded. Desktop links use `streamskope://app/#query=…`
+as a portable string to paste into the dialog; this version does not register an
+operating-system link handler to launch the app. JSON files work in either host.
+
+The format is a version 1 query document, limited to 32 KiB. Imports reject
+unknown fields, future schema versions, credentials, local profile identifiers,
+message records and unsupported expressions. Invalid imports leave the current
+investigation unchanged. Opening a valid import restores controls without
+connecting, consuming, saving it to the library or changing Kafka resources.
+
+Query links encode the document in their fragment; encoding is **not encryption**.
+Topic names and filter text can disclose incident details or sensitive literals
+you entered. Share them only with intended recipients. Importing a pasted URL
+decodes its fragment locally and does not visit that URL.
+
 ## Export the records you need
 
 1. Stop an active tail or wait for the bounded read to finish so the sample is stable.

@@ -9,6 +9,7 @@ import { PluginsProvider, type PluginRendererImporter } from "./PluginsProvider"
 export interface StreamSkopeAppProperties {
   readonly desktop?: StreamSkopeDesktop | undefined;
   readonly host: StreamSkopeHost;
+  readonly initialQueryImport?: string | undefined;
   readonly pluginImporter?: PluginRendererImporter | undefined;
   readonly streamMonitorObserver?: StreamSkopeWorkbenchProperties["streamMonitorObserver"];
 }
@@ -23,6 +24,7 @@ export function StreamSkopeApp({
   host,
   pluginImporter,
   streamMonitorObserver,
+  initialQueryImport,
 }: StreamSkopeAppProperties): React.JSX.Element {
   return (
     <StreamSkopeThemeProvider>
@@ -30,6 +32,7 @@ export function StreamSkopeApp({
         <StreamSkopeWorkbench
           desktop={desktop}
           host={host}
+          initialQueryImport={initialQueryImport}
           {...(streamMonitorObserver === undefined ? {} : { streamMonitorObserver })}
         />
       </PluginsProvider>

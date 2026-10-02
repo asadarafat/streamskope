@@ -6,6 +6,7 @@ import type { StreamSkopeDesktop } from "../../desktop";
 
 import { installRendererRandomUuid } from "./crypto-compatibility";
 import { resolveStreamSkopeHost } from "./host";
+import { takeInitialQueryImport } from "./query-entry";
 
 declare global {
   interface Window {
@@ -14,10 +15,17 @@ declare global {
 }
 
 installRendererRandomUuid(globalThis.crypto);
+const initialQueryImport = takeInitialQueryImport(window);
 
 function StreamSkopeApplication(): React.JSX.Element {
   const host = useMemo(() => resolveStreamSkopeHost(window), []);
-  return <StreamSkopeApp desktop={window.streamSkopeDesktop} host={host} />;
+  return (
+    <StreamSkopeApp
+      desktop={window.streamSkopeDesktop}
+      host={host}
+      initialQueryImport={initialQueryImport}
+    />
+  );
 }
 
 const rootElement = document.querySelector("#root");
