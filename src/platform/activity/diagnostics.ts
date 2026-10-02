@@ -39,6 +39,8 @@ function causeMessage(cause: unknown): string {
 
 function stageLabel(stage: HostErrorStage): string {
   switch (stage) {
+    case "query":
+      return "Saved queries";
     case "backend":
       return "Backend";
     case "broker":

@@ -1,3 +1,4 @@
+import { parseKafkaSearchFilter, type KafkaSearchFilter } from "./query-search";
 import { parseKafkaFetchRequest, parseKafkaTimestamp } from "./fetch-validation";
 import type { KafkaFetchRequest } from "./types";
 import { HostContractValidationError } from "./validation-error";
@@ -6,16 +7,23 @@ import { exactKeys, record } from "./validation-primitives";
 /** Configuration only: no connection credentials, resolved secrets or message data. */
 export interface KafkaInvestigationQuery {
   readonly schemaVersion: 1;
+  readonly filters?: KafkaSearchFilter;
   readonly request: KafkaFetchRequest;
 }
 
 export function parseKafkaInvestigationQuery(value: unknown): KafkaInvestigationQuery {
   const query = record(value, "query");
-  exactKeys(query, ["schemaVersion", "request"], "query");
+  exactKeys(query, ["schemaVersion", "request", "filters"], "query");
   if (query.schemaVersion !== 1) {
     throw new HostContractValidationError("query.schemaVersion", "unsupported query version");
   }
-  return { schemaVersion: 1, request: parseKafkaFetchRequest(query.request, "query.request") };
+  return {
+    schemaVersion: 1,
+    ...(query.filters === undefined
+      ? {}
+      : { filters: parseKafkaSearchFilter(query.filters, "query.filters") }),
+    request: parseKafkaFetchRequest(query.request, "query.request"),
+  };
 }
 
 /** Parse an explicit offset, never the machine's implicit local time zone. */

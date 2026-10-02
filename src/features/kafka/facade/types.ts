@@ -1,4 +1,5 @@
 import type {
+  KafkaQueryLibrary,
   KafkaClusterDiagnosticsServicePort,
   KafkaLatencyProbeServicePort,
   KafkaOperationalPreferenceService,
@@ -8,6 +9,7 @@ import type {
 } from "../application";
 
 export interface KafkaBackendFacadeOptions {
+  readonly queries?: KafkaQueryLibrary;
   readonly clusterDiagnostics?: KafkaClusterDiagnosticsServicePort;
   readonly createCorrelationId?: () => string;
   readonly plugins?: import("../../../plugins/api").PluginRuntimePort;

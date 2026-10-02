@@ -13,6 +13,7 @@ import {
   ConnectionAttemptSupersededError,
   InMemoryKafkaOperationalPreferenceStore,
   KafkaOperationalPreferenceService,
+  KafkaQueryLibrary,
   type KafkaTrustRecipeLibrary,
   type KafkaProfileService,
   type KafkaProfileSnapshot,
@@ -25,6 +26,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { executeQueryCommand } from "./query-facade";
 import { ConsumptionFacadeController } from "./consumption-facade";
 import type { KafkaBackendFacadeOptions } from "./types";
 import {
@@ -88,6 +90,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly listeners = new Set<HostEventListener>();
   private readonly latencyProbe;
   private readonly now;
+  private readonly queries: KafkaQueryLibrary;
   private readonly preferences: KafkaOperationalPreferenceService;
   private sequence = 0;
   private shutdownPromise: Promise<void> | undefined;
@@ -102,6 +105,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     private readonly topicConfigurations: KafkaTopicConfigurationServicePort,
     options: KafkaBackendFacadeOptions = {},
   ) {
+    this.queries = options.queries ?? new KafkaQueryLibrary();
     this.clusterDiagnostics = createClusterDetailsService(session, options);
     this.latencyProbe = createLatencyService(session, options);
     this.createCorrelationId = options.createCorrelationId ?? defaultCorrelationId;
@@ -202,6 +206,10 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "queries.list":
+      case "queries.put":
+      case "queries.delete":
+        return executeQueryCommand(command, correlationId, this.queries);
       case "plugin.execute":
       case "plugins.list":
       case "plugins.catalog":
@@ -437,7 +445,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     const finishConsumption = this.consumption.prepareShutdown();
     let shutdownFailure: unknown;
     try {
-      await Promise.all([this.session.shutdown(), this.plugins.close()]);
+      await Promise.all([this.session.shutdown(), this.plugins.close(), this.queries.idle()]);
     } catch (error) {
       shutdownFailure = error;
     }

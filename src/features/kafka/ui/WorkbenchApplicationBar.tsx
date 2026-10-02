@@ -22,6 +22,7 @@ export interface WorkbenchApplicationBarProperties {
   readonly navigatorOpen: boolean;
   readonly navigatorTemporary: boolean;
   readonly onOpenCommandPalette: () => void;
+  readonly onOpenQueries?: () => void;
   readonly onOpenPreferences: () => void;
   readonly onToggleNavigator: () => void;
 }
@@ -30,6 +31,7 @@ export function WorkbenchApplicationBar({
   navigatorOpen,
   navigatorTemporary,
   onOpenCommandPalette,
+  onOpenQueries,
   onOpenPreferences,
   onToggleNavigator,
 }: WorkbenchApplicationBarProperties): React.JSX.Element {
@@ -92,6 +94,11 @@ export function WorkbenchApplicationBar({
         </Box>
 
         <Box sx={{ flex: 1 }} />
+        {onOpenQueries === undefined ? null : (
+          <Button aria-label="Saved queries" onClick={onOpenQueries}>
+            Queries
+          </Button>
+        )}
 
         {navigatorTemporary ? (
           <Tooltip title="Search and commands">

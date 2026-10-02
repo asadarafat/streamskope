@@ -6,6 +6,7 @@ import type {
   PluginChangePrompt,
 } from "../../../plugins/contracts";
 
+import type { KafkaQueryLibrarySnapshot } from "./query-library";
 import type { TrustAcquisitionCommandResults } from "./remote-trust-types";
 import type { TrustRecipeCommandResults } from "./trust-recipe-types";
 import type { ProfileBindingDetailResult } from "./profile-binding";
@@ -15,6 +16,12 @@ import type { KafkaOperationalPreferenceResult } from "./operational-preference-
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
 interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRecipeCommandResults {
+  readonly "queries.list": {
+    readonly correlationId: string;
+    readonly snapshot: KafkaQueryLibrarySnapshot;
+  };
+  readonly "queries.put": SpecificCommandResults["queries.list"];
+  readonly "queries.delete": SpecificCommandResults["queries.list"];
   readonly "plugin.execute": { readonly correlationId: string; readonly output: JsonValue };
   readonly "plugins.list": {
     readonly correlationId: string;
@@ -48,6 +55,9 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "queries.list": true,
+  "queries.put": true,
+  "queries.delete": true,
   "plugin.execute": true,
   "plugins.list": true,
   "plugins.catalog": true,
