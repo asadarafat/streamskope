@@ -1,7 +1,7 @@
 import {
   KAFKA_MESSAGE_LIMITS,
   KAFKA_QUERY_LIMITS,
-  matchesKafkaSearchFilter,
+  compileKafkaSearchFilter,
   type KafkaReadCoverage,
   type KafkaReadReason,
 } from "../contracts";
@@ -11,6 +11,7 @@ import type { KafkaRawMessage } from "./types";
 
 /** Tracks traversed offsets, not an estimate based on the number of returned matches. */
 export class KafkaReadTracker {
+  private readonly predicate: ReturnType<typeof compileKafkaSearchFilter> | undefined;
   private reason: KafkaReadReason = "reading";
   private scannedRecords = 0;
   private scannedBytes = 0;
@@ -19,6 +20,8 @@ export class KafkaReadTracker {
   private readonly next: Map<number, bigint>;
 
   constructor(private readonly plan: KafkaFetchPlan) {
+    this.predicate =
+      plan.request.search === undefined ? undefined : compileKafkaSearchFilter(plan.request.search);
     this.next = new Map(plan.startOffsets);
     this.checkRangeComplete();
   }
@@ -81,7 +84,7 @@ export class KafkaReadTracker {
       const filter = request.search;
       // An omitted large field is unknown, never proof that the record did not match.
       if (
-        (filter.value.trim().length > 0 &&
+        ((filter.value.trim().length > 0 || (filter.expression?.trim().length ?? 0) > 0) &&
           (message.value?.byteLength ?? 0) > KAFKA_MESSAGE_LIMITS.messageBytes) ||
         (filter.key.trim().length > 0 &&
           (message.key?.byteLength ?? 0) > KAFKA_MESSAGE_LIMITS.messageBytes)
@@ -89,17 +92,18 @@ export class KafkaReadTracker {
         this.unavailableRecords += 1;
         match = false;
       } else {
-        match = matchesKafkaSearchFilter(
-          {
-            key: filter.key.trim().length === 0 ? null : (message.key?.toString("utf8") ?? null),
-            payload:
-              filter.value.trim().length === 0 ? null : (message.value?.toString("utf8") ?? null),
-            offset: String(message.offset),
-            partition: message.partition,
-            timestamp: new Date(Number(message.timestamp)).toISOString(),
-          },
-          filter,
-        );
+        const result = this.predicate?.({
+          key: filter.key.trim().length === 0 ? null : (message.key?.toString("utf8") ?? null),
+          payload:
+            filter.value.trim().length === 0 && (filter.expression?.trim().length ?? 0) === 0
+              ? null
+              : (message.value?.toString("utf8") ?? null),
+          offset: String(message.offset),
+          partition: message.partition,
+          timestamp: new Date(Number(message.timestamp)).toISOString(),
+        });
+        match = result === "matched";
+        if (result === "unavailable") this.unavailableRecords += 1;
       }
     }
     if (match) this.matchedRecords += 1;

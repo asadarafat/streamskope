@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { KafkaRulePredicate } from "../../src/features/kafka/application";
-import { KafkaRuleExpressionError } from "../../src/features/kafka/engine/rule-expression";
+import { KafkaRuleExpressionError } from "../../src/features/kafka/contracts/rule-expression";
 import { StreamSkopeKafkaRuleEvaluator } from "../../src/features/kafka/engine/rule-evaluator";
 
 interface PredicateCase {

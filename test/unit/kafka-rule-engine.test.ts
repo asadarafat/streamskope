@@ -5,11 +5,11 @@ import {
   KafkaRuleExpressionError,
   evaluateKafkaRuleExpression,
   validateKafkaRuleExpression,
-} from "../../src/features/kafka/engine/rule-expression";
+} from "../../src/features/kafka/contracts/rule-expression";
 import {
   KafkaRuleSampleError,
   parseKafkaRuleSample,
-} from "../../src/features/kafka/engine/rule-sample";
+} from "../../src/features/kafka/contracts/rule-sample";
 
 const sample = {
   changes: [

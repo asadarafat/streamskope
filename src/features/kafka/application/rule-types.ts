@@ -5,8 +5,7 @@ import type {
   KafkaRuleIssue,
   KafkaRuleStoreCapability,
 } from "../contracts";
-
-import type { KafkaRuleSampleLimits } from "./rule-sample-error";
+import type { KafkaRuleSampleLimits } from "../contracts/rule-sample-error";
 
 export interface KafkaRuleDocument {
   readonly rules: readonly KafkaRuleDefinition[];

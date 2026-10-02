@@ -476,6 +476,7 @@ export function StreamSkopeWorkbench({
         }}
       >
         <MessageWorkspace
+          unavailableFilterRecords={messageSelection.unavailable}
           readCoverage={state.readCoverage}
           onSearch={(filter) => {
             if (selectedTopic !== null) void startConsumption(selectedTopic, filter);

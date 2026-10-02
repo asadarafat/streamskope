@@ -1,8 +1,10 @@
 import type { KafkaRuleEvaluator, KafkaRulePredicate, KafkaRuleSampleLimits } from "../application";
-
-import { evaluateCompiledKafkaRuleExpression } from "./rule-expression-evaluator";
-import { compileKafkaRuleExpression, validateKafkaRuleExpression } from "./rule-expression-parser";
-import { parseKafkaRuleSample } from "./rule-sample";
+import { evaluateCompiledKafkaRuleExpression } from "../contracts/rule-expression-evaluator";
+import {
+  compileKafkaRuleExpression,
+  validateKafkaRuleExpression,
+} from "../contracts/rule-expression-parser";
+import { parseKafkaRuleSample } from "../contracts/rule-sample";
 
 export class StreamSkopeKafkaRuleEvaluator implements KafkaRuleEvaluator {
   compile(expression: string): KafkaRulePredicate {

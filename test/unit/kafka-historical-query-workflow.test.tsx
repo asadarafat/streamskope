@@ -167,12 +167,24 @@ it("keeps sample filtering explicit and sends a finite broker search with honest
     screen.getByRole("textbox", { name: "Value or retained preview contains" }),
     "needle",
   );
+  const expression = screen.getByRole("textbox", { name: "JSON expression" });
+  await pasteText(user, expression, "$.status ==");
+  expect(search).toBeDisabled();
+  await user.clear(expression);
+  await pasteText(user, expression, '$.status == "ready"');
   await user.click(search);
   const request = {
     topic: "test",
     mode: "earliest" as const,
     maxMessages: 1_000,
-    search: { key: "", value: "needle", offset: "", timestamp: "", partition: null },
+    search: {
+      key: "",
+      value: "needle",
+      offset: "",
+      timestamp: "",
+      partition: null,
+      expression: '$.status == "ready"',
+    },
   };
   expect(host.commands.at(-1)).toMatchObject({ command: "messages.start", payload: request });
   act(() =>

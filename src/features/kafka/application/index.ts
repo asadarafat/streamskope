@@ -42,7 +42,10 @@ export {
   KafkaRuleStoreUnavailableError,
   KafkaRuleValidationError,
 } from "./rule-errors";
-export { KAFKA_RULE_SAMPLE_FAILURE_REASONS, KafkaRuleSampleParseError } from "./rule-sample-error";
+export {
+  KAFKA_RULE_SAMPLE_FAILURE_REASONS,
+  KafkaRuleSampleParseError,
+} from "../contracts/rule-sample-error";
 export { InMemoryKafkaRuleStore, cloneKafkaRuleDocument } from "./in-memory-rule-store";
 export {
   InMemoryKafkaTopicConfigurationHistoryStore,
@@ -147,4 +150,7 @@ export type {
   KafkaTopicConfigurationSessionPort,
   KafkaTopicConfigurationView,
 } from "./topic-configuration-types";
-export type { KafkaRuleSampleFailureReason, KafkaRuleSampleLimits } from "./rule-sample-error";
+export type {
+  KafkaRuleSampleFailureReason,
+  KafkaRuleSampleLimits,
+} from "../contracts/rule-sample-error";

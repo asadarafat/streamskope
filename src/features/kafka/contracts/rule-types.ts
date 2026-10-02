@@ -11,6 +11,7 @@ export const KAFKA_RULE_STORE_DURABILITIES = ["durable", "session"] as const;
 export const KAFKA_RULE_STORE_STATES = ["ready", "unavailable"] as const;
 
 export const KAFKA_RULE_LIMITS = {
+  evaluationWork: 250_000,
   conditions: 64,
   cooldownMs: 86_400_000,
   descriptionCharacters: 2_048,

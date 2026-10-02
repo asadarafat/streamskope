@@ -1,6 +1,8 @@
 import {
   KAFKA_MESSAGE_LIMITS,
-  matchesKafkaSearchFilter,
+  compileKafkaSearchFilter,
+  KAFKA_RULE_LIMITS,
+  KafkaRuleWorkBudget,
   DESKTOP_TEXT_DOCUMENT_LIMITS,
   utf8ByteLength,
   type HostTextDocument,
@@ -16,11 +18,18 @@ export const KAFKA_MESSAGE_OPERATION_LIMITS = {
   filterCharacters: 256,
 } as const;
 
-export const KAFKA_MESSAGE_TEXT_FILTER_FIELDS = ["timestamp", "offset", "key", "value"] as const;
+export const KAFKA_MESSAGE_TEXT_FILTER_FIELDS = [
+  "timestamp",
+  "offset",
+  "key",
+  "value",
+  "expression",
+] as const;
 
 export type KafkaMessageTextFilterField = (typeof KAFKA_MESSAGE_TEXT_FILTER_FIELDS)[number];
 
 export interface KafkaMessageFilters {
+  readonly expression?: string;
   readonly activeRuleMatchesOnly: boolean;
   readonly key: string;
   readonly offset: string;
@@ -92,27 +101,45 @@ export function countActiveKafkaMessageFilters(filters: KafkaMessageFilters): nu
     Number(filters.activeRuleMatchesOnly) +
     Number(filters.partition !== null) +
     KAFKA_MESSAGE_TEXT_FILTER_FIELDS.reduce(
-      (count, field) => count + Number(filters[field].trim().length > 0),
+      (count, field) => count + Number((filters[field]?.trim().length ?? 0) > 0),
       0,
     )
   );
+}
+
+export function selectKafkaQueryMessages(
+  messages: readonly KafkaExploredMessage[],
+  filters: KafkaMessageFilters,
+): { readonly messages: readonly KafkaExploredMessage[]; readonly unavailable: number } {
+  if (countActiveKafkaMessageFilters(filters) === 0) return { messages, unavailable: 0 };
+  let predicate: ReturnType<typeof compileKafkaSearchFilter>;
+  try {
+    predicate = compileKafkaSearchFilter(
+      filters,
+      new KafkaRuleWorkBudget(2 * KAFKA_RULE_LIMITS.evaluationWork),
+    );
+  } catch {
+    return { messages: [], unavailable: messages.length };
+  }
+  let unavailable = 0;
+  const selected = messages.filter((message) => {
+    if (filters.activeRuleMatchesOnly && message.ruleEvaluation.activeMatchCount === 0)
+      return false;
+    const outcome = predicate({
+      ...message,
+      payload: message.payload ?? (message.truncated ? message.preview : null),
+    });
+    if (outcome === "unavailable") unavailable += 1;
+    return outcome === "matched";
+  });
+  return { messages: selected, unavailable };
 }
 
 export function selectFilteredKafkaMessages(
   messages: readonly KafkaExploredMessage[],
   filters: KafkaMessageFilters,
 ): readonly KafkaExploredMessage[] {
-  if (countActiveKafkaMessageFilters(filters) === 0) {
-    return messages;
-  }
-  return messages.filter(
-    (message) =>
-      (!filters.activeRuleMatchesOnly || message.ruleEvaluation.activeMatchCount > 0) &&
-      matchesKafkaSearchFilter(
-        { ...message, payload: message.payload ?? (message.truncated ? message.preview : null) },
-        filters,
-      ),
-  );
+  return selectKafkaQueryMessages(messages, filters).messages;
 }
 
 export function withKafkaMessageTextFilter(
@@ -120,7 +147,12 @@ export function withKafkaMessageTextFilter(
   field: KafkaMessageTextFilterField,
   value: string,
 ): KafkaMessageFilters {
-  const bounded = value.slice(0, KAFKA_MESSAGE_OPERATION_LIMITS.filterCharacters);
+  const bounded = value.slice(
+    0,
+    field === "expression"
+      ? KAFKA_RULE_LIMITS.expressionCharacters
+      : KAFKA_MESSAGE_OPERATION_LIMITS.filterCharacters,
+  );
   return bounded === filters[field] ? filters : { ...filters, [field]: bounded };
 }
 
@@ -173,7 +205,11 @@ function validateExportInput(input: KafkaMessageExportInput): void {
   }
   if (
     KAFKA_MESSAGE_TEXT_FILTER_FIELDS.some(
-      (field) => input.filters[field].length > KAFKA_MESSAGE_OPERATION_LIMITS.filterCharacters,
+      (field) =>
+        (input.filters[field]?.length ?? 0) >
+        (field === "expression"
+          ? KAFKA_RULE_LIMITS.expressionCharacters
+          : KAFKA_MESSAGE_OPERATION_LIMITS.filterCharacters),
     ) ||
     (input.filters.partition !== null &&
       (!Number.isSafeInteger(input.filters.partition) || input.filters.partition < 0))
@@ -210,6 +246,7 @@ function exportRecord(message: KafkaExploredMessage): KafkaMessageExportRecord {
 
 function exportFilters(filters: KafkaMessageFilters): KafkaMessageFilters {
   return {
+    ...(filters.expression === undefined ? {} : { expression: filters.expression }),
     timestamp: filters.timestamp,
     partition: filters.partition,
     offset: filters.offset,
