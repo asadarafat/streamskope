@@ -55,7 +55,19 @@ export function useWorkbenchActivity(
 
   useEffect(() => {
     const openCommands = (event: KeyboardEvent): void => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
+      if (
+        !event.repeat &&
+        !event.isComposing &&
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLocaleLowerCase() === "k"
+      ) {
+        // Keep an active editor/import dialog's focus trap intact.
+        const dialog = globalThis.document.querySelector('[role="dialog"]');
+        if (
+          dialog !== null &&
+          dialog.getAttribute("aria-labelledby") !== "streamskope-command-palette-title"
+        )
+          return;
         event.preventDefault();
         setCommandPaletteOpen(true);
       }

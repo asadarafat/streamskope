@@ -41,9 +41,11 @@ import {
   consumerGroupStatusLabel,
   consumptionStateLabel,
   topicStatusLabel,
+  isKafkaConsumptionActive,
 } from "./workbench-status";
 import { WorkbenchApplicationBar } from "./WorkbenchApplicationBar";
 import { WorkbenchCommandPalette } from "./WorkbenchCommandPalette";
+import { investigationCommands } from "./workbench-query-commands";
 import { WorkbenchBreadcrumbs } from "./WorkbenchBreadcrumbs";
 import type { TopicWorkspaceView } from "./WorkbenchContextBar";
 import { WorkbenchSidebar } from "./WorkbenchSidebar";
@@ -763,6 +765,21 @@ export function StreamSkopeWorkbench({
         />
       ) : null}
       <WorkbenchCommandPalette
+        actions={investigationCommands({
+          connected,
+          selectedTopic,
+          selectedProfile,
+          profileBusy: profileConnectionOperation !== null,
+          readActive: isKafkaConsumptionActive(state.consumptionState, state.consumptionRequest),
+          stopping: consumptionStopping,
+          mode: fetchMode,
+          timeError: timeWindow.error,
+          filters: state.messageFilters,
+          openQueries: () => setQueriesOpen(true),
+          toggleProfile: toggleProfileConnection,
+          startRead: startConsumption,
+          stopRead: stopConsumption,
+        })}
         connected={connected}
         onClose={() => setCommandPaletteOpen(false)}
         onOpenResource={selectNavigation}
