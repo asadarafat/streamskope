@@ -4,26 +4,30 @@ Use the exact desktop release and plugin identity when deciding whether a
 procedure has been exercised for your environment. A passing documentation build
 checks the site; it does not establish live integration, permissions or recovery.
 
-## Current qualification
+## Find evidence for your version
 
-The source contains unreleased **plugin API 4** and release-process changes. Its
-`0.0.0-dev` identity is a development marker; maintainers assign component versions
-when starting release CI. No release of these changes, live-cluster qualification
-or installed legacy-to-API-4 upgrade rehearsal is recorded yet. Results from the original
-release do not qualify the changed source. The shared CI result below belongs
-to the linked pre-merge revision; it does not establish native or live qualification.
+Open the exact desktop version in [release history](../releases/index.md). New
+release notes include a **Build evidence** link to the executed release workflow
+and its source commit. That run records shared CI, each native installer and the
+unsigned EDA application build. Use its job results and the release's `SHA256SUMS`
+to assess the downloaded packages. A published release or a green badge alone
+does not qualify operations outside those checks.
 
-| Check                                                     | Required evidence                                                        | Record for unreleased source / API 4                                                            |
-| --------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| Static, unit, architecture, non-live integration and docs | Successful CI for exact committed source                                 | [Passed for source 2250217](https://github.com/asadarafat/streamskope/actions/runs/36924058229) |
-| Three native installers                                   | Release CI, launch checks and installer checksums                        | Pending packaging                                                                               |
-| 60-second performance soak                                | Local report tied to exact source                                        | No source-specific local report linked                                                          |
-| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal         | No current live result recorded                                                                 |
-| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and verified execution removal  | No current live result recorded                                                                 |
-| API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup | No installed native rehearsal recorded                                                          |
-| Native dialogs and credential-backed restore              | Installed desktop and real credential-service rehearsal                  | No current native workflow result recorded                                                      |
+For a development checkout, `0.0.0-dev` is an unassigned version. Use the PR's
+successful CI result for its exact revision; that check does not build native
+installers. Results from an earlier revision do not qualify changed source.
 
-## Published release: v0.1.0+build.1
+| Check | Evidence to use |
+| --- | --- |
+| Static, unit, architecture, non-live integration and docs | The exact successful PR CI or release CI run |
+| Linux, macOS and Windows installers | The release's native build/launch jobs and installer checksums |
+| 60-second performance soak | A local report tied to the source revision; release CI does not run it |
+| EDA 26.8.2 capture and cleanup | API version, received record and verified owned-resource removal; no current API 4 live result is recorded |
+| NSP 26.4.0 setup and cleanup | API version, profile reuse, Kafka access and execution removal; no current API 4 live result is recorded |
+| API 2/3 to API 4 upgrade and rollback | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
+| Native plugin dialogs and credential-backed restore | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded |
+
+## Historical qualification: v0.1.0+build.1
 
 The [v0.1.0+build.1 prerelease](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1),
 application **0.1.0**, was published on **2026-10-01** from source

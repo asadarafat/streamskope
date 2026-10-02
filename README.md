@@ -18,10 +18,10 @@ one application.
 
 ## Download
 
-The published release is **v0.1.0+build.1** (app version **0.1.0**), available for macOS
-**ARM64**, Windows **x64** and Linux **x64**. Download it from the
-[GitHub release](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1).
-Desktop packages are **unsigned prereleases**. Verify the installer against its release's
+Download StreamSkope for macOS **ARM64**, Windows **x64** or Linux **x64** from
+[GitHub releases](https://github.com/asadarafat/streamskope/releases). Each release
+identifies its version, source revision and automated qualification evidence.
+Desktop packages are **unsigned**. Verify the installer against its release's
 `SHA256SUMS` and follow the [platform installation instructions](website/docs/start/installation.md).
 Kafka is a separate service; the desktop installer does not require Node or Docker.
 The [qualification record](website/docs/guide/qualification.md) links the release's
