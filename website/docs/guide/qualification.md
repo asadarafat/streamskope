@@ -81,6 +81,30 @@ vendor-specific least-privilege policies, live NSP Kafka SASL OAuth and EDA
 controller-outage cleanup each need explicit evidence. A successful TLS connection
 to one NSP listener does not establish OAuth broker support.
 
+## Repeat the core investigation rehearsal
+
+Start the owned [AIO development fixture](../start/development.md), then run:
+
+```sh
+node tools/package/e2e.mjs web test/e2e/web-real-connection.spec.ts test/e2e/web-authentication-failures.spec.ts --grep 'connects, inspects, exports|rejects invalid OAuth'
+```
+
+This exercises the browser UI and real Kafka host together: save a protected
+connection profile, read and inspect a known record, stop consumption, export a
+bounded read, disconnect, reconnect with the same profile, read again, and remove
+the profile. It checks the downloaded record's payload, partition and offset, and
+confirms that credentials are absent from the export and activity. A second scenario
+verifies rejected OAuth credentials leave the application disconnected with
+actionable diagnostics. The read scenario creates a uniquely named fixture topic
+and deletes it during teardown.
+
+Retain the exact source revision, fixture revision from `aio-kafka/SOURCE_COMMIT`,
+broker image/version, platform and the sanitized results in
+`test-results/web/playwright-results.json`. Report failed or skipped scenarios
+explicitly. These checks use session-only profile storage in the development host;
+they do not establish native credential restore, installed-app upgrades or live
+EDA/NSP qualification. Run the corresponding rehearsals separately.
+
 ## Repeat the same-account recovery rehearsal
 
 Use a disposable workstation account/session with an unlocked real credential

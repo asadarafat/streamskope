@@ -105,7 +105,7 @@ test.describe("real StreamSkope browser connection", () => {
     }
   });
 
-  test("connects, discovers, consumes, and inspects the aio-kafka topic through the browser workflow", async ({
+  test("connects, inspects, exports, cancels and reconnects using the same saved profile", async ({
     page,
   }, testInfo) => {
     test.setTimeout(90_000);
@@ -242,6 +242,48 @@ test.describe("real StreamSkope browser connection", () => {
     await expect(messageGrid.getByText(config.seedPayload, { exact: true }).first()).toBeVisible();
     expect((await messageGrid.getByRole("row").count()) - 1).toBeLessThanOrEqual(10);
 
+    const downloadStarted = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    const download = await downloadStarted;
+    const downloadPath = await download.path();
+    if (downloadPath === null) {
+      throw new Error("The browser did not retain the investigation export.");
+    }
+    const exported = await readFile(downloadPath, "utf8");
+    expect(JSON.parse(exported)).toMatchObject({
+      topic: config.topic,
+      exportedMessageCount: 1,
+      retainedMessageCount: 1,
+      stale: false,
+      messages: [
+        { key: "streamskope-seed", offset: "0", partition: 0, payload: config.seedPayload },
+      ],
+    });
+    expect(exported).not.toContain(config.oauthClientSecret);
+    expect(exported).not.toContain("BEGIN CERTIFICATE");
+
+    await openWorkbenchResource(page, "Connection Profiles");
+    await page.getByRole("button", { name: "Disconnect profile Local aio" }).click();
+    await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
+    // Reuse host-held credentials; no second profile or credential entry is needed.
+    await page.getByRole("button", { name: "Connect profile Local aio" }).click();
+    await expect(page.getByLabel("Connection status")).toContainText("Connected · Local aio");
+    await fixtureTopic.click();
+    await expect(messageGrid.getByText(config.seedPayload, { exact: true })).toHaveCount(1);
+    await page.getByRole("button", { name: `Stop tail ${config.topic}` }).click();
+    await expect(page.getByLabel("Consumption status")).toContainText("Stopped");
+
+    await openWorkbenchResource(page, "Connection Profiles");
+    await page.getByRole("button", { name: "Disconnect profile Local aio" }).click();
+    await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
+    await openProfileAction(page, "Local aio", "Delete");
+    await page
+      .getByRole("dialog", { name: "Delete Kafka profile Local aio" })
+      .getByRole("button", { name: "Delete profile" })
+      .click();
+    await expect(page.getByRole("button", { name: "Connect profile Local aio" })).toHaveCount(0);
+    await expect(page.getByText("Add a connection profile to connect to Kafka.")).toBeVisible();
+
     const activity = await openActivity(page);
     await expect(activity).toContainText("Connect");
     await expectRawLogEvidence(
@@ -258,6 +300,19 @@ test.describe("real StreamSkope browser connection", () => {
     );
     await expect(activity).toContainText("Consume messages");
     await expect(activity).toContainText("Stop consumption");
+    await expectRawLogEvidence(
+      activity,
+      "Stop consumption",
+      "stopped and the consumer closed.",
+      config.topic,
+    );
+    await expectRawLogEvidence(
+      activity,
+      "Disconnect",
+      "Kafka resources closed and the active connection was cleared.",
+      "Local aio",
+    );
+    await expect(activity).toContainText("Delete profile");
     await expect(activity).not.toContainText(config.oauthClientSecret);
     await testInfo.attach("redacted-host-activity", {
       body: await activity.innerText(),
@@ -275,7 +330,7 @@ test.describe("real StreamSkope browser connection", () => {
     });
     await page.screenshot({
       animations: "disabled",
-      path: testInfo.outputPath("real-aio-kafka-connected.png"),
+      path: testInfo.outputPath("real-aio-kafka-investigation-complete.png"),
     });
     expect(diagnostics.problems).toEqual([]);
   });
