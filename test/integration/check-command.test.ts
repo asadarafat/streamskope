@@ -77,6 +77,10 @@ it("GitHub CI runs the shared checks and docs without local soak, live clusters 
   const result = await run(["--ci"]);
   expect(result.status).toBe(0);
   const stages = result.calls.flatMap(({ args }) => args.map((arg) => basename(arg)));
+  expect(result.calls[0]).toEqual({
+    command: "node",
+    args: ["tools/check/forge-patch.ts", "--apply"],
+  });
   for (const stage of [
     "workflow-validation",
     "prettier",
@@ -85,7 +89,7 @@ it("GitHub CI runs the shared checks and docs without local soak, live clusters 
     "vitest",
     "eda-source.mjs",
     "dependencies.ts",
-    "audit",
+    "audit.ts",
     "qualify",
   ])
     expect(stages).toContain(stage);
@@ -119,6 +123,16 @@ it("a failing shared check stops qualification before tests and docs", async () 
   expect(result.calls.at(-1)?.args).toContain("eslint");
   expect(result.calls.some(({ command }) => command === "npm" || command === "go")).toBe(false);
 });
+
+it.each(["tools/check/forge-patch.ts", "tools/check/audit.ts"])(
+  "stops qualification when the security gate %s fails",
+  async (stage) => {
+    const result = await run(["--ci"], stage);
+    expect(result.status).toBe(7);
+    expect(result.calls.at(-1)?.args).toContain(stage);
+    expect(result.calls.some(({ args }) => args.includes("qualify"))).toBe(false);
+  },
+);
 
 it.each([["--relaxed"], ["--ci", "--extra"]])(
   "rejects unsupported options before running checks: %j",

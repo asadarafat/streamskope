@@ -1,9 +1,27 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
 
 const cwd = process.env.GIT_WORK_TREE ?? fileURLToPath(new URL("../../", import.meta.url));
+
+it("keeps release versions unassigned in source qualification", () => {
+  for (const file of [
+    "package.json",
+    "package-lock.json",
+    "plugins/eda/manifest.json",
+    "plugins/nsp/manifest.json",
+  ]) {
+    const manifest = JSON.parse(readFileSync(join(cwd, file), "utf8")) as {
+      version: unknown;
+      packages?: Record<string, { version: unknown }>;
+    };
+    expect(manifest.version, file).toBe("0.0.0-dev");
+    if (file === "package-lock.json") expect(manifest.packages?.[""]?.version).toBe("0.0.0-dev");
+  }
+});
 
 it("does not track ignored private or generated content", () => {
   const tracked = execFileSync("git", ["ls-files", "-ci", "--exclude-standard"], {

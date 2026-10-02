@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -7,6 +7,7 @@ import {
   type OfficialPlugin,
 } from "../../src/platform/node/plugins/official";
 import { parsePluginManifest } from "../../src/plugins/validation";
+import { DEVELOPMENT_VERSION, isDevelopmentPluginVersion } from "../../src/plugins/compatibility";
 import {
   encodePluginPackage,
   parsePluginPackage,
@@ -17,9 +18,15 @@ export async function builtPluginAssets(
   directory: OfficialPlugin["directory"],
 ): Promise<ReturnType<typeof officialPluginAssets>> {
   const plugin = OFFICIAL_PLUGINS.find((item) => item.directory === directory)!;
-  const manifest = parsePluginManifest(
-    JSON.parse(await readFile(join("plugins", directory, "manifest.json"), "utf8")),
+  const manifests = (await readdir("dist/plugin-package")).filter(
+    (name) => name.startsWith(`streamskope-${directory}-`) && name.endsWith("-plugin.json"),
   );
+  if (manifests.length !== 1) throw new Error(`Expected one built ${directory} plugin manifest.`);
+  const manifest = parsePluginManifest(
+    JSON.parse(await readFile(join("dist/plugin-package", manifests[0]!), "utf8")),
+  );
+  if (manifest.id !== plugin.id)
+    throw new Error("Built plugin identity does not match its assets.");
   return officialPluginAssets(plugin, manifest.version);
 }
 
@@ -33,7 +40,11 @@ export async function pluginPackageFixtures(): Promise<{
   const current = fixture(await readFile(join("dist/plugin-package", assets.packageAsset)));
   const parsed = parsePluginPackage(current.bytes, current.sha256);
   const revised = (offset: number): typeof parsed.manifest => {
-    const [major, minor, patch] = parsed.manifest.version.split(".").map(Number);
+    if (isDevelopmentPluginVersion(parsed.manifest.version)) {
+      const build = BigInt(parsed.manifest.version.split(".")[3] ?? "0") + BigInt(offset);
+      return { ...parsed.manifest, version: `${DEVELOPMENT_VERSION}.${build}` };
+    }
+    const [major, minor, patch] = parsed.manifest.version.split("-")[0]!.split(".").map(Number);
     return { ...parsed.manifest, version: `${major}.${minor}.${patch! + offset}` };
   };
   const update = fixture(encodePluginPackage(revised(1), parsed.files));

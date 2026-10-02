@@ -173,14 +173,53 @@ and `execute()` inference enforce the existing wire result shapes; this type ref
 did not increment protocol 26. Runtime validation still checks result shapes and
 request identifiers at host boundaries.
 
+## Temporary Forge security backport
+
+`node-forge@1.4.0` has no published fix for
+[GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv).
+StreamSkope applies the narrow RSA validation change from
+[upstream PR #1152](https://github.com/digitalbazaar/forge/pull/1152), pinned to
+commit `ceba34402e329f0365134f23fe19898756527d65`. This is a local backport of an
+unmerged upstream patch, not a new upstream version. Registry versions, lockfile
+integrity, and the dependency's existing licenses remain unchanged.
+
+The `dev`, `build`, `check`, and `package` entry points apply the backport before
+using application dependencies. This also covers development dependency caches
+and the fresh production install used by native packaging. Packaging verifies the
+patched bytes again after extracting the final ASAR and records the hash in its
+verification report. `tools/check/forge-patch.ts` pins the entire original and
+patched RSA file hashes; unknown versions, changed files, missing copies, or
+unlisted dependency resolutions fail verification. No install lifecycle script
+or additional public npm command is needed.
+
+Raw `npm audit` still reports the upstream advisory because the package retains
+its real version. `tools/check/audit.ts` runs the registry audit and accepts this
+specific advisory only after checking every installed affected copy against the
+backport hash. Indirect findings are accepted only when all their underlying
+advisories are accounted for. Other high/critical findings, malformed reports,
+and audit-service failures still fail CI. Signature regression tests demonstrate
+that stock Forge accepts the malformed signature and the patched copy rejects it;
+existing JKS/PKCS12 tests continue to qualify truststore handling.
+
+When a fixed upstream release is available, review and upgrade both direct and
+transitive Forge dependencies, remove the temporary patch hooks and advisory
+handling, restore the direct audit command, and retain the signature regression.
+
 ## GitHub builds
 
-The **CI** workflow runs the required **CI** source/docs check on every PR, push
-to main, desktop release tags (`v*`) and plugin tags (`plugins/eda/v*`, `plugins/nsp/v*`). It uses the shared `check` command with
+The **CI** workflow runs the required **CI** source/docs check on every PR and push
+to `main`. It uses the shared `check` command with
 `--ci`; there are no labels, relaxed modes or change-based routing.
 Configure the repository's branch rules to require the **CI** status before merging.
 
-Desktop release tags start native and cluster packaging after the shared check passes. The
+The separate **Release** workflow is manual. Open **Actions → Release → Run workflow**,
+select branch **main**, choose **desktop**, **eda** or **nsp**, and enter a bare
+Semantic Version such as `0.2.0` or `0.2.0-rc.1`. The version belongs to the
+selected component. CI qualifies the exact selected source before stamping a
+disposable build checkout. It does not commit a version bump to `main`. Tag pushes
+do not trigger a release.
+
+For desktop releases, native and cluster packaging follow qualification. The
 native runners build, launch and package installers for Linux x64, macOS ARM64
 and Windows x64. A Linux runner builds the complete unsigned EDA OCI application
 with EDABuilder v26.8.2 and uploads it separately. Desktop installer packaging
@@ -199,33 +238,49 @@ the cluster version before starting a capture.
 EDA packaging needs Linux and Docker; native desktop packaging needs its matching OS.
 Local soak and live EDA/NSP results should be reported in the PR, including skips.
 
-A desktop tag is exactly `v` plus `package.json.version`, such as `v0.2.0` or
-`v0.2.0-rc.1`. The app, installer and embedded release identity all derive from
-that one version. New release versions reject build metadata; CI run IDs and Git
-commits provide traceability. Historical `+build.N` tags remain readable but are
-not reused or created by the new release process.
+The version entered in **Run workflow** becomes the desktop app and installer
+version, or the selected plugin's manifest version. Desktop drafts use `vVERSION`;
+plugin drafts use `plugins/NAME/vVERSION`. The tag identifies the qualified source
+commit; release CI stamps its build checkout from the recorded workflow input.
+Source archives at that tag retain the neutral development identity. To reproduce
+a release, check out that tag in a disposable directory, install dependencies and
+run `node --import tsx tools/package/release-version.ts COMPONENT VERSION --stamp`
+using its recorded `desktop`, `eda` or `nsp` input before packaging. New release
+versions reject build metadata and reserved development identities; CI run IDs and
+Git commits provide traceability. Historical `+build.N` tags remain readable but
+are not reused or created by the new process. Existing tags/releases are rejected.
+The final draft step creates the tag atomically. If a run fails after that point,
+inspect the existing tag/draft before retrying: an ordinary retry rejects the used
+identity. Choose an unused version or explicitly resolve the unpublished failed
+identity; the workflow never overwrites or deletes it automatically.
 
-After checks and native/unsigned EDA packaging pass, the desktop tag creates a
-**draft release** with three unsigned installers, `SHA256SUMS` and reviewed notes
-from `website/docs/releases/TAG.md`. A SemVer prerelease tag marks the GitHub
-release as a prerelease; an ordinary version does not. Signing is a separate
-property: these desktop installers remain unsigned. Desktop releases no longer
-republish plugin packages. Review and publish the draft on GitHub.
-When publishing a stable desktop draft, select **Set as the latest release** or
-run `gh release edit v0.2.0 --draft=false --latest` for that reviewed version.
-Publish release candidates with `--prerelease --latest=false` and plugin releases
-with `--latest=false`. Drafts cannot themselves be GitHub's latest release;
-independent plugin publications must not replace the desktop download destination.
+After qualification and native/unsigned EDA packaging pass, a desktop release
+creates a **draft** with three unsigned installers, `SHA256SUMS` and reviewed
+content from `website/docs/releases/unreleased.md`. CI assigns the title and exact
+version metadata in the build checkout. A SemVer prerelease marks the draft as a
+prerelease; an ordinary version does not. Signing is a separate property: these
+desktop installers remain unsigned. Desktop releases do not republish plugins.
+Review the draft, its source and qualification evidence, then publish it on GitHub.
+For stable desktop publication, select **Set as the latest release**. Publish
+release candidates and independent plugin releases without changing the latest
+desktop destination. Creating a draft does not make its downloads public.
 
-For example, preparing `v0.2.0` requires `"version": "0.2.0"` in `package.json`
-and `website/docs/releases/v0.2.0.md` declaring `release_version: 0.2.0` and
-`release_tag: v0.2.0`. An RC requires its own exact version/tag/notes. Do not alter
-a published version's contents. Keep historical notes intact and mark pending
-features/notes `unreleased: true`. The website's `project.extra.desktop_release`
-continues to identify an actually published installer, not the upcoming source
-version. Update that download baseline and applicable unreleased notices through
-a PR after publication. Source-tag qualification validates the new version's notes
-without requiring unpublished download assets to exist.
+Keep `package.json`, its lockfile and source plugin manifest versions at
+`0.0.0-dev`. PRs change implementation, compatibility declarations and unversioned
+notes; they neither choose final versions nor publish releases. Prepare reviewed
+notes in `website/docs/releases/unreleased.md` with `unreleased: true`, without
+`release_tag` or `release_version`. A future plugin host minimum is a compatibility
+requirement, not an assigned desktop release number. Local development packages
+use `0.0.0-dev.<numeric timestamp>` so rebuilt bytes receive distinct identities;
+only development hosts load these packages. Release hosts reject them.
+
+After publishing, archive the reviewed notes in `website/docs/releases/vVERSION.md`
+with exact `release_version` and `release_tag` metadata, update the published
+download baseline and applicable unreleased notices, and reset the unversioned
+notes through a PR. Keep historical notes intact. The website's
+`project.extra.desktop_release` identifies an actually published installer;
+starting release CI does not change it. Release qualification can validate the
+stamped notes while downloads still point to the last published desktop.
 
 The **Pages** workflow qualifies current `main` on documentation-related pushes,
 manual dispatch from `main`, and desktop release publication. PRs qualify locally
@@ -238,8 +293,9 @@ Set Pages source to **GitHub Actions** and allow `main` plus desktop release tag
 (`v*`) in the `github-pages` environment's deployment rules. A manual run can retry
 a failed deployment without a desktop release. Post-deployment failure requires
 inspection of the reported URL/revision; retry only after establishing the cause.
-Tag-push CI rejects a source version/tag/notes mismatch before packaging. Docs
-retain the published download baseline and label source-only changes as unreleased.
+Release CI validates the selected version and stamps matching build metadata
+before packaging. Docs retain the published download baseline and label source-only
+changes as unreleased.
 Current source plugin declarations are rendered directly from their manifests;
 keep published and historical package facts in the compatibility/release references.
 Installation links and its release identity are generated from
@@ -276,7 +332,9 @@ creates both EDA and NSP artifacts under `dist/plugin-package/`. Each has a
 `streamskope-NAME-vVERSION.skope-plugin` bundle and
 `streamskope-NAME-vVERSION-plugin.json` manifest, where `NAME` is `eda` or `nsp`
 and `VERSION` is the independent plugin SemVer described in
-[Plugin versioning](website/docs/plugins/versioning.md). For example:
+[Plugin versioning](website/docs/plugins/versioning.md). Local builds use
+`0.0.0-dev.<numeric timestamp>`; release CI uses the entered version. For example,
+a released NSP plugin could provide:
 
 ```text
 streamskope-nsp-v0.1.0.skope-plugin
@@ -333,20 +391,22 @@ for each plugin independently and verifies each manifest/package digest. The cur
 catalog examines the first 100 GitHub releases, with at most 16 manifest candidates
 per plugin within that window.
 
-To release a desktop plugin, update its independent `version` in
-`plugins/NAME/manifest.json` and push `plugins/NAME/vVERSION`, for example
-`plugins/nsp/v0.1.0`. Keep its supported desktop interval and target bounds explicit;
-changing plugin contents, workflow bytes or compatibility declarations requires a
-new plugin version. The CI workflow validates the tag, runs shared checks,
-packages only that plugin and creates its draft release. Review and publish it;
-native desktop/EDA OCI packaging and Pages do not run for that tag. A desktop
-release is not required for a plugin fix supported by the current host API.
+To release a desktop plugin, open **Actions → Release → Run workflow** on
+**main**, select **eda** or **nsp**, and enter its next independent SemVer. Do not
+bump its source manifest or push a release tag manually. Keep its supported
+desktop interval and target bounds explicit; changing plugin contents, workflow
+bytes or compatibility declarations requires a new release version. Release CI
+runs shared checks, stamps and packages only that plugin, then creates its tagged
+draft. Review and publish it. Native desktop/EDA OCI packaging and Pages do not
+run for a plugin release. A desktop release is not required for a plugin fix
+supported by the current host API.
 
-The source prepares desktop **0.2.0**, plugin API **4** and independent **0.1.0**
-EDA/NSP plugins, each declaring **>=0.2.0, <0.3.0**. Publish the supporting desktop
-before announcing API 4 plugins as usable. The original **v0.1.0+build.1** and its
-API **3** assets remain published and immutable. Keep source-only changes marked
-unreleased until their supporting desktop and plugin releases are available.
+The development source implements plugin API **4**. EDA/NSP plugins each declare
+host compatibility **>=0.2.0, <0.3.0**; these bounds do not assign the desktop's
+next version. Publish a compatible supporting desktop before announcing API 4
+plugins as usable. The original **v0.1.0+build.1** and its API **3** assets remain
+published and immutable. Keep source-only changes marked unreleased until their
+supporting desktop and plugin releases are available.
 
 Desktop plugin packaging does not require cluster access. It validates the
 manifest and includes the declared compatibility range, but does not prove that
@@ -362,8 +422,20 @@ recovery after a target upgrade; cleanup does not create a new execution.
 
 Browser development stores plugin installations under `.cache/development-plugins`;
 desktop installations live under the application's user-data `plugins` directory.
-Development uses the same immediate installation lifecycle. Source changes alone
-do not replace an installed artifact; build and qualify the package before release.
+Development uses the same immediate installation lifecycle with current-API
+development packages only. Source changes alone do not replace an installed
+artifact; repackage to obtain a new development identity, then install it.
+Released packages require a matching release desktop for qualification.
+
+For source plugin QA, run `npm run package -- plugin` to build both plugins, then
+`npm run dev`. Open **Preferences → Plugins → Refresh plugins** and choose **Install**
+or **Update to** the new development version. The browser development host reads
+`dist/plugin-package/` again on refresh; startup neither builds plugins nor downloads
+published packages. Rebuild after source changes, then refresh and update normally.
+Preserve `.cache/development-plugins` and its capture/recovery state. If it contains
+an old release-versioned package, use the previous compatible build to complete
+owned-work cleanup and remove it explicitly before installing the development
+package; do not reset the cache to bypass cleanup.
 
 The **Publish EDA application** workflow is manual from main. Configure the
 `eda-production` environment with `EDA_APP_SIGNING_KEY_B64` and
@@ -372,17 +444,18 @@ Its GitHub token needs repository and GHCR write access. It builds, signs and
 verifies the image, then publishes a generated versioned catalog branch and tags.
 Existing image/catalog versions are rejected. If publication stops halfway,
 inspect the registry and catalog before recovering; the workflow does not overwrite them.
-The unsigned OCI artifact from local/release-tag builds is for development, while this workflow
+The unsigned OCI artifact from local/manual desktop-release builds is for development, while this workflow
 produces the signed EDA Store application.
 
 ## Versions and clean public history
 
-The app and installer share `package.json.version`, currently **0.2.0**. Each
-plugin declares its own SemVer in `plugins/NAME/manifest.json`, currently **0.1.0**
-for EDA and NSP. The equality of their initial numbers does not couple releases.
-A plugin bug fix can become **0.1.1** without changing the app or other plugin.
+Final versions are supplied to release CI. A desktop release stamps the app and
+installer from the same input; an EDA/NSP plugin release stamps only that plugin.
+Source versions remain **0.0.0-dev**. For example, an EDA-only fix could release
+**0.1.1** while NSP stays at **0.1.0** and the desktop at **0.2.0**; these illustrate
+independence, not current publication or reserved future versions.
 
-API 4 manifests separate identity from requirements:
+A released API 4 manifest separates identity from requirements (example):
 
 ```json
 {

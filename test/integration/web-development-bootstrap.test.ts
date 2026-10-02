@@ -20,12 +20,39 @@ async function fixture(): Promise<string> {
   roots.push(root);
   await mkdir(join(root, "tools"));
   await mkdir(join(root, "tools", "dev"));
+  await mkdir(join(root, "tools", "check"));
   await cp(new URL("tools/dev.mjs", sourceRoot), join(root, "tools", "dev.mjs"));
+  await cp(
+    new URL("tools/check/forge-patch.ts", sourceRoot),
+    join(root, "tools", "check", "forge-patch.ts"),
+  );
   await writeFile(
     join(root, "package.json"),
-    JSON.stringify({ name: "bootstrap-test", private: true }),
+    JSON.stringify({
+      name: "bootstrap-test",
+      private: true,
+      dependencies: { "node-forge": "1.4.0", "jks-js": "1.1.7" },
+    }),
   );
-  await writeFile(join(root, "package-lock.json"), JSON.stringify({ lockfileVersion: 3 }));
+  const actualLock = JSON.parse(
+    await readFile(new URL("package-lock.json", sourceRoot), "utf8"),
+  ) as { packages: Record<string, unknown> };
+  await writeFile(
+    join(root, "package-lock.json"),
+    JSON.stringify({
+      lockfileVersion: 3,
+      packages: Object.fromEntries(
+        ["", "node_modules/node-forge", "node_modules/jks-js"].map((path) => [
+          path,
+          actualLock.packages[path],
+        ]),
+      ),
+    }),
+  );
+  for (const name of ["node-forge", "jks-js"])
+    await cp(new URL(`node_modules/${name}/`, sourceRoot), join(root, "node_modules", name), {
+      recursive: true,
+    });
   await writeFile(join(root, ".npmrc"), "fund=false\n");
   const modules: Record<string, string> = {
     esbuild: `exports.transformSync = () => { if (process.env.TEST_HEALTHY !== "1") require("streamskope-native-fixture"); return {code:""}; };`,
@@ -59,6 +86,8 @@ async function fixture(): Promise<string> {
     if (!args.includes("ci") || !args.includes("--ignore-scripts")) process.exit(9);
     if (process.env.TEST_INSTALL_FAIL === "1") process.exit(7);
     const target = args[args.indexOf("--prefix") + 1];
+    for (const name of ["node-forge", "jks-js"])
+      fs.cpSync(path.join(root, "node_modules", name), path.join(target, "node_modules", name), { recursive: true });
     const native = path.join(target, "node_modules", "streamskope-native-fixture");
     fs.mkdirSync(native, { recursive: true });
     fs.writeFileSync(path.join(native, "index.js"), "module.exports = true;");
@@ -113,10 +142,20 @@ describe("web development native bootstrap", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
     await writeFile(
       join(root, "package-lock.json"),
-      JSON.stringify({ lockfileVersion: 3, revision: 2 }),
+      JSON.stringify({ ...(JSON.parse(lock.toString()) as object), revision: 2 }),
     );
     expect(await launch(root)).toContain("fixture launcher ready");
     expect(await readFile(join(root, "install-calls"), "utf8")).toBe("install\ninstall\n");
+  });
+
+  it("refuses a modified security dependency in a reused native cache", async () => {
+    const root = await fixture();
+    expect(await launch(root)).toContain("fixture launcher ready");
+    const [cache] = await readdir(join(root, ".cache", "web-native"));
+    const path = join(root, ".cache", "web-native", cache!, "node_modules/node-forge/lib/rsa.js");
+    await writeFile(path, `${await readFile(path, "utf8")}\n// changed dependency\n`);
+    await expect(launch(root)).rejects.toMatchObject({ code: 1 });
+    expect(await readFile(join(root, "install-calls"), "utf8")).toBe("install\n");
   });
 
   it("cleans failed installation staging without publishing a partial cache", async () => {

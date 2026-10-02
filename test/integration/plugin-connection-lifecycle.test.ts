@@ -43,6 +43,7 @@ it.each([false, true])(
     let stops = 0;
     const runtime = new PluginRuntime({
       store,
+      hostRelease: "v0.2.0",
       loadModule: (): Promise<PluginBackendModule> =>
         Promise.resolve({
           activate: (host): PluginBackend => ({
@@ -202,6 +203,7 @@ it.each([false, true])(
     const unload = vi.fn();
     const runtime = new PluginRuntime({
       store,
+      hostRelease: "v0.2.0",
       loadModule: (): Promise<PluginBackendModule> =>
         Promise.resolve({
           activate: (host): PluginBackend => ({
@@ -375,6 +377,7 @@ async function validationFixture(validateProfile: PluginBackend["validateProfile
   await store.install(bytes, pluginPackageSha256(bytes));
   const runtime = new PluginRuntime({
     store,
+    hostRelease: "v0.2.0",
     loadModule: (): Promise<PluginBackendModule> =>
       Promise.resolve({
         activate: (host): PluginBackend => ({

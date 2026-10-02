@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { EDA_TARGET_VERSION } from "../../plugins/eda/contracts/eda-capture-types";
 import { PLUGIN_API_VERSION } from "../../src/plugins/contracts";
 import { parsePluginManifest } from "../../src/plugins/validation";
+import { DEVELOPMENT_VERSION } from "../../src/plugins/compatibility";
 import {
   OFFICIAL_PLUGINS,
   officialPluginAssets,
@@ -14,6 +15,8 @@ import {
 import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
 import { PluginStore } from "../../src/platform/node/plugins/store";
 import { buildPlugin } from "../build/plugin.js";
+
+let lastDevelopmentBuild = 0;
 
 async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<void> {
   const manifest = parsePluginManifest(
@@ -39,12 +42,19 @@ async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<vo
   const files = new Map<string, Uint8Array>();
   for (const name of (await readdir(directory)).sort())
     files.set(name, await readFile(join(directory, name)));
+  let version = manifest.version;
+  if (version === DEVELOPMENT_VERSION) {
+    // Keep local rebuilds ordered without weakening immutable package checks.
+    lastDevelopmentBuild = Math.max(Date.now(), lastDevelopmentBuild + 1);
+    version = `${DEVELOPMENT_VERSION}.${lastDevelopmentBuild}`;
+  }
   const publishedManifest = parsePluginManifest({
     ...manifest,
+    version,
     ...(files.has("renderer.css") ? { styles: "renderer.css" } : {}),
   });
   const bytes = encodePluginPackage(publishedManifest, files);
-  const assets = officialPluginAssets(plugin, manifest.version);
+  const assets = officialPluginAssets(plugin, publishedManifest.version);
   const temporary = await mkdtemp(join(tmpdir(), "streamskope-plugin-package-"));
   try {
     const store = new PluginStore(temporary);
@@ -72,7 +82,7 @@ async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<vo
     await writeFile(join(output, `${assets.prefix}-${resource.path}`), files.get(resource.path)!);
   }
   process.stdout.write(
-    `Built ${manifest.name} desktop plugin ${manifest.version}: ${join(output, assets.packageAsset)}\n`,
+    `Built ${manifest.name} desktop plugin ${publishedManifest.version}: ${join(output, assets.packageAsset)}\n`,
   );
 }
 

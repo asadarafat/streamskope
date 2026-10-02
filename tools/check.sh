@@ -10,6 +10,7 @@ elif [[ $# -ne 0 ]]; then
   exit 2
 fi
 
+node tools/check/forge-patch.ts --apply
 bash tools/check/workflows.sh
 npx --no-install prettier --check . --ignore-unknown
 npx --no-install eslint . --max-warnings=0
@@ -18,7 +19,7 @@ npx --no-install vitest run --config config/vitest.config.ts test/architecture t
 node tools/check/eda-source.mjs
 (cd vendors/streamskope/apps/capture/agent && go test -race ./...)
 node --import tsx tools/check/dependencies.ts
-npm audit --package-lock-only --audit-level=high
+node --import tsx tools/check/audit.ts
 if [[ "$mode" == local ]]; then
   node --import tsx test/performance/stream-pipeline-replay.ts --seconds=60 --rate=1000 --bytes=256 --mixed --clone
 fi

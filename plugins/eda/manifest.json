@@ -2,7 +2,7 @@
   "id": "streamskope.eda",
   "name": "EDA Capture",
   "description": "Capture EDA event streams and explore them in StreamSkope.",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "apiVersion": 4,
   "backend": "backend.cjs",
   "renderer": "renderer.js",

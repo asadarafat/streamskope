@@ -197,6 +197,38 @@ describe("plugin compatibility declarations", () => {
       }
     });
 
+    it("isolates development packages and hosts from all published compatibility ranges", () => {
+      for (const version of ["0.0.0-dev", "0.0.0-dev.1790928000000"]) {
+        const development = parsePluginManifest({ ...current, version });
+        expect(isPluginCompatibleWithHost(development, "v0.0.0-dev")).toBe(true);
+        expect(isPluginCompatibleWithHost(development, "0.0.0-dev")).toBe(true);
+        for (const host of ["v0.1.0+build.1", "v0.2.0", "v0.2.0-rc.1", "v0.0.0-dev.1"]) {
+          expect(isPluginCompatibleWithHost(development, host)).toBe(false);
+        }
+        expect(isTargetVersionCompatible(development, "26.8.2")).toBe(true);
+        expect(isTargetVersionCompatible(development, "27.4.2")).toBe(false);
+        expect(
+          isPluginCompatibleWithHost(
+            parsePluginManifest({
+              id: current.id,
+              name: current.name,
+              backend: current.backend,
+              renderer: current.renderer,
+              version,
+              apiVersion: 2,
+            }),
+            "v0.0.0-dev",
+          ),
+        ).toBe(false);
+      }
+      for (const version of ["0.1.0", "0.2.0-rc.1", "0.0.0-dev.local", "0.0.0-dev.1.2"]) {
+        expect(
+          isPluginCompatibleWithHost(parsePluginManifest({ ...current, version }), "v0.0.0-dev"),
+        ).toBe(false);
+      }
+      expect(isPluginCompatibleWithHost(parsePluginManifest(manifest), "v0.0.0-dev")).toBe(false);
+    });
+
     it.each([
       { version: "v0.1.0" },
       { version: "0.1.0+build.2" },

@@ -5,9 +5,16 @@ import { join } from "node:path";
 
 import { parseReleaseVersion } from "../../src/plugins/compatibility";
 
+export function parsePublicationVersion(version: string): string {
+  const parsed = parseReleaseVersion(version);
+  if (parsed === "0.0.0" || parsed.startsWith("0.0.0-"))
+    throw new Error("The 0.0.0 namespace is reserved for development builds.");
+  return parsed;
+}
+
 export function isDesktopReleaseTag(tag: string | undefined, version: string): boolean {
   try {
-    return tag === `v${parseReleaseVersion(version)}`;
+    return tag === `v${parsePublicationVersion(version)}`;
   } catch {
     return false;
   }

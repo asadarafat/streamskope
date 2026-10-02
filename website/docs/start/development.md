@@ -79,6 +79,33 @@ filters and check the selected read mode before retrying.
 
 To connect a different broker, follow [Connect your Kafka](../guide/connections.md).
 
+## Test a development plugin
+
+Source builds use the development identity `0.0.0-dev`. They load current-API
+development packages; test published plugins with a compatible released desktop.
+
+1. Build the local EDA and NSP packages:
+
+    ```sh
+    npm run package -- plugin
+    ```
+
+2. Start or return to the workbench launched by `npm run dev`.
+3. Open **Preferences → Plugins** and select **Refresh plugins**.
+4. Choose **Install**, or **Update to** the new development version.
+
+**You should see:** the plugin's connection action becomes available without a
+restart. Development reads verified packages from `dist/plugin-package/`; startup
+does not build them automatically or fetch published packages from GitHub.
+After changing plugin source, rebuild, refresh and update. Each local build gets
+a distinct development identity, so updates retain the normal cleanup lifecycle.
+
+Keep `.cache/development-plugins` and its capture/recovery state. If an older
+checkout installed a release-versioned plugin there, use that compatible build
+to complete owned-work cleanup and remove it before installing a development
+package. Do not delete the cache to bypass cleanup. Packaging alone does not
+qualify a live EDA or NSP connection; follow the plugin's target prerequisites.
+
 ## Stop local Kafka when finished
 
 The local broker stays available after you close the browser. To remove the

@@ -1,6 +1,6 @@
 {
   "name": "streamskope",
-  "version": "0.2.0",
+  "version": "0.0.0-dev",
   "private": true,
   "description": "A desktop workbench for exploring and operating event-streaming systems.",
   "license": "Apache-2.0",
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "node tools/dev.mjs",
-    "build": "node tools/build.mjs",
+    "build": "node --import tsx tools/build.mjs",
     "check": "bash tools/check.sh",
     "package": "node --import tsx tools/package.ts",
     "docs": "python3 tools/docs.py"

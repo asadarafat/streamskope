@@ -29,6 +29,7 @@ async function desktop(): Promise<void> {
   if (!["linux-x64", "win32-x64", "darwin-arm64"].includes(target)) {
     throw new Error(`Unsupported native package target: ${target}`);
   }
+  node("tools/check/forge-patch.ts", "--apply");
   node("tools/package/e2e.mjs", "boundary");
   node("tools/build.mjs");
   node("tools/package/verify.ts");
@@ -96,10 +97,14 @@ async function desktop(): Promise<void> {
 
 async function main(): Promise<void> {
   const [target = "desktop", ...args] = process.argv.slice(2);
+  if (target === "desktop" && args.length === 0) {
+    await desktop();
+    return;
+  }
+  node("tools/check/forge-patch.ts", "--apply");
   if (target === "eda" && args.length === 0) run("bash", ["tools/package/eda.sh"]);
   else if (target === "plugin" && args.length <= 1) node("tools/package/plugin.ts", ...args);
   else if (target === "release") node("tools/package/release.ts", ...args);
-  else if (target === "desktop" && args.length === 0) await desktop();
   else
     throw new Error(
       "Usage: npm run package [-- desktop|eda|plugin [eda|nsp]|release <release arguments>]",

@@ -19,7 +19,7 @@ describe("development commands", () => {
       "package",
     ]);
     expect(manifest.scripts.dev).toBe("node tools/dev.mjs");
-    expect(manifest.scripts.build).toBe("node tools/build.mjs");
+    expect(manifest.scripts.build).toBe("node --import tsx tools/build.mjs");
     expect(manifest.scripts.package).toBe("node --import tsx tools/package.ts");
     expect(manifest.scripts.check).toBe("bash tools/check.sh");
     expect(manifest.scripts.docs).toBe("python3 tools/docs.py");
@@ -36,7 +36,8 @@ describe("development commands", () => {
       "tools/check/eda-source.mjs",
       "cd vendors/streamskope/apps/capture/agent && go test -race ./...",
       "tools/check/dependencies.ts",
-      "npm audit --package-lock-only --audit-level=high",
+      "tools/check/forge-patch.ts --apply",
+      "tools/check/audit.ts",
       "stream-pipeline-replay.ts --seconds=60",
       "--mixed --clone",
       "npm run docs -- qualify",
@@ -51,5 +52,24 @@ describe("development commands", () => {
       expect(docs).toContain(required);
     const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
     expect(ci).toContain("npm run check -- --ci");
+  });
+
+  it("qualifies automatic changes without assigning a release version or packaging", () => {
+    const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+    const release = readFileSync(
+      new URL("../../.github/workflows/release.yml", import.meta.url),
+      "utf8",
+    );
+    expect(ci).toContain("pull_request:");
+    expect(ci).toContain("branches: [main]");
+    expect(ci).toContain("workflow_call:");
+    expect(ci).not.toMatch(/tags:|release-version|npm run package|contents: write/);
+    expect(release).toContain("workflow_dispatch:");
+    expect(release).not.toMatch(/^ {2}(?:push|pull_request):/mu);
+    expect(release).toContain("uses: ./.github/workflows/ci.yml");
+    expect(release).toContain('"$GITHUB_REF" != refs/heads/main');
+    expect(release).toContain('release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp');
+    expect(release).toContain('--target "$GITHUB_SHA" --draft');
+    expect(release).not.toContain("git push");
   });
 });

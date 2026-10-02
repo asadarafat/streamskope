@@ -39,10 +39,10 @@ describe("versioned release notes source", () => {
 
 it("uses the same versioned Markdown release source for the GitHub Release body", async () => {
   const workflow = await readFile(
-    new URL("../../.github/workflows/ci.yml", import.meta.url),
+    new URL("../../.github/workflows/release.yml", import.meta.url),
     "utf8",
   );
   expect(workflow).toContain("npm run package -- release");
-  expect(workflow).toContain("website/docs/releases/$GITHUB_REF_NAME.md");
+  expect(workflow).toContain("website/docs/releases/$RELEASE_TAG.md");
   expect(workflow).toContain('--notes-file "$RUNNER_TEMP/notes.md"');
 });

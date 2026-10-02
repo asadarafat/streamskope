@@ -2,7 +2,7 @@
 
 Use this procedure before replacing the desktop app or downgrading it. Record the
 release tag as well as the app version: `v0.1.0+build.1` identifies the first
-release, while `0.1.0` is the app version. From 0.2.0 the app version identifies the desktop release, while plugins
+release, while `0.1.0` is the app version. For new releases the app version identifies the desktop release, while plugins
 version independently. Record each installed plugin version and its requirements.
 
 The [qualification record](qualification.md) separates recorded results from
@@ -59,7 +59,7 @@ recovered. Never attach a full backup to an issue report.
    with empty values to dismiss an error.
 4. Open **Preferences → Plugins**. Install the compatible plugin if a saved EDA
    or NSP profile reports it missing. The original release uses API 3 packages;
-   0.2.0 introduces API 4 and preserves installed API 2/3 packages. Check the
+   The unreleased host introduces API 4; its release builds preserve installed API 2/3 packages. Check the
    [migration instructions](../plugins/versioning.md#upgrade-from-the-original-packages),
    desktop interval and target version. A stopped EDA capture needs an explicit resume.
 5. Test a reviewed profile, read a known topic and confirm the expected result.
