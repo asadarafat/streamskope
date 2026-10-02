@@ -63,8 +63,8 @@ export class KafkaReadTracker {
     const bytes =
       (message.key?.byteLength ?? 0) +
       (message.value?.byteLength ?? 0) +
-      [...message.headers].reduce(
-        (total, [key, value]) => total + key.byteLength + value.byteLength,
+      (message.headerEntries ?? [...message.headers]).reduce(
+        (total, [key, value]) => total + key.byteLength + (value?.byteLength ?? 0),
         0,
       );
     if (this.scannedBytes + bytes > KAFKA_QUERY_LIMITS.scanBytes) {

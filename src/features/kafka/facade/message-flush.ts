@@ -54,7 +54,12 @@ export function flushFacadeMessages(
   let lastBatchMessages = 0;
   const delivered: QueuedFacadeMessage[] = [];
   do {
-    const batch = takeFacadeMessageBatch(consumption);
+    const batch = takeFacadeMessageBatch(
+      consumption,
+      drainAll
+        ? consumption.streamTuning.batchSize
+        : consumption.streamTuning.batchSize - deliveredMessages,
+    );
     if (batch.length > 0) {
       delivered.push(...batch);
       deliveredMessages += batch.length;
@@ -71,7 +76,10 @@ export function flushFacadeMessages(
         version: HOST_PROTOCOL_VERSION,
       });
     }
-  } while (drainAll && consumption.messages.length > 0);
+  } while (
+    consumption.messages.length > 0 &&
+    (drainAll || (batchCount < 4 && deliveredMessages < consumption.streamTuning.batchSize))
+  );
   publishRuleOutputs(consumption, delivered, bindings);
   const completedAtMs = bindings.monotonicNow();
   const droppedSincePrevious = recordStreamFlush(consumption, {

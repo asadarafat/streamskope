@@ -24,10 +24,11 @@ export function appendFacadeMessage(
 
 export function takeFacadeMessageBatch(
   consumption: ActiveFacadeConsumption,
+  maximumMessages = consumption.streamTuning.batchSize,
 ): readonly QueuedFacadeMessage[] {
   const batch: QueuedFacadeMessage[] = [];
   let batchBytes = 0;
-  while (batch.length < consumption.streamTuning.batchSize && consumption.messages.length > 0) {
+  while (batch.length < maximumMessages && consumption.messages.length > 0) {
     const next = consumption.messages[0];
     if (next === undefined) {
       break;

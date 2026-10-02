@@ -133,6 +133,26 @@ beforeEach(() => {
   kafkaState.streamCloseCalls = 0;
 });
 
+it("retains the client's ordered header entries including duplicate names and null values", async () => {
+  kafkaState.offsets.set("-2", [0n]);
+  kafkaState.offsets.set("-1", [0n]);
+  const headerEntries = [
+    [Buffer.from("same"), Buffer.from("one")],
+    [Buffer.from("same"), undefined],
+  ] as const;
+  kafkaState.messages.push({ ...rawMessage(0n), headerEntries });
+  const stream = await new PlatformaticConsumerFactory().open(
+    input({ mode: "tail", maxMessages: 10, topic: "orders" }),
+  );
+  try {
+    const result = await stream[Symbol.asyncIterator]().next();
+    if (result.done) throw new Error("Expected a Kafka record");
+    expect(result.value.headerEntries).toEqual(headerEntries);
+  } finally {
+    await stream.close();
+  }
+});
+
 describe("Platformatic Kafka fetch adapter", () => {
   it("preserves cancelled coverage and closes an unopened iteration exactly once", async () => {
     kafkaState.offsets.set("-2", [0n]);

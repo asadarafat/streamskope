@@ -211,6 +211,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   private toRawMessage(message: Message<Buffer, Buffer, Buffer, Buffer>): KafkaRawMessage {
     return {
       headers: message.headers,
+      ...(message.headerEntries === undefined ? {} : { headerEntries: message.headerEntries }),
       key: message.key,
       offset: message.offset,
       partition: message.partition,

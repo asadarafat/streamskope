@@ -209,7 +209,7 @@ export class KafkaLiveRuleRuntime {
     }
     if (message.payload === null) {
       return unavailableEvaluation(
-        message.originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes
+        (message.payloadTruncated ?? message.originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes)
           ? "payload-truncated"
           : "payload-null",
       );

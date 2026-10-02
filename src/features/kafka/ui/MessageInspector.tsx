@@ -29,6 +29,7 @@ import {
   type TextDocumentTransferPort,
 } from "./text-document-transfer";
 import { formatUtcTimestamp } from "./timestamp-presentation";
+import { OriginalRecordEvidence } from "./OriginalRecordEvidence";
 
 export interface MessageInspectorProperties {
   readonly message: KafkaExploredMessage;
@@ -261,13 +262,16 @@ export function MessageInspector({
 }: MessageInspectorProperties): React.JSX.Element {
   const formatted = useMemo(() => formattedJson(message.payload), [message.payload]);
   const payloadTruncated =
-    message.truncated && message.originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes;
+    message.payloadTruncated ??
+    (message.truncated && message.originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes);
   const selectedContent =
     message.payload !== null ? message.payload : payloadTruncated ? message.preview : null;
   const [payloadView, setPayloadView] = useState<"formatted" | "raw">(
     formatted === null ? "raw" : "formatted",
   );
-  const [section, setSection] = useState<"key" | "metadata" | "rules" | "value">("metadata");
+  const [section, setSection] = useState<"key" | "metadata" | "rules" | "value" | "original">(
+    "metadata",
+  );
   const [copying, setCopying] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [operationError, setOperationError] = useState<string>();
@@ -374,7 +378,7 @@ export function MessageInspector({
       </Box>
       <Tabs
         aria-label="Message evidence"
-        onChange={(_event, value: "key" | "metadata" | "rules" | "value") => {
+        onChange={(_event, value: "key" | "metadata" | "rules" | "value" | "original") => {
           setSection(value);
         }}
         sx={{
@@ -388,6 +392,7 @@ export function MessageInspector({
         <Tab label="Metadata" value="metadata" />
         <Tab label="Key" value="key" />
         <Tab label="Value" value="value" />
+        <Tab label="Original" value="original" />
         <Tab label="Rules" value="rules" />
       </Tabs>
       <Box
@@ -396,6 +401,13 @@ export function MessageInspector({
         sx={{ minHeight: 0, overflow: "auto" }}
         tabIndex={0}
       >
+        {section === "original" ? (
+          <OriginalRecordEvidence
+            key={message.id}
+            original={message.original}
+            transfer={transfer}
+          />
+        ) : null}
         {section === "metadata" ? (
           <Box aria-label="Metadata evidence" component="section">
             <InspectorEvidenceSection title="Record">

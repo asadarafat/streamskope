@@ -56,7 +56,7 @@ class ProbeAborted extends Error {
 function header(message: KafkaRawMessage, name: string): string | undefined {
   for (const [key, value] of message.headers) {
     if (key.toString("utf8") === name) {
-      return value.toString("utf8");
+      return value?.toString("utf8");
     }
   }
   return undefined;

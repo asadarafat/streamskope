@@ -81,13 +81,14 @@ export interface KafkaAdminFactory {
 }
 
 export interface KafkaRawMessage {
-  readonly headers: ReadonlyMap<Buffer, Buffer>;
-  readonly key?: Buffer;
+  readonly headers: ReadonlyMap<Buffer, Buffer | null | undefined>;
+  readonly headerEntries?: readonly (readonly [Buffer, Buffer | null | undefined])[];
+  readonly key?: Buffer | null;
   readonly offset: bigint;
   readonly partition: number;
   readonly timestamp: bigint;
   readonly topic: string;
-  readonly value?: Buffer;
+  readonly value?: Buffer | null;
 }
 
 export interface KafkaRawMessageStream extends AsyncIterable<KafkaRawMessage> {

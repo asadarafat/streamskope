@@ -151,7 +151,7 @@ describe("message presentation", () => {
       within(evidenceTabs)
         .getAllByRole("tab")
         .map((tab) => tab.textContent),
-    ).toEqual(["Metadata", "Key", "Value", "Rules"]);
+    ).toEqual(["Metadata", "Key", "Value", "Original", "Rules"]);
     expect(within(evidenceTabs).getByRole("tab", { name: "Metadata" })).toHaveAttribute(
       "aria-selected",
       "true",

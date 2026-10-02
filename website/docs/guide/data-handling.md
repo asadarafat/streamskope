@@ -42,19 +42,20 @@ gone. Do not remove shared OS credential-service files to clean up one applicati
 These are workbench bounds, not Kafka retention settings
 or a throughput guarantee. Both the record-count and byte limits apply.
 
-| Boundary                         | Limit                                | What happens                                                                                        |
-| -------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Retained message count           | 1,000                                | Older records leave the view as the window advances                                                 |
-| Retained message bytes           | 64 MiB                               | Retention can reach this limit before the record-count limit                                        |
-| Full record content              | 1 MiB                                | Combined key/value content above this limit is truncated; a preview is not the complete value       |
-| Value preview                    | 8 KiB                                | Shows a bounded prefix, with original-size/truncation information                                   |
-| Maximum bounded fetch count      | 1,000                                | A bounded read does not imply a complete topic export                                               |
-| Serialized export record content | 8 MiB                                | An oversized export fails; narrow the filters and retry                                             |
-| Complete JSON export document    | 16 MiB                               | Includes formatting and metadata; this is a separate final size check                               |
-| Default recent time window       | 2 minutes                            | Resolved before Load messages; Custom interval accepts explicit start/end with a time zone          |
-| Broker search scan               | 10,000 records / 32 MiB / 30 seconds | The first reached budget stops the scan with partial coverage; limits do not imply complete history |
-| Saved query library              | 100 queries / 1 MiB                  | Unreadable or unsupported files are preserved for recovery                                          |
-| Portable query document          | 32 KiB                               | Versioned settings only; import requires review and explicit opening                                |
+| Boundary                         | Limit                                | What happens                                                                                                 |
+| -------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Retained message count           | 1,000                                | Older records leave the view as the window advances                                                          |
+| Retained message bytes           | 64 MiB                               | Retention can reach this limit before the record-count limit                                                 |
+| Full record content              | 1 MiB                                | Combined display text, headers, previews and original-byte envelope; over-limit display content is truncated |
+| Original record bytes            | 256 KiB                              | Key, value and ordered headers are retained as Base64 within this bound; otherwise explicitly unavailable    |
+| Value preview                    | 8 KiB                                | Shows a bounded prefix, with original-size/truncation information                                            |
+| Maximum bounded fetch count      | 1,000                                | A bounded read does not imply a complete topic export                                                        |
+| Serialized export record content | 8 MiB                                | An oversized export fails; narrow the filters and retry                                                      |
+| Complete JSON export document    | 16 MiB                               | Includes formatting and metadata; this is a separate final size check                                        |
+| Default recent time window       | 2 minutes                            | Resolved before Load messages; Custom interval accepts explicit start/end with a time zone                   |
+| Broker search scan               | 10,000 records / 32 MiB / 30 seconds | The first reached budget stops the scan with partial coverage; limits do not imply complete history          |
+| Saved query library              | 100 queries / 1 MiB                  | Unreadable or unsupported files are preserved for recovery                                                   |
+| Portable query document          | 32 KiB                               | Versioned settings only; import requires review and explicit opening                                         |
 
 Check **Monitor** for overload drops as well as ordinary retention evictions.
 Filters operate on the records currently available to the workbench, including
@@ -64,7 +65,7 @@ complete historical coverage; see [message investigation](messages.md#search-bey
 
 ## Understand an export
 
-The message export is UTF-8 JSON containing the filtered records from one topic.
+The message export uses **schema version 2**: UTF-8 JSON containing the filtered records from one topic.
 It includes keys, headers, payloads/previews, partitions, offsets and timestamps;
 it is not automatically redacted or encrypted. Review the destination and contents
 before sharing it. Stopping a tail gives a stable view but does not recover evicted
@@ -72,17 +73,30 @@ records or dropped delivery.
 
 Inspect these fields before using an export as evidence:
 
-| Field                                          | Meaning                                                                                                    |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `topic`, `filters`                             | Topic and filters applied to the exported view                                                             |
-| `retainedMessageCount`, `exportedMessageCount` | Retained and exported counts; neither is the broker's total record count                                   |
-| `stale`                                        | Whether the snapshot was marked stale when exported                                                        |
-| `partition`, `offset`                          | The broker position of each exported record                                                                |
-| `truncated`, `originalByteSize`                | Whether the representation is incomplete and the original content size                                     |
-| `payload`, `preview`                           | Available complete value or bounded preview; a null payload with truncation is not a recovered full record |
+| Field                                          | Meaning                                                                                                         |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `topic`, `filters`                             | Topic and filters applied to the exported view                                                                  |
+| `retainedMessageCount`, `exportedMessageCount` | Retained and exported counts; neither is the broker's total record count                                        |
+| `stale`                                        | Whether the snapshot was marked stale when exported                                                             |
+| `partition`, `offset`                          | The broker position of each exported record                                                                     |
+| `truncated`, `originalByteSize`                | Whether the representation is incomplete and the original content size                                          |
+| `payload`, `preview`                           | Available complete value or bounded preview; a null payload with truncation is not a recovered full record      |
+| `payloadTruncated`                             | Distinguishes a withheld display value from a Kafka tombstone, including invalid UTF-8 that expands on decoding |
+| `original.state`                               | `complete` means the bounded original bytes are present; `unavailable` carries a reason                         |
+| `original.key`, `original.value`               | Canonical Base64 bytes; JSON `null` means Kafka null, while an empty string means zero bytes                    |
+| `original.headers`                             | Ordered Base64 key/value entries preserving repeated names and null header values                               |
 
-Exports contain the current representation, not a byte-for-byte broker backup.
-Headers and other fields also have bounds. If you need a complete archive, use an
+The **Original** inspector tab can copy one complete original as Base64 JSON.
+Its ordered headers are authoritative; the Metadata header dictionary is a text preview.
+Originals retain at most 128 headers, with 512 bytes per header name and 8 KiB per
+header value, within the combined 256 KiB limit. Base64 is encoding, not encryption.
+Display text decodes UTF-8 and can replace invalid sequences; use the complete
+original envelope when byte fidelity matters. Incomplete, unavailable or masked
+originals must not be reconstructed from previews. Version 1 exports did not retain
+original bytes; consumers of the export format must recognize version 2 explicitly.
+
+Exports still describe only the retained records, not a complete broker backup.
+If you need a complete archive, use an
 approved Kafka data-export process with its own offset coverage and retention checks.
 
 ## Share diagnostic evidence

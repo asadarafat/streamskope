@@ -363,7 +363,7 @@ test.describe("StreamSkope browser message operations", () => {
       exportedMessageCount: 2,
       filters: { key: "alpha" },
       retainedMessageCount: 4,
-      schemaVersion: 1,
+      schemaVersion: 2,
       stale: false,
     });
     expect(exported.messages.map((record) => record.key)).toEqual([

@@ -3,10 +3,8 @@ import { randomUUID } from "node:crypto";
 import {
   type KafkaReadCoverage,
   HostContractValidationError,
-  KAFKA_MESSAGE_LIMITS,
   parseKafkaFetchRequest,
   parseKafkaLatencyProbeRequest,
-  utf8ByteLength,
   validateSecureConnectionInput,
   type HostErrorStage,
   type KafkaFetchRequest,
@@ -27,6 +25,7 @@ import type {
   KafkaLatencyProbeMeasurement,
 } from "../application";
 
+import { translateKafkaRecord } from "./message-record";
 import {
   KafkaEngineFailure,
   mapKafkaAdminFailure,
@@ -46,7 +45,6 @@ import type {
   KafkaLatencyProbePort,
   KafkaEngineConnection,
   KafkaConnectionTestResult,
-  KafkaRawMessage,
   KafkaRawMessageStream,
   OAuthToken,
   OAuthTokenProvider,
@@ -160,97 +158,6 @@ function withCleanupFailure(
   });
 }
 
-function decode(buffer: Buffer | undefined): string | null {
-  return buffer === undefined ? null : buffer.toString("utf8");
-}
-
-function decodePrefix(buffer: Buffer | undefined, maximumBytes: number): string {
-  if (buffer === undefined) {
-    return "";
-  }
-  const decoded = buffer.subarray(0, maximumBytes).toString("utf8");
-  if (utf8ByteLength(decoded) <= maximumBytes) {
-    return decoded;
-  }
-  const retained: string[] = [];
-  let retainedBytes = 0;
-  for (const character of decoded) {
-    const characterBytes = Buffer.byteLength(character, "utf8");
-    if (retainedBytes + characterBytes > maximumBytes) {
-      break;
-    }
-    retained.push(character);
-    retainedBytes += characterBytes;
-  }
-  return retained.join("");
-}
-
-function translateHeaders(headers: ReadonlyMap<Buffer, Buffer>): {
-  readonly headers: Readonly<Record<string, string>>;
-  readonly truncated: boolean;
-} {
-  const translated: Array<readonly [string, string]> = [];
-  let truncated = headers.size > KAFKA_MESSAGE_LIMITS.headerCount;
-  for (const [key, value] of [...headers].slice(0, KAFKA_MESSAGE_LIMITS.headerCount)) {
-    if (
-      key.byteLength > KAFKA_MESSAGE_LIMITS.headerKeyBytes ||
-      value.byteLength > KAFKA_MESSAGE_LIMITS.headerValueBytes
-    ) {
-      truncated = true;
-    }
-    translated.push([
-      decodePrefix(key, KAFKA_MESSAGE_LIMITS.headerKeyBytes),
-      decodePrefix(value, KAFKA_MESSAGE_LIMITS.headerValueBytes),
-    ]);
-  }
-  return { headers: Object.fromEntries(translated), truncated };
-}
-
-function translateMessage(raw: KafkaRawMessage, expectedTopic: string): KafkaMessage {
-  if (raw.topic !== expectedTopic) {
-    throw new Error(`Kafka returned a record for unexpected topic ${raw.topic}.`);
-  }
-  if (!Number.isSafeInteger(raw.partition) || raw.partition < 0 || raw.offset < 0n) {
-    throw new Error("Kafka returned invalid partition or offset metadata.");
-  }
-  const timestamp = Number(raw.timestamp);
-  if (
-    !Number.isSafeInteger(timestamp) ||
-    timestamp < -8_640_000_000_000_000 ||
-    timestamp > 8_640_000_000_000_000
-  ) {
-    throw new Error("Kafka returned an invalid record timestamp.");
-  }
-
-  const keyBytes = raw.key?.byteLength ?? 0;
-  const payloadBytes = raw.value?.byteLength ?? 0;
-  const key = decode(raw.key);
-  const payload = decode(raw.value);
-  const originalByteSize = Math.max(
-    keyBytes + payloadBytes,
-    utf8ByteLength(key) + utf8ByteLength(payload),
-  );
-  const contentTruncated = originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes;
-  const translatedHeaders = translateHeaders(raw.headers);
-  return {
-    headers: translatedHeaders.headers,
-    id: `${raw.topic}:${raw.partition}:${raw.offset.toString()}`,
-    key: contentTruncated
-      ? key !== null && utf8ByteLength(key) <= KAFKA_MESSAGE_LIMITS.previewBytes
-        ? key
-        : null
-      : key,
-    offset: raw.offset.toString(),
-    originalByteSize,
-    partition: raw.partition,
-    payload: contentTruncated ? null : payload,
-    preview: decodePrefix(raw.value, KAFKA_MESSAGE_LIMITS.previewBytes),
-    timestamp: new Date(timestamp).toISOString(),
-    topic: raw.topic,
-    truncated: contentTruncated || translatedHeaders.truncated,
-  };
-}
-
 class TranslatedKafkaMessageStream implements KafkaMessageStream {
   coverage(): KafkaReadCoverage | undefined {
     return this.rawStream.coverage?.();
@@ -272,7 +179,7 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
   async *[Symbol.asyncIterator](): AsyncIterator<KafkaMessage> {
     try {
       for await (const raw of this.rawStream) {
-        yield translateMessage(raw, this.expectedTopic);
+        yield translateKafkaRecord(raw, this.expectedTopic);
       }
     } catch (error) {
       throw mapKafkaAdminFailure(error, this.target);

@@ -267,7 +267,9 @@ describe("Kafka live rule contract", () => {
   });
 
   it("preserves the maximum raw-message capacity when bounded evidence is attached", () => {
-    const payload = JSON.stringify("x".repeat(KAFKA_MESSAGE_LIMITS.messageBytes - 2));
+    const payload = JSON.stringify(
+      "x".repeat(KAFKA_MESSAGE_LIMITS.messageBytes - KAFKA_MESSAGE_LIMITS.previewBytes - 2),
+    );
     const message: KafkaExploredMessage = {
       ...explored({
         ...zeroEvaluated,
@@ -280,7 +282,7 @@ describe("Kafka live rule contract", () => {
       preview: payload.slice(0, KAFKA_MESSAGE_LIMITS.previewBytes),
     };
 
-    expect(payload.length).toBe(KAFKA_MESSAGE_LIMITS.messageBytes);
+    expect(payload.length + message.preview.length).toBe(KAFKA_MESSAGE_LIMITS.messageBytes);
     expect(kafkaMessageRetainedBytes(message)).toBeGreaterThan(KAFKA_MESSAGE_LIMITS.messageBytes);
     expect(parseHostEvent(batch(message))).toEqual(batch(message));
   });

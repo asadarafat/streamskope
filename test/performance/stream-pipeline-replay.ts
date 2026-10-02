@@ -95,8 +95,19 @@ async function main(): Promise<void> {
           const padding = `${payloads[sequence % payloads.length] ?? ""}${sequence}`;
           const payload = rules ? JSON.stringify({ index: sequence, data: padding }) : padding;
           generatedBytes += Buffer.byteLength(payload);
+          const projected = message(`${sequence}:${performance.now()}`, payload);
           yield {
-            ...message(`${sequence}:${performance.now()}`, payload),
+            ...projected,
+            original: {
+              state: "complete",
+              encoding: "base64",
+              key: projected.key === null ? null : Buffer.from(projected.key).toString("base64"),
+              value: Buffer.from(payload).toString("base64"),
+              headers: Object.entries(projected.headers).map(([key, value]) => ({
+                key: Buffer.from(key).toString("base64"),
+                value: Buffer.from(value).toString("base64"),
+              })),
+            },
             offset: String(9007199254740993n + BigInt(sequence)),
             partition: sequence % partitions,
             timestamp: new Date(1700000000000 + sequence).toISOString(),

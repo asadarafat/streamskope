@@ -74,6 +74,43 @@ afterEach(() => {
 });
 
 describe("Kafka message inspector operations", () => {
+  it("copies exact binary originals with ordered duplicate and null headers", async () => {
+    const original = {
+      state: "complete",
+      encoding: "base64",
+      key: null,
+      value: "/wA=",
+      headers: [
+        { key: "aA==", value: "" },
+        { key: "aA==", value: null },
+      ],
+    } as const;
+    const { copy, user } = setup(message("�\u0000", { original }));
+    await user.click(screen.getByRole("tab", { name: "Original" }));
+    await user.click(screen.getByRole("button", { name: "Copy original record" }));
+    expect(copy).toHaveBeenCalledWith(JSON.stringify(original, null, 2));
+    expect(screen.getByRole("status")).toHaveTextContent("Original record copied as Base64 JSON.");
+  });
+
+  it("refuses original-byte copy for incomplete records and identifies truncated decoded data", async () => {
+    const { user, copy } = setup(
+      message(null, {
+        originalByteSize: 220_000,
+        truncated: true,
+        payloadTruncated: true,
+        preview: "�",
+        original: { state: "unavailable", reason: "size-limit" },
+      }),
+    );
+    await user.click(screen.getByRole("tab", { name: "Original" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("cannot be used as byte-exact records");
+    expect(screen.queryByRole("button", { name: "Copy original record" })).not.toBeInTheDocument();
+    expect(copy).not.toHaveBeenCalled();
+    await openValue(user);
+    expect(screen.getByRole("button", { name: "Copy retained preview" })).toBeEnabled();
+    expect(screen.queryByText("Kafka supplied a null value.")).not.toBeInTheDocument();
+  });
+
   it("copies the exact immutable value including surrounding whitespace after confirmation", async () => {
     const exact = "  first line\nsecond line  \n";
     const { copy, user } = setup(message(exact));
