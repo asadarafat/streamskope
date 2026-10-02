@@ -168,7 +168,7 @@ it("requires a missing profile reference to be resolved and blocks opening durin
     host,
     profiles: [],
     currentTopic: null,
-    captureCurrent: () => configuration,
+    captureCurrent: (): typeof configuration => configuration,
     onRestore,
     onClose: vi.fn(),
   };
