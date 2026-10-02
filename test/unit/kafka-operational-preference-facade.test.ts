@@ -220,7 +220,7 @@ describe("Kafka operational-preference facade", () => {
     expect(JSON.stringify(activity)).not.toMatch(/private\.example|runbooks|newest|queueDepth/);
   });
 
-  it("publishes honest fallback and keeps unrelated commands available after storage failure", async () => {
+  it("publishes unavailable storage and denies remote reads while protection cannot be loaded", async () => {
     const { events, facade } = setup(new UnavailablePreferenceStore());
 
     const loaded = await facade.execute(preferenceCommand("preferences.get", {}));
@@ -256,7 +256,7 @@ describe("Kafka operational-preference facade", () => {
       },
       ok: false,
     });
-    expect(topics).toMatchObject({ ok: false });
+    expect(topics).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });
     expect(preferenceEvents(events)).toHaveLength(2);
     expect(preferenceEvents(events).at(-1)?.payload).toEqual(preferenceEvents(events)[0]?.payload);
     const serialized = JSON.stringify(events);
@@ -268,7 +268,7 @@ describe("Kafka operational-preference facade", () => {
     ).toEqual([
       ["Load preferences", "succeeded", "warning"],
       ["Save preferences", "failed", "error"],
-      ["Refresh topics", "failed", "error"],
+      ["topics.list", "failed", "error"],
     ]);
   });
 });
