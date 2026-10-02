@@ -1,20 +1,6 @@
 name: Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "website/**"
-      - "tools/docs.py"
-      - "tools/docs/**"
-      - "test/docs/**"
-      - "plugins/*/manifest.json"
-      - "src/platform/ui/**"
-      - "src/features/kafka/contracts/types.ts"
-      - "src/features/kafka/ui/message-operations.ts"
-      - "package*.json"
-      - ".github/workflows/docs.yml"
-  workflow_dispatch:
   release:
     types: [published]
 
@@ -27,21 +13,22 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v'))
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       STREAMSKOPE_DOCS_URL: https://asadarafat.github.io/streamskope/
       STREAMSKOPE_DOCS_PUBLISH: "1"
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
     outputs:
       revision: ${{ steps.identity.outputs.revision }}
       release: ${{ steps.identity.outputs.release }}
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          # Always publish current main, including when an older release event arrives.
-          ref: main
+          # The release event SHA is the tagged source, even if main has advanced.
+          ref: ${{ github.sha }}
           fetch-depth: 2
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
@@ -53,6 +40,10 @@ jobs:
           cache: pip
           cache-dependency-path: website/requirements.txt
       - run: npm ci --no-audit --no-fund
+      - name: Prepare documentation for the published desktop
+        run: |
+          node --import tsx tools/package/release-version.ts desktop "${RELEASE_TAG#v}" --stamp
+          npm run docs -- prepare
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run docs -- qualify
       - id: identity

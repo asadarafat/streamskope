@@ -21,18 +21,17 @@ without its `v` prefix. Each plugin has an independent Semantic Version. Record 
 reporting a problem. The original `v0.1.0+build.1` retains its historical build
 identity; match its installer against `SHA256SUMS` from that exact release.
 
-The notice on each guide identifies its published desktop baseline. Pages with
-upcoming changes are marked **Unreleased**. Their development identity does not
-assign a release version. **Development documentation** comes from a checkout or PR.
-**Published documentation** is the qualified site built from current `main`, with
-published installer availability verified before deployment; it can also contain
-clearly labeled upcoming changes.
+The notice on each guide identifies the source it describes. **Development
+documentation** in a checkout or PR labels unreleased guides explicitly; it does
+not assign a release version or claim that new features exist in older installers.
+**Published documentation** is a qualified snapshot of one published desktop
+release: its tagged source, version notice and download links match.
 
-Merging documentation changes to `main` qualifies and publishes Pages without
-another desktop release. Maintainers can also run **Pages** manually from `main`.
-Desktop release publication triggers the same current-main build; an old release
-event cannot replace the site with an old checkout. Plugin and signed EDA cluster-app
-publication are independent.
+Pages deploys only after a desktop release is published, including prereleases.
+Merging to `main`, creating a tag or draft, and publishing plugins do not replace
+the site. Documentation changes become public with the next desktop release.
+The publication build includes the release event's final notes and checks installer
+availability. Plugin and signed EDA cluster-app publication remain independent.
 
 Maintainers review unversioned notes, then start **Actions → Release → Run workflow**
 from `main`, select **desktop**, **eda** or **nsp** and enter its version. CI collects
@@ -52,11 +51,13 @@ upgrade instructions, limitations and actual qualification links. Its workflow
 artifacts retain the PR selection evidence for review.
 
 After publication, the **published GitHub release body** is the authoritative record.
-Archive that exact body, including draft-review edits, under the release's tag in
-this section through a documentation PR. Add page metadata and navigation, retain
+Pages includes the desktop publication event's exact body in its release snapshot.
+Archive published bodies, including draft-review edits, under their release tags
+in the repository through a documentation PR for future snapshots. Add page metadata and navigation, retain
 historical notes and reset only that component's shipped unreleased commentary.
 For a desktop release, update the documented downloads and applicable unreleased
-notices in the same PR. Review the [compatibility matrix](../start/compatibility.md)
+notices in the same PR. That PR qualifies source documentation but does not deploy
+the public site. Review the [compatibility matrix](../start/compatibility.md)
 and [qualification record](../guide/qualification.md). Record qualification only
 after inspecting evidence for the exact source and environment; publishing a
 release does not qualify an unexecuted live test.

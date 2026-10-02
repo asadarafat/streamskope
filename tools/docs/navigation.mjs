@@ -12,6 +12,16 @@ export async function checkNavigation(page, base, evidence, accessible) {
       if ((scheme === "slate") !== (theme === "dark"))
         await page.locator(`label[title="Switch to ${theme} mode"]`).click();
 
+      const brand = page.getByRole("link", { name: "StreamSkope home", exact: true });
+      await expect(brand.locator("img")).toBeVisible();
+      await expect(brand.getByText("StreamSkope", { exact: true })).toBeVisible();
+      const brandBox = await brand.boundingBox();
+      const toolsBox = await page.locator(".sk-header-tools").boundingBox();
+      assert(
+        brandBox.x + brandBox.width <= toolsBox.x + 1,
+        "Brand does not overlap header controls",
+      );
+
       const mobile = width < 1220;
       const sidebar = page.locator(".md-sidebar--primary");
       const navigation = sidebar.getByRole("navigation", { name: "Navigation", exact: true });

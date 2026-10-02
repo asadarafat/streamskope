@@ -342,7 +342,9 @@ through a normal documentation PR. For desktop, use
 `website/docs/releases/plugins/NAME/vVERSION.md` with `title` front matter only;
 desktop publication validators own the `release_*` fields. Link the new page from
 the release index and navigation. Keep its links usable in both GitHub and the docs
-site. The workflow does not create this documentation PR.
+site. Pages includes the desktop publication event's body automatically in its
+release snapshot. Keep the archival documentation PR for repository history and
+subsequent snapshots; it does not deploy Pages or change an existing release snapshot.
 
 For a desktop publication, update the published download baseline and applicable
 unreleased notices. Reset only the commentary shipped in that component's release;
@@ -352,24 +354,33 @@ components. Keep historical notes intact. The website's
 starting release CI does not change it. Release qualification can validate the
 stamped notes while downloads still point to the last published desktop.
 
-The **Pages** workflow qualifies current `main` on documentation-related pushes,
-manual dispatch from `main`, and desktop release publication. PRs qualify locally
-built artifacts without deployment. Every deployment uses current `main`, even
-when an older desktop release event triggered it. The build verifies that the
-configured documented desktop is a published GitHub release with the exact three
-installer assets and `SHA256SUMS` uploaded and nonempty, uploads the qualified
-artifact and checks its public revision marker, key pages and bookmark redirects.
-Set Pages source to **GitHub Actions** and allow `main` plus desktop release tags
-(`v*`) in the `github-pages` environment's deployment rules. A manual run can retry
-a failed deployment without a desktop release. Post-deployment failure requires
-inspection of the reported URL/revision; retry only after establishing the cause.
-Release CI validates the selected version and stamps matching build metadata
-before packaging. Docs retain the published download baseline and label source-only
-changes as unreleased.
-Current source plugin declarations are rendered directly from their manifests;
+The **Pages** workflow runs only when a desktop GitHub release is **published**
+(including prereleases). PRs, `main` pushes, tag creation, draft releases and plugin
+publication do not deploy it; there is no manual Pages dispatch. They still run
+the usual documentation qualification where applicable.
+
+Pages checks out the release event's exact commit, even if `main` has advanced.
+It stamps a disposable checkout with that desktop version using the existing
+release tool, then `npm run docs -- prepare` aligns the download baseline and
+release index, copies the publication event's exact release body, and removes
+that checkout's unreleased page. Main stays `0.0.0-dev`. Local and PR previews
+label source guides as unreleased rather than claiming they apply to the last
+published desktop; stamped release previews remain explicitly labeled previews.
+
+Publication refuses a non-release event, wrong source commit, mismatched version
+or incomplete notes. The build also verifies that the exact three installers and
+`SHA256SUMS` exist in the published release, qualifies the site and then verifies
+its public revision, key pages and bookmark redirects. Docs changes become public
+with the next desktop release. To recover a failed deployment, rerun that release's
+Pages run after inspecting its failure; never build newer main under an older
+release label. Set Pages source to **GitHub Actions** and permit desktop release
+tags (`v*`) in the `github-pages` environment's deployment rules.
+
+Source plugin declarations are rendered directly from the release's manifests;
 keep published and historical package facts in the compatibility/release references.
-Installation links and its release identity are generated from
-`project.extra.desktop_release`; keep the download marker in the installation page.
+Installation links use the prepared `project.extra.desktop_release`; keep the
+download marker in the installation page. The publication-only preparation
+changes the build checkout, not the source tag or main.
 **Launch video** remains a separate manual utility.
 
 ## Build a desktop package

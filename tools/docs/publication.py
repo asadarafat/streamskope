@@ -44,6 +44,60 @@ def validate_unreleased_notes(root):
         raise ValueError("Development source needs unversioned unreleased notes")
 
 
+def published_release(root=ROOT, environment=None):
+    """Require a published desktop event, its exact checkout and stamped version."""
+    environment = os.environ if environment is None else environment
+    if environment.get("GITHUB_EVENT_NAME") != "release":
+        raise ValueError("Pages publication requires a published desktop release event")
+    event_path = environment.get("GITHUB_EVENT_PATH")
+    if not event_path:
+        raise ValueError("Pages publication requires the release event payload")
+    event = json.loads(Path(event_path).read_text())
+    release = event.get("release") if isinstance(event, dict) else None
+    if not isinstance(release, dict):
+        raise ValueError("Pages publication requires release metadata")
+    tag = release.get("tag_name", "")
+    version = release_version(tag) if isinstance(tag, str) else None
+    if (event.get("action") != "published" or release.get("draft") is not False
+            or not version or tag != environment.get("GITHUB_REF_NAME")
+            or environment.get("GITHUB_REF") != f"refs/tags/{tag}"
+            or not isinstance(release.get("body"), str) or not release["body"].strip()):
+        raise ValueError("Pages requires the exact published desktop release and its notes")
+    if json.loads((Path(root) / "package.json").read_text())["version"] != version:
+        raise ValueError("Published desktop tag differs from the stamped application version")
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    if not re.fullmatch(r"[a-f0-9]{40}", revision) or revision != environment.get("GITHUB_SHA"):
+        raise ValueError("Pages checkout differs from the published release source")
+    return release
+
+
+def prepare_publication(root=ROOT, environment=None):
+    """Materialize the publication event's notes and downloads in its build checkout."""
+    root = Path(root)
+    release = published_release(root, environment)
+    tag = release["tag_name"]
+    version = release_version(tag)
+    config = root / "website/zensical.toml"
+    source, count = re.subn(r'^desktop_release = "[^"]+"$',
+                            f'desktop_release = "{tag}"', config.read_text(), flags=re.M)
+    if count != 1:
+        raise ValueError("Pages requires one documented desktop release setting")
+    index = root / "website/docs/releases/index.md"
+    status = "Published prerelease" if release.get("prerelease") else "Published release"
+    row = f"| [{tag}]({tag}.md) | {version} | {status}; notes from the publication event |"
+    contents, rows = re.subn(r'^\|[^\n]*\(unreleased\.md\)[^\n]*$', row,
+                             index.read_text(), flags=re.M)
+    if rows != 1 and not (rows == 0 and row in contents):
+        raise ValueError("Release index needs one unreleased row or this publication's row")
+    notes = (f"---\ntitle: StreamSkope {tag}\nrelease_version: {version}\n"
+             f"release_tag: {tag}\n---\n\n" + release["body"])
+    # Validate all inputs before changing the disposable checkout. Main is never stamped.
+    (root / f"website/docs/releases/{tag}.md").write_text(notes)
+    config.write_text(source)
+    index.write_text(contents)
+    (root / "website/docs/releases/unreleased.md").unlink(missing_ok=True)
+
+
 def documentation_context(root=ROOT, environment=None):
     """Keep published downloads separate from development or CI-stamped source."""
     root = Path(root)
@@ -69,10 +123,13 @@ def documentation_context(root=ROOT, environment=None):
         or environment.get("GITHUB_REF_TYPE") == "tag"
         or environment.get("GITHUB_REF", "").startswith("refs/tags/")
     )
-    # A stamped build must retain its exact identity. Pages always uses main,
-    # even when publication of a historical release triggers the deployment.
+    # Public guides must describe this release's source, never a newer main checkout.
     published = environment.get("STREAMSKOPE_DOCS_PUBLISH") == "1"
-    if desktop_tag and tag != source_release and not published:
+    if published:
+        event_release = published_release(root, environment)
+        if release != event_release["tag_name"] or source_release != release:
+            raise ValueError("Published documentation and downloads must match the desktop release")
+    if desktop_tag and tag != source_release:
         raise ValueError("Desktop release tag differs from the source application version")
     return {
         "status": "Published documentation" if published else "Development documentation",

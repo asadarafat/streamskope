@@ -119,17 +119,37 @@ class DocumentationVersionTests(unittest.TestCase):
             "GITHUB_REF_NAME": tag, **values,
         })
 
-    def test_distinguishes_preview_and_current_main_publication_without_assigning_version(self):
+    def release_environment(self, version="0.2.0"):
+        subprocess.run(["git", "init", "--quiet", str(self.root)], check=True)
+        subprocess.run(["git", "-c", "user.name=Docs test", "-c", "user.email=docs@example.invalid",
+                        "commit", "--quiet", "--allow-empty", "-m", "Release source"],
+                       cwd=self.root, check=True)
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.root, text=True).strip()
+        tag = "v" + version
+        self.source_version(version)
+        self.notes(tag, version)
+        (self.root / "website/docs/releases/index.md").write_text(
+            "# Releases\n\n| [Unreleased changes](unreleased.md) | Unassigned | Development |\n"
+            "| [v0.1.0+build.1](v0.1.0+build.1.md) | 0.1.0 | Historical release |\n")
+        self.event = self.root / "release-event.json"
+        self.event.write_text(json.dumps({"action": "published", "release": {
+            "tag_name": tag, "draft": False, "prerelease": "-" in version,
+            "body": f"# StreamSkope {tag}\n\nReviewed **final** notes, with edits from the draft.\n",
+        }}))
+        return {"GITHUB_EVENT_NAME": "release", "GITHUB_REF_NAME": tag,
+                "GITHUB_REF": "refs/tags/" + tag, "GITHUB_SHA": revision,
+                "GITHUB_EVENT_PATH": str(self.event), "STREAMSKOPE_DOCS_PUBLISH": "1"}
+
+    def test_main_is_a_preview_and_cannot_be_published_under_the_previous_release(self):
         self.assertEqual(docs.documentation_context(self.root, {}), {
             "status": "Development documentation", "source_release": "development",
         })
-        context = docs.documentation_context(self.root, {
-            "GITHUB_EVENT_NAME": "push", "GITHUB_REF_NAME": "main",
-            "STREAMSKOPE_DOCS_PUBLISH": "1",
-        })
-        self.assertEqual(context, {
-            "status": "Published documentation", "source_release": "development",
-        })
+        for event in ("push", "pull_request", "workflow_dispatch"):
+            with self.subTest(event=event), self.assertRaisesRegex(ValueError, "published desktop release event"):
+                docs.documentation_context(self.root, {
+                    "GITHUB_EVENT_NAME": event, "GITHUB_REF_NAME": "main",
+                    "STREAMSKOPE_DOCS_PUBLISH": "1",
+                })
 
     def test_manual_release_checks_unstamped_source_without_assigning_input_version(self):
         context = docs.documentation_context(self.root, {
@@ -171,12 +191,61 @@ class DocumentationVersionTests(unittest.TestCase):
     def test_plugin_only_release_keeps_desktop_in_development(self):
         self.assertEqual(self.context("plugins/nsp/v0.1.0")["source_release"], "development")
 
-    def test_pages_release_event_uses_current_main_not_the_old_event_tag(self):
-        result = self.context("v0.1.0+build.1", GITHUB_EVENT_NAME="release",
-                              STREAMSKOPE_DOCS_PUBLISH="1")
+    def test_publication_aligns_tagged_source_notes_and_downloads_reproducibly(self):
+        environment = self.release_environment()
+        with self.assertRaisesRegex(ValueError, "downloads must match"):
+            docs.documentation_context(self.root, environment)
+        docs.publication.prepare_publication(self.root, environment)
+        result = docs.documentation_context(self.root, environment)
         self.assertEqual(result, {
-            "status": "Published documentation", "source_release": "development",
+            "status": "Published documentation", "source_release": "v0.2.0",
         })
+        identity = docs.publication_identity(self.root)
+        self.assertEqual(identity, {"revision": environment["GITHUB_SHA"], "desktop_release": "v0.2.0"})
+        notes = self.root / "website/docs/releases/v0.2.0.md"
+        self.assertEqual(notes.read_text().split("---\n\n", 1)[1], json.loads(self.event.read_text())["release"]["body"])
+        self.assertFalse(self.unreleased.exists())
+        self.assertIn("[v0.2.0](v0.2.0.md)", (self.root / "website/docs/releases/index.md").read_text())
+        self.assertTrue((self.root / "website/docs/releases/v0.1.0+build.1.md").is_file())
+        before = {p: p.read_bytes() for p in self.root.rglob("*.md")}
+        docs.publication.prepare_publication(self.root, environment)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*.md")})
+        (self.root / "website/docs/start").mkdir()
+        (self.root / "website/docs/start/installation.md").write_text("<!-- desktop-downloads -->")
+        links = docs.desktop_downloads(self.root)
+        self.assertEqual(links["tag"], "v0.2.0")
+        self.assertTrue(all("/v0.2.0/StreamSkope-0.2.0-" in a["url"] for a in links["assets"]))
+
+    def test_published_prerelease_keeps_its_exact_identity(self):
+        environment = self.release_environment("0.3.0-rc.1")
+        docs.publication.prepare_publication(self.root, environment)
+        self.assertEqual(docs.documentation_context(self.root, environment)["source_release"], "v0.3.0-rc.1")
+        self.assertIn("| 0.3.0-rc.1 | Published prerelease;", (self.root / "website/docs/releases/index.md").read_text())
+
+    def test_rejects_wrong_event_revision_version_or_notes_before_preparing_publication(self):
+        environment = self.release_environment()
+        event = json.loads(self.event.read_text())
+        original = {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()}
+        for change in (
+            {"GITHUB_SHA": "b" * 40}, {"GITHUB_REF": "refs/heads/main"},
+            {"GITHUB_REF_NAME": "v0.3.0"}, {"GITHUB_EVENT_NAME": "workflow_dispatch"},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                docs.publication.prepare_publication(self.root, {**environment, **change})
+        for key, value in (("draft", True), ("body", ""), ("body", None),
+                           ("tag_name", "plugins/nsp/v0.2.0")):
+            self.event.write_text(json.dumps({**event, "release": {**event["release"], key: value}}))
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                docs.publication.prepare_publication(self.root, environment)
+        self.event.write_text(json.dumps({**event, "action": "created"}))
+        with self.assertRaises(ValueError):
+            docs.publication.prepare_publication(self.root, environment)
+        self.event.write_text(json.dumps(event))
+        for version in ("0.0.0-dev", "0.3.0"):
+            self.source_version(version)
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "stamped application version"):
+                docs.publication.prepare_publication(self.root, environment)
+        self.assertEqual(original, {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()})
 
     def test_requires_exact_notes_for_both_published_and_stamped_versions(self):
         self.source_version("0.2.0")
