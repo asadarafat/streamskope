@@ -525,3 +525,7 @@ export {
   createKafkaQueryLink,
   parseKafkaQueryTransfer,
 } from "./query-transfer";
+
+export type { KafkaRecordProtection } from "./operational-preference-types";
+export { KAFKA_RECORD_PROTECTION_DEFAULTS } from "./operational-preference-types";
+export { parseKafkaRecordProtection } from "./operational-preference-validation";

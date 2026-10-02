@@ -48,7 +48,22 @@ export interface KafkaRulePreferences {
   readonly notificationsEnabled: boolean;
 }
 
+export interface KafkaRecordProtection {
+  readonly readOnly: boolean;
+  readonly maskKey: boolean;
+  readonly maskHeaders: readonly string[];
+  readonly valuePaths: readonly string[];
+}
+
+export const KAFKA_RECORD_PROTECTION_DEFAULTS: KafkaRecordProtection = Object.freeze({
+  readOnly: false,
+  maskKey: false,
+  maskHeaders: Object.freeze([]),
+  valuePaths: Object.freeze([]),
+});
+
 export interface KafkaOperationalPreferences {
+  readonly protection: KafkaRecordProtection;
   readonly fetch: KafkaFetchPreferences;
   readonly latency: KafkaLatencyPreferences;
   readonly rules: KafkaRulePreferences;
@@ -56,6 +71,7 @@ export interface KafkaOperationalPreferences {
 }
 
 export const KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS: KafkaOperationalPreferences = Object.freeze({
+  protection: KAFKA_RECORD_PROTECTION_DEFAULTS,
   fetch: Object.freeze({
     maxMessages: 1_000,
     mode: "tail",
@@ -91,6 +107,7 @@ export interface KafkaOperationalPreferenceSnapshot {
 }
 
 export interface KafkaOperationalPreferencePatch {
+  readonly protection?: KafkaRecordProtection;
   readonly fetch?: Partial<KafkaFetchPreferences>;
   readonly latency?: Partial<KafkaLatencyPreferences>;
   readonly rules?: Partial<KafkaRulePreferences>;

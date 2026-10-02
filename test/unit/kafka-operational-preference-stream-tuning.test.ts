@@ -19,6 +19,7 @@ import {
 
 function preferences(): KafkaOperationalPreferences {
   return {
+    protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
     fetch: { maxMessages: 100, mode: "newest" },
     latency: {
       acknowledgements: 1,

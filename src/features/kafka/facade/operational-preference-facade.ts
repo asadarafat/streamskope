@@ -23,7 +23,7 @@ interface OperationalPreferenceFacadeDependencies {
   readonly recordActivity: (input: ActivityInput) => void;
 }
 
-const PREFERENCE_GROUPS = ["fetch", "latency", "rules", "stream"] as const;
+const PREFERENCE_GROUPS = ["fetch", "latency", "rules", "stream", "protection"] as const;
 
 function operation(command: PreferenceHostCommand): string {
   switch (command.command) {
@@ -88,11 +88,11 @@ export async function executeOperationalPreferenceCommand(
     dependencies.recordActivity({
       correlationId,
       detail: fallback
-        ? "Factory defaults are active because operational preference storage is unavailable."
+        ? "Preference storage is unavailable. Remote operations are blocked until protection settings can be verified."
         : command.command === "preferences.update"
           ? "The selected operational preference groups were committed atomically."
           : command.command === "preferences.reset"
-            ? "Factory operational preferences were committed atomically."
+            ? "Workbench defaults were restored; protection settings were preserved or recovered conservatively."
             : "The complete operational preference snapshot was loaded.",
       object,
       operation: commandOperation,

@@ -9,6 +9,11 @@ export function cloneKafkaOperationalPreferences(
   preferences: KafkaOperationalPreferences,
 ): KafkaOperationalPreferences {
   return {
+    protection: {
+      ...preferences.protection,
+      maskHeaders: [...preferences.protection.maskHeaders],
+      valuePaths: [...preferences.protection.valuePaths],
+    },
     fetch: { ...preferences.fetch },
     latency: { ...preferences.latency },
     rules: { ...preferences.rules },

@@ -1,7 +1,11 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
-import type { BackendAvailability, ConnectionState } from "../contracts";
+import type {
+  BackendAvailability,
+  ConnectionState,
+  KafkaOperationalPreferenceSnapshot,
+} from "../contracts";
 import {
   streamSkopeGeometry,
   streamSkopeSpacing,
@@ -21,6 +25,7 @@ export interface WorkbenchStatusBarProperties {
   readonly operationStatus: string;
   readonly onReload: () => void;
   readonly resourceStatus: string;
+  readonly protection?: KafkaOperationalPreferenceSnapshot | null;
 }
 
 export function WorkbenchStatusBar({
@@ -32,6 +37,7 @@ export function WorkbenchStatusBar({
   operationStatus,
   onReload,
   resourceStatus,
+  protection,
 }: WorkbenchStatusBarProperties): React.JSX.Element {
   const backendUnavailable = backend === "unavailable";
   const backendLabel =
@@ -70,6 +76,22 @@ export function WorkbenchStatusBar({
         live="polite"
         tone={connectionTone}
       />
+      {protection?.store.state === "unavailable" ? (
+        <StatusIndicator
+          ariaLabel="Record protection"
+          label="Protection unavailable"
+          tone="error"
+        />
+      ) : protection?.preferences.protection.readOnly ? (
+        <StatusIndicator ariaLabel="Record protection" label="Read-only" tone="warning" />
+      ) : null}
+      {protection !== null &&
+      protection !== undefined &&
+      (protection.preferences.protection.maskKey ||
+        protection.preferences.protection.maskHeaders.length > 0 ||
+        protection.preferences.protection.valuePaths.length > 0) ? (
+        <StatusIndicator ariaLabel="Message masking" label="Masking active" tone="warning" />
+      ) : null}
       <Typography color="text.secondary" noWrap variant="caption">
         {backendUnavailable ? "Data is stale" : resourceStatus}
       </Typography>

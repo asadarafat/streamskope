@@ -23,6 +23,8 @@ import {
   type KafkaRuleStore,
   type KafkaTopicConfigurationHistoryStore,
 } from "../../features/kafka/application";
+import type { KafkaMessage } from "../../features/kafka/contracts";
+import { protectKafkaRecord } from "../../features/kafka/application/record-protection";
 import { KafkaBackendFacade } from "../../features/kafka/facade";
 import {
   NodeBoundedJsonHttp,
@@ -86,7 +88,16 @@ export function createKafkaBackend(
 ): KafkaBackendFacade {
   const evaluator = new StreamSkopeKafkaRuleEvaluator();
   const rules = new KafkaRuleService(ruleStore, evaluator);
-  const session = new KafkaApplicationSession(new StreamSkopeKafkaEngine());
+  const preferences = new KafkaOperationalPreferenceService(preferenceStore);
+  const session = new KafkaApplicationSession(
+    new StreamSkopeKafkaEngine({
+      protectRecord: (message): KafkaMessage => {
+        const snapshot = preferences.currentSnapshot();
+        if (snapshot.store.state !== "ready") throw new Error("Record protection is unavailable.");
+        return protectKafkaRecord(message, snapshot.preferences.protection);
+      },
+    }),
+  );
   const recipes = new KafkaTrustRecipeLibrary({ store: recipeStore }, legacySource);
   const trustDecoder = createHostTrustMaterialDecoder();
   const trustAcquisitions: KafkaTrustAcquisitionService = new KafkaTrustAcquisitionService(
@@ -115,7 +126,7 @@ export function createKafkaBackend(
     new KafkaTopicConfigurationService(session, topicConfigurationHistoryStore),
     {
       ...(plugins === undefined ? {} : { plugins }),
-      preferences: new KafkaOperationalPreferenceService(preferenceStore),
+      preferences,
       queries: new KafkaQueryLibrary(queryStore),
       schemaRegistry: new SchemaRegistryHttpAdapter(serviceHttp),
       transforms: new RedpandaTransformHttpAdapter(serviceHttp),

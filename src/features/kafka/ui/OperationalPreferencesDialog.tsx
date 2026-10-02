@@ -36,10 +36,12 @@ import {
   type KafkaOperationalPreferenceDraft,
   type KafkaOperationalPreferenceDraftField,
 } from "./operational-preference-draft";
+import { RecordProtectionPanel } from "./RecordProtectionPanel";
 import { PluginsPanel } from "./PluginsPanel";
 
 export interface OperationalPreferencesDialogProperties {
   readonly host: StreamSkopeHost;
+  readonly disconnected?: boolean;
   readonly initialSection?: "workbench" | "plugins";
   readonly loadError?: string;
   readonly onClose: () => void;
@@ -155,6 +157,7 @@ function saveConfirmation(snapshot: KafkaOperationalPreferenceSnapshot): string 
 
 export function OperationalPreferencesDialog({
   host,
+  disconnected = true,
   initialSection = "workbench",
   loadError,
   onClose,
@@ -162,7 +165,7 @@ export function OperationalPreferencesDialog({
   open,
   snapshot,
 }: OperationalPreferencesDialogProperties): React.JSX.Element {
-  const [section, setSection] = useState(initialSection);
+  const [section, setSection] = useState<"workbench" | "plugins" | "protection">(initialSection);
   useEffect(() => {
     if (open) setSection(initialSection);
   }, [initialSection, open]);
@@ -320,13 +323,19 @@ export function OperationalPreferencesDialog({
         <Tabs
           aria-label="Preferences sections"
           value={section}
-          onChange={(_event, value: "workbench" | "plugins") => setSection(value)}
+          onChange={(_event, value: "workbench" | "plugins" | "protection") => setSection(value)}
         >
           <Tab
             id="preferences-workbench-tab"
             aria-controls="preferences-workbench-panel"
             label="Workbench"
             value="workbench"
+          />
+          <Tab
+            id="preferences-protection-tab"
+            aria-controls="preferences-protection-panel"
+            label="Protection"
+            value="protection"
           />
           <Tab
             id="preferences-plugins-tab"
@@ -336,6 +345,15 @@ export function OperationalPreferencesDialog({
           />
         </Tabs>
         <DialogContent dividers>
+          {section === "protection" && open ? (
+            <Box
+              role="tabpanel"
+              id="preferences-protection-panel"
+              aria-labelledby="preferences-protection-tab"
+            >
+              <RecordProtectionPanel host={host} snapshot={snapshot} disconnected={disconnected} />
+            </Box>
+          ) : null}
           {section === "plugins" && open ? (
             <Box
               role="tabpanel"
@@ -689,8 +707,10 @@ export function OperationalPreferencesDialog({
         </DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2">
-            Replace only workbench preferences with the factory snapshot. Profiles, rules,
-            templates, topic history, and Kafka data are unaffected.
+            Restore workbench defaults while preserving record protection. Disconnect first. If
+            storage is unreadable, recovery enables read-only mode and masks keys and values; review
+            header rules before connecting. Profiles, rules, templates, topic history, and Kafka
+            data are unaffected.
           </Typography>
         </DialogContent>
         <DialogActions>

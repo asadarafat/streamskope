@@ -30,6 +30,7 @@ interface Bindings {
   readonly nextSequence: () => number;
   readonly recordActivity: (input: ActivityInput) => void;
   readonly disconnectPluginConnection: (pluginId: string) => Promise<void>;
+  readonly assertRemoteWriteAllowed?: () => void;
 }
 function unavailable(pluginId?: string): Error {
   return Object.assign(
@@ -199,6 +200,7 @@ export class PluginFacadeController {
     }
   }
   async validateProfile(source: ProfileSource, brokers: readonly string[]): Promise<void> {
+    this.bindings.assertRemoteWriteAllowed?.();
     if (this.bindings.runtime === undefined) throw unavailable(source.pluginId);
     await this.bindings.runtime.validateProfile(source, brokers);
   }
@@ -207,6 +209,7 @@ export class PluginFacadeController {
     brokers: readonly string[],
     connect: () => Promise<T>,
   ): Promise<T> {
+    this.bindings.assertRemoteWriteAllowed?.();
     if (this.bindings.runtime === undefined) throw unavailable(source.pluginId);
     return this.bindings.runtime.withProfileConnection(source, brokers, connect);
   }
@@ -217,5 +220,8 @@ export class PluginFacadeController {
       this.unsubscribe?.();
       this.unsubscribeChanges?.();
     }
+  }
+  async hasPendingWork(): Promise<boolean> {
+    return (await this.bindings.runtime?.prepareExit()) != null;
   }
 }

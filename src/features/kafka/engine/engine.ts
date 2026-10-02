@@ -169,6 +169,7 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
     private readonly expectedTopic: string,
     private readonly target: string,
     private readonly onClose: () => void,
+    private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
   ) {}
 
   close(): Promise<void> {
@@ -179,7 +180,7 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
   async *[Symbol.asyncIterator](): AsyncIterator<KafkaMessage> {
     try {
       for await (const raw of this.rawStream) {
-        yield translateKafkaRecord(raw, this.expectedTopic);
+        yield this.protectRecord(translateKafkaRecord(raw, this.expectedTopic));
       }
     } catch (error) {
       throw mapKafkaAdminFailure(error, this.target);
@@ -200,6 +201,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     private readonly operationTimeoutMs: number,
     private readonly services: SecureConnectionInput["services"],
     private readonly target: string,
+    private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
   ) {}
 
   alterTopicConfiguration(
@@ -385,6 +387,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
         () => {
           this.streams.delete(translated);
         },
+        this.protectRecord,
       );
       this.streams.add(translated);
       return translated;
@@ -534,8 +537,11 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
   private readonly operationTimeoutMs: number;
   private readonly latencyProbe;
   private readonly tokenRequester;
+  private readonly protectRecord;
 
   constructor(options: StreamSkopeKafkaEngineOptions = {}) {
+    this.protectRecord =
+      options.protectRecord ?? ((message: KafkaMessage): KafkaMessage => message);
     this.adminFactory = options.adminFactory ?? new PlatformaticAdminFactory();
     this.consumerFactory = options.consumerFactory ?? new PlatformaticConsumerFactory();
     this.latencyProbe = options.latencyProbe ?? new PlatformaticLatencyProbe();
@@ -715,6 +721,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
         this.operationTimeoutMs,
         connection.services,
         target,
+        this.protectRecord,
       );
       const topics = await activeConnection.listTopics(cancellationSignal);
       const checks: ConnectionCheck[] = [

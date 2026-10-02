@@ -502,7 +502,7 @@ export function StreamSkopeWorkbench({
           fetchMode={fetchMode}
           timeWindow={timeWindow}
           filters={state.messageFilters}
-          key={selectedTopic ?? "no-topic"}
+          key={`${selectedTopic ?? "no-topic"}:${JSON.stringify(state.preferenceSnapshot?.preferences.protection)}`}
           liveRuleCapability={state.liveRuleCapability}
           messages={visibleMessages}
           messagesStale={state.messagesStale}
@@ -729,6 +729,7 @@ export function StreamSkopeWorkbench({
           onReload={() => window.location.reload()}
           operationStatus={operationStatus}
           resourceStatus={resourceStatus}
+          protection={state.preferenceSnapshot}
         />
       </Box>
 
@@ -803,6 +804,7 @@ export function StreamSkopeWorkbench({
         <Suspense fallback={null}>
           <LazyOperationalPreferencesDialog
             host={host}
+            disconnected={["disconnected", "failed"].includes(state.connectionState)}
             initialSection={preferenceSection}
             onClose={() => {
               setPreferenceDialogOpen(false);

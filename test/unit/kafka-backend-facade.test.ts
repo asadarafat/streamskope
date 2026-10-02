@@ -165,13 +165,15 @@ describe("Kafka backend facade", () => {
 
     const connecting = facade.execute(command("connection.connect", "request-connect"));
 
-    expect(events.at(-1)).toMatchObject({
-      event: "connection.state",
-      payload: {
-        connectionName: "Local aio",
-        state: "connecting",
-      },
-    });
+    await vi.waitFor(() =>
+      expect(events.at(-1)).toMatchObject({
+        event: "connection.state",
+        payload: {
+          connectionName: "Local aio",
+          state: "connecting",
+        },
+      }),
+    );
     resolveOpen?.(activeConnection);
     await expect(connecting).resolves.toMatchObject({
       ok: true,
