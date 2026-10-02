@@ -92,6 +92,19 @@ function api(releases: unknown[], pulls: Record<string, unknown[]> = {}): Github
     return Promise.resolve(values.slice((page - 1) * 100, page * 100));
   };
 }
+
+function stackedPull(
+  number: number,
+  commit: string,
+  labels: string[],
+  target = "main",
+): Record<string, unknown> {
+  return {
+    ...pull(number, commit, labels),
+    base: { ref: `layer-${number - 1}`, repo: { full_name: repository } },
+    stack: { id: 100, number: 1, size: 4, position: number, base: { ref: target, sha: null } },
+  };
+}
 async function generate(
   root: string,
   sourceSha: string,
@@ -233,6 +246,42 @@ it("collects actual mainline merge commits and deduplicates PR associations with
   expect(result.markdown).toContain("### Breaking changes");
 });
 
+it("retains individual squashed stack PRs, component labels and omissions after landing on main", async () => {
+  const repo = await graph();
+  await repo.tag("v0.1.0", repo.initial);
+  const bottom = await repo.commit("src/bottom.ts");
+  const plugin = await repo.commit("src/plugin.ts");
+  const skipped = await repo.commit("src/skipped.ts");
+  const top = await repo.commit("plugins/nsp/top.ts");
+  const result = await generate(
+    repo.root,
+    top,
+    api([release("v0.1.0")], {
+      [bottom]: [pull(1, bottom, ["component:desktop"])],
+      [plugin]: [stackedPull(2, plugin, ["component:nsp"])],
+      [skipped]: [stackedPull(3, skipped, ["component:desktop", "release-notes:skip"])],
+      [top]: [stackedPull(4, top, ["component:desktop"])],
+    }),
+  );
+  expect(
+    result.evidence.changes.map(({ kind, id, included, selectionBasis }) => ({
+      kind,
+      id,
+      included,
+      selectionBasis,
+    })),
+  ).toEqual([
+    { kind: "pr", id: 1, included: true, selectionBasis: "labels" },
+    { kind: "pr", id: 2, included: false, selectionBasis: "labels" },
+    { kind: "pr", id: 3, included: false, selectionBasis: "labels" },
+    { kind: "pr", id: 4, included: true, selectionBasis: "labels" },
+  ]);
+  expect(result.markdown).toContain("/pull/4");
+  expect(result.markdown).not.toContain("/pull/2");
+  expect(result.markdown).not.toContain("/pull/3");
+  expect(result.markdown).not.toContain("### Direct commits");
+});
+
 it("ignores future, unmerged, foreign-repository and other-base PRs and retains their scoped commits", async () => {
   const repo = await graph();
   await repo.tag("v0.1.0", repo.initial);
@@ -247,6 +296,17 @@ it("ignores future, unmerged, foreign-repository and other-base PRs and retains 
         { merged_at: null },
         { ...pull(3, source), base: { ref: "other", repo: { full_name: repository } } },
         { ...pull(4, source), base: { ref: "main", repo: { full_name: "foreign/repo" } } },
+        stackedPull(2, future, ["component:desktop"]),
+        { ...stackedPull(2, source, ["component:desktop"]), merged_at: null },
+        stackedPull(2, source, ["component:desktop"], "release/next"),
+        {
+          ...stackedPull(2, source, ["component:desktop"]),
+          base: { ref: "layer-1", repo: { full_name: "foreign/repo" } },
+        },
+        {
+          ...stackedPull(2, source, ["component:desktop"], "release/next"),
+          base: { ref: "main", repo: { full_name: repository } },
+        },
       ],
     }),
   );
@@ -296,6 +356,17 @@ it.each([
   [
     "invalid PR number",
     (commit: string): Record<string, unknown> => ({ ...pull(1, commit), number: -1 }),
+  ],
+  [
+    "missing stack target",
+    (commit: string): Record<string, unknown> => ({ ...pull(1, commit), stack: {} }),
+  ],
+  [
+    "empty stack target",
+    (commit: string): Record<string, unknown> => ({
+      ...pull(1, commit),
+      stack: { base: { ref: "" } },
+    }),
   ],
 ])("refuses incomplete evidence: %s", async (_name, malformed) => {
   const repo = await graph();

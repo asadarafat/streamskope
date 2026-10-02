@@ -229,8 +229,11 @@ export async function generateReleaseChangelog(
       if (pull.merged_at === null) continue;
       date(pull.merged_at);
       const base = object(pull.base);
+      // Merged stack layers retain their intermediate base branch. Their trunk
+      // identifies the destination; repository and mainline membership still apply.
+      const target = pull.stack == null ? base : object(object(pull.stack).base);
       if (
-        string(base.ref) !== "main" ||
+        string(target.ref) !== "main" ||
         string(object(base.repo).full_name).toLowerCase() !== repository.toLowerCase()
       )
         continue;
