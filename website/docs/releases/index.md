@@ -37,7 +37,8 @@ Maintainers review unversioned notes, then start **Actions → Release → Run w
 from `main`, select **desktop**, **eda** or **nsp** and enter its version. CI collects
 the component's merged PRs up to that exact source commit, qualifies the source,
 stamps a build checkout and creates a tagged draft; review it before publishing.
-PR and `main` checks only qualify source. Tags are release output, not triggers.
+PR checks only qualify source; merging to `main` does not repeat CI.
+Tags are release output, not triggers.
 
 The changelog starts after the nearest ancestral published release of that same
 component. Stable releases compare against a stable release, including changes

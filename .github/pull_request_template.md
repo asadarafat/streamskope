@@ -6,4 +6,4 @@
 
 ## Verification
 
-<!-- List checks actually run and their results; identify any important unverified behavior. Run `npm run check` locally and report its result, including any live EDA/NSP skip. GitHub qualifies source/docs on every PR and main push. The separate manual Release workflow assigns the selected component/version in its build checkout, then verifies native desktop packages plus the unsigned EDA application, or the selected plugin. -->
+<!-- List checks actually run and their results; identify any important unverified behavior. Run `npm run check` locally and report its result, including any live EDA/NSP skip. GitHub qualifies source/docs on every PR; merging to main does not repeat CI. The separate manual Release workflow qualifies its selected source again, assigns the selected component/version in its build checkout, then verifies native desktop packages plus the unsigned EDA application, or the selected plugin. -->

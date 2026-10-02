@@ -60,8 +60,9 @@ forward as qualification for this source.
 | NSP 26.4.0 setup and cleanup                        | Configured target, API version, profile reuse, Kafka access and verified execution removal | No live result recorded for this release                                                                                                          |
 | Native plugin dialogs and credential-backed restore | Installed desktop, OS/architecture and real credential-service rehearsal                   | No installed native workflow result recorded for this release                                                                                     |
 
-Qualification CI runs on pull requests and `main`. The manual Release workflow
-qualifies its selected source again before assigning a version and packaging. The
+Qualification CI runs on pull requests; merging to `main` does not repeat it.
+The manual Release workflow calls the same CI to qualify its selected source again
+before assigning a version and packaging. The
 [CI workflow](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
 is a place to find results, not a substitute for linking the exact successful run.
 Local `npm run check` also runs the soak and configured live checks. An unconfigured

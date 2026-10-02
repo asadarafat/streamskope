@@ -1,9 +1,9 @@
 <h1 align="left">
-  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" align="middle" alt="StreamSkope logo">
+  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" align="absmiddle" alt="StreamSkope logo">
   StreamSkope
 </h1>
 
-[![CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
+[![PR CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml?query=event%3Apull_request)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/asadarafat/streamskope)
 
 A desktop workbench for exploring and troubleshooting Kafka.
