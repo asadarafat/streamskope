@@ -64,10 +64,15 @@ def inspect_message_limits(page=None):
         "require('./src/features/kafka/contracts/types.ts');"
         "const {KAFKA_MESSAGE_OPERATION_LIMITS:e}="
         "require('./src/features/kafka/ui/message-operations.ts');"
+        "const {KAFKA_QUERY_LIMITS:q}=require('./src/features/kafka/contracts/query-search.ts');"
+        "const {KAFKA_QUERY_LIBRARY_LIMITS:l}=require('./src/features/kafka/contracts/query-library.ts');"
+        "const {KAFKA_QUERY_TRANSFER_LIMITS:t}=require('./src/features/kafka/contracts/query-transfer.ts');"
         "process.stdout.write(JSON.stringify({"
         "retained:m.retainedMessages,bytes:m.retainedBytes,record:m.messageBytes,"
         "preview:m.previewBytes,fetch:f.maxMessages,"
-        "content:e.exportContentBytes,document:e.exportBytes,window:f.defaultTimeWindowMs}));",
+        "content:e.exportContentBytes,document:e.exportBytes,window:f.defaultTimeWindowMs,"
+        "scan:q.scanRecords,scanBytes:q.scanBytes,scanMs:q.durationMs,"
+        "queries:l.queries,libraryBytes:l.fileBytes,queryBytes:t.documentBytes}));",
     ], cwd=ROOT, text=True))
     expected = {
         "Retained message count": f"{limits['retained']:,}",
@@ -77,7 +82,10 @@ def inspect_message_limits(page=None):
         "Maximum bounded fetch count": f"{limits['fetch']:,}",
         "Serialized export record content": f"{limits['content'] / 1_048_576:g} MiB",
         "Complete JSON export document": f"{limits['document'] / 1_048_576:g} MiB",
-        "Recent time window": f"{limits['window'] / 60_000:g} minutes",
+        "Default recent time window": f"{limits['window'] / 60_000:g} minutes",
+        "Broker search scan": f"{limits['scan']:,} records / {limits['scanBytes'] / 1_048_576:g} MiB / {limits['scanMs'] / 1000:g} seconds",
+        "Saved query library": f"{limits['queries']} queries / {limits['libraryBytes'] / 1_048_576:g} MiB",
+        "Portable query document": f"{limits['queryBytes'] / 1024:g} KiB",
     }
     rows = {}
     for line in page.read_text(encoding="utf8").splitlines():

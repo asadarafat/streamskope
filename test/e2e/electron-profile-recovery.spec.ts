@@ -56,6 +56,7 @@ test("restores a full backup with native credential protection and reconnects", 
     const baseline = await application.evaluate(({ app }) => ({
       name: app.getName(),
       version: app.getVersion(),
+      electron: process.versions.electron,
     }));
     const protection = await application.evaluate(async ({ safeStorage }) => ({
       available: await safeStorage.isAsyncEncryptionAvailable(),
@@ -77,7 +78,10 @@ test("restores a full backup with native credential protection and reconnects", 
       await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
       await expect(page.getByLabel("Connection status")).toContainText("Connected");
     }
-    const candidateVersion = await application.evaluate(({ app }) => app.getVersion());
+    const candidateRuntime = await application.evaluate(({ app }) => ({
+      version: app.getVersion(),
+      electron: process.versions.electron,
+    }));
     await openTopicDetail(page, seeded.config.topic);
     await page
       .getByRole("button", { name: `Stop tail ${seeded.config.topic}`, exact: true })
@@ -195,7 +199,8 @@ test("restores a full backup with native credential protection and reconnects", 
         architecture: process.arch,
         protection: protection.backend,
         baseline,
-        candidateVersion,
+        candidateVersion: candidateRuntime.version,
+        electronVersion: candidateRuntime.electron,
         previousExecutableUsed: previousExecutable !== undefined,
         upgradedProfileReconnected: previousExecutable === undefined ? "not-run" : true,
         savedQueryRestored: true,
