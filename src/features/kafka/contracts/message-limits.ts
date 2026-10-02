@@ -1,4 +1,5 @@
 import type { KafkaLiveRuleEvaluation } from "./live-rule-types";
+import type { KafkaOriginalRecord } from "./record-bytes";
 import type { KafkaExploredMessage, KafkaMessage } from "./types";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -30,6 +31,24 @@ function isExploredMessage(message: KafkaMessage): message is KafkaExploredMessa
   return "ruleEvaluation" in message;
 }
 
+// Base64 is ASCII without JSON escapes. Count its canonical envelope without
+// repeatedly allocating another copy of the record at every queue boundary.
+function originalRetainedBytes(original: KafkaOriginalRecord | undefined): number {
+  if (original === undefined) return 0;
+  if (original.state === "unavailable") return 35 + original.reason.length;
+  const field = (value: string | null): number => (value === null ? 4 : value.length + 2);
+  return (
+    69 +
+    field(original.key) +
+    field(original.value) +
+    original.headers.reduce(
+      (bytes, header, index) =>
+        bytes + 17 + field(header.key) + field(header.value) + (index === 0 ? 0 : 1),
+      0,
+    )
+  );
+}
+
 export function kafkaRawMessageRetainedBytes(message: KafkaMessage): number {
   return (
     utf8ByteLength(message.key) +
@@ -39,7 +58,7 @@ export function kafkaRawMessageRetainedBytes(message: KafkaMessage): number {
       (total, [key, value]) => total + utf8ByteLength(key) + utf8ByteLength(value),
       0,
     ) +
-    (message.original === undefined ? 0 : utf8ByteLength(JSON.stringify(message.original)))
+    originalRetainedBytes(message.original)
   );
 }
 

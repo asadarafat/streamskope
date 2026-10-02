@@ -10,6 +10,28 @@ import { parseKafkaOriginalRecord } from "../../src/features/kafka/contracts/rec
 import { translateKafkaRecord } from "../../src/features/kafka/engine/message-record";
 import type { KafkaRawMessage } from "../../src/features/kafka/engine/types";
 
+it("counts the complete Base64 envelope without underestimating its serialized retention", () => {
+  for (const source of [
+    raw(),
+    raw({
+      key: Buffer.alloc(0),
+      value: Buffer.from([255, 0]),
+      headerEntries: [
+        [Buffer.from("a"), null],
+        [Buffer.from("a"), Buffer.from([1])],
+      ],
+    }),
+    raw({ value: Buffer.alloc(300_000) }),
+  ]) {
+    const message = translateKafkaRecord(source, "events");
+    const { original, ...withoutOriginal } = message;
+    const bytesWithoutOriginal = kafkaRawMessageRetainedBytes(withoutOriginal);
+    expect(kafkaRawMessageRetainedBytes(message) - bytesWithoutOriginal).toBe(
+      Buffer.byteLength(JSON.stringify(original)),
+    );
+  }
+});
+
 function raw(overrides: Partial<KafkaRawMessage> = {}): KafkaRawMessage {
   return {
     headers: new Map(),

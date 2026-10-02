@@ -936,6 +936,34 @@ describe("Kafka backend facade", () => {
     expect(batches[0]?.payload.messages[0]).toMatchObject({ id: "2" });
   });
 
+  it("drains byte-split batches in a bounded turn without waiting an interval for each record", async () => {
+    const stream = new ControlledMessageStream();
+    const activeConnection = new RecordingActiveConnection();
+    activeConnection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(activeConnection));
+    const flushes: Array<() => void> = [];
+    const facade = createFacade(port, (flush): void => {
+      flushes.push(flush);
+    });
+    const events: HostEvent[] = [];
+    facade.subscribe((event): void => {
+      events.push(event);
+    });
+    await facade.execute(command("connection.connect", "connect"));
+    await facade.execute(command("messages.start", "start"));
+    for (let index = 0; index < 6; index += 1)
+      stream.push(message(String(index), "x".repeat(600 * 1_024)));
+    await vi.waitFor(() => expect(stream.deliveredMessages).toBe(6));
+    expect(flushes).toHaveLength(1);
+    flushes.shift()?.();
+    expect(events.filter((event) => event.event === "messages.batch")).toHaveLength(4);
+    expect(flushes).toHaveLength(1);
+    flushes.shift()?.();
+    expect(events.filter((event) => event.event === "messages.batch")).toHaveLength(6);
+    await facade.shutdown();
+  });
+
   it("reports an oversize batch omission as backpressure without exposing content", async () => {
     const stream = new ControlledMessageStream();
     const activeConnection = new RecordingActiveConnection();
