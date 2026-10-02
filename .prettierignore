@@ -19,3 +19,6 @@ website/docs/launch/assets/
 apps/*/sigstore.json
 # Immutable deployed workflow bytes; changing formatting changes its ownership fingerprint.
 plugins/nsp/resources/nsp-capture.workflow.yaml
+# Published release bodies are archived unchanged beneath their front matter.
+website/docs/releases/v*.md
+website/docs/releases/plugins/*/v*.md
