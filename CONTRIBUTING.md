@@ -209,7 +209,7 @@ handling, restore the direct audit command, and retain the signature regression.
 
 The **CI** workflow runs the required **CI** source/docs check on every PR and push
 to `main`. It uses the shared `check` command with
-`--ci`; there are no labels, relaxed modes or change-based routing.
+`--ci`; release-note labels do not change these checks or allow relaxed modes.
 Configure the repository's branch rules to require the **CI** status before merging.
 
 The separate **Release** workflow is manual. Open **Actions → Release → Run workflow**,
@@ -256,7 +256,8 @@ identity; the workflow never overwrites or deletes it automatically.
 
 After qualification and native/unsigned EDA packaging pass, a desktop release
 creates a **draft** with three unsigned installers, `SHA256SUMS` and reviewed
-content from `website/docs/releases/unreleased.md`. CI assigns the title and exact
+content from `website/docs/releases/unreleased.md`, plus a generated changelog.
+CI assigns the title and exact
 version metadata in the build checkout. A SemVer prerelease marks the draft as a
 prerelease; an ordinary version does not. Signing is a separate property: these
 desktop installers remain unsigned. Desktop releases do not republish plugins.
@@ -274,10 +275,73 @@ requirement, not an assigned desktop release number. Local development packages
 use `0.0.0-dev.<numeric timestamp>` so rebuilt bytes receive distinct identities;
 only development hosts load these packages. Release hosts reject them.
 
-After publishing, archive the reviewed notes in `website/docs/releases/vVERSION.md`
-with exact `release_version` and `release_tag` metadata, update the published
-download baseline and applicable unreleased notices, and reset the unversioned
-notes through a PR. Keep historical notes intact. The website's
+### Release notes
+
+Use a Conventional Commit PR title, such as `fix(eda): recover capture after restart`.
+Release CI collects merged PRs through the GitHub API and groups them into
+Security, Breaking changes, Features, Fixes and Other changes. PR titles describe
+the user-visible outcome; the draft still needs a maintainer's review. Titles and
+labels do not select the next version.
+
+Review component labels before merging:
+
+| Label                | Include the PR in                             |
+| -------------------- | --------------------------------------------- |
+| `component:desktop`  | Desktop releases                              |
+| `component:eda`      | EDA Capture plugin releases                   |
+| `component:nsp`      | NSP Capture plugin releases                   |
+| `component:shared`   | All three release families                    |
+| `release-notes:skip` | None; deliberately omit it from the changelog |
+
+Multiple component labels are allowed. Without them, these paths identify a
+plugin owner:
+
+- `plugins/eda/` and `plugins/nsp/` identify the corresponding plugin.
+- Matching `eda-` or `nsp-` filenames under `test/unit/`, `test/integration/`,
+  `test/architecture/` and `test/support/` identify that plugin, as do
+  `website/docs/plugins/eda.md`, `website/docs/plugins/nsp.md` and the corresponding
+  `website/docs/guide/eda/` or `website/docs/guide/nsp/` directory.
+- `vendors/streamskope/apps/` belongs to EDA.
+
+A PR touching only these paths belongs to every plugin represented by its files.
+Any other path makes the unlabelled change shared across all three components.
+Review the recorded inference, especially for documentation and tooling changes;
+explicit labels override it.
+
+The baseline is the nearest ancestral published release of the **same component**:
+`vVERSION`, `plugins/eda/vVERSION` or `plugins/nsp/vVERSION`. Historical desktop
+`+build.N` tags remain eligible. Stable releases use a stable baseline, so changes
+already described in intervening release candidates are included again. Drafts,
+unrelated component tags and releases outside the selected source history are
+ineligible. With no eligible baseline, the notes explicitly cover the full history.
+Collection stops at the exact selected source commit, even if `main` advances.
+Commits without an associated merged PR appear separately and use the same
+component selection rules; PR changes are not duplicated as commit entries.
+
+The prepare job freezes this selection in the `release-changelog` artifact before
+qualification and packaging. The final draft combines it with reviewed highlights,
+upgrade instructions and known limitations. Maintain desktop commentary in
+`website/docs/releases/unreleased.md` and plugin commentary in
+`plugins/eda/RELEASE_NOTES.md` or `plugins/nsp/RELEASE_NOTES.md`; keep these short
+rather than duplicating every PR. Use absolute published documentation URLs because
+these bodies also appear on GitHub. Package metadata and workflow evidence links
+accompany the notes. Inspect the retained notes and JSON selection evidence before
+publication; successful packaging does not establish live EDA/NSP qualification.
+
+The final **published GitHub body** is the authoritative release record, including
+any edits made while reviewing the draft. Copy that body unchanged into Zensical
+through a normal documentation PR. For desktop, use
+`website/docs/releases/vVERSION.md` with `title`, `release_version` and
+`release_tag` front matter. For a plugin, use
+`website/docs/releases/plugins/NAME/vVERSION.md` with `title` front matter only;
+desktop publication validators own the `release_*` fields. Link the new page from
+the release index and navigation. Keep its links usable in both GitHub and the docs
+site. The workflow does not create this documentation PR.
+
+For a desktop publication, update the published download baseline and applicable
+unreleased notices. Reset only the commentary shipped in that component's release;
+preserve notes for work merged after its source commit and other unreleased
+components. Keep historical notes intact. The website's
 `project.extra.desktop_release` identifies an actually published installer;
 starting release CI does not change it. Release qualification can validate the
 stamped notes while downloads still point to the last published desktop.

@@ -83,6 +83,21 @@ plugin release does not rebuild the desktop. The catalog compares versions withi
 each plugin ID; EDA's version is never compared with NSP's version. It also enforces
 the desktop interval independently of version ordering.
 
+Each plugin draft includes a generated PR changelog against its own previous
+eligible published release, plus reviewed highlights, upgrade instructions,
+limitations and the packaged compatibility metadata. It does not compare against
+the most recent desktop or other plugin release. A first plugin release explicitly
+covers history without a previous plugin baseline. Shared changes can appear in
+both plugin changelogs. Stable releases include changes introduced by intervening
+release candidates.
+
+Maintainers keep EDA and NSP commentary in their respective
+`plugins/NAME/RELEASE_NOTES.md` files. After publication, archive the final reviewed
+GitHub body in the [release notes](../releases/index.md) through a documentation PR
+and reset only the shipped commentary. A listed compatibility interval describes
+the package's declaration; use the [qualification record](../guide/qualification.md)
+to establish which live environments were actually tested.
+
 ## Install, update and target upgrades
 
 ```text

@@ -105,7 +105,8 @@ it.each(["0.1.0", "0.2.0-rc.1"])(
     expect(notes).toContain("# Reviewed release\n\nReviewed change.");
     expect(notes).toContain("These downloads are unsigned.");
     expect(notes).toContain(commit);
-    expect(notes).toContain(`# StreamSkope ${version}\n`);
+    expect(notes).toContain("## Distribution\n");
+    expect(notes.match(/^# /gmu)).toHaveLength(1);
     expect(notes).toContain(`Source: ${commit} (tag ${tag}).`);
     expect(notes).toContain(`StreamSkope-${version}-linux-x64.AppImage`);
     expect((await readFile(join(assets, "SHA256SUMS"), "utf8")).trim().split("\n")).toHaveLength(3);
