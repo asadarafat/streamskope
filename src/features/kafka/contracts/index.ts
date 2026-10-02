@@ -1,4 +1,6 @@
 export { isHostAcknowledgementCommand } from "./host-command-results";
+export { parseKafkaInvestigationQuery, parseKafkaQueryTimestamp } from "./investigation-query";
+export type { KafkaInvestigationQuery } from "./investigation-query";
 export type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 export {
   exportTrustAcquisitionRecipe,

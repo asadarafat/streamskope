@@ -610,6 +610,63 @@ describe("StreamSkope workbench shell", () => {
     expect(screen.getByText(/2026-07-25T15:00:00.000Z/)).toBeVisible();
   });
 
+  it("validates an explicit historical interval and converts its offsets before reading", async () => {
+    const host = new FakeHost();
+    const user = userEvent.setup();
+    render(<StreamSkopeWorkbench host={host} />);
+    act(() => {
+      host.emit({
+        event: "connection.state",
+        payload: { connectionName: "Local validation", state: "connected" },
+        sequence: 1,
+        version: HOST_PROTOCOL_VERSION,
+      });
+      host.emit({
+        event: "topics.changed",
+        payload: {
+          refreshedAt: "2026-07-25T14:00:00.000Z",
+          state: "ready",
+          topics: ["test"],
+        },
+        sequence: 2,
+        version: HOST_PROTOCOL_VERSION,
+      });
+    });
+    await user.click(await screen.findByRole("button", { name: "test" }));
+    await user.click(screen.getByRole("combobox", { name: "Read mode" }));
+    await user.click(screen.getByRole("option", { name: "Time window" }));
+    await user.click(screen.getByRole("combobox", { name: "Time interval" }));
+    await user.click(screen.getByRole("option", { name: "Custom interval" }));
+    const start = screen.getByRole("textbox", { name: "Start time (inclusive)" });
+    const end = screen.getByRole("textbox", { name: "End time (exclusive)" });
+    await user.clear(start);
+    await pasteText(user, start, "2026-07-24T16:03:00+02:00");
+    await user.clear(end);
+    await pasteText(user, end, "2026-07-24T14:04:00Z");
+    const load = screen.getByRole("button", { name: "Load messages test" });
+    await user.click(load);
+    expect(host.commands.at(-1)).toMatchObject({
+      command: "messages.start",
+      payload: {
+        topic: "test",
+        mode: "time-window",
+        maxMessages: 1_000,
+        startTimeMs: Date.parse("2026-07-24T14:03:00Z"),
+        endTimeMs: Date.parse("2026-07-24T14:04:00Z"),
+      },
+    });
+    const count = host.commands.length;
+    await user.clear(end);
+    await pasteText(user, end, "2026-07-24T14:02:00Z");
+    expect(load).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("End time: must be after start time");
+    await user.clear(end);
+    await pasteText(user, end, "2026-07-24T14:04:00");
+    expect(load).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Z or an explicit UTC offset");
+    expect(host.commands).toHaveLength(count);
+  });
+
   it("starts, displays, inspects and stops a selected topic through host commands", async () => {
     const host = new FakeHost();
     const user = userEvent.setup();

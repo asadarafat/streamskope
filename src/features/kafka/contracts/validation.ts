@@ -1,3 +1,5 @@
+import { parseKafkaFetchRequest } from "./fetch-validation";
+export { parseKafkaFetchRequest } from "./fetch-validation";
 import { isHostAcknowledgementCommand } from "./host-command-results";
 import {
   parseTrustRecipeHostCommand,
@@ -66,8 +68,6 @@ import {
   HOST_ERROR_CODES,
   HOST_ERROR_STAGES,
   HOST_EVENTS,
-  KAFKA_FETCH_LIMITS,
-  KAFKA_FETCH_MODES,
   KAFKA_MESSAGE_LIMITS,
   SECURE_CONNECTION_LIMITS,
   type HostCommand,
@@ -75,7 +75,6 @@ import {
   type HostError,
   type HostSecureConnectionInput,
   type HostEvent,
-  type KafkaFetchRequest,
   type KafkaExploredMessage,
   type OAuthConnectionInput,
   type TlsConnectionInput,
@@ -108,7 +107,6 @@ import {
   nullableText,
   optionalText,
   parseBoundedBrokers as parseBrokers,
-  positiveBoundedInteger,
   record,
   text,
   truth,
@@ -218,36 +216,6 @@ function parseHostError(value: unknown, path: string): HostError {
     summary: text(error.summary, `${path}.summary`, 2_048),
   };
   return target === undefined ? base : { ...base, target };
-}
-
-export function parseKafkaFetchRequest(value: unknown, path = "fetch"): KafkaFetchRequest {
-  const request = record(value, path);
-  const mode = declaredValue(request.mode, KAFKA_FETCH_MODES, `${path}.mode`);
-  const common = {
-    maxMessages: positiveBoundedInteger(
-      request.maxMessages,
-      `${path}.maxMessages`,
-      KAFKA_FETCH_LIMITS.maxMessages,
-    ),
-    topic: text(request.topic, `${path}.topic`, 512),
-  };
-  if (mode !== "time-window") {
-    exactKeys(request, ["maxMessages", "mode", "topic"], path);
-    return { ...common, mode };
-  }
-
-  exactKeys(request, ["endTimeMs", "maxMessages", "mode", "startTimeMs", "topic"], path);
-  const startTimeMs = nonNegativeInteger(request.startTimeMs, `${path}.startTimeMs`);
-  const endTimeMs = nonNegativeInteger(request.endTimeMs, `${path}.endTimeMs`);
-  if (startTimeMs >= endTimeMs) {
-    throw new HostContractValidationError(`${path}.endTimeMs`, "must be greater than startTimeMs");
-  }
-  return {
-    ...common,
-    endTimeMs,
-    mode,
-    startTimeMs,
-  };
 }
 
 export function parseHostCommand(value: unknown): HostCommand {

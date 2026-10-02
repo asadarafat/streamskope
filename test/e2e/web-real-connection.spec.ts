@@ -242,6 +242,33 @@ test.describe("real StreamSkope browser connection", () => {
     await expect(messageGrid.getByText(config.seedPayload, { exact: true }).first()).toBeVisible();
     expect((await messageGrid.getByRole("row").count()) - 1).toBeLessThanOrEqual(10);
 
+    await page.getByRole("combobox", { name: "Read mode" }).click();
+    await page.getByRole("option", { name: "Time window" }).click();
+    await page.getByRole("combobox", { name: "Time interval" }).click();
+    await page.getByRole("option", { name: "Custom interval" }).click();
+    const startTime = new Date(Date.now() - 3_600_000).toISOString();
+    const endTime = new Date(Date.now() + 60_000).toISOString();
+    await page.getByRole("textbox", { name: "Start time (inclusive)" }).fill(startTime);
+    await page.getByRole("textbox", { name: "End time (exclusive)" }).fill(endTime);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      animations: "disabled",
+      path: testInfo.outputPath("real-aio-kafka-custom-interval.png"),
+    });
+    await page.getByRole("button", { name: `Load messages ${config.topic}` }).click();
+    await expect(page.getByLabel("Active fetch request")).toContainText(startTime);
+    await expect(page.getByLabel("Active fetch request")).toContainText(endTime);
+    await page.getByRole("button", { name: `Cancel fetch ${config.topic}` }).click();
+    await expect(page.getByLabel("Consumption status")).toContainText("Stopped");
+    await expect(page.getByRole("textbox", { name: "Start time (inclusive)" })).toHaveValue(
+      startTime,
+    );
+    await page.getByRole("button", { name: `Load messages ${config.topic}` }).click();
+    await expect(page.getByLabel("Consumption status")).toContainText("Snapshot complete", {
+      timeout: 15_000,
+    });
+    await expect(messageGrid.getByText(config.seedPayload, { exact: true })).toHaveCount(1);
+
     const downloadStarted = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export filtered JSON" }).click();
     const download = await downloadStarted;
@@ -262,6 +289,8 @@ test.describe("real StreamSkope browser connection", () => {
     expect(exported).not.toContain(config.oauthClientSecret);
     expect(exported).not.toContain("BEGIN CERTIFICATE");
 
+    await page.getByRole("combobox", { name: "Read mode" }).click();
+    await page.getByRole("option", { name: "Tail", exact: true }).click();
     await openWorkbenchResource(page, "Connection Profiles");
     await page.getByRole("button", { name: "Disconnect profile Local aio" }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
