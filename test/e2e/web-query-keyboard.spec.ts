@@ -79,6 +79,7 @@ test("investigates and reopens a saved query using only the keyboard after profi
   // Profile provisioning is setup. All connection and investigation actions below use keys.
   await configureLocalConnection(page);
   await page.getByRole("button", { name: "Save profile" }).click();
+  await expect(page.getByRole("dialog", { name: "Add Kafka profile" })).toBeHidden();
   await keyboardCommand(page, fixture.kafkaEndpoint, "Select profile Local aio");
   await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
   await keyboardCommand(page, "Connect profile Local aio", "Connect profile Local aio");
