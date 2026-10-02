@@ -57,7 +57,8 @@ when you click **Load messages**.
 
 Kafka resolves time-window boundaries to offsets per partition. This is not a
 payload-time search or a guarantee of completeness when timestamps are out of
-order. **Timestamp contains** only filters already-loaded timestamp text.
+order. **Timestamp contains** matches record timestamp text, in the loaded sample
+or a bounded broker search; it does not establish the time-window offset boundaries.
 
 ### Example: inspect a past incident and save the result
 

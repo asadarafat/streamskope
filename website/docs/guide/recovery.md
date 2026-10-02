@@ -38,7 +38,7 @@ the app before retrying. A copied profile file alone does not recreate OS keys.
 3. Quit every StreamSkope process using this data directory.
 4. Make a dated, access-restricted copy of the **entire** directory outside the
    live app directory. Include `profiles/` and every recovery generation,
-   `templates/`, `rules/`, `history/`, `preferences/`, `plugins/` and Electron's
+   `templates/`, `rules/`, `queries/`, `history/`, `preferences/`, `plugins/` and Electron's
    supporting files. Compare file sizes or hashes with the originals.
 5. Preserve the same OS user and credential-service context. Store exported message
    files separately if needed; they are outside this directory. Review the

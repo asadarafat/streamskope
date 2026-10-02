@@ -27,7 +27,7 @@ test("restores a full backup with native credential protection and reconnects", 
     process.env.STREAMSKOPE_NATIVE_RECOVERY !== "1",
     "Opt in with an unlocked OS credential service and disposable Kafka fixture.",
   );
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   expect(process.env.STREAMSKOPE_RENDERER_URL).toBeUndefined();
   const config = await loadFixtureConfig();
   const fixture = await loadFixtureConnection();
@@ -35,21 +35,28 @@ test("restores a full backup with native credential protection and reconnects", 
   const active = join(root, "active");
   const backup = join(root, "backup");
   const require = createRequire(resolve("package.json"));
+  const previousExecutable = process.env.STREAMSKOPE_UPGRADE_FROM_EXECUTABLE;
   let application: ElectronApplication | undefined;
   let seeded: SeededFixtureTopic | undefined;
-  const launch = (): Promise<ElectronApplication> =>
+  const launch = (previous = false): Promise<ElectronApplication> =>
     electron.launch({
-      executablePath: require("electron") as string,
+      executablePath:
+        previous && previousExecutable ? previousExecutable : (require("electron") as string),
       args: [
         ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
         `--user-data-dir=${active}`,
-        resolve("dist/electron/main.cjs"),
+        // Load package.json as Electron would in a package, preserving the app's credential identity.
+        ...(previous && previousExecutable ? [] : [resolve(".")]),
       ],
     });
   try {
     seeded = await provisionSeededFixtureTopic();
-    application = await launch();
+    application = await launch(previousExecutable !== undefined);
     expect(await application.evaluate(({ app }) => app.getPath("userData"))).toBe(active);
+    const baseline = await application.evaluate(({ app }) => ({
+      name: app.getName(),
+      version: app.getVersion(),
+    }));
     const protection = await application.evaluate(async ({ safeStorage }) => ({
       available: await safeStorage.isAsyncEncryptionAvailable(),
       backend:
@@ -59,6 +66,42 @@ test("restores a full backup with native credential protection and reconnects", 
     expect(["basic_text", "unknown"]).not.toContain(protection.backend);
     let page = await application.firstWindow();
     await connectElectronToFixture(page, config, fixture);
+    if (previousExecutable !== undefined) {
+      await application.close();
+      application = undefined;
+      await cp(active, join(root, "pre-upgrade"), { recursive: true, preserveTimestamps: true });
+      application = await launch();
+      expect(await application.evaluate(({ app }) => app.getName())).toBe(baseline.name);
+      expect(await application.evaluate(({ app }) => app.getPath("userData"))).toBe(active);
+      page = await application.firstWindow();
+      await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
+      await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    }
+    const candidateVersion = await application.evaluate(({ app }) => app.getVersion());
+    await openTopicDetail(page, seeded.config.topic);
+    await page
+      .getByRole("button", { name: `Stop tail ${seeded.config.topic}`, exact: true })
+      .click();
+    const planningMode = page.getByRole("combobox", { name: "Read mode" });
+    await expect(planningMode).toBeEnabled();
+    await planningMode.click();
+    await page.getByRole("option", { name: "Time window", exact: true }).click();
+    await page.getByRole("combobox", { name: "Time interval" }).click();
+    await page.getByRole("option", { name: "Custom interval" }).click();
+    const startTime = new Date(Date.now() - 600_000).toISOString();
+    const endTime = new Date(Date.now() + 60_000).toISOString();
+    await page.getByRole("textbox", { name: "Start time (inclusive)" }).fill(startTime);
+    await page.getByRole("textbox", { name: "End time (exclusive)" }).fill(endTime);
+    await page.getByRole("button", { name: "Show message filters" }).click();
+    await page.getByRole("textbox", { name: "Key contains" }).fill("streamskope-seed");
+    await page.getByRole("button", { name: "Saved queries" }).click();
+    let queries = page.getByRole("dialog", { name: "Saved queries" });
+    await queries.getByRole("textbox", { name: "Query name" }).fill("Native incident");
+    await queries.getByRole("combobox", { name: "Local connection profile" }).click();
+    await page.getByRole("option", { name: "Electron local aio" }).click();
+    await queries.getByRole("button", { name: "Save current as new" }).click();
+    await expect(queries).toContainText("Query saved.");
+    await queries.getByRole("button", { name: "Close", exact: true }).click();
     await application.close();
     application = undefined;
 
@@ -67,6 +110,25 @@ test("restores a full backup with native credential protection and reconnects", 
     const saved = await readFile(join(backup, "profiles/kafka-profiles.json"), "utf8");
     expect(saved).not.toContain(config.oauthClientSecret);
     expect(saved).not.toContain("BEGIN CERTIFICATE");
+    const queryBackup = await readFile(join(backup, "queries/kafka-queries.json"), "utf8");
+    expect(queryBackup).not.toContain(config.oauthClientSecret);
+    expect(JSON.parse(queryBackup)).toMatchObject({
+      schemaVersion: 1,
+      queries: [
+        {
+          name: "Native incident",
+          configuration: {
+            request: {
+              topic: seeded.config.topic,
+              mode: "time-window",
+              startTimeMs: Date.parse(startTime),
+              endTimeMs: Date.parse(endTime),
+            },
+            filters: { key: "streamskope-seed" },
+          },
+        },
+      ],
+    });
 
     application = await launch();
     page = await application.firstWindow();
@@ -78,6 +140,13 @@ test("restores a full backup with native credential protection and reconnects", 
     await expect(
       page.getByRole("button", { name: "Connect profile Electron local aio" }),
     ).toHaveCount(0);
+    await page.getByRole("button", { name: "Saved queries" }).click();
+    queries = page.getByRole("dialog", { name: "Saved queries" });
+    await queries.getByRole("combobox", { name: "Saved query" }).click();
+    await page.getByRole("option", { name: "Native incident" }).click();
+    await queries.getByRole("button", { name: "Delete selected" }).click();
+    await queries.getByRole("button", { name: "Delete query", exact: true }).click();
+    await expect(queries).toContainText("Query deleted.");
     await application.close();
     application = undefined;
     await rename(active, join(root, "preserved-after-change"));
@@ -85,23 +154,30 @@ test("restores a full backup with native credential protection and reconnects", 
 
     application = await launch();
     page = await application.firstWindow();
+    await page.getByRole("button", { name: "Saved queries" }).click();
+    queries = page.getByRole("dialog", { name: "Saved queries" });
+    await queries.getByRole("combobox", { name: "Saved query" }).click();
+    await page.getByRole("option", { name: "Native incident" }).click();
+    await queries.getByRole("button", { name: "Open query" }).click();
+    await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Connected");
-    await openTopicDetail(page, seeded.config.topic);
-    await page
-      .getByRole("button", { name: `Stop tail ${seeded.config.topic}`, exact: true })
-      .click();
     const readMode = page.getByRole("combobox", { name: "Read mode" });
     await expect(readMode).toBeEnabled();
-    await readMode.click();
-    await page.getByRole("option", { name: "Time window", exact: true }).click();
+    await expect(readMode).toContainText("Time window");
+    await expect(page.getByRole("textbox", { name: "Start time (inclusive)" })).toHaveValue(
+      startTime,
+    );
+    await expect(page.getByRole("textbox", { name: "End time (exclusive)" })).toHaveValue(endTime);
     await page
       .getByRole("button", { name: `Load messages ${seeded.config.topic}`, exact: true })
       .click();
     await expect(readMode).toBeEnabled({ timeout: 20_000 });
     await expect(page.getByLabel("Active fetch request")).toContainText("→");
     await page.getByRole("button", { name: "Show message filters" }).click();
-    await page.getByRole("textbox", { name: "Key contains" }).fill("streamskope-seed");
+    await expect(page.getByRole("textbox", { name: "Key contains" })).toHaveValue(
+      "streamskope-seed",
+    );
     const exportPath = join(root, "incident.json");
     await chooseNextElectronSavePath(application, exportPath);
     await page.getByRole("button", { name: "Export filtered JSON" }).click();
@@ -118,9 +194,15 @@ test("restores a full backup with native credential protection and reconnects", 
         platform: process.platform,
         architecture: process.arch,
         protection: protection.backend,
+        baseline,
+        candidateVersion,
+        previousExecutableUsed: previousExecutable !== undefined,
+        upgradedProfileReconnected: previousExecutable === undefined ? "not-run" : true,
+        savedQueryRestored: true,
+        explicitAbsoluteBoundsRestored: true,
         restoredProfileReconnected: true,
         credentialsReentered: false,
-        recentWindowFilteredExportVerified: true,
+        historicalFilteredExportVerified: true,
       }),
       contentType: "application/json",
     });
