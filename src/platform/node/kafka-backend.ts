@@ -5,6 +5,8 @@ import {
   InMemoryKafkaRuleStore,
   InMemoryKafkaTopicConfigurationHistoryStore,
   KafkaApplicationSession,
+  KafkaQueryLibrary,
+  type KafkaQueryStore,
   KafkaTrustRecipeLibrary,
   KafkaLiveRuleRuntime,
   KafkaOperationalPreferenceService,
@@ -80,6 +82,7 @@ export function createKafkaBackend(
   ),
   recipeStore: KafkaTrustRecipeStore = new InMemoryKafkaTrustRecipeStore(browserRecipeCapability),
   plugins?: PluginRuntimePort,
+  queryStore?: KafkaQueryStore,
 ): KafkaBackendFacade {
   const evaluator = new StreamSkopeKafkaRuleEvaluator();
   const rules = new KafkaRuleService(ruleStore, evaluator);
@@ -113,6 +116,7 @@ export function createKafkaBackend(
     {
       ...(plugins === undefined ? {} : { plugins }),
       preferences: new KafkaOperationalPreferenceService(preferenceStore),
+      queries: new KafkaQueryLibrary(queryStore),
       schemaRegistry: new SchemaRegistryHttpAdapter(serviceHttp),
       transforms: new RedpandaTransformHttpAdapter(serviceHttp),
       trustAcquisitions,

@@ -504,3 +504,11 @@ export { parseKafkaRuleSample } from "./rule-sample";
 
 export { compileKafkaSearchFilter } from "./query-predicate";
 export type { KafkaSearchMatch, KafkaSearchMessage } from "./query-predicate";
+
+export {
+  KAFKA_QUERY_LIBRARY_LIMITS,
+  parseKafkaSavedQuery,
+  parseKafkaQueryLibraryDocument,
+  parseKafkaQueryLibrarySnapshot,
+} from "./query-library";
+export type { KafkaSavedQuery, KafkaQueryLibrarySnapshot } from "./query-library";

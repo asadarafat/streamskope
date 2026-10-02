@@ -7,6 +7,7 @@ import {
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   parseKafkaInvestigationQuery,
   type KafkaSearchFilter,
+  type KafkaInvestigationQuery,
   type KafkaFetchMode,
   type KafkaFetchRequest,
   type StreamSkopeHost,
@@ -38,6 +39,8 @@ type TopicWorkbenchState = Pick<
 >;
 
 interface WorkbenchTopicController {
+  readonly captureQuery: () => KafkaInvestigationQuery;
+  readonly restoreQuery: (query: KafkaInvestigationQuery, awaitConnection: boolean) => void;
   readonly fetchMaximum: number;
   readonly fetchMode: KafkaFetchMode;
   readonly timeWindow: QueryTimeWindowControlsProps;
@@ -72,6 +75,7 @@ export function useWorkbenchTopics(
   setNavigation: (navigation: NavigationView) => void,
   state: TopicWorkbenchState,
 ): WorkbenchTopicController {
+  const pendingQuery = useRef<KafkaInvestigationQuery | null>(null);
   const [fetchMaximum, setFetchMaximum] = useState<number>(KAFKA_FETCH_LIMITS.defaultMaxMessages);
   const [fetchMode, setFetchMode] = useState<KafkaFetchMode>("tail");
   const [timeWindowDraft, setTimeWindowDraft] = useState(initialKafkaTimeWindow);
@@ -124,7 +128,8 @@ export function useWorkbenchTopics(
   useEffect(() => {
     if (connected) {
       setNavigation("topics");
-      setSelectedTopic(null);
+      setSelectedTopic(pendingQuery.current?.request.topic ?? null);
+      pendingQuery.current = null;
       setTopicWorkspace("messages");
       void requestTopics();
     }
@@ -191,25 +196,67 @@ export function useWorkbenchTopics(
     state.consumptionRequest,
   ]);
 
+  const requestForTopic = useCallback(
+    (topic: string): KafkaFetchRequest =>
+      fetchMode === "time-window"
+        ? {
+            ...resolveKafkaTimeWindow(timeWindowDraft),
+            maxMessages: fetchMaximum,
+            mode: fetchMode,
+            topic,
+          }
+        : { maxMessages: fetchMaximum, mode: fetchMode, topic },
+    [fetchMaximum, fetchMode, timeWindowDraft],
+  );
+  const captureQuery = useCallback((): KafkaInvestigationQuery => {
+    if (selectedTopic === null)
+      throw new HostContractValidationError("Query", "choose a topic first");
+    if (state.messageFilters.activeRuleMatchesOnly)
+      throw new HostContractValidationError(
+        "Query",
+        "turn off Rule matches only; use a JSON expression to save an independent filter",
+      );
+    const { key, value, offset, timestamp, partition, expression } = state.messageFilters;
+    return parseKafkaInvestigationQuery({
+      schemaVersion: 1,
+      request: requestForTopic(selectedTopic),
+      filters: {
+        key,
+        value,
+        offset,
+        timestamp,
+        partition,
+        ...(expression === undefined ? {} : { expression }),
+      },
+    });
+  }, [selectedTopic, requestForTopic, state.messageFilters]);
+  const restoreQuery = useCallback(
+    (query: KafkaInvestigationQuery, awaitConnection: boolean): void => {
+      const validated = parseKafkaInvestigationQuery(query);
+      pendingQuery.current = awaitConnection ? validated : null;
+      setFetchMode(validated.request.mode);
+      setFetchMaximum(validated.request.maxMessages);
+      if (validated.request.mode === "time-window")
+        setTimeWindowDraft({
+          mode: "custom",
+          start: new Date(validated.request.startTimeMs).toISOString(),
+          end: new Date(validated.request.endTimeMs).toISOString(),
+        });
+      setSelectedTopic(awaitConnection ? null : validated.request.topic);
+      setTopicWorkspace("messages");
+      setSelectedMessageId(null);
+      setMessageRequestError(undefined);
+    },
+    [],
+  );
+
   const startConsumption = useCallback(
     async (topic: string, search?: KafkaSearchFilter): Promise<void> => {
       setMessageRequestError(undefined);
       setSelectedMessageId(null);
       setSelectionNotice(undefined);
       try {
-        const request: KafkaFetchRequest =
-          fetchMode === "time-window"
-            ? {
-                ...resolveKafkaTimeWindow(timeWindowDraft),
-                maxMessages: fetchMaximum,
-                mode: fetchMode,
-                topic,
-              }
-            : {
-                maxMessages: fetchMaximum,
-                mode: fetchMode,
-                topic,
-              };
+        const request = requestForTopic(topic);
         const query = parseKafkaInvestigationQuery({
           schemaVersion: 1,
           request: { ...request, ...(search === undefined ? {} : { search }) },
@@ -231,12 +278,13 @@ export function useWorkbenchTopics(
         );
       }
     },
-    [fetchMaximum, fetchMode, host, timeWindowDraft],
+    [host, requestForTopic],
   );
 
   const activateTopic = useCallback(
     (topic: string): void => {
       if (!connected) return;
+      pendingQuery.current = null;
       setNavigation("topics");
       setSelectedTopic(topic);
       setTopicWorkspace("messages");
@@ -271,6 +319,8 @@ export function useWorkbenchTopics(
   }, [host]);
 
   return {
+    captureQuery,
+    restoreQuery,
     fetchMaximum,
     fetchMode,
     timeWindow: {

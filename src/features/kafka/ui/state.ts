@@ -1,5 +1,6 @@
 import {
   type KafkaReadCoverage,
+  type KafkaSearchFilter,
   HOST_ACTIVITY_HISTORY_LIMIT,
   KAFKA_MESSAGE_LIMITS,
   KAFKA_RULE_NOTIFICATION_LIMITS,
@@ -332,6 +333,7 @@ function staleStreamMonitor(current: KafkaStreamMonitorUiState): KafkaStreamMoni
 }
 
 export type KafkaUiAction =
+  | { readonly type: "query.restored"; readonly filters: KafkaSearchFilter }
   | {
       readonly event: HostEvent;
       readonly type: "host.event";
@@ -363,6 +365,23 @@ export type KafkaUiAction =
 
 export function reduceKafkaUiState(state: KafkaUiState, action: KafkaUiAction): KafkaUiState {
   switch (action.type) {
+    case "query.restored":
+      return {
+        ...state,
+        messages: [],
+        consumptionRequest: null,
+        consumptionState: "stopped",
+        consumptionError: null,
+        readCoverage: null,
+        receivedMessages: 0,
+        droppedMessages: 0,
+        hostDroppedMessages: 0,
+        rendererDroppedMessages: 0,
+        rendererWindowEvictions: 0,
+        retainedMessageBytes: 0,
+        messagesStale: false,
+        messageFilters: { ...initialKafkaMessageFilters, ...action.filters },
+      };
     case "host.event":
       return reduceKafkaHostEvent(state, action.event);
     case "messages.filters.cleared":

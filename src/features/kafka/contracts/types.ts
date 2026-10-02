@@ -1,5 +1,6 @@
 import type { JsonValue, PluginEvent, PluginSnapshot } from "../../../plugins/contracts";
 
+import type { KafkaSavedQuery } from "./query-library";
 import type { KafkaReadCoverage, KafkaSearchFilter } from "./query-search";
 import type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 import type {
@@ -69,7 +70,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 30 as const;
+export const HOST_PROTOCOL_VERSION = 31 as const;
 
 export const HOST_COMMANDS = [
   "connection.test",
@@ -125,6 +126,9 @@ export const HOST_COMMANDS = [
   "latency.start",
   "latency.stop",
   "latency.export",
+  "queries.list",
+  "queries.put",
+  "queries.delete",
   "messages.start",
   "messages.stop",
   "trustAcquisition.hostKey.discover",
@@ -182,6 +186,7 @@ export const HOST_EVENTS = [
 ] as const;
 
 export const HOST_ERROR_CODES = [
+  "QUERY_UNAVAILABLE",
   "VALIDATION",
   "CANCELLED",
   "TIMEOUT",
@@ -237,6 +242,7 @@ export const HOST_ERROR_CODES = [
 ] as const;
 
 export const HOST_ERROR_STAGES = [
+  "query",
   "validation",
   "oauth",
   "tls",
@@ -377,6 +383,18 @@ interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | (HostCommandBase & {
+      readonly command: "queries.list";
+      readonly payload: Readonly<Record<string, never>>;
+    })
+  | (HostCommandBase & {
+      readonly command: "queries.put";
+      readonly payload: { readonly query: KafkaSavedQuery };
+    })
+  | (HostCommandBase & {
+      readonly command: "queries.delete";
+      readonly payload: { readonly id: string };
+    })
   | (HostCommandBase & {
       readonly command:
         "plugins.list" | "plugins.catalog" | "plugins.restart" | "plugins.exit.prepare";

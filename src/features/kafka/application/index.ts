@@ -154,3 +154,10 @@ export type {
   KafkaRuleSampleFailureReason,
   KafkaRuleSampleLimits,
 } from "../contracts/rule-sample-error";
+
+export {
+  KafkaQueryLibrary,
+  KafkaQueryLibraryError,
+  InMemoryKafkaQueryStore,
+} from "./query-library";
+export type { KafkaQueryStore } from "./query-library";

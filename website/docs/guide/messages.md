@@ -92,6 +92,36 @@ records across the whole topic.
   <noscript><img src="../assets/messages.png" alt="Message inspector for an orders.events record on AIO Kafka" width="2880" height="1800" loading="lazy"></noscript>
 </figure>
 
+## Save and reopen an investigation
+
+1. Choose a topic, read mode, limit and filters. Use a custom time interval for
+   a repeatable incident window. Saving **Last 2 minutes** captures absolute times
+   at the moment you save; reopening does not move that interval forward.
+2. Open **Queries** in the header, enter **Query name**, optionally choose a
+   **Local connection profile**, and click **Save current as new**.
+3. Later, choose the entry in **Saved query** and click **Open query**. Opening
+   restores the controls and clears previous results. It never connects or reads
+   automatically. Stop a running read before opening another query.
+4. Connect the chosen profile if needed, check the topic and interval, and click
+   **Load messages**, **Start tail** or **Search broker** explicitly.
+5. To change an entry, open it, adjust the controls, return to **Queries**, select
+   it and use **Replace selected**. **Delete selected** asks for confirmation and
+   removes only the saved configuration.
+
+Queries retain topic, bounds, filters and limits, plus an optional local profile
+reference. They contain no broker credentials or message records. Filters can
+still contain sensitive text you enter; treat saved query files accordingly.
+The dynamic **Rule matches only** switch cannot be saved; use a JSON expression
+for a repeatable independent filter. A deleted profile must be replaced or its
+reference cleared before opening. Missing topics still require operator review.
+
+The desktop stores up to 100 queries in its application data at
+`queries/kafka-queries.json`, using atomic private writes. Back up this file with
+the [application data](recovery.md). Browser development keeps its query library
+only until the development host restarts. An unreadable, oversized or unsupported
+library is preserved and reported as unavailable; restore a valid backup before
+retrying. StreamSkope does not silently replace that file with an empty library.
+
 ## Export the records you need
 
 1. Stop an active tail or wait for the bounded read to finish so the sample is stable.

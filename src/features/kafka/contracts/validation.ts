@@ -1,3 +1,4 @@
+import { parseKafkaSavedQuery, parseKafkaQueryLibrarySnapshot } from "./query-library";
 import { parseKafkaReadCoverage } from "./query-search";
 import { parseKafkaFetchRequest } from "./fetch-validation";
 export { parseKafkaFetchRequest } from "./fetch-validation";
@@ -250,6 +251,7 @@ export function parseHostCommand(value: unknown): HostCommand {
     case "latency.export":
     case "latency.stop":
     case "messages.stop":
+    case "queries.list":
     case "preferences.get":
     case "preferences.reset":
     case "profiles.list":
@@ -268,6 +270,16 @@ export function parseHostCommand(value: unknown): HostCommand {
         payload: parseKafkaConsumerGroupIdentity(envelope.payload, "command.payload"),
         version,
       };
+    case "queries.put": {
+      const payload = record(envelope.payload, "command.payload");
+      exactKeys(payload, ["query"], "command.payload");
+      return { command, id, version, payload: { query: parseKafkaSavedQuery(payload.query) } };
+    }
+    case "queries.delete": {
+      const payload = record(envelope.payload, "command.payload");
+      exactKeys(payload, ["id"], "command.payload");
+      return { command, id, version, payload: { id: text(payload.id, "command.payload.id", 128) } };
+    }
     case "preferences.update":
       return {
         command,
@@ -445,6 +457,19 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
   if (captureResponse !== undefined) return captureResponse;
   const remoteResponse = parseRemoteTrustResponse(command, id, result, version);
   if (remoteResponse !== undefined) return remoteResponse;
+  if (command === "queries.list" || command === "queries.put" || command === "queries.delete") {
+    exactKeys(result, ["correlationId", "snapshot"], "response.result");
+    return {
+      command,
+      id,
+      ok: true,
+      version,
+      result: {
+        correlationId: text(result.correlationId, "response.result.correlationId", 128),
+        snapshot: parseKafkaQueryLibrarySnapshot(result.snapshot),
+      },
+    };
+  }
   if (command === "profiles.binding.get")
     return { command, id, ok: true, version, result: parseProfileBindingDetailResult(result) };
   const recipeReview = parseTrustRecipeReviewResponse(command, id, result, version);

@@ -14,6 +14,8 @@ import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 
+import { initialKafkaMessageFilters } from "./message-operations";
+import { SavedQueriesDialog } from "./SavedQueriesDialog";
 import { ActivityLogDrawer } from "./ActivityLogDrawer";
 import { AclPage } from "./AclPage";
 import { ConnectionProfilesPage } from "./ConnectionProfilesPage";
@@ -71,6 +73,7 @@ export function StreamSkopeWorkbench({
   host,
   streamMonitorObserver,
 }: StreamSkopeWorkbenchProperties): React.JSX.Element {
+  const [queriesOpen, setQueriesOpen] = useState(false);
   const [state, dispatch] = useReducer(reduceKafkaUiState, initialKafkaUiState);
   const [rendererStreamMonitor] = useState(
     () => streamMonitorObserver ?? createRendererStreamMonitorObserver(),
@@ -115,6 +118,8 @@ export function StreamSkopeWorkbench({
     toggleProfileConnection,
   } = useWorkbenchProfiles(host, connected, state.profiles);
   const {
+    captureQuery,
+    restoreQuery,
     fetchMaximum,
     fetchMode,
     timeWindow,
@@ -633,6 +638,7 @@ export function StreamSkopeWorkbench({
     >
       <Box sx={{ gridArea: "application", minWidth: 0 }}>
         <WorkbenchApplicationBar
+          onOpenQueries={() => setQueriesOpen(true)}
           navigatorOpen={resourcePaneOpen}
           navigatorTemporary={contextPaneTemporary}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
@@ -721,6 +727,32 @@ export function StreamSkopeWorkbench({
         />
       </Box>
 
+      {queriesOpen ? (
+        <SavedQueriesDialog
+          host={host}
+          profiles={state.profiles}
+          currentTopic={selectedTopic}
+          readActive={
+            ["loading", "fetching", "streaming"].includes(state.consumptionState) ||
+            (state.consumptionState === "empty" && state.consumptionRequest?.mode === "tail")
+          }
+          captureCurrent={captureQuery}
+          onClose={() => setQueriesOpen(false)}
+          onRestore={(query, profileId) => {
+            const profile = state.profiles.find((entry) => entry.id === profileId);
+            const needsConnection =
+              !connected || (profile !== undefined && profile.name !== state.connectionName);
+            restoreQuery(query, needsConnection);
+            dispatch({
+              type: "query.restored",
+              filters: query.filters ?? query.request.search ?? initialKafkaMessageFilters,
+            });
+            if (profile !== undefined) setSelectedProfileId(profile.id);
+            setNavigation(needsConnection ? "profiles" : "topics");
+            setQueriesOpen(false);
+          }}
+        />
+      ) : null}
       <WorkbenchCommandPalette
         connected={connected}
         onClose={() => setCommandPaletteOpen(false)}

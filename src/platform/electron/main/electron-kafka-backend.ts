@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { AtomicKafkaQueryFileStore } from "../../node/kafka-query-file-store";
 import { UnavailableKafkaProfileStore } from "../../../features/kafka/application";
 import type { KafkaBackendFacade } from "../../../features/kafka/facade";
 import { PluginRuntime } from "../../node/plugins/runtime";
@@ -67,6 +68,7 @@ export async function createElectronKafkaBackend(
       join(options.userDataPath, "templates", "trust-acquisition-recipes.json"),
     ),
     plugins,
+    new AtomicKafkaQueryFileStore(join(options.userDataPath, "queries", "kafka-queries.json")),
   );
   await plugins.start();
   return backend;
