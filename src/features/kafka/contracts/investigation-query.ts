@@ -32,14 +32,19 @@ export function parseKafkaQueryTimestamp(value: string, label: string): number {
       "use ISO 8601 with seconds and Z or an explicit UTC offset (for example +02:00)",
     );
   }
-  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(Number);
+  const year = Number(parts[1]);
+  const month = Number(parts[2]);
+  const day = Number(parts[3]);
+  const hour = Number(parts[4]);
+  const minute = Number(parts[5]);
+  const second = Number(parts[6]);
   const calendar = new Date(0);
-  calendar.setUTCFullYear(year!, month! - 1, day!);
-  calendar.setUTCHours(hour!, minute!, second!, 0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(hour, minute, second, 0);
   // Date.parse normalizes invalid calendar dates; reject that silent correction.
   if (
     calendar.getUTCFullYear() !== year ||
-    calendar.getUTCMonth() !== month! - 1 ||
+    calendar.getUTCMonth() !== month - 1 ||
     calendar.getUTCDate() !== day ||
     calendar.getUTCHours() !== hour ||
     calendar.getUTCMinutes() !== minute ||
