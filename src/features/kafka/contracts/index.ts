@@ -1,4 +1,10 @@
 export { isHostAcknowledgementCommand } from "./host-command-results";
+export { KAFKA_ORIGINAL_RECORD_LIMITS, parseKafkaOriginalRecord } from "./record-bytes";
+export type {
+  KafkaOriginalRecord,
+  KafkaCompleteRecord,
+  KafkaRecordHeaderBytes,
+} from "./record-bytes";
 export { parseKafkaInvestigationQuery, parseKafkaQueryTimestamp } from "./investigation-query";
 export type { KafkaInvestigationQuery } from "./investigation-query";
 export type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
@@ -192,6 +198,7 @@ export {
 export {
   kafkaLiveRuleEvidenceBytes,
   kafkaMessageRetainedBytes,
+  kafkaRawMessageRetainedBytes,
   utf8ByteLength,
 } from "./message-limits";
 export {

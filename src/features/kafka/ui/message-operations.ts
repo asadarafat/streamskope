@@ -7,6 +7,7 @@ import {
   utf8ByteLength,
   type HostTextDocument,
   type KafkaExploredMessage,
+  type KafkaOriginalRecord,
 } from "../contracts";
 
 export const KAFKA_MESSAGE_OPERATION_LIMITS = {
@@ -66,12 +67,14 @@ export interface KafkaMessageExportInput {
 }
 
 export interface KafkaMessageExportRecord {
+  readonly original: KafkaOriginalRecord;
   readonly headers: Readonly<Record<string, string>>;
   readonly key: string | null;
   readonly offset: string;
   readonly originalByteSize: number;
   readonly partition: number;
   readonly payload: string | null;
+  readonly payloadTruncated: boolean;
   readonly preview: string;
   readonly timestamp: string;
   readonly truncated: boolean;
@@ -82,7 +85,7 @@ export interface KafkaMessageExportSnapshot {
   readonly filters: KafkaMessageFilters;
   readonly messages: readonly KafkaMessageExportRecord[];
   readonly retainedMessageCount: number;
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly stale: boolean;
   readonly topic: string;
 }
@@ -238,9 +241,13 @@ function exportRecord(message: KafkaExploredMessage): KafkaMessageExportRecord {
     key: message.key,
     headers: orderedHeaders(message.headers),
     payload: message.payload,
+    payloadTruncated:
+      message.payloadTruncated ??
+      (message.truncated && message.originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes),
     preview: message.preview,
     truncated: message.truncated,
     originalByteSize: message.originalByteSize,
+    original: message.original ?? { state: "unavailable", reason: "not-captured" },
   };
 }
 
@@ -280,7 +287,7 @@ export function createKafkaMessageExportDocument(input: KafkaMessageExportInput)
     }
   }
   const snapshot: KafkaMessageExportSnapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     topic: input.topic,
     filters: exportFilters(input.filters),
     retainedMessageCount: input.retainedMessageCount,

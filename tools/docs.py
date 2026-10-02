@@ -67,9 +67,10 @@ def inspect_message_limits(page=None):
         "const {KAFKA_QUERY_LIMITS:q}=require('./src/features/kafka/contracts/query-search.ts');"
         "const {KAFKA_QUERY_LIBRARY_LIMITS:l}=require('./src/features/kafka/contracts/query-library.ts');"
         "const {KAFKA_QUERY_TRANSFER_LIMITS:t}=require('./src/features/kafka/contracts/query-transfer.ts');"
+        "const {KAFKA_ORIGINAL_RECORD_LIMITS:o}=require('./src/features/kafka/contracts/record-bytes.ts');"
         "process.stdout.write(JSON.stringify({"
         "retained:m.retainedMessages,bytes:m.retainedBytes,record:m.messageBytes,"
-        "preview:m.previewBytes,fetch:f.maxMessages,"
+        "preview:m.previewBytes,fetch:f.maxMessages,original:o.bytes,"
         "content:e.exportContentBytes,document:e.exportBytes,window:f.defaultTimeWindowMs,"
         "scan:q.scanRecords,scanBytes:q.scanBytes,scanMs:q.durationMs,"
         "queries:l.queries,libraryBytes:l.fileBytes,queryBytes:t.documentBytes}));",
@@ -78,6 +79,7 @@ def inspect_message_limits(page=None):
         "Retained message count": f"{limits['retained']:,}",
         "Retained message bytes": f"{limits['bytes'] / 1_048_576:g} MiB",
         "Full record content": f"{limits['record'] / 1_048_576:g} MiB",
+        "Original record bytes": f"{limits['original'] / 1024:g} KiB",
         "Value preview": f"{limits['preview'] / 1024:g} KiB",
         "Maximum bounded fetch count": f"{limits['fetch']:,}",
         "Serialized export record content": f"{limits['content'] / 1_048_576:g} MiB",

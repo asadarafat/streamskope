@@ -1,3 +1,4 @@
+import { parseKafkaOriginalRecord } from "./record-bytes";
 import { parseKafkaSavedQuery, parseKafkaQueryLibrarySnapshot } from "./query-library";
 import { parseKafkaReadCoverage } from "./query-search";
 import { parseKafkaFetchRequest } from "./fetch-validation";
@@ -112,7 +113,6 @@ import {
   record,
   text,
   truth,
-  utf8Text,
   type UnknownRecord,
 } from "./validation-primitives";
 
@@ -572,7 +572,7 @@ function parseHeaders(value: unknown, path: string): Readonly<Record<string, str
   }
   return Object.fromEntries(
     Object.entries(headers).map(([key, headerValue]) => [
-      utf8Text(key, `${path}.key`, KAFKA_MESSAGE_LIMITS.headerKeyBytes),
+      boundedUtf8Text(key, `${path}.key`, KAFKA_MESSAGE_LIMITS.headerKeyBytes),
       boundedUtf8Text(headerValue, `${path}.${key}`, KAFKA_MESSAGE_LIMITS.headerValueBytes),
     ]),
   );
@@ -588,8 +588,10 @@ function parseMessage(value: unknown, path: string): KafkaExploredMessage {
       "key",
       "offset",
       "originalByteSize",
+      "original",
       "partition",
       "payload",
+      "payloadTruncated",
       "preview",
       "ruleEvaluation",
       "timestamp",
@@ -599,6 +601,9 @@ function parseMessage(value: unknown, path: string): KafkaExploredMessage {
     path,
   );
   const parsed: KafkaExploredMessage = {
+    ...(message.original === undefined
+      ? {}
+      : { original: parseKafkaOriginalRecord(message.original, `${path}.original`) }),
     headers: parseHeaders(message.headers, `${path}.headers`),
     id: text(message.id, `${path}.id`, 256),
     key: nullableBoundedUtf8Text(message.key, `${path}.key`, KAFKA_MESSAGE_LIMITS.messageBytes),
@@ -610,6 +615,9 @@ function parseMessage(value: unknown, path: string): KafkaExploredMessage {
       `${path}.payload`,
       KAFKA_MESSAGE_LIMITS.messageBytes,
     ),
+    ...(message.payloadTruncated === undefined
+      ? {}
+      : { payloadTruncated: truth(message.payloadTruncated, `${path}.payloadTruncated`) }),
     preview: boundedUtf8Text(message.preview, `${path}.preview`, KAFKA_MESSAGE_LIMITS.previewBytes),
     ruleEvaluation: parseKafkaLiveRuleEvaluation(message.ruleEvaluation, `${path}.ruleEvaluation`),
     timestamp: text(message.timestamp, `${path}.timestamp`, 128),
@@ -619,7 +627,7 @@ function parseMessage(value: unknown, path: string): KafkaExploredMessage {
   if (kafkaRawMessageRetainedBytes(parsed) > KAFKA_MESSAGE_LIMITS.messageBytes) {
     throw new HostContractValidationError(
       path,
-      `retained key and payload must total at most ${KAFKA_MESSAGE_LIMITS.messageBytes} UTF-8 bytes`,
+      `retained record data must total at most ${KAFKA_MESSAGE_LIMITS.messageBytes} UTF-8 bytes`,
     );
   }
   return parsed;

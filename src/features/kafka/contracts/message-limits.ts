@@ -31,7 +31,16 @@ function isExploredMessage(message: KafkaMessage): message is KafkaExploredMessa
 }
 
 export function kafkaRawMessageRetainedBytes(message: KafkaMessage): number {
-  return utf8ByteLength(message.key) + utf8ByteLength(message.payload);
+  return (
+    utf8ByteLength(message.key) +
+    utf8ByteLength(message.payload) +
+    utf8ByteLength(message.preview) +
+    Object.entries(message.headers).reduce(
+      (total, [key, value]) => total + utf8ByteLength(key) + utf8ByteLength(value),
+      0,
+    ) +
+    (message.original === undefined ? 0 : utf8ByteLength(JSON.stringify(message.original)))
+  );
 }
 
 export function kafkaMessageRetainedBytes(message: KafkaMessage): number {

@@ -112,6 +112,75 @@ async function openAndCollect(
 }
 
 describe("real StreamSkope Kafka engine", () => {
+  it("retains binary bytes, tombstones, empty values and ordered duplicate/null headers from Kafka", async () => {
+    const config = await loadFixtureConfig();
+    const fixture = await loadFixtureConnection();
+    const options = await fixtureClientOptions(fixture, config);
+    const topic = `streamskope-fidelity-${randomUUID()}`;
+    const admin = new Admin(options);
+    const producer = new Producer<Buffer, Buffer, Buffer, Buffer | undefined>({
+      ...options,
+      autocreateTopics: false,
+    });
+    let connection: Awaited<ReturnType<StreamSkopeKafkaEngine["openConnection"]>> | undefined;
+    let created = false;
+    const headers = new Map<Buffer, Buffer | undefined>([
+      [Buffer.from("same"), Buffer.from([255, 0])],
+      [Buffer.from("same"), undefined],
+      [Buffer.from("empty"), Buffer.alloc(0)],
+      [Buffer.from("same"), Buffer.from("last")],
+    ]);
+    try {
+      await admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
+      created = true;
+      await producer.send({
+        messages: [
+          { topic, partition: 0, headers },
+          { topic, partition: 0, key: Buffer.alloc(0), value: Buffer.alloc(0) },
+          {
+            topic,
+            partition: 0,
+            key: Buffer.from([0, 255]),
+            value: Buffer.from([128, 0, 254]),
+            headers,
+          },
+        ],
+      });
+      connection = await new StreamSkopeKafkaEngine().openConnection(
+        await secureConnectionInput(fixture, config),
+        new AbortController().signal,
+      );
+      const records = await openAndCollect({ mode: "earliest", topic, maxMessages: 3 }, connection);
+      expect(records).toHaveLength(3);
+      expect(records[0]?.original).toMatchObject({ state: "complete", key: null, value: null });
+      expect(records[1]?.original).toMatchObject({ state: "complete", key: "", value: "" });
+      expect(records[2]?.original).toEqual({
+        state: "complete",
+        encoding: "base64",
+        key: "AP8=",
+        value: "gAD+",
+        headers: [
+          { key: "c2FtZQ==", value: "/wA=" },
+          { key: "c2FtZQ==", value: null },
+          { key: "ZW1wdHk=", value: "" },
+          { key: "c2FtZQ==", value: "bGFzdA==" },
+        ],
+      });
+      expect(records.map((record) => record.offset)).toEqual(["0", "1", "2"]);
+    } finally {
+      try {
+        await connection?.close();
+      } finally {
+        await producer.close();
+        try {
+          if (created) await admin.deleteTopics({ topics: [topic] });
+        } finally {
+          await admin.close();
+        }
+      }
+    }
+  }, 30_000);
+
   it("reads half-open historical intervals across partitions, caps results and respects removed history", async () => {
     const config = await loadFixtureConfig();
     const fixture = await loadFixtureConnection();

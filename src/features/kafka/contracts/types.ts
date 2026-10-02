@@ -1,6 +1,7 @@
 import type { JsonValue, PluginEvent, PluginSnapshot } from "../../../plugins/contracts";
 
 import type { KafkaSavedQuery } from "./query-library";
+import type { KafkaOriginalRecord } from "./record-bytes";
 import type { KafkaReadCoverage, KafkaSearchFilter } from "./query-search";
 import type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 import type {
@@ -70,7 +71,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 31 as const;
+export const HOST_PROTOCOL_VERSION = 32 as const;
 
 export const HOST_COMMANDS = [
   "connection.test",
@@ -758,6 +759,7 @@ export type ActivitySeverity = "info" | "warning" | "error";
 export type ActivityOutcome = "started" | "succeeded" | "cancelled" | "failed";
 
 export interface KafkaMessage {
+  readonly original?: KafkaOriginalRecord;
   readonly headers: Readonly<Record<string, string>>;
   readonly id: string;
   readonly key: string | null;
@@ -765,6 +767,7 @@ export interface KafkaMessage {
   readonly originalByteSize: number;
   readonly partition: number;
   readonly payload: string | null;
+  readonly payloadTruncated?: boolean;
   readonly preview: string;
   readonly timestamp: string;
   readonly topic: string;

@@ -925,14 +925,15 @@ describe("Kafka backend facade", () => {
     await facade.execute(command("messages.stop", "request-stop"));
 
     const batches = events.filter((event) => event.event === "messages.batch");
-    expect(batches).toHaveLength(27);
+    // Retention includes the separately retained preview as well as the payload.
+    expect(batches).toHaveLength(26);
     expect(batches[0]).toMatchObject({
       payload: {
-        droppedMessages: 1,
+        droppedMessages: 2,
         topic: "test",
       },
     });
-    expect(batches[0]?.payload.messages[0]).toMatchObject({ id: "1" });
+    expect(batches[0]?.payload.messages[0]).toMatchObject({ id: "2" });
   });
 
   it("reports an oversize batch omission as backpressure without exposing content", async () => {

@@ -343,6 +343,19 @@ describe("StreamSkope Kafka engine connection test", () => {
         originalByteSize: 25,
         partition: 2,
         payload: '{"status":"ready"}',
+        payloadTruncated: false,
+        original: {
+          state: "complete",
+          encoding: "base64",
+          key: Buffer.from("order-1").toString("base64"),
+          value: Buffer.from('{"status":"ready"}').toString("base64"),
+          headers: [
+            {
+              key: Buffer.from("content-type").toString("base64"),
+              value: Buffer.from("application/json").toString("base64"),
+            },
+          ],
+        },
         preview: '{"status":"ready"}',
         timestamp: "2026-07-25T15:00:00.000Z",
         topic: "test",
@@ -425,7 +438,7 @@ describe("StreamSkope Kafka engine connection test", () => {
       records.push(record);
     }
 
-    expect(records[0]?.originalByteSize).toBe(KAFKA_MESSAGE_LIMITS.messageBytes * 3);
+    expect(records[0]?.originalByteSize).toBe(KAFKA_MESSAGE_LIMITS.messageBytes);
     expect(records[0]?.payload === null).toBe(true);
     expect(records[0]?.truncated).toBe(true);
     expect(utf8ByteLength(records[0]?.preview ?? null)).toBeLessThanOrEqual(

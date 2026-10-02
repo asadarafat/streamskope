@@ -75,7 +75,7 @@ describe("Kafka filtered message export", () => {
     });
 
     const expected = `{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "topic": "orders.eu",
   "filters": {
     "timestamp": "",
@@ -101,9 +101,14 @@ describe("Kafka filtered message export", () => {
         "😀": "supplementary"
       },
       "payload": "  value with whitespace  ",
+      "payloadTruncated": false,
       "preview": "  value with whitespace  ",
       "truncated": false,
-      "originalByteSize": 14
+      "originalByteSize": 14,
+      "original": {
+        "state": "unavailable",
+        "reason": "not-captured"
+      }
     }
   ]
 }

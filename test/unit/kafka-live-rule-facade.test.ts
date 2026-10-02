@@ -4,6 +4,7 @@ import { createRecipeLibrary, LegacyTemplateFixture } from "../support/recipe-li
 import {
   HOST_PROTOCOL_VERSION,
   KAFKA_LIVE_RULE_LIMITS,
+  KAFKA_MESSAGE_LIMITS,
   type HostCommand,
   type HostEvent,
   type KafkaFetchRequest,
@@ -75,7 +76,7 @@ function message(id: string, payload: string): KafkaMessage {
     originalByteSize: payload.length,
     partition: 0,
     payload,
-    preview: payload,
+    preview: payload.slice(0, KAFKA_MESSAGE_LIMITS.previewBytes),
     timestamp: "2026-07-25T22:00:00.000Z",
     topic: "orders",
     truncated: false,
