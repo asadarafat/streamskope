@@ -93,14 +93,16 @@ Shared CI and native release packaging must pass for the exact release source.
 live/native scenarios. Publication does not establish live EDA/NSP qualification
 or an installed upgrade rehearsal. Previous results do not qualify changed source.
 
+## Bounded broker search and filters
+
 Broker search can read beyond the loaded sample with separate result and scan
 limits. Finite reads expose traversed offsets and terminal reasons; a read ending
-is no longer labelled a complete snapshot. Host protocol 29 adds optional search
+is no longer labelled a complete snapshot. The typed host contract carries search
 criteria and read coverage. Desktop hosts and renderers must be upgraded together;
 older protocol versions are rejected. Plugin API compatibility is unchanged.
 
 JSON query filters now share the rule parser and bounded evaluator with preview
-and live rules (host protocol 30). Numeric comparisons require finite JSON numbers;
+and live rules. Numeric comparisons require finite JSON numbers;
 existing rules that relied on converting strings, null or booleans to numbers
 must be updated. Costly traversals stop with an explicit evaluation limit, and
 query results disclose unevaluable records instead of treating them as negatives.
