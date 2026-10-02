@@ -112,6 +112,93 @@ async function openAndCollect(
 }
 
 describe("real StreamSkope Kafka engine", () => {
+  it("reads half-open historical intervals across partitions, caps results and respects removed history", async () => {
+    const config = await loadFixtureConfig();
+    const fixture = await loadFixtureConnection();
+    const options = await fixtureClientOptions(fixture, config);
+    const topic = `streamskope-history-${randomUUID()}`;
+    const admin = new Admin(options);
+    const producer = new Producer<Buffer, Buffer, Buffer, Buffer>({
+      ...options,
+      autocreateTopics: false,
+    });
+    let connection: Awaited<ReturnType<StreamSkopeKafkaEngine["openConnection"]>> | undefined;
+    let created = false;
+    try {
+      await admin.createTopics({ topics: [topic], partitions: 2, replicas: 1 });
+      created = true;
+      const startTimeMs = Date.now() - 3_600_000;
+      const endTimeMs = startTimeMs + 10_000;
+      await producer.send({
+        messages: [0, 1].flatMap((partition) =>
+          [startTimeMs - 1_000, startTimeMs, startTimeMs + 5_000, endTimeMs].map(
+            (timestamp, index) => ({
+              topic,
+              partition,
+              timestamp: BigInt(timestamp),
+              key: Buffer.from(`partition-${partition}`),
+              value: Buffer.from(`record-${partition}-${index}`),
+            }),
+          ),
+        ),
+      });
+      connection = await new StreamSkopeKafkaEngine().openConnection(
+        await secureConnectionInput(fixture, config),
+        new AbortController().signal,
+      );
+      const request: KafkaFetchRequest = {
+        mode: "time-window",
+        topic,
+        startTimeMs,
+        endTimeMs,
+        maxMessages: 100,
+      };
+      const records = await openAndCollect(request, connection);
+      expect(records.map((record) => `${record.partition}:${record.offset}`).sort()).toEqual([
+        "0:1",
+        "0:2",
+        "1:1",
+        "1:2",
+      ]);
+      for (const record of records) {
+        expect(Date.parse(record.timestamp)).toBeGreaterThanOrEqual(startTimeMs);
+        expect(Date.parse(record.timestamp)).toBeLessThan(endTimeMs);
+      }
+      const capped = await openAndCollect({ ...request, maxMessages: 1 }, connection);
+      expect(capped).toHaveLength(1);
+      expect(records.map((record) => record.id)).toContain(capped[0]?.id);
+      expect(
+        await openAndCollect(
+          { ...request, startTimeMs: endTimeMs + 1, endTimeMs: endTimeMs + 1_000 },
+          connection,
+        ),
+      ).toEqual([]);
+
+      // Remove only our fixture's prefix to prove that an old interval cannot
+      // recreate deleted history. This never touches the sandbox's shared topic.
+      await admin.deleteRecords({
+        topics: [
+          { name: topic, partitions: [0, 1].map((partition) => ({ partition, offset: 3n })) },
+        ],
+      });
+      expect(await openAndCollect(request, connection)).toEqual([]);
+    } finally {
+      try {
+        await connection?.close();
+      } finally {
+        try {
+          await producer.close();
+        } finally {
+          try {
+            if (created) await admin.deleteTopics({ topics: [topic] });
+          } finally {
+            await admin.close();
+          }
+        }
+      }
+    }
+  }, 45_000);
+
   it("confirms the secure fixture through localhost without runtime warnings", async () => {
     const seededFixtureTopic = await provisionSeededFixtureTopic();
     const config = seededFixtureTopic.config;

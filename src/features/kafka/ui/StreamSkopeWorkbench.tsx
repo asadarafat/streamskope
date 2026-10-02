@@ -117,6 +117,7 @@ export function StreamSkopeWorkbench({
   const {
     fetchMaximum,
     fetchMode,
+    timeWindow,
     messageRequestError,
     consumptionStopping,
     selectedMessageId,
@@ -484,6 +485,7 @@ export function StreamSkopeWorkbench({
           droppedMessages={state.droppedMessages}
           fetchMaximum={fetchMaximum}
           fetchMode={fetchMode}
+          timeWindow={timeWindow}
           filters={state.messageFilters}
           key={selectedTopic ?? "no-topic"}
           liveRuleCapability={state.liveRuleCapability}

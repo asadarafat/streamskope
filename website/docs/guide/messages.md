@@ -38,26 +38,36 @@ If nothing matches, clear the filter and check the topic and read mode.
 | Tail        | A recent starting window, then incoming records             | Runs until stopped; the display remains bounded            |
 | Newest N    | Recent offsets from each partition, capped by Limit overall | Ends at the captured partition ends or the record limit    |
 | First N     | Earliest retained offsets in each partition                 | Ends at the captured bounds or the record limit            |
-| Time window | The two minutes immediately before clicking Load messages   | Ends at the time-derived offset bounds or the record limit |
+| Time window | Last 2 minutes, or your explicit custom start/end interval  | Ends at the time-derived offset bounds or the record limit |
 
 Limit is an overall fetch cap for bounded reads, not a promise of that many records
 from each partition. Newest N is not a globally sorted latest-N query: partition
 arrival order and the cap affect which records you receive. First N cannot recover
 records already removed by retention or compaction. The active time-window bounds
-are displayed in UTC; this release has no custom start/end picker.
+are displayed in UTC.
+
+For a past incident, select **Time window → Custom interval**. Enter an inclusive
+**Start time** and an exclusive **End time**, using ISO 8601 with seconds and a
+time zone: `2026-07-24T16:03:00+02:00` and `2026-07-24T14:03:00Z` represent the
+same instant. Check **Requested interval in UTC** before loading. Missing time
+zones, impossible dates, and end times at or before the start disable loading.
+The chosen settings stay available after completion or cancellation so you can
+adjust and repeat the read. **Last 2 minutes** continues to resolve its bounds
+when you click **Load messages**.
 
 Kafka resolves time-window boundaries to offsets per partition. This is not a
 payload-time search or a guarantee of completeness when timestamps are out of
 order. **Timestamp contains** only filters already-loaded timestamp text.
 
-### Example: inspect a recent incident and save the result
+### Example: inspect a past incident and save the result
 
-Suppose an error happened within the last two minutes on `orders.events`:
+Suppose an error happened at 14:03 UTC on `orders.events`:
 
 1. Select that topic, stop any active read, select **Time window**, and set **Limit**
-   to `1000`. Click **Load messages** before the event ages out of that window.
-2. Note the UTC range shown by **Active fetch request** and wait for completion.
-   If the incident is older, this mode cannot select its historical interval.
+   to `1000`. Choose **Custom interval**, enter that date's start and end times
+   around the incident with `Z` for UTC, and click **Load messages**.
+2. Note the UTC range shown by **Active fetch request** and wait for completion,
+   or use **Cancel fetch** to stop the read. History removed from Kafka cannot be recovered.
 3. Open **Filters**, set **Key contains** to a known affected key, and inspect
    matching records' partition, offset and timestamp.
 4. Clear the filter if you need the rest of the loaded sample. Reaching the limit,

@@ -39,6 +39,10 @@ import { WorkspaceState } from "./WorkspaceState";
 import { TopicWorkspaceToolbar } from "./TopicWorkspaceToolbar";
 import { consumptionStateLabel, isKafkaConsumptionActive } from "./workbench-status";
 import { WorkbenchIcon } from "./WorkbenchIcons";
+import {
+  QueryTimeWindowControls,
+  type QueryTimeWindowControlsProps,
+} from "./QueryTimeWindowControls";
 
 const LazyMessageDataGrid = lazy(() => import("./MessageDataGrid"));
 const LazyMessageInspector = lazy(() => import("./MessageInspector"));
@@ -54,6 +58,7 @@ export function MessageWorkspace({
   droppedMessages,
   fetchMaximum,
   fetchMode,
+  timeWindow,
   filters,
   liveRuleCapability,
   messages,
@@ -86,6 +91,7 @@ export function MessageWorkspace({
   readonly droppedMessages: number;
   readonly fetchMaximum: number;
   readonly fetchMode: KafkaFetchMode;
+  readonly timeWindow?: QueryTimeWindowControlsProps;
   readonly filters: KafkaMessageFilters;
   readonly liveRuleCapability: KafkaLiveRuleCapability;
   readonly messages: readonly KafkaExploredMessage[];
@@ -347,7 +353,11 @@ export function MessageWorkspace({
             <Button
               aria-label={`${readActionLabel} ${selectedTopic}`}
               disabled={
-                operationBelongsToTopic ? consumptionStopping : !connectionAvailable || active
+                operationBelongsToTopic
+                  ? consumptionStopping
+                  : !connectionAvailable ||
+                    active ||
+                    (fetchMode === "time-window" && timeWindow?.error !== undefined)
               }
               onClick={operationBelongsToTopic ? onStop : onStart}
               size="small"
@@ -422,6 +432,9 @@ export function MessageWorkspace({
             />
           </TopicWorkspaceToolbar>
         )}
+        {selectedTopic !== null && fetchMode === "time-window" && timeWindow !== undefined ? (
+          <QueryTimeWindowControls {...timeWindow} disabled={active} />
+        ) : null}
         {topicMatches && filterPanelOpen ? (
           <Box
             aria-label="Message filters"

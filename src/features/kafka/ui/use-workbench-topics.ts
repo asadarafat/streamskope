@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   HOST_PROTOCOL_VERSION,
+  HostContractValidationError,
   KAFKA_FETCH_LIMITS,
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+  parseKafkaInvestigationQuery,
   type KafkaFetchMode,
   type KafkaFetchRequest,
   type StreamSkopeHost,
@@ -15,6 +17,12 @@ import type { TopicWorkspaceView } from "./WorkbenchContextBar";
 import type { NavigationView } from "./workbench-navigation";
 import { isKafkaConsumptionActive } from "./workbench-status";
 import { useWorkbenchMessageSelection } from "./workbench-runtime-effects";
+import {
+  initialKafkaTimeWindow,
+  kafkaTimeWindowError,
+  resolveKafkaTimeWindow,
+} from "./query-time-window";
+import type { QueryTimeWindowControlsProps } from "./QueryTimeWindowControls";
 
 type TopicWorkbenchState = Pick<
   KafkaUiState,
@@ -31,6 +39,7 @@ type TopicWorkbenchState = Pick<
 interface WorkbenchTopicController {
   readonly fetchMaximum: number;
   readonly fetchMode: KafkaFetchMode;
+  readonly timeWindow: QueryTimeWindowControlsProps;
   readonly messageRequestError: string | undefined;
   readonly consumptionStopping: boolean;
   readonly selectedMessageId: string | null;
@@ -64,6 +73,11 @@ export function useWorkbenchTopics(
 ): WorkbenchTopicController {
   const [fetchMaximum, setFetchMaximum] = useState<number>(KAFKA_FETCH_LIMITS.defaultMaxMessages);
   const [fetchMode, setFetchMode] = useState<KafkaFetchMode>("tail");
+  const [timeWindowDraft, setTimeWindowDraft] = useState(initialKafkaTimeWindow);
+  const appliedFetchDefaults = useRef<{
+    readonly mode: KafkaFetchMode;
+    readonly maxMessages: number;
+  }>(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.fetch);
   const [messageRequestError, setMessageRequestError] = useState<string>();
   const [consumptionStopping, setConsumptionStopping] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -161,9 +175,13 @@ export function useWorkbenchTopics(
     if (consumptionActive && state.consumptionRequest !== null) {
       setFetchMode(state.consumptionRequest.mode);
       setFetchMaximum(state.consumptionRequest.maxMessages);
-    } else {
+    } else if (
+      appliedFetchDefaults.current.mode !== confirmedFetchDefaults.mode ||
+      appliedFetchDefaults.current.maxMessages !== confirmedFetchDefaults.maxMessages
+    ) {
       setFetchMode(confirmedFetchDefaults.mode);
       setFetchMaximum(confirmedFetchDefaults.maxMessages);
+      appliedFetchDefaults.current = confirmedFetchDefaults;
     }
   }, [
     confirmedFetchDefaults.maxMessages,
@@ -178,14 +196,12 @@ export function useWorkbenchTopics(
       setSelectedMessageId(null);
       setSelectionNotice(undefined);
       try {
-        const endTimeMs = Date.now();
         const request: KafkaFetchRequest =
           fetchMode === "time-window"
             ? {
-                endTimeMs,
+                ...resolveKafkaTimeWindow(timeWindowDraft),
                 maxMessages: fetchMaximum,
                 mode: fetchMode,
-                startTimeMs: endTimeMs - KAFKA_FETCH_LIMITS.defaultTimeWindowMs,
                 topic,
               }
             : {
@@ -193,22 +209,25 @@ export function useWorkbenchTopics(
                 mode: fetchMode,
                 topic,
               };
+        const query = parseKafkaInvestigationQuery({ schemaVersion: 1, request });
         const response = await host.execute({
           command: "messages.start",
           id: globalThis.crypto.randomUUID(),
-          payload: request,
+          payload: query.request,
           version: HOST_PROTOCOL_VERSION,
         });
         if (!response.ok) {
           setMessageRequestError(response.error.summary);
         }
-      } catch {
+      } catch (error) {
         setMessageRequestError(
-          "The application host did not accept the consume request. Open Activity for diagnostics.",
+          error instanceof HostContractValidationError
+            ? error.message
+            : "The application host did not accept the consume request. Open Activity for diagnostics.",
         );
       }
     },
-    [fetchMaximum, fetchMode, host],
+    [fetchMaximum, fetchMode, host, timeWindowDraft],
   );
 
   const activateTopic = useCallback(
@@ -250,6 +269,11 @@ export function useWorkbenchTopics(
   return {
     fetchMaximum,
     fetchMode,
+    timeWindow: {
+      value: timeWindowDraft,
+      onChange: setTimeWindowDraft,
+      error: kafkaTimeWindowError(timeWindowDraft),
+    },
     messageRequestError,
     consumptionStopping,
     selectedMessageId,

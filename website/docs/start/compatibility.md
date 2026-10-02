@@ -8,17 +8,17 @@ See [qualification evidence](../guide/qualification.md) for what was actually ex
 
 ## Connection and data capabilities
 
-| Capability           | Implemented scope                                                                | Boundary                                                                                                              |
-| -------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Kafka transport      | TLS with server certificate validation; explicitly selected plaintext            | No mutual-TLS client certificate/key configuration                                                                    |
-| Kafka authentication | OAuth 2.0 client-credentials token retrieval with SASL OAUTHBEARER, or no SASL   | SASL PLAIN, SCRAM and Kerberos are not configurable                                                                   |
-| Broker trust         | PEM CA, JKS and PKCS12 trust material                                            | Truststores provide CA trust, not client identity                                                                     |
-| Message inspection   | Keys/values interpreted as UTF-8; JSON formatting when valid                     | No automatic Avro, Protobuf or Schema Registry wire-format decoding; no byte-exact binary export                      |
-| Message reads        | Tail, Newest N, First N and a recent two-minute Time window                      | Bounded retention; no arbitrary historical date picker; see [read semantics](../guide/messages.md#choose-a-read-mode) |
-| Schema Registry      | Confluent-compatible HTTP API; Avro, JSON Schema and Protobuf schema definitions | Browsing/registration is separate from message decoding; auth is none or the profile's OAuth token, not HTTP Basic    |
-| Redpanda transforms  | Redpanda Admin API and transform-log topic                                       | Not an Apache Kafka feature; independent service permissions and connectivity required                                |
-| EDA capture          | EDA Capture, API 3 (published), API 4 (upcoming)                                 | Requires exactly EDA 26.8.2 and the separate matching cluster app                                                     |
-| NSP capture          | NSP Capture, API 3 (published), API 4 (upcoming)                                 | Requires exactly NSP 26.4.0 and the workflow/mounted-trust layout                                                     |
+| Capability           | Implemented scope                                                                | Boundary                                                                                                           |
+| -------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Kafka transport      | TLS with server certificate validation; explicitly selected plaintext            | No mutual-TLS client certificate/key configuration                                                                 |
+| Kafka authentication | OAuth 2.0 client-credentials token retrieval with SASL OAUTHBEARER, or no SASL   | SASL PLAIN, SCRAM and Kerberos are not configurable                                                                |
+| Broker trust         | PEM CA, JKS and PKCS12 trust material                                            | Truststores provide CA trust, not client identity                                                                  |
+| Message inspection   | Keys/values interpreted as UTF-8; JSON formatting when valid                     | No automatic Avro, Protobuf or Schema Registry wire-format decoding; no byte-exact binary export                   |
+| Message reads        | Tail, Newest N, First N and recent or custom Time window                         | Reads retained Kafka records within explicit limits; see [read semantics](../guide/messages.md#choose-a-read-mode) |
+| Schema Registry      | Confluent-compatible HTTP API; Avro, JSON Schema and Protobuf schema definitions | Browsing/registration is separate from message decoding; auth is none or the profile's OAuth token, not HTTP Basic |
+| Redpanda transforms  | Redpanda Admin API and transform-log topic                                       | Not an Apache Kafka feature; independent service permissions and connectivity required                             |
+| EDA capture          | EDA Capture, API 3 (published), API 4 (upcoming)                                 | Requires exactly EDA 26.8.2 and the separate matching cluster app                                                  |
+| NSP capture          | NSP Capture, API 3 (published), API 4 (upcoming)                                 | Requires exactly NSP 26.4.0 and the workflow/mounted-trust layout                                                  |
 
 TLS failures do not fall back to plaintext. HTTP service authentication and Kafka
 broker authentication must each be accepted by their destination. A valid Kafka
