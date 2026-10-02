@@ -4,6 +4,8 @@ import { Box, Drawer, Skeleton, Stack, Typography, useMediaQuery } from "@mui/ma
 import {
   KAFKA_FETCH_MODE_LABELS,
   KAFKA_QUERY_LIMITS,
+  KAFKA_RULE_LIMITS,
+  validateKafkaRuleExpression,
   type KafkaReadCoverage,
   type KafkaSearchFilter,
   type ConsumptionState,
@@ -55,6 +57,7 @@ const FETCH_MAXIMUM_PRESETS = [10, 100, 500, 1_000] as const;
 export function MessageWorkspace({
   component = "main",
   connectionAvailable,
+  unavailableFilterRecords = 0,
   readCoverage = null,
   consumptionError,
   consumptionRequest,
@@ -90,6 +93,7 @@ export function MessageWorkspace({
 }: {
   readonly component?: "main" | "section";
   readonly connectionAvailable: boolean;
+  readonly unavailableFilterRecords?: number;
   readonly readCoverage?: KafkaReadCoverage | null;
   readonly onSearch?: (filter: KafkaSearchFilter) => void;
   readonly consumptionError: HostError | null;
@@ -155,6 +159,9 @@ export function MessageWorkspace({
   );
   const visibleMessages = topicMatches ? messages : [];
   const activeFilterCount = countActiveKafkaMessageFilters(filters);
+  const expression = filters.expression ?? "";
+  const expressionValidation =
+    expression.trim().length === 0 ? { valid: true } : validateKafkaRuleExpression(expression);
   const reusableProfilesAvailable = savedProfileCount > 0;
   const statusLabel = consumptionStateLabel(consumptionState);
   const statusTone: StatusIndicatorTone =
@@ -229,6 +236,7 @@ export function MessageWorkspace({
     }
   }
   const operationalNoticeVisible =
+    unavailableFilterRecords > 0 ||
     exportStatus.length > 0 ||
     exportError !== undefined ||
     selectionNotice !== undefined ||
@@ -534,6 +542,20 @@ export function MessageWorkspace({
                 value={filters[field]}
               />
             ))}
+            <TextField
+              label="JSON expression"
+              value={expression}
+              onChange={(event) => onTextFilterChange("expression", event.target.value)}
+              error={!expressionValidation.valid}
+              helperText={
+                expressionValidation.valid
+                  ? 'Uses the rule language, for example $.status == "failed" && $.attempts > 2. Values must be complete JSON.'
+                  : expressionValidation.diagnostic
+              }
+              slotProps={{ htmlInput: { maxLength: KAFKA_RULE_LIMITS.expressionCharacters } }}
+              size="small"
+              sx={{ gridColumn: "1 / -1" }}
+            />
             <Stack
               direction="row"
               spacing={1}
@@ -557,10 +579,12 @@ export function MessageWorkspace({
                     active ||
                     fetchMode === "tail" ||
                     filters.activeRuleMatchesOnly ||
+                    !expressionValidation.valid ||
                     (fetchMode === "time-window" && timeWindow?.error !== undefined)
                   }
                   onClick={() =>
                     onSearch({
+                      ...(expression.length === 0 ? {} : { expression }),
                       key: filters.key,
                       value: filters.value,
                       offset: filters.offset,
@@ -631,6 +655,13 @@ export function MessageWorkspace({
               {exportStatus}
             </Typography>
           )}
+          {unavailableFilterRecords > 0 ? (
+            <Alert severity="warning">
+              {unavailableFilterRecords.toLocaleString()} loaded records could not be evaluated by
+              the JSON filter (invalid, incomplete or over the evaluation limits). Filter results
+              are partial.
+            </Alert>
+          ) : null}
           {exportError === undefined ? null : <Alert severity="error">{exportError}</Alert>}
           {selectionNotice === undefined ? null : <Alert severity="info">{selectionNotice}</Alert>}
           {topicMatches && liveRuleCapability.state === "partial" ? (

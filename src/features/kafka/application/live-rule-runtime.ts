@@ -14,10 +14,13 @@ import {
   type KafkaRuleDefinition,
   type KafkaRuleSnapshot,
 } from "../contracts";
+import {
+  KafkaRuleSampleParseError,
+  type KafkaRuleSampleLimits,
+} from "../contracts/rule-sample-error";
 
 import type { KafkaRuleEvaluator, KafkaRulePredicate } from "./rule-types";
 import type { KafkaRuleService } from "./rule-service";
-import { KafkaRuleSampleParseError, type KafkaRuleSampleLimits } from "./rule-sample-error";
 
 const DEFAULT_CATALOG_RECOVERY =
   "Review the rule catalog failure in Activity, correct the catalog, then start consumption again.";

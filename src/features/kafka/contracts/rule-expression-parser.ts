@@ -1,5 +1,4 @@
-import { KAFKA_RULE_LIMITS } from "../contracts";
-
+import { KAFKA_RULE_LIMITS } from "./rule-types";
 import type {
   CompiledKafkaRuleExpression,
   RuleCondition,

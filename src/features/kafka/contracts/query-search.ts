@@ -1,3 +1,5 @@
+import { KAFKA_RULE_LIMITS } from "./rule-types";
+import { validateKafkaRuleExpression } from "./rule-expression-parser";
 import { HostContractValidationError } from "./validation-error";
 import {
   boundedText,
@@ -17,6 +19,7 @@ export const KAFKA_QUERY_LIMITS = {
 } as const;
 
 export interface KafkaSearchFilter {
+  readonly expression?: string;
   readonly key: string;
   readonly value: string;
   readonly offset: string;
@@ -26,8 +29,25 @@ export interface KafkaSearchFilter {
 
 export function parseKafkaSearchFilter(value: unknown, path: string): KafkaSearchFilter {
   const filter = record(value, path);
-  exactKeys(filter, ["key", "value", "offset", "timestamp", "partition"], path);
+  exactKeys(filter, ["key", "value", "offset", "timestamp", "partition", "expression"], path);
+  let expression: string | undefined;
+  if (filter.expression !== undefined) {
+    expression = boundedText(
+      filter.expression,
+      `${path}.expression`,
+      KAFKA_RULE_LIMITS.expressionCharacters,
+    ).trim();
+    if (expression.length > 0) {
+      const result = validateKafkaRuleExpression(expression);
+      if (!result.valid)
+        throw new HostContractValidationError(
+          `${path}.expression`,
+          result.diagnostic ?? "Invalid expression",
+        );
+    }
+  }
   return {
+    ...(expression === undefined ? {} : { expression }),
     key: boundedText(filter.key, `${path}.key`, KAFKA_QUERY_LIMITS.filterCharacters),
     value: boundedText(filter.value, `${path}.value`, KAFKA_QUERY_LIMITS.filterCharacters),
     offset: boundedText(filter.offset, `${path}.offset`, KAFKA_QUERY_LIMITS.filterCharacters),

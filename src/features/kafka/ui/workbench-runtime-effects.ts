@@ -10,7 +10,8 @@ import {
 import type { ActivityEntry, StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 
-import { selectVisibleKafkaMessages, type KafkaUiAction, type KafkaUiState } from "./state";
+import { selectKafkaQueryMessages } from "./message-operations";
+import { type KafkaUiAction, type KafkaUiState } from "./state";
 import type { RendererStreamMonitorObserver } from "./stream-monitor-observer";
 
 interface RendererStreamMonitorLifecycleOptions {
@@ -30,21 +31,19 @@ export function useWorkbenchMessageSelection(
   messageFilters: KafkaUiState["messageFilters"],
   retainedMessages: KafkaUiState["messages"],
 ): {
+  readonly unavailable: number;
   readonly durationMs: number | null;
   readonly messages: KafkaUiState["messages"];
 } {
   return useMemo(() => {
     if (!presentationActive) {
-      return { durationMs: null, messages: retainedMessages };
+      return { durationMs: null, messages: retainedMessages, unavailable: 0 };
     }
     const startedAt = globalThis.performance.now();
-    const messages = selectVisibleKafkaMessages({
-      messageFilters,
-      messages: retainedMessages,
-    });
+    const selection = selectKafkaQueryMessages(retainedMessages, messageFilters);
     return {
       durationMs: Math.max(0, globalThis.performance.now() - startedAt),
-      messages,
+      ...selection,
     };
   }, [messageFilters, presentationActive, retainedMessages]);
 }

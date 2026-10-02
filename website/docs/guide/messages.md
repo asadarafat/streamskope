@@ -158,3 +158,34 @@ recent candidate range, up to 10,000 offsets per partition, with a topic-wide sc
 budget. A time window uses Kafka timestamp lookups and tests each record against
 the selected interval. Reaching those offset ranges does not prove that deleted
 history is available or that records with out-of-order timestamps were included.
+
+## Filter JSON values
+
+In **Filters → JSON expression**, use the same bounded expression language as
+**Rules**, for example `$.status == "failed" && $.attempts > 2`. The expression
+applies to the loaded sample and is included when you select **Search broker**.
+An invalid expression disables broker search; clearing it restores field-only
+filtering. A query contains the expression itself, independent of any saved rule
+name, rule severity or cooldown.
+
+| Operation                       | Meaning                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| `$.a == null`                   | Matches an explicit JSON null; a missing property does not match.                    |
+| `$.a exists`                    | Requires a present value other than null; false and zero exist.                      |
+| `$.a > 2`                       | Requires a finite JSON number. Numeric strings, null and booleans are not converted. |
+| `$.items[*].status == "failed"` | Matches when an array item has that exact value.                                     |
+| `&&` / `\|\|`                   | AND / OR, with AND taking precedence; use parentheses to group.                      |
+| `$.name matches /^edge-/i`      | Restricted regex; repetition, lookarounds and backreferences are rejected.           |
+
+Expressions allow 4,096 characters, 64 conditions, 64 path segments and 16 grouping
+levels. Each evaluation has 250,000 work units for traversal and comparison;
+loaded-sample filtering shares a further 500,000-unit budget across the selection.
+The live/query JSON limit is 256 KiB, 25,000 structural nodes and depth 64. Rule
+preview accepts up to 1 MiB and 100,000 nodes but uses the same expression semantics
+and per-evaluation work limit.
+
+Malformed, missing, truncated, oversized or over-budget JSON is counted as
+**could not be evaluated**, not as a confirmed negative match. Read the partial
+result notice before drawing conclusions. Live rules report evaluation failures;
+rule preview reports a bounded error. These expressions do not execute JavaScript
+or SQL.

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   KafkaRuleSampleError,
   parseKafkaRuleSample,
-} from "../../src/features/kafka/engine/rule-sample";
+} from "../../src/features/kafka/contracts/rule-sample";
 
 function capturedError(operation: () => unknown): unknown {
   try {

@@ -75,3 +75,9 @@ limits. Finite reads expose traversed offsets and terminal reasons; a read endin
 is no longer labelled a complete snapshot. Host protocol 29 adds optional search
 criteria and read coverage. Desktop hosts and renderers must be upgraded together;
 older protocol versions are rejected. Plugin API compatibility is unchanged.
+
+JSON query filters now share the rule parser and bounded evaluator with preview
+and live rules (host protocol 30). Numeric comparisons require finite JSON numbers;
+existing rules that relied on converting strings, null or booleans to numbers
+must be updated. Costly traversals stop with an explicit evaluation limit, and
+query results disclose unevaluable records instead of treating them as negatives.

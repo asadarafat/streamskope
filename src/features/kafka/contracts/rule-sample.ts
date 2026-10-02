@@ -1,9 +1,10 @@
-import { KAFKA_RULE_LIMITS, utf8ByteLength } from "../contracts";
+import { KAFKA_RULE_LIMITS } from "./rule-types";
+import { utf8ByteLength } from "./message-limits";
 import {
   KafkaRuleSampleParseError,
   type KafkaRuleSampleFailureReason,
   type KafkaRuleSampleLimits,
-} from "../application";
+} from "./rule-sample-error";
 
 const DEFAULT_LIMITS: KafkaRuleSampleLimits = {
   bytes: KAFKA_RULE_LIMITS.sampleBytes,

@@ -494,3 +494,13 @@ export {
   parseKafkaReadCoverage,
 } from "./query-search";
 export type { KafkaSearchFilter, KafkaReadCoverage, KafkaReadReason } from "./query-search";
+
+export { compileKafkaRuleExpression, validateKafkaRuleExpression } from "./rule-expression-parser";
+export {
+  evaluateCompiledKafkaRuleExpression,
+  KafkaRuleWorkBudget,
+} from "./rule-expression-evaluator";
+export { parseKafkaRuleSample } from "./rule-sample";
+
+export { compileKafkaSearchFilter } from "./query-predicate";
+export type { KafkaSearchMatch, KafkaSearchMessage } from "./query-predicate";

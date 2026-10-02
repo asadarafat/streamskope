@@ -11,8 +11,8 @@ export {
   KafkaRuleExpressionError,
   evaluateKafkaRuleExpression,
   validateKafkaRuleExpression,
-} from "./rule-expression";
-export { KafkaRuleSampleError, parseKafkaRuleSample } from "./rule-sample";
+} from "../contracts/rule-expression";
+export { KafkaRuleSampleError, parseKafkaRuleSample } from "../contracts/rule-sample";
 export { StreamSkopeTrustMaterialDecoder } from "./trust-material";
 export { parseTrustMaterial } from "./trust-material-parser";
 export { KafkaTrustMaterialError, KafkaTruststorePasswordError } from "./trust-material-shared";

@@ -69,7 +69,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 29 as const;
+export const HOST_PROTOCOL_VERSION = 30 as const;
 
 export const HOST_COMMANDS = [
   "connection.test",

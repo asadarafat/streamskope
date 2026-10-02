@@ -137,7 +137,7 @@ describe("real StreamSkope Kafka engine", () => {
               partition,
               timestamp: BigInt(timestamp),
               key: Buffer.from(`partition-${partition}`),
-              value: Buffer.from(`record-${partition}-${index}`),
+              value: Buffer.from(JSON.stringify({ partition, index })),
             }),
           ),
         ),
@@ -164,6 +164,31 @@ describe("real StreamSkope Kafka engine", () => {
         expect(Date.parse(record.timestamp)).toBeGreaterThanOrEqual(startTimeMs);
         expect(Date.parse(record.timestamp)).toBeLessThan(endTimeMs);
       }
+      const filtered = await connection.openMessageStream(
+        {
+          ...request,
+          search: {
+            key: "",
+            value: "",
+            offset: "",
+            timestamp: "",
+            partition: null,
+            expression: "$.index == 2",
+          },
+        },
+        new AbortController().signal,
+      );
+      expect(
+        (await collectFiniteStream(filtered))
+          .map((record) => `${record.partition}:${record.offset}`)
+          .sort(),
+      ).toEqual(["0:2", "1:2"]);
+      expect(filtered.coverage?.()).toMatchObject({
+        reason: "range-complete",
+        scannedRecords: 4,
+        matchedRecords: 2,
+        unavailableRecords: 0,
+      });
       const capped = await openAndCollect({ ...request, maxMessages: 1 }, connection);
       expect(capped).toHaveLength(1);
       expect(records.map((record) => record.id)).toContain(capped[0]?.id);
