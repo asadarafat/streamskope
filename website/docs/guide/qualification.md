@@ -17,15 +17,15 @@ For a development checkout, `0.0.0-dev` is an unassigned version. Use the PR's
 successful CI result for its exact revision; that check does not build native
 installers. Results from an earlier revision do not qualify changed source.
 
-| Check | Evidence to use |
-| --- | --- |
-| Static, unit, architecture, non-live integration and docs | The exact successful PR CI or release CI run |
-| Linux, macOS and Windows installers | The release's native build/launch jobs and installer checksums |
-| 60-second performance soak | A local report tied to the source revision; release CI does not run it |
-| EDA 26.8.2 capture and cleanup | API version, received record and verified owned-resource removal; no current API 4 live result is recorded |
-| NSP 26.4.0 setup and cleanup | API version, profile reuse, Kafka access and execution removal; no current API 4 live result is recorded |
-| API 2/3 to API 4 upgrade and rollback | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
-| Native plugin dialogs and credential-backed restore | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded |
+| Check                                                     | Evidence to use                                                                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Static, unit, architecture, non-live integration and docs | The exact successful PR CI or release CI run                                                                        |
+| Linux, macOS and Windows installers                       | The release's native build/launch jobs and installer checksums                                                      |
+| 60-second performance soak                                | A local report tied to the source revision; release CI does not run it                                              |
+| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal; no current API 4 live result is recorded          |
+| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal; no current API 4 live result is recorded            |
+| API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
+| Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
 
 ## Historical qualification: v0.1.0+build.1
 
