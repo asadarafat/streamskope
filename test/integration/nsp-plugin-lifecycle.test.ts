@@ -100,7 +100,7 @@ it("hot update drains the old NSP retrieval before the new backend reads recover
   vi.spyOn(NspApiClient.prototype, "close").mockResolvedValue();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.2.0",
+    hostRelease: "v0.3.0",
     catalog: {
       list: (): Promise<[]> => Promise.resolve([]),
       download: (): Promise<ReturnType<typeof bundle>> => Promise.resolve(bundle(2)),
@@ -145,6 +145,7 @@ it("hot update drains the old NSP retrieval before the new backend reads recover
       ).error,
   });
   const old = (await runtime.list()).plugins[0]!;
+  expect(old.activationId).toBeDefined();
   const requestId = randomUUID();
   const operation = runtime.execute({
     pluginId: NSP_PLUGIN_ID,
@@ -247,7 +248,7 @@ it("direct host shutdown permits final NSP cleanup and journal writes while reje
   const closeClient = vi.spyOn(NspApiClient.prototype, "close").mockResolvedValue();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.2.0",
+    hostRelease: "v0.3.0",
     loadModule: (): Promise<PluginBackendModule> =>
       Promise.resolve({
         activate: (host: PluginBackendHost): PluginBackend => {
@@ -279,6 +280,7 @@ it("direct host shutdown permits final NSP cleanup and journal writes while reje
       ).error,
   });
   const current = (await runtime.list()).plugins[0]!;
+  expect(current.activationId).toBeDefined();
   const operation = runtime.execute({
     pluginId: NSP_PLUGIN_ID,
     activationId: current.activationId!,
@@ -329,7 +331,7 @@ it("discarding a staged update cannot overwrite the active plugin's unresolved r
   const attemptedWrite = vi.fn();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.2.0",
+    hostRelease: "v0.3.0",
     catalog: {
       list: (): Promise<[]> => Promise.resolve([]),
       download: (): Promise<ReturnType<typeof bundle>> => Promise.resolve(bundle(2)),
