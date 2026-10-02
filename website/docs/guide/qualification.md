@@ -27,6 +27,25 @@ installers. Results from an earlier revision do not qualify changed source.
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
 
+## Published release: v0.2.0
+
+[v0.2.0](../releases/v0.2.0.md) was published on **2026-10-02** from source
+[`f3b7a3e`](https://github.com/asadarafat/streamskope/commit/f3b7a3ebb62d7a01ab269705f9b888bbaa70f6c7).
+The [release workflow](https://github.com/asadarafat/streamskope/actions/runs/37048395196)
+passed on its second attempt after the first runner timed out downloading Ubuntu
+packages for video playback checks. The source and qualification gates were unchanged.
+
+| Check                                                   | Recorded result and evidence                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shared qualification                                    | [CI passed](https://github.com/asadarafat/streamskope/actions/runs/37048395196/job/110982283219): 2,122 tests, 33 documentation pages and 28 browser routes, including video playback                                                                                                                              |
+| Native installers, package inspection and launch checks | [Linux x64](https://github.com/asadarafat/streamskope/actions/runs/37048395196/job/110984596249), [macOS ARM64](https://github.com/asadarafat/streamskope/actions/runs/37048395196/job/110984596071) and [Windows x64](https://github.com/asadarafat/streamskope/actions/runs/37048395196/job/110984596120) passed |
+| Unsigned EDA OCI application                            | [Packaging passed](https://github.com/asadarafat/streamskope/actions/runs/37048395196/job/110984596070); this is not a live-cluster or signing result                                                                                                                                                              |
+| Download integrity                                      | [SHA256SUMS](https://github.com/asadarafat/streamskope/releases/download/v0.2.0/SHA256SUMS) matches the three uploaded installers' GitHub SHA-256 digests                                                                                                                                                          |
+
+The installers are unsigned. No live EDA/NSP result or installed legacy-plugin
+upgrade and credential-recovery rehearsal is recorded for this release. Those
+results must be recorded separately; the successful release does not establish them.
+
 ## Historical qualification: v0.1.0+build.1
 
 The [v0.1.0+build.1 prerelease](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1),
