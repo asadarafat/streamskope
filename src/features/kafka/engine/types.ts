@@ -1,4 +1,5 @@
 import type {
+  KafkaReadCoverage,
   HostErrorCode,
   HostErrorStage,
   KafkaConfigurationEntry,
@@ -91,6 +92,7 @@ export interface KafkaRawMessage {
 
 export interface KafkaRawMessageStream extends AsyncIterable<KafkaRawMessage> {
   close(): Promise<void>;
+  coverage?(): KafkaReadCoverage | undefined;
 }
 
 export type KafkaConsumerInput = KafkaClientInput & {

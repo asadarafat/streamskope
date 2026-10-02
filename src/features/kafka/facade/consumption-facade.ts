@@ -256,6 +256,13 @@ export class ConsumptionFacadeController {
         this.bindings.recordActivity(unavailableLiveRuleActivity(consumption, capability));
       }
       await this.bindings.session.startConsumption(command.payload, {
+        onCoverage: (coverage): void => {
+          if (this.activeConsumption === consumption) {
+            consumption.coverage = coverage;
+            if (consumption.state !== "loading")
+              this.publishConsumption(consumption, consumption.state);
+          }
+        },
         onComplete: (): void => {
           runTerminal(() => {
             if (this.activeConsumption !== consumption) {
@@ -268,7 +275,7 @@ export class ConsumptionFacadeController {
             this.publishConsumption(consumption, state);
             this.bindings.recordActivity({
               correlationId: consumption.correlationId,
-              detail: `${fetchDescription(consumption.request)} completed with ${String(
+              detail: `${fetchDescription(consumption.request)} ended with ${String(
                 consumption.receivedMessages,
               )} message${consumption.receivedMessages === 1 ? "" : "s"}.`,
               object: consumption.request.topic,

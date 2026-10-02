@@ -1,5 +1,6 @@
 import {
   KAFKA_MESSAGE_LIMITS,
+  matchesKafkaSearchFilter,
   DESKTOP_TEXT_DOCUMENT_LIMITS,
   utf8ByteLength,
   type HostTextDocument,
@@ -86,56 +87,6 @@ export const initialKafkaMessageFilters: KafkaMessageFilters = Object.freeze({
   value: "",
 });
 
-function normalizedCriterion(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function matchesText(value: string | null, criterion: string): boolean {
-  return criterion.length === 0 || (value !== null && value.toLowerCase().includes(criterion));
-}
-
-interface NormalizedKafkaMessageTextFilters {
-  readonly key: string;
-  readonly offset: string;
-  readonly timestamp: string;
-  readonly value: string;
-}
-
-function normalizedTextFilters(filters: KafkaMessageFilters): NormalizedKafkaMessageTextFilters {
-  return {
-    key: normalizedCriterion(filters.key),
-    offset: normalizedCriterion(filters.offset),
-    timestamp: normalizedCriterion(filters.timestamp),
-    value: normalizedCriterion(filters.value),
-  };
-}
-
-function filterableValue(message: KafkaExploredMessage): string | null {
-  if (message.payload !== null) {
-    return message.payload;
-  }
-  return message.truncated ? message.preview : null;
-}
-
-function matchesMessage(
-  message: KafkaExploredMessage,
-  filters: KafkaMessageFilters,
-  criteria: NormalizedKafkaMessageTextFilters,
-): boolean {
-  if (filters.activeRuleMatchesOnly && message.ruleEvaluation.activeMatchCount === 0) {
-    return false;
-  }
-  if (filters.partition !== null && message.partition !== filters.partition) {
-    return false;
-  }
-  return (
-    matchesText(message.timestamp, criteria.timestamp) &&
-    matchesText(message.offset, criteria.offset) &&
-    matchesText(message.key, criteria.key) &&
-    matchesText(filterableValue(message), criteria.value)
-  );
-}
-
 export function countActiveKafkaMessageFilters(filters: KafkaMessageFilters): number {
   return (
     Number(filters.activeRuleMatchesOnly) +
@@ -154,8 +105,14 @@ export function selectFilteredKafkaMessages(
   if (countActiveKafkaMessageFilters(filters) === 0) {
     return messages;
   }
-  const criteria = normalizedTextFilters(filters);
-  return messages.filter((message) => matchesMessage(message, filters, criteria));
+  return messages.filter(
+    (message) =>
+      (!filters.activeRuleMatchesOnly || message.ruleEvaluation.activeMatchCount > 0) &&
+      matchesKafkaSearchFilter(
+        { ...message, payload: message.payload ?? (message.truncated ? message.preview : null) },
+        filters,
+      ),
+  );
 }
 
 export function withKafkaMessageTextFilter(

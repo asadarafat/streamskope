@@ -69,3 +69,9 @@ Shared CI and native release packaging must pass for the exact release source.
 [Qualification evidence](https://asadarafat.github.io/streamskope/guide/qualification/) tracks the checks and remaining
 live/native scenarios. Publication does not establish live EDA/NSP qualification
 or an installed upgrade rehearsal. Previous results do not qualify changed source.
+
+Broker search can read beyond the loaded sample with separate result and scan
+limits. Finite reads expose traversed offsets and terminal reasons; a read ending
+is no longer labelled a complete snapshot. Host protocol 29 adds optional search
+criteria and read coverage. Desktop hosts and renderers must be upgraded together;
+older protocol versions are rejected. Plugin API compatibility is unchanged.

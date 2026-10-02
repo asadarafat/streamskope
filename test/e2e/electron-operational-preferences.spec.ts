@@ -144,7 +144,7 @@ test("restores, applies and exactly resets durable operational preferences in El
     await openTopicTask(page, "Messages");
     await expect(page.getByRole("combobox", { name: "Read mode" })).toContainText("First N");
     await expect(page.getByRole("combobox", { name: "Record limit" })).toContainText("25");
-    await expect(page.getByLabel("Consumption status")).toContainText("Snapshot complete", {
+    await expect(page.getByLabel("Consumption status")).toContainText("Read finished", {
       timeout: 15_000,
     });
     await page.getByRole("combobox", { name: "Read mode" }).click();

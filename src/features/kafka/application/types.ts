@@ -1,4 +1,5 @@
 import type {
+  KafkaReadCoverage,
   ConnectionState,
   KafkaClusterBroker,
   KafkaAclBinding,
@@ -24,6 +25,7 @@ export interface KafkaConnectionTestResult {
 
 export interface KafkaMessageStream extends AsyncIterable<KafkaMessage> {
   close(): Promise<void>;
+  coverage?(): KafkaReadCoverage | undefined;
 }
 
 export interface KafkaClusterMetadata {
@@ -38,6 +40,7 @@ export interface KafkaConsumerGroupInventory {
 }
 
 export interface KafkaConsumptionObserver {
+  onCoverage?(coverage: KafkaReadCoverage): void;
   onComplete(): void;
   onEmpty(): void;
   onFailure(error: unknown): void;

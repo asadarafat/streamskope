@@ -92,6 +92,39 @@ it("validates an explicit historical interval and converts its offsets before re
       endTimeMs: Date.parse("2026-07-24T14:04:00Z"),
     },
   });
+  const request = {
+    topic: "test",
+    mode: "time-window" as const,
+    maxMessages: 1_000,
+    startTimeMs: Date.parse("2026-07-24T14:03:00Z"),
+    endTimeMs: Date.parse("2026-07-24T14:04:00Z"),
+  };
+  const payload = {
+    request,
+    receivedMessages: 0,
+    droppedMessages: 0,
+    ruleEvaluation: { applicableRules: 0, omittedRules: 0, state: "ready" as const },
+  };
+  act(() =>
+    host.emit({
+      event: "consumption.state",
+      version: HOST_PROTOCOL_VERSION,
+      sequence: 3,
+      payload: { ...payload, state: "fetching" },
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Cancel fetch test" }));
+  expect(host.commands.at(-1)?.command).toBe("messages.stop");
+  act(() =>
+    host.emit({
+      event: "consumption.state",
+      version: HOST_PROTOCOL_VERSION,
+      sequence: 4,
+      payload: { ...payload, state: "stopped" },
+    }),
+  );
+  expect(start).toHaveValue("2026-07-24T16:03:00+02:00");
+  expect(load).toBeEnabled();
   const count = host.commands.length;
   await user.clear(end);
   await pasteText(user, end, "2026-07-24T14:02:00Z");
@@ -102,4 +135,72 @@ it("validates an explicit historical interval and converts its offsets before re
   expect(load).toBeDisabled();
   expect(screen.getByRole("alert")).toHaveTextContent("Z or an explicit UTC offset");
   expect(host.commands).toHaveLength(count);
+});
+
+it("keeps sample filtering explicit and sends a finite broker search with honest partial coverage", async () => {
+  const host = new QueryHost();
+  const user = userEvent.setup();
+  render(<StreamSkopeApp host={host} />);
+  act(() => {
+    host.emit({
+      event: "connection.state",
+      payload: { connectionName: "Local search", state: "connected" },
+      sequence: 1,
+      version: HOST_PROTOCOL_VERSION,
+    });
+    host.emit({
+      event: "topics.changed",
+      payload: { refreshedAt: "2026-07-25T14:00:00.000Z", state: "ready", topics: ["test"] },
+      sequence: 2,
+      version: HOST_PROTOCOL_VERSION,
+    });
+  });
+  await user.click(await screen.findByRole("button", { name: "test" }));
+  await user.click(screen.getByRole("button", { name: "Show message filters" }));
+  const search = screen.getByRole("button", { name: "Search broker" });
+  expect(search).toBeDisabled();
+  expect(screen.getByText(/Filters below apply to the loaded sample/)).toBeVisible();
+  await user.click(screen.getByRole("combobox", { name: "Read mode" }));
+  await user.click(screen.getByRole("option", { name: "First N" }));
+  await pasteText(
+    user,
+    screen.getByRole("textbox", { name: "Value or retained preview contains" }),
+    "needle",
+  );
+  await user.click(search);
+  const request = {
+    topic: "test",
+    mode: "earliest" as const,
+    maxMessages: 1_000,
+    search: { key: "", value: "needle", offset: "", timestamp: "", partition: null },
+  };
+  expect(host.commands.at(-1)).toMatchObject({ command: "messages.start", payload: request });
+  act(() =>
+    host.emit({
+      event: "consumption.state",
+      version: HOST_PROTOCOL_VERSION,
+      sequence: 3,
+      payload: {
+        state: "empty",
+        request,
+        receivedMessages: 0,
+        droppedMessages: 0,
+        ruleEvaluation: { applicableRules: 0, omittedRules: 0, state: "ready" },
+        coverage: {
+          reason: "fetch-limit",
+          scannedRecords: 15,
+          scannedBytes: 45,
+          matchedRecords: 0,
+          unavailableRecords: 0,
+          partitions: [{ partition: 0, startOffset: "0", endOffset: "100", nextOffset: "15" }],
+        },
+      },
+    }),
+  );
+  expect(screen.getByRole("region", { name: "Read coverage" })).toHaveTextContent(
+    "Partial read: fetch budget exhausted. 15 records scanned; 0 matches returned.",
+  );
+  expect(screen.queryByText("The snapshot contains no readable records.")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "Rule matches only" }));
+  expect(search).toBeDisabled();
 });

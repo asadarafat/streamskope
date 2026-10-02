@@ -7,8 +7,9 @@ import {
   type MessagesStream,
 } from "@platformatic/kafka";
 
-import { KAFKA_MESSAGE_LIMITS } from "../contracts";
+import { KAFKA_MESSAGE_LIMITS, KAFKA_QUERY_LIMITS, type KafkaReadCoverage } from "../contracts";
 
+import { KafkaReadTracker } from "./read-coverage";
 import { normalizeKafkaError } from "./failure";
 import { resolveKafkaFetchPlan, type KafkaFetchPlan } from "./fetch-plan";
 import { platformaticClientOptions } from "./platformatic-options";
@@ -97,15 +98,23 @@ function fetchDiagnosticCleanup(
 
 class PlatformaticMessageStream implements KafkaRawMessageStream {
   private closePromise: Promise<void> | undefined;
+  private readonly tracker: KafkaReadTracker | undefined;
 
   constructor(
     private readonly consumer: Consumer<Buffer, Buffer, Buffer, Buffer>,
     private readonly stream: MessagesStream<Buffer, Buffer, Buffer, Buffer> | null,
     private readonly plan: KafkaFetchPlan,
     private readonly cleanupDiagnostics: () => void,
-  ) {}
+  ) {
+    this.tracker = plan.continuous ? undefined : new KafkaReadTracker(plan);
+  }
+
+  coverage(): KafkaReadCoverage | undefined {
+    return this.tracker?.snapshot();
+  }
 
   close(): Promise<void> {
+    this.tracker?.finish("cancelled");
     this.closePromise ??= this.closeResources();
     return this.closePromise;
   }
@@ -113,28 +122,34 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   async *[Symbol.asyncIterator](): AsyncIterator<KafkaRawMessage> {
     let iterationFailure: Error | undefined;
     let cleanupFailure: Error | undefined;
-    let yielded = 0;
+    const deadline = this.plan.continuous
+      ? undefined
+      : setTimeout(() => {
+          this.tracker?.finish("deadline");
+          void this.close().catch(() => undefined); // The finally block observes cleanup failure.
+        }, KAFKA_QUERY_LIMITS.durationMs);
+    deadline?.unref?.();
     try {
-      if (this.stream !== null) {
+      if (this.stream !== null && !this.tracker?.finished) {
         for await (const message of this.stream) {
           const raw = this.toRawMessage(message);
-          if (!this.includes(raw)) {
-            continue;
-          }
-          yield raw;
-          yielded += 1;
-          if (!this.plan.continuous && yielded >= this.plan.maxMessages) {
-            break;
-          }
+          const accepted =
+            this.tracker === undefined ? this.includes(raw) : this.tracker.accept(raw);
+          if (accepted) yield raw;
+          if (this.tracker?.finished) break;
         }
       }
+      this.tracker?.finish("fetch-limit");
     } catch (error) {
+      this.tracker?.finish("failed");
       iterationFailure = normalizeKafkaError(error);
     } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
       if (!this.plan.continuous) {
         try {
           await this.close();
         } catch (error) {
+          this.tracker?.finish("failed");
           cleanupFailure = normalizeKafkaError(error);
         }
       }

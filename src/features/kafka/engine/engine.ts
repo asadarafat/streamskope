@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  type KafkaReadCoverage,
   HostContractValidationError,
   KAFKA_MESSAGE_LIMITS,
   parseKafkaFetchRequest,
@@ -251,6 +252,9 @@ function translateMessage(raw: KafkaRawMessage, expectedTopic: string): KafkaMes
 }
 
 class TranslatedKafkaMessageStream implements KafkaMessageStream {
+  coverage(): KafkaReadCoverage | undefined {
+    return this.rawStream.coverage?.();
+  }
   private closePromise: Promise<void> | undefined;
 
   constructor(

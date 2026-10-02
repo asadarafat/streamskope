@@ -76,7 +76,7 @@ export function consumerGroupStatusLabel(
 export function consumptionStateLabel(state: ConsumptionState): string {
   switch (state) {
     case "complete":
-      return "Snapshot complete";
+      return "Read finished";
     case "fetching":
       return "Fetching snapshot";
     case "loading":

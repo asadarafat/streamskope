@@ -1,3 +1,4 @@
+import { parseKafkaSearchFilter } from "./query-search";
 import { KAFKA_FETCH_LIMITS, KAFKA_FETCH_MODES, type KafkaFetchRequest } from "./types";
 import { HostContractValidationError } from "./validation-error";
 import {
@@ -22,7 +23,13 @@ export function parseKafkaTimestamp(value: unknown, path: string): number {
 export function parseKafkaFetchRequest(value: unknown, path = "fetch"): KafkaFetchRequest {
   const request = record(value, path);
   const mode = declaredValue(request.mode, KAFKA_FETCH_MODES, `${path}.mode`);
+  if (mode === "tail" && request.search !== undefined) {
+    throw new HostContractValidationError(`${path}.search`, "requires a finite read mode");
+  }
   const common = {
+    ...(request.search === undefined
+      ? {}
+      : { search: parseKafkaSearchFilter(request.search, `${path}.search`) }),
     maxMessages: positiveBoundedInteger(
       request.maxMessages,
       `${path}.maxMessages`,
@@ -34,10 +41,10 @@ export function parseKafkaFetchRequest(value: unknown, path = "fetch"): KafkaFet
     throw new HostContractValidationError(`${path}.topic`, "must name a topic");
   }
   if (mode !== "time-window") {
-    exactKeys(request, ["maxMessages", "mode", "topic"], path);
+    exactKeys(request, ["maxMessages", "mode", "topic", "search"], path);
     return { ...common, mode };
   }
-  exactKeys(request, ["endTimeMs", "maxMessages", "mode", "startTimeMs", "topic"], path);
+  exactKeys(request, ["endTimeMs", "maxMessages", "mode", "startTimeMs", "topic", "search"], path);
   const startTimeMs = parseKafkaTimestamp(request.startTimeMs, `${path}.startTimeMs`);
   const endTimeMs = parseKafkaTimestamp(request.endTimeMs, `${path}.endTimeMs`);
   if (startTimeMs >= endTimeMs) {

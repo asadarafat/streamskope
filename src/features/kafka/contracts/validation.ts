@@ -1,3 +1,4 @@
+import { parseKafkaReadCoverage } from "./query-search";
 import { parseKafkaFetchRequest } from "./fetch-validation";
 export { parseKafkaFetchRequest } from "./fetch-validation";
 import { isHostAcknowledgementCommand } from "./host-command-results";
@@ -699,7 +700,15 @@ export function parseHostEvent(value: unknown): HostEvent {
     case "consumption.state": {
       exactKeys(
         payload,
-        ["droppedMessages", "error", "receivedMessages", "request", "ruleEvaluation", "state"],
+        [
+          "coverage",
+          "droppedMessages",
+          "error",
+          "receivedMessages",
+          "request",
+          "ruleEvaluation",
+          "state",
+        ],
         "event.payload",
       );
       const request =
@@ -708,6 +717,9 @@ export function parseHostEvent(value: unknown): HostEvent {
           : parseKafkaFetchRequest(payload.request, "event.payload.request");
       const consumptionPayload = withOptionalError(
         {
+          ...(payload.coverage === undefined
+            ? {}
+            : { coverage: parseKafkaReadCoverage(payload.coverage, "event.payload.coverage") }),
           droppedMessages: nonNegativeInteger(
             payload.droppedMessages,
             "event.payload.droppedMessages",

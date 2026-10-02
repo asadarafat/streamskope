@@ -1,4 +1,4 @@
-import type { KafkaFetchRequest } from "../contracts";
+import { KAFKA_QUERY_LIMITS, type KafkaFetchRequest } from "../contracts";
 
 export const KAFKA_EARLIEST_OFFSET_TIMESTAMP = -2n;
 export const KAFKA_LATEST_OFFSET_TIMESTAMP = -1n;
@@ -25,7 +25,7 @@ interface TopicOffsetBounds {
 }
 
 function assertOffsetBounds(low: readonly bigint[], high: readonly bigint[]): void {
-  if (low.length !== high.length) {
+  if (low.length !== high.length || low.length > KAFKA_QUERY_LIMITS.partitions) {
     throw new Error("Kafka returned inconsistent partition offset maps.");
   }
   for (let partition = 0; partition < low.length; partition += 1) {
@@ -61,22 +61,6 @@ async function loadTopicBounds(
   ]);
   assertOffsetBounds(low, high);
   return { high, low };
-}
-
-function boundedEndOffsets(
-  start: readonly bigint[],
-  high: readonly bigint[],
-  maximum: number,
-): readonly bigint[] {
-  const span = BigInt(maximum);
-  return start.map((offset, partition) => {
-    const highOffset = high[partition];
-    if (highOffset === undefined) {
-      throw new Error(`Kafka returned inconsistent offsets for partition ${partition}.`);
-    }
-    const bounded = offset + span;
-    return bounded < highOffset ? bounded : highOffset;
-  });
 }
 
 function countCandidates(candidates: readonly bigint[], bounds: TopicOffsetBounds): number {
@@ -183,7 +167,7 @@ export async function resolveKafkaFetchPlan(
   if (request.mode === "earliest") {
     return {
       continuous: false,
-      endOffsets: offsetsMap(boundedEndOffsets(bounds.low, bounds.high, request.maxMessages)),
+      endOffsets: offsetsMap(bounds.high),
       maxMessages: request.maxMessages,
       request,
       startOffsets: offsetsMap(bounds.low),
@@ -219,14 +203,21 @@ export async function resolveKafkaFetchPlan(
     });
     return {
       continuous: false,
-      endOffsets: offsetsMap(boundedEndOffsets(start, windowEnd, request.maxMessages)),
+      endOffsets: offsetsMap(windowEnd),
       maxMessages: request.maxMessages,
       request,
       startOffsets: offsetsMap(start),
     };
   }
 
-  const start = await resolveRecentOffsets(lookup, request, bounds, nowMs);
+  const start = await resolveRecentOffsets(
+    lookup,
+    request.search === undefined
+      ? request
+      : { ...request, maxMessages: KAFKA_QUERY_LIMITS.scanRecords },
+    bounds,
+    nowMs,
+  );
   return {
     continuous: request.mode === "tail",
     endOffsets: request.mode === "tail" ? null : offsetsMap(bounds.high),

@@ -1,0 +1,121 @@
+import {
+  KAFKA_MESSAGE_LIMITS,
+  KAFKA_QUERY_LIMITS,
+  matchesKafkaSearchFilter,
+  type KafkaReadCoverage,
+  type KafkaReadReason,
+} from "../contracts";
+
+import type { KafkaFetchPlan } from "./fetch-plan";
+import type { KafkaRawMessage } from "./types";
+
+/** Tracks traversed offsets, not an estimate based on the number of returned matches. */
+export class KafkaReadTracker {
+  private reason: KafkaReadReason = "reading";
+  private scannedRecords = 0;
+  private scannedBytes = 0;
+  private matchedRecords = 0;
+  private unavailableRecords = 0;
+  private readonly next: Map<number, bigint>;
+
+  constructor(private readonly plan: KafkaFetchPlan) {
+    this.next = new Map(plan.startOffsets);
+    this.checkRangeComplete();
+  }
+
+  get finished(): boolean {
+    return this.reason !== "reading";
+  }
+
+  finish(reason: KafkaReadReason): void {
+    if (!this.finished || reason === "failed") this.reason = reason;
+  }
+
+  snapshot(): KafkaReadCoverage {
+    return {
+      reason: this.reason,
+      scannedRecords: this.scannedRecords,
+      scannedBytes: this.scannedBytes,
+      matchedRecords: this.matchedRecords,
+      unavailableRecords: this.unavailableRecords,
+      partitions: [...this.plan.startOffsets].map(([partition, start]) => ({
+        partition,
+        startOffset: String(start),
+        endOffset: String(this.plan.endOffsets?.get(partition) ?? start),
+        nextOffset: String(this.next.get(partition) ?? start),
+      })),
+    };
+  }
+
+  accept(message: KafkaRawMessage): boolean {
+    if (this.finished || message.topic !== this.plan.request.topic) return false;
+    const next = this.next.get(message.partition);
+    const end = this.plan.endOffsets?.get(message.partition);
+    if (next === undefined || end === undefined || message.offset < next) return false;
+    if (message.offset >= end) {
+      this.next.set(message.partition, end);
+      this.checkRangeComplete();
+      return false;
+    }
+    const bytes =
+      (message.key?.byteLength ?? 0) +
+      (message.value?.byteLength ?? 0) +
+      [...message.headers].reduce(
+        (total, [key, value]) => total + key.byteLength + value.byteLength,
+        0,
+      );
+    if (this.scannedBytes + bytes > KAFKA_QUERY_LIMITS.scanBytes) {
+      this.finish("byte-limit");
+      return false;
+    }
+    this.next.set(message.partition, message.offset + 1n);
+    this.scannedRecords += 1;
+    this.scannedBytes += bytes;
+    const request = this.plan.request;
+    const inTime =
+      request.mode !== "time-window" ||
+      (message.timestamp >= BigInt(request.startTimeMs) &&
+        message.timestamp < BigInt(request.endTimeMs));
+    let match = inTime;
+    if (match && request.search !== undefined) {
+      const filter = request.search;
+      // An omitted large field is unknown, never proof that the record did not match.
+      if (
+        (filter.value.trim().length > 0 &&
+          (message.value?.byteLength ?? 0) > KAFKA_MESSAGE_LIMITS.messageBytes) ||
+        (filter.key.trim().length > 0 &&
+          (message.key?.byteLength ?? 0) > KAFKA_MESSAGE_LIMITS.messageBytes)
+      ) {
+        this.unavailableRecords += 1;
+        match = false;
+      } else {
+        match = matchesKafkaSearchFilter(
+          {
+            key: filter.key.trim().length === 0 ? null : (message.key?.toString("utf8") ?? null),
+            payload:
+              filter.value.trim().length === 0 ? null : (message.value?.toString("utf8") ?? null),
+            offset: String(message.offset),
+            partition: message.partition,
+            timestamp: new Date(Number(message.timestamp)).toISOString(),
+          },
+          filter,
+        );
+      }
+    }
+    if (match) this.matchedRecords += 1;
+    this.checkRangeComplete();
+    if (this.matchedRecords >= this.plan.maxMessages) this.finish("result-limit");
+    if (this.scannedRecords >= KAFKA_QUERY_LIMITS.scanRecords) this.finish("scan-limit");
+    return match;
+  }
+
+  private checkRangeComplete(): void {
+    if (
+      this.plan.endOffsets !== null &&
+      [...this.plan.endOffsets].every(
+        ([partition, end]) => (this.next.get(partition) ?? -1n) >= end,
+      )
+    )
+      this.finish("range-complete");
+  }
+}
