@@ -27,6 +27,12 @@ type QueryCommand = Extract<
   { readonly command: "queries.list" | "queries.put" | "queries.delete" }
 >;
 
+import { QueryTransferControls } from "./QueryTransferControls";
+import {
+  browserTextDocumentTransfer,
+  type TextDocumentTransferPort,
+} from "./text-document-transfer";
+
 export function SavedQueriesDialog({
   host,
   profiles,
@@ -35,6 +41,8 @@ export function SavedQueriesDialog({
   captureCurrent,
   onRestore,
   onClose,
+  transfer = browserTextDocumentTransfer,
+  initialImport,
 }: {
   readonly host: StreamSkopeHost;
   readonly profiles: readonly ProfileSummary[];
@@ -43,6 +51,8 @@ export function SavedQueriesDialog({
   readonly captureCurrent: () => KafkaInvestigationQuery;
   readonly onRestore: (query: KafkaInvestigationQuery, profileId: string | undefined) => void;
   readonly onClose: () => void;
+  readonly transfer?: TextDocumentTransferPort | undefined;
+  readonly initialImport?: string | undefined;
 }): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<KafkaQueryLibrarySnapshot>();
   const [selectedId, setSelectedId] = useState("");
@@ -285,6 +295,14 @@ export function SavedQueriesDialog({
               Stop the current read before opening another query.
             </Typography>
           ) : null}
+          <QueryTransferControls
+            transfer={transfer}
+            captureExport={() => selected?.configuration ?? captureCurrent()}
+            profiles={profiles}
+            readActive={readActive}
+            onRestore={onRestore}
+            initialImport={initialImport}
+          />
         </Stack>
       </DialogContent>
       <DialogActions>

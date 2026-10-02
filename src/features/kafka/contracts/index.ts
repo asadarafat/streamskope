@@ -512,3 +512,9 @@ export {
   parseKafkaQueryLibrarySnapshot,
 } from "./query-library";
 export type { KafkaSavedQuery, KafkaQueryLibrarySnapshot } from "./query-library";
+export {
+  KAFKA_QUERY_TRANSFER_LIMITS,
+  serializeKafkaQuery,
+  createKafkaQueryLink,
+  parseKafkaQueryTransfer,
+} from "./query-transfer";
