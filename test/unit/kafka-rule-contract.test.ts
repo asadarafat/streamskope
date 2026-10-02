@@ -47,6 +47,7 @@ describe("Kafka rule contract", () => {
     expect(KAFKA_RULE_STORE_DURABILITIES).toEqual(["durable", "session"]);
     expect(KAFKA_RULE_STORE_STATES).toEqual(["ready", "unavailable"]);
     expect(KAFKA_RULE_LIMITS).toEqual({
+      evaluationWork: 250_000,
       conditions: 64,
       cooldownMs: 86_400_000,
       descriptionCharacters: 2_048,
