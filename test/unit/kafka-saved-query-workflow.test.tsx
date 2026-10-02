@@ -111,7 +111,7 @@ it("saves, reopens and deletes query settings without starting a read or keeping
       sequence: 3,
       payload: {
         state: "empty",
-      request: { mode: "newest", topic: "orders", maxMessages: 1_000 },
+        request: { mode: "newest", topic: "orders", maxMessages: 1_000 },
         droppedMessages: 0,
         receivedMessages: 0,
         ruleEvaluation: { applicableRules: 0, omittedRules: 0, state: "ready" },
