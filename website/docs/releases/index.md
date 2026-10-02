@@ -35,12 +35,28 @@ event cannot replace the site with an old checkout. Plugin and signed EDA cluste
 publication are independent.
 
 Maintainers review unversioned notes, then start **Actions → Release → Run workflow**
-from `main`, select **desktop** and enter its version. CI qualifies the source,
-stamps a build checkout and creates the tagged draft; review it before publishing.
+from `main`, select **desktop**, **eda** or **nsp** and enter its version. CI collects
+the component's merged PRs up to that exact source commit, qualifies the source,
+stamps a build checkout and creates a tagged draft; review it before publishing.
 PR and `main` checks only qualify source. Tags are release output, not triggers.
-After publication, archive the notes under the exact new tag and retain historical
-notes. Review the [compatibility matrix](../start/compatibility.md) and
-[qualification record](../guide/qualification.md). After publishing, update the
-documented download release and remove the applicable unreleased notices through
-a reviewed PR. Record qualification only after inspecting evidence for the exact
-source and environment.
+
+The changelog starts after the nearest ancestral published release of that same
+component. Stable releases compare against a stable release, including changes
+from intervening release candidates. With no eligible baseline, the draft explicitly
+covers the full history. Component labels select relevant PRs; without labels,
+files clearly owned by a plugin select that plugin, and other paths count as shared.
+The [contributor guide](https://github.com/asadarafat/streamskope/blob/main/CONTRIBUTING.md#release-notes)
+defines the mapping. The draft records its comparison
+range and accompanies the generated changes with reviewed highlights, compatibility,
+upgrade instructions, limitations and actual qualification links. Its workflow
+artifacts retain the PR selection evidence for review.
+
+After publication, the **published GitHub release body** is the authoritative record.
+Archive that exact body, including draft-review edits, under the release's tag in
+this section through a documentation PR. Add page metadata and navigation, retain
+historical notes and reset only that component's shipped unreleased commentary.
+For a desktop release, update the documented downloads and applicable unreleased
+notices in the same PR. Review the [compatibility matrix](../start/compatibility.md)
+and [qualification record](../guide/qualification.md). Record qualification only
+after inspecting evidence for the exact source and environment; publishing a
+release does not qualify an unexecuted live test.

@@ -31,6 +31,9 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
     timeout-minutes: 5
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
@@ -49,6 +52,7 @@ jobs:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 24.12.0
@@ -72,6 +76,18 @@ jobs:
             if (response.status !== 404) throw new Error(`Cannot establish whether ${RELEASE_TAG} is unused: GitHub returned HTTP ${response.status}.`);
           }
           NODE
+      - name: Collect changes for the selected component and source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-changelog"
+          node --import tsx tools/package/release-changelog.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" "$RUNNER_TEMP/release-changelog/changelog.md"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-changelog
+          path: ${{ runner.temp }}/release-changelog/*
+          if-no-files-found: error
+          retention-days: 30
 
   checks:
     needs: prepare
@@ -190,8 +206,23 @@ jobs:
           pattern: desktop-*-*
           merge-multiple: true
           path: dist/installers
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-changelog
+          path: ${{ runner.temp }}/release-changelog
       - name: Assemble checksums and reviewed release notes
-        run: npm run package -- release dist/installers "$RELEASE_VERSION" "$GITHUB_SHA" "website/docs/releases/$RELEASE_TAG.md" "$RUNNER_TEMP/notes.md" "$RELEASE_TAG"
+        run: npm run package -- release dist/installers "$RELEASE_VERSION" "$GITHUB_SHA" "website/docs/releases/$RELEASE_TAG.md" "$RUNNER_TEMP/notes.md" "$RELEASE_TAG" "$RUNNER_TEMP/release-changelog/changelog.md"
+      - name: Link executed release qualification
+        run: |
+          printf '\n## Build evidence\n\n[Release checks and native packaging](%s/%s/actions/runs/%s) passed for `%s`. Live EDA/NSP qualification is recorded separately; this run does not establish it.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_SHA" >> "$RUNNER_TEMP/notes.md"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: desktop-release-notes
+          path: |
+            ${{ runner.temp }}/notes.md
+            ${{ runner.temp }}/release-changelog/changelog.md.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Reserve the tag and create a draft for maintainer review
         env:
           GH_TOKEN: ${{ github.token }}
@@ -214,40 +245,39 @@ jobs:
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: desktop-plugins
           path: dist/plugin-package
-      - name: Prepare plugin installation notes
-        id: plugin
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-changelog
+          path: ${{ runner.temp }}/release-changelog
+      - name: Assemble reviewed plugin notes and generated changes
+        run: node --import tsx tools/package/release.ts plugin dist/plugin-package "$RELEASE_COMPONENT" "$RELEASE_VERSION" "$GITHUB_SHA" "plugins/$RELEASE_COMPONENT/RELEASE_NOTES.md" "$RUNNER_TEMP/release-changelog/changelog.md" "$RUNNER_TEMP/plugin-notes.md"
+      - name: Link executed plugin qualification
         run: |
-          node --input-type=module <<'NODE'
-          import { appendFile, readFile, readdir, writeFile } from 'node:fs/promises';
-          import { join } from 'node:path';
-          const directory = 'dist/plugin-package';
-          const manifests = (await readdir(directory)).filter(name => name.endsWith('-plugin.json'));
-          if (manifests.length !== 1) throw new Error('A plugin release must contain exactly one plugin.');
-          const manifest = JSON.parse(await readFile(join(directory, manifests[0]), 'utf8'));
-          if (manifest.id !== `streamskope.${process.env.RELEASE_COMPONENT}` || manifest.version !== process.env.RELEASE_VERSION) {
-            throw new Error('Packaged plugin does not match the requested release.');
-          }
-          const notes = [
-            `${manifest.name} desktop plugin ${manifest.version}.`,
-            `Install from StreamSkope Preferences > Plugins; activation is immediate. Requires plugin API ${manifest.apiVersion}.`,
-            `Requires StreamSkope >=${manifest.compatibility.streamskope.minimum} and <${manifest.compatibility.streamskope.maximumExclusive}, with plugin API ${manifest.apiVersion}.`,
-            `Supports ${manifest.compatibility.target.system.toUpperCase()} ${manifest.compatibility.target.minimum} through ${manifest.compatibility.target.maximum} (inclusive).`,
-            ...(manifest.compatibility.target.system === 'eda' ? ['The EDA cluster application is installed separately through the capture workflow.'] : []),
-            ...(manifest.resources ?? []).map(resource => `Included resource: ${resource.path} (SHA256 ${resource.sha256}). The identical resource is available as a separate download.`),
-            `Source commit: ${process.env.GITHUB_SHA}.`,
-          ].join('\n\n');
-          await writeFile(join(process.env.RUNNER_TEMP, 'plugin-notes.md'), `${notes}\n`);
-          await appendFile(process.env.GITHUB_OUTPUT, `title=${manifest.name} ${manifest.version}\n`);
-          NODE
+          printf '\n## Build evidence\n\n[Release checks and plugin packaging](%s/%s/actions/runs/%s) passed for `%s`. Live EDA/NSP qualification is recorded separately; this run does not establish it.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_SHA" >> "$RUNNER_TEMP/plugin-notes.md"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: plugin-release-notes
+          path: |
+            ${{ runner.temp }}/plugin-notes.md
+            ${{ runner.temp }}/release-changelog/changelog.md.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Reserve the tag and create a plugin draft
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PLUGIN_TITLE: ${{ steps.plugin.outputs.title }}
+          PLUGIN_TITLE: ${{ inputs.component == 'eda' && 'EDA Capture' || 'NSP Capture' }} ${{ needs.prepare.outputs.version }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
