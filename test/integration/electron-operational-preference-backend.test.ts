@@ -171,14 +171,20 @@ describe("Electron operational-preference backend composition", () => {
       ok: true,
       result: {
         snapshot: {
-          preferences: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+          preferences: {
+            ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+            protection: { readOnly: true, maskKey: true, maskHeaders: [], valuePaths: [""] },
+          },
           store: { durability: "durable", state: "ready" },
         },
       },
     });
     await expect(readFile(neighboringRulePath, "utf8")).resolves.toBe("operator-owned-rule-bytes");
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
-      preferences: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+      preferences: {
+        ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+        protection: { readOnly: true, maskKey: true, maskHeaders: [], valuePaths: [""] },
+      },
       version: 1,
     });
     await backend.shutdown();

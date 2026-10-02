@@ -17,6 +17,7 @@ function changedPreferences(
   overrides: Partial<KafkaOperationalPreferences> = {},
 ): KafkaOperationalPreferences {
   return {
+    protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
     fetch: { maxMessages: 100, mode: "newest" },
     latency: {
       acknowledgements: -1,
@@ -255,11 +256,15 @@ describe("Kafka operational-preference application", () => {
     );
 
     store.loadFailure = undefined;
+    const recovered = {
+      ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+      protection: { readOnly: true, maskKey: true, maskHeaders: [], valuePaths: [""] },
+    };
     await expect(service.reset()).resolves.toEqual({
-      preferences: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+      preferences: recovered,
       store: { durability: "durable", state: "ready" },
     });
-    expect(store.commits).toEqual([KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS]);
+    expect(store.commits).toEqual([recovered]);
   });
 
   it("defensively isolates a structurally invalid loaded preference document", async () => {

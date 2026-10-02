@@ -110,3 +110,30 @@ account for the cluster's network controls and trusted workloads. Keep EDA TLS
 verification enabled. The plugin has no custom-CA upload; review the
 [supported API trust and private-CA limitation](tls-trust.md#eda-and-nsp-api-certificates)
 before approving an endpoint. Broker-profile trust does not configure the EDA API.
+
+## Host read-only mode
+
+Disconnect Kafka and finish any active plugin capture or cleanup, then enable
+**Preferences → Protection → Read-only mode**. The status bar shows **Read-only**.
+The host rejects remote mutations before dispatch, including direct host commands:
+Kafka configuration and ACL writes, Schema Registry registration and deletion,
+transform deletion, latency probes, remote credential acquisition, and plugin
+actions or installation/removal. New commands must declare their access category.
+
+Ordinary Kafka connections, bounded message reads, metadata and validation requests
+remain available. Managed plugin profiles require lifecycle hooks, so connecting
+or testing them is blocked in this mode. Use an ordinary saved Kafka profile with
+credentials that the broker restricts to reading, or deliberately disable the mode
+before managing a capture. Plugin state changes and remote cleanup also require
+leaving read-only mode; finish them before enabling it.
+
+This is an operator safeguard, not role-based authorization. A local user can
+change it, and trusted installed plugin code is not sandboxed. Broker and Registry
+permissions remain the final enforcement boundary. There is no general-purpose
+CLI in this release; any future host command must use the same access policy.
+
+Workbench preference reset preserves protection settings. If preferences cannot
+be read, remote operations fail closed. Restore the file or explicitly reset while
+disconnected; recovery enables read-only and masks keys and values. Review header
+masking before reconnecting. Browser-development preferences last only for the host
+process; desktop preferences persist in application storage.

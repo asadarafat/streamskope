@@ -1,4 +1,5 @@
 import type {
+  KafkaMessage,
   KafkaReadCoverage,
   HostErrorCode,
   HostErrorStage,
@@ -132,6 +133,7 @@ export interface KafkaEngineFailureOptions {
 }
 
 export interface StreamSkopeKafkaEngineOptions {
+  readonly protectRecord?: (message: KafkaMessage) => KafkaMessage;
   readonly adminFactory?: KafkaAdminFactory;
   readonly consumerFactory?: KafkaConsumerFactory;
   readonly latencyProbe?: KafkaLatencyProbePort;

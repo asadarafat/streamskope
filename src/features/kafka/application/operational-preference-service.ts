@@ -40,6 +40,9 @@ function immutablePreferences(
   preferences: KafkaOperationalPreferences,
 ): KafkaOperationalPreferences {
   const clone = cloneKafkaOperationalPreferences(preferences);
+  Object.freeze(clone.protection.maskHeaders);
+  Object.freeze(clone.protection.valuePaths);
+  Object.freeze(clone.protection);
   Object.freeze(clone.fetch);
   Object.freeze(clone.latency);
   Object.freeze(clone.rules);
@@ -62,6 +65,7 @@ function mergePreferences(
   patch: KafkaOperationalPreferencePatch,
 ): KafkaOperationalPreferences {
   return {
+    protection: patch.protection ?? current.protection,
     fetch: { ...current.fetch, ...patch.fetch },
     latency: { ...current.latency, ...patch.latency },
     rules: { ...current.rules, ...patch.rules },
@@ -140,7 +144,13 @@ export class KafkaOperationalPreferenceService {
   private async completeReset(signal?: AbortSignal): Promise<KafkaOperationalPreferenceSnapshot> {
     await this.ensureLoaded(signal);
     return this.commit(
-      cloneKafkaOperationalPreferences(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS),
+      {
+        ...cloneKafkaOperationalPreferences(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS),
+        protection:
+          this.capability().state === "unavailable"
+            ? { readOnly: true, maskKey: true, maskHeaders: [], valuePaths: [""] }
+            : this.preferences.protection,
+      },
       signal,
     );
   }

@@ -27,6 +27,7 @@ const durableStore = {
 } as const;
 
 const changedPreferences = {
+  protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
   fetch: {
     maxMessages: 500,
     mode: "newest",
@@ -72,6 +73,7 @@ describe("Kafka operational-preference contract", () => {
       runbookCharacters: 2_048,
     });
     expect(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS).toEqual({
+      protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
       fetch: { maxMessages: 1_000, mode: "tail" },
       latency: {
         acknowledgements: 1,
@@ -116,6 +118,7 @@ describe("Kafka operational-preference contract", () => {
         id: "preferences-update",
         payload: {
           patch: {
+            protection: changedPreferences.protection,
             fetch: changedPreferences.fetch,
             latency: changedPreferences.latency,
             rules: changedPreferences.rules,

@@ -1,6 +1,8 @@
 import { KAFKA_LATENCY_ACKNOWLEDGEMENTS } from "./latency-types";
 import {
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+  KAFKA_RECORD_PROTECTION_DEFAULTS,
+  type KafkaRecordProtection,
   KAFKA_OPERATIONAL_PREFERENCE_LIMITS,
   KAFKA_OPERATIONAL_PREFERENCE_LOG_LEVELS,
   KAFKA_OPERATIONAL_PREFERENCE_STORE_DURABILITIES,
@@ -26,6 +28,46 @@ import {
   truth,
   type UnknownRecord,
 } from "./validation-primitives";
+
+export function parseKafkaRecordProtection(
+  value: unknown,
+  path = "protection",
+): KafkaRecordProtection {
+  const input = record(value, path);
+  exactKeys(input, ["readOnly", "maskKey", "maskHeaders", "valuePaths"], path);
+  function strings(value: unknown, field: string): string[] {
+    if (!Array.isArray(value) || value.length > 32)
+      throw new HostContractValidationError(`${path}.${field}`, "must contain at most 32 entries");
+    const entries = value.map((item: unknown) => {
+      if (typeof item !== "string" || item.length > 512)
+        throw new HostContractValidationError(
+          `${path}.${field}`,
+          "must contain strings of at most 512 characters",
+        );
+      return item;
+    });
+    if (new Set(entries).size !== entries.length)
+      throw new HostContractValidationError(`${path}.${field}`, "must not repeat an entry");
+    return entries;
+  }
+  const valuePaths = strings(input.valuePaths, "valuePaths");
+  for (const pointer of valuePaths) {
+    if (
+      pointer !== "" &&
+      (!pointer.startsWith("/") || /~(?![01])/u.test(pointer) || pointer.split("/").length > 17)
+    )
+      throw new HostContractValidationError(
+        `${path}.valuePaths`,
+        "use JSON Pointers with at most 16 segments; empty masks the entire value",
+      );
+  }
+  return {
+    readOnly: truth(input.readOnly, `${path}.readOnly`),
+    maskKey: truth(input.maskKey, `${path}.maskKey`),
+    maskHeaders: strings(input.maskHeaders, "maskHeaders"),
+    valuePaths,
+  };
+}
 
 function boundedInteger(
   value: unknown,
@@ -150,8 +192,12 @@ export function parseKafkaOperationalPreferences(
   path = "preferences",
 ): KafkaOperationalPreferences {
   const preferences = record(value, path);
-  exactKeys(preferences, ["fetch", "latency", "rules", "stream"], path);
+  exactKeys(preferences, ["fetch", "latency", "rules", "stream", "protection"], path);
   return {
+    protection:
+      preferences.protection === undefined
+        ? { ...KAFKA_RECORD_PROTECTION_DEFAULTS, maskHeaders: [], valuePaths: [] }
+        : parseKafkaRecordProtection(preferences.protection, `${path}.protection`),
     fetch: parseFetchPreferences(preferences.fetch, `${path}.fetch`),
     latency: parseLatencyPreferences(preferences.latency, `${path}.latency`),
     rules: parseRulePreferences(preferences.rules, `${path}.rules`),
@@ -312,11 +358,14 @@ export function parseKafkaOperationalPreferencePatch(
   path = "preferences.patch",
 ): KafkaOperationalPreferencePatch {
   const patch = record(value, path);
-  exactKeys(patch, ["fetch", "latency", "rules", "stream"], path);
+  exactKeys(patch, ["fetch", "latency", "rules", "stream", "protection"], path);
   if (Object.keys(patch).length === 0) {
     throw new HostContractValidationError(path, "must change at least one preference group");
   }
   return {
+    ...(Object.hasOwn(patch, "protection")
+      ? { protection: parseKafkaRecordProtection(patch.protection, `${path}.protection`) }
+      : {}),
     ...(Object.hasOwn(patch, "fetch")
       ? { fetch: parseFetchPatch(patch.fetch, `${path}.fetch`) }
       : {}),

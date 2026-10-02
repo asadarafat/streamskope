@@ -107,3 +107,34 @@ Review raw logs and screenshots even when application secrets are redacted; topi
 names, hostnames and message content can still be sensitive. Exclude credentials,
 tokens, trust material, private payloads and full app-data directories from public
 issues. See [Troubleshooting](troubleshooting.md#share-useful-evidence).
+
+## Mask records before they reach the workbench
+
+Disconnect Kafka, then open **Preferences → Protection**. Finish active plugin
+capture and cleanup work before saving. Protection settings apply to every
+connection on this host and use the same storage as workbench preferences.
+
+| Control                   | Result                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mask record keys          | Replaces non-null keys with `[MASKED]`.                                                                                                                          |
+| Header names to mask      | Replaces exact, case-sensitive names, including duplicate occurrences.                                                                                           |
+| JSON value paths          | Replaces the selected fields using JSON Pointer, such as `/customer/email` or `/items/0/token`. Escape `/` as `~1` and `~` as `~0`; wildcards are not supported. |
+| Mask entire record values | Replaces each non-null value. Tombstones remain null.                                                                                                            |
+
+There can be at most 32 header names and 32 value paths, each at most 512
+characters, with at most 16 path segments. Invalid or duplicate rules are rejected.
+When JSON paths are configured, non-JSON and incomplete values are fully masked;
+they never fall back to a raw preview. A path that is absent from valid JSON does
+not change that document.
+
+Masking runs in the application host before records reach the table, inspector,
+local filters, live rules, copy or export. This includes reads through connections
+created by EDA and NSP plugins. All original-byte envelopes are withheld while any
+masking is active. Broker-side search is unavailable with masking; use bounded
+reads and local filters instead. Topic names, offsets, timestamps and record sizes
+remain visible. The status bar shows **Masking active**.
+
+Saving protection clears retained records and transform logs. It cannot recall
+previous exports, clipboard contents or data already copied into another program.
+Masking is a disclosure aid controlled by the local operator, not encryption or a
+sandbox for installed plugins. The plugins are trusted application code.

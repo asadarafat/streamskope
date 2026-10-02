@@ -19,6 +19,7 @@ import {
 
 function preferences(): KafkaOperationalPreferences {
   return {
+    protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
     fetch: { maxMessages: 100, mode: "newest" },
     latency: {
       acknowledgements: 1,
@@ -158,7 +159,7 @@ describe("Kafka operational-preference stream tuning", () => {
     await facade.execute(command("messages.stop", "stop-second"));
   });
 
-  it("labels factory tuning as fallback when preference storage is unavailable", async () => {
+  it("blocks consumption when protection storage is unavailable", async () => {
     const stream = new ControlledMessageStream();
     const activeConnection = new RecordingActiveConnection();
     activeConnection.messageStreamOperations.push(() => Promise.resolve(stream));
@@ -183,20 +184,12 @@ describe("Kafka operational-preference stream tuning", () => {
       events.push(event);
     });
 
-    await facade.execute(command("connection.connect", "connect"));
-    await facade.execute(command("messages.start", "fallback-operation"));
-
-    expect(events.filter((event) => event.event === "streamMetrics.changed").at(-1)).toMatchObject({
-      payload: {
-        delivery: {
-          batchSize: 200,
-          historySamples: 50,
-          intervalMs: 20,
-          tuningSource: "factory-fallback",
-        },
-        queue: { capacityMessages: 1_000 },
-      },
-    });
+    const connected = await facade.execute(command("connection.connect", "connect"));
+    const started = await facade.execute(command("messages.start", "fallback-operation"));
+    expect(connected).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });
+    expect(started).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });
+    expect(events.filter((event) => event.event === "streamMetrics.changed")).toHaveLength(0);
+    expect(activeConnection.messageStreamOperations).toHaveLength(1);
     await facade.execute(command("messages.stop", "stop"));
     await settleAsyncIteration();
   });

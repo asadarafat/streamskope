@@ -2,8 +2,15 @@ import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
 import { Admin, Producer, type BaseOptions } from "@platformatic/kafka";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import {
+  HOST_PROTOCOL_VERSION,
+  KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+  parseHostEvent,
+} from "../../src/features/kafka/contracts";
+import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
+import { InMemoryKafkaOperationalPreferenceStore } from "../../src/features/kafka/application/in-memory-operational-preference-store";
 import type {
   KafkaFetchRequest,
   KafkaMessage,
@@ -112,6 +119,106 @@ async function openAndCollect(
 }
 
 describe("real StreamSkope Kafka engine", () => {
+  it("masks real Kafka records at the host boundary and blocks direct writes", async () => {
+    const config = await loadFixtureConfig();
+    const fixture = await loadFixtureConnection();
+    const options = await fixtureClientOptions(fixture, config);
+    const topic = `streamskope-protection-${randomUUID()}`;
+    const admin = new Admin(options);
+    const producer = new Producer<Buffer, Buffer, Buffer, Buffer>({
+      ...options,
+      autocreateTopics: false,
+    });
+    const preferences = new InMemoryKafkaOperationalPreferenceStore(
+      { durability: "session", state: "ready" },
+      {
+        ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+        protection: {
+          readOnly: true,
+          maskKey: true,
+          maskHeaders: ["token"],
+          valuePaths: ["/secret"],
+        },
+      },
+    );
+    const backend = createKafkaBackend(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      preferences,
+    );
+    const records: KafkaMessage[] = [];
+    backend.subscribe((event) => {
+      const parsed = parseHostEvent(event);
+      if (parsed.event === "messages.batch") records.push(...parsed.payload.messages);
+    });
+    let created = false;
+    try {
+      await admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
+      created = true;
+      await producer.send({
+        messages: [
+          {
+            topic,
+            partition: 0,
+            key: Buffer.from("hidden-key"),
+            value: Buffer.from('{"secret":"hidden-value","visible":1}'),
+            headers: new Map([[Buffer.from("token"), Buffer.from("hidden-header")]]),
+          },
+        ],
+      });
+      expect(
+        await backend.execute({
+          command: "connection.connect",
+          id: "connect-protected",
+          payload: await secureConnectionInput(fixture, config),
+          version: HOST_PROTOCOL_VERSION,
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        await backend.execute({
+          command: "messages.start",
+          id: "read-protected",
+          payload: { mode: "earliest", topic, maxMessages: 1 },
+          version: HOST_PROTOCOL_VERSION,
+        }),
+      ).toMatchObject({ ok: true });
+      await vi.waitFor(() => expect(records).toHaveLength(1), { timeout: 10_000 });
+      expect(records[0]).toMatchObject({
+        key: "[MASKED]",
+        payload: '{"secret":"[MASKED]","visible":1}',
+        headers: { token: "[MASKED]" },
+        original: { state: "unavailable", reason: "masked" },
+      });
+      expect(JSON.stringify(records)).not.toContain("hidden-");
+      expect(
+        await backend.execute({
+          command: "schemas.delete",
+          id: "blocked-write",
+          payload: {
+            target: { kind: "subject", subject: "never-dispatched" },
+            mode: "soft",
+            confirmation: "never-dispatched",
+          },
+          version: HOST_PROTOCOL_VERSION,
+        }),
+      ).toMatchObject({
+        ok: false,
+        error: { code: "AUTHORIZATION_DENIED", summary: "Read-only mode blocks this operation." },
+      });
+    } finally {
+      await backend.shutdown();
+      await producer.close();
+      try {
+        if (created) await admin.deleteTopics({ topics: [topic] });
+      } finally {
+        await admin.close();
+      }
+    }
+  }, 30_000);
+
   it("retains binary bytes, tombstones, empty values and ordered duplicate/null headers from Kafka", async () => {
     const config = await loadFixtureConfig();
     const fixture = await loadFixtureConnection();

@@ -28,6 +28,7 @@ function preferencePath(userData: string): string {
 
 function changedPreferences(): KafkaOperationalPreferences {
   return {
+    protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
     fetch: { maxMessages: 100, mode: "newest" },
     latency: {
       acknowledgements: -1,

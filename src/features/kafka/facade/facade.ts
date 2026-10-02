@@ -26,6 +26,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { KafkaCommandProtection } from "./command-protection";
 import { executeQueryCommand } from "./query-facade";
 import { ConsumptionFacadeController } from "./consumption-facade";
 import type { KafkaBackendFacadeOptions } from "./types";
@@ -92,6 +93,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly now;
   private readonly queries: KafkaQueryLibrary;
   private readonly preferences: KafkaOperationalPreferenceService;
+  private readonly protection: KafkaCommandProtection;
+  private authorizationIntent = 0;
   private sequence = 0;
   private shutdownPromise: Promise<void> | undefined;
   private readonly trustAcquisitions: KafkaTrustAcquisitionServicePort | undefined;
@@ -126,6 +129,26 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
           state: "ready",
         }),
       );
+    this.protection = new KafkaCommandProtection({
+      preferences: this.preferences,
+      disconnected: (): boolean =>
+        ["disconnected", "failed"].includes(this.session.snapshot().state),
+      pendingPluginWork: (): Promise<boolean> => this.plugins.hasPendingWork(),
+      managedProfile: async (command): Promise<boolean> => {
+        if (command.command === "profiles.test" && command.payload.mode === "create")
+          return command.payload.profile.source !== undefined;
+        const profileId = "profileId" in command.payload ? command.payload.profileId : undefined;
+        const snapshot = await this.profiles.list();
+        return snapshot.profiles.find((entry) => entry.id === profileId)?.source !== undefined;
+      },
+      rejected: (command, error): void =>
+        this.recordFailureActivity(
+          "Record protection",
+          command.command,
+          error.correlationId,
+          `${error.summary} ${error.recovery}`,
+        ),
+    });
     const publish = this.publish.bind(this);
     const nextSequence = this.nextSequence.bind(this);
     this.clusterServices = new ClusterServiceFacadeController({
@@ -144,6 +167,16 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       nextSequence,
       execute: this.execute.bind(this),
       disconnectPluginConnection: this.disconnectPluginConnection.bind(this),
+      assertRemoteWriteAllowed: (): void => {
+        if (this.preferences.currentSnapshot().preferences.protection.readOnly)
+          throw Object.assign(new Error("Read-only mode blocks managed plugin connections."), {
+            code: "AUTHORIZATION_DENIED",
+            stage: "authorization",
+            retryable: false,
+            recovery:
+              "Use an ordinary Kafka profile or deliberately disable read-only before invoking plugin lifecycle hooks.",
+          });
+      },
       recordActivity: this.recordActivity.bind(this),
     });
     this.consumption = new ConsumptionFacadeController({
@@ -173,6 +206,31 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   ): Promise<HostCommandResponse<Command["command"]>>;
   async execute(command: HostCommand): Promise<HostCommandResponse> {
     const correlationId = this.createCorrelationId();
+    if (
+      ["connection.connect", "profiles.connect", "connection.disconnect"].includes(command.command)
+    )
+      this.authorizationIntent += 1;
+    const intent = this.authorizationIntent;
+    return this.protection.execute(command, correlationId, () =>
+      intent === this.authorizationIntent
+        ? this.dispatch(command, correlationId)
+        : Promise.resolve(
+            failureResponse(
+              command,
+              this.translateFailure(new ConnectionAttemptSupersededError(), {
+                activeStateChanged: false,
+                connection: undefined,
+                correlationId,
+              }).error,
+            ),
+          ),
+    );
+  }
+
+  private async dispatch(
+    command: HostCommand,
+    correlationId: string,
+  ): Promise<HostCommandResponse> {
     if (!this.available) {
       return failureResponse(
         command,
