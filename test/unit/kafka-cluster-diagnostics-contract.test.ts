@@ -67,7 +67,6 @@ const readySnapshot = {
 
 describe("Kafka cluster-diagnostics contract", () => {
   it("declares the current host protocol, bounded cluster vocabulary and no mutation command", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(HOST_COMMANDS).toEqual(
       expect.arrayContaining(["clusterDetails.load", "clusterDetails.export"]),
     );

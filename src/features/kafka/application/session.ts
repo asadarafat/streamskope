@@ -535,9 +535,6 @@ export class KafkaApplicationSession {
       const coverage = consumption.stream.coverage?.();
       if (coverage !== undefined) consumption.observer.onCoverage?.(coverage);
     };
-    const progress =
-      consumption.stream.coverage === undefined ? undefined : setInterval(reportCoverage, 250);
-    progress?.unref?.();
     let failure: unknown;
     let completed = false;
     try {
@@ -561,7 +558,6 @@ export class KafkaApplicationSession {
         failure = error;
       }
     } finally {
-      if (progress !== undefined) clearInterval(progress);
       this.clearEmptyTimer(consumption);
       try {
         await this.closeConsumptionStream(consumption);

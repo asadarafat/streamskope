@@ -11,6 +11,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/facade/facade-support.ts",
     "src/features/kafka/engine/engine.ts",
     "src/features/kafka/engine/platformatic-latency.ts",
+    // Finite reads own a deadline that is cleared when iteration ends.
+    "src/features/kafka/engine/platformatic-consumer.ts",
     "src/features/kafka/ui/LatencyWorkspace.tsx",
     "src/features/kafka/ui/OperationalPreferencesDialog.tsx",
     "src/features/kafka/ui/TrustRecipeManager.tsx",

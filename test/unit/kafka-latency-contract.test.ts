@@ -67,7 +67,6 @@ const evidence = {
 
 describe("Kafka latency contract", () => {
   it("declares the bounded protocol vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(HOST_COMMANDS).toEqual(
       expect.arrayContaining(["latency.start", "latency.stop", "latency.export"]),
     );

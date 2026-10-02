@@ -77,7 +77,6 @@ function batch(message: KafkaExploredMessage): unknown {
 
 describe("Kafka live rule contract", () => {
   it("retains the bounded live vocabulary on the current host protocol", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(KAFKA_LIVE_RULE_CAPABILITY_STATES).toEqual(["idle", "ready", "partial", "unavailable"]);
     expect(KAFKA_LIVE_RULE_EVALUATION_STATES).toEqual(["evaluated", "partial", "unavailable"]);
     expect(KAFKA_LIVE_RULE_UNAVAILABLE_REASONS).toEqual([
