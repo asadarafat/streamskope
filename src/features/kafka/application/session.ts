@@ -531,6 +531,10 @@ export class KafkaApplicationSession {
   }
 
   private async pumpConsumption(consumption: ActiveConsumption): Promise<void> {
+    const reportCoverage = (): void => {
+      const coverage = consumption.stream.coverage?.();
+      if (coverage !== undefined) consumption.observer.onCoverage?.(coverage);
+    };
     let failure: unknown;
     let completed = false;
     try {
@@ -562,6 +566,7 @@ export class KafkaApplicationSession {
           failure = error;
         }
       }
+      reportCoverage();
       if (this.isCurrentConsumption(consumption)) {
         this.activeConsumption = undefined;
         if (failure !== undefined) {

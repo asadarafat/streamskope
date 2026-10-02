@@ -3,6 +3,9 @@ import { Box, Drawer, Skeleton, Stack, Typography, useMediaQuery } from "@mui/ma
 
 import {
   KAFKA_FETCH_MODE_LABELS,
+  KAFKA_QUERY_LIMITS,
+  type KafkaReadCoverage,
+  type KafkaSearchFilter,
   type ConsumptionState,
   type HostError,
   type KafkaExploredMessage,
@@ -21,6 +24,7 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import { QueryReadCoverage } from "./QueryReadCoverage";
 import {
   KafkaMessageOperationError,
   KAFKA_MESSAGE_OPERATION_LIMITS,
@@ -51,6 +55,7 @@ const FETCH_MAXIMUM_PRESETS = [10, 100, 500, 1_000] as const;
 export function MessageWorkspace({
   component = "main",
   connectionAvailable,
+  readCoverage = null,
   consumptionError,
   consumptionRequest,
   consumptionState,
@@ -70,6 +75,7 @@ export function MessageWorkspace({
   onPartitionFilterChange,
   onRuleFilterChange,
   onSelectMessage,
+  onSearch,
   onStart,
   onStop,
   onTextFilterChange,
@@ -84,6 +90,8 @@ export function MessageWorkspace({
 }: {
   readonly component?: "main" | "section";
   readonly connectionAvailable: boolean;
+  readonly readCoverage?: KafkaReadCoverage | null;
+  readonly onSearch?: (filter: KafkaSearchFilter) => void;
   readonly consumptionError: HostError | null;
   readonly consumptionRequest: KafkaFetchRequest | null;
   readonly consumptionState: ConsumptionState;
@@ -201,7 +209,7 @@ export function MessageWorkspace({
       emptyDetail =
         consumptionRequest?.mode === "tail"
           ? "The consumer is active. New records will appear here."
-          : "The snapshot contains no readable records.";
+          : "No records were returned. Check read coverage before treating this as an empty range.";
     } else if (consumptionState === "fetching") {
       emptyTitle = "Fetching snapshot";
       emptyDetail = "Reading the requested messages from Kafka.";
@@ -209,8 +217,8 @@ export function MessageWorkspace({
       emptyTitle = "Waiting for messages";
       emptyDetail = "The consumer is active and no records are retained yet.";
     } else if (consumptionState === "complete") {
-      emptyTitle = "Snapshot complete";
-      emptyDetail = "The snapshot completed with no messages to display.";
+      emptyTitle = "Read finished";
+      emptyDetail = "No records were returned. Check read coverage and filters.";
     } else if (consumptionState === "stopped") {
       emptyTitle = "Consumption stopped";
       emptyDetail = "No messages were retained for this topic.";
@@ -435,7 +443,13 @@ export function MessageWorkspace({
         {selectedTopic !== null && fetchMode === "time-window" && timeWindow !== undefined ? (
           <QueryTimeWindowControls {...timeWindow} disabled={active} />
         ) : null}
-        {topicMatches && filterPanelOpen ? (
+        {topicMatches && consumptionRequest?.mode !== "tail" ? (
+          <QueryReadCoverage
+            coverage={readCoverage}
+            search={consumptionRequest?.search !== undefined}
+          />
+        ) : null}
+        {selectedTopic !== null && filterPanelOpen ? (
           <Box
             aria-label="Message filters"
             id="kafka-message-filter-region"
@@ -450,6 +464,12 @@ export function MessageWorkspace({
               py: 1,
             }}
           >
+            <Typography variant="caption" sx={{ gridColumn: "1 / -1" }}>
+              Filters below apply to the loaded sample. Search broker reads beyond that sample using
+              the selected finite read mode and record limit; up to{" "}
+              {KAFKA_QUERY_LIMITS.scanRecords.toLocaleString()} scanned records, 32 MiB or 30
+              seconds.
+            </Typography>
             <TextField
               fullWidth
               label="Timestamp contains"
@@ -529,6 +549,37 @@ export function MessageWorkspace({
                 {`${activeFilterCount.toLocaleString()} active ${
                   activeFilterCount === 1 ? "filter" : "filters"
                 }`}
+              </Typography>
+              {onSearch === undefined ? null : (
+                <Button
+                  disabled={
+                    !connectionAvailable ||
+                    active ||
+                    fetchMode === "tail" ||
+                    filters.activeRuleMatchesOnly ||
+                    (fetchMode === "time-window" && timeWindow?.error !== undefined)
+                  }
+                  onClick={() =>
+                    onSearch({
+                      key: filters.key,
+                      value: filters.value,
+                      offset: filters.offset,
+                      partition: filters.partition,
+                      timestamp: filters.timestamp,
+                    })
+                  }
+                  variant="outlined"
+                  size="small"
+                >
+                  Search broker
+                </Button>
+              )}
+              <Typography variant="caption">
+                {fetchMode === "tail"
+                  ? "Choose First N, Newest N or Time window to search the broker."
+                  : filters.activeRuleMatchesOnly
+                    ? "Turn off Rule matches only to search the broker."
+                    : "The current filter edits do not change a running broker search."}
               </Typography>
               <Button
                 disabled={activeFilterCount === 0}

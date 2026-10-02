@@ -1,5 +1,6 @@
 import type { JsonValue, PluginEvent, PluginSnapshot } from "../../../plugins/contracts";
 
+import type { KafkaReadCoverage, KafkaSearchFilter } from "./query-search";
 import type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 import type {
   ClusterServiceEndpointsInput,
@@ -68,7 +69,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 28 as const;
+export const HOST_PROTOCOL_VERSION = 29 as const;
 
 export const HOST_COMMANDS = [
   "connection.test",
@@ -303,6 +304,7 @@ export type HostErrorStage = (typeof HOST_ERROR_STAGES)[number];
 export type KafkaFetchMode = (typeof KAFKA_FETCH_MODES)[number];
 
 interface KafkaFetchRequestBase {
+  readonly search?: KafkaSearchFilter;
   readonly maxMessages: number;
   readonly topic: string;
 }
@@ -843,6 +845,7 @@ export type HostEvent =
   | (HostEventBase & {
       readonly event: "consumption.state";
       readonly payload: {
+        readonly coverage?: KafkaReadCoverage;
         readonly droppedMessages: number;
         readonly error?: HostError;
         readonly receivedMessages: number;

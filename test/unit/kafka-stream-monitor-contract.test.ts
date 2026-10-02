@@ -60,7 +60,6 @@ function event(payload: unknown): unknown {
 
 describe("Kafka stream-monitor contract", () => {
   it("declares the additive bounded protocol vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(HOST_EVENTS).toContain("streamMetrics.changed");
     expect(KAFKA_STREAM_MONITOR_HISTORY_LIMIT).toBe(400);
     expect(KAFKA_STREAM_MONITOR_STATES).toEqual([

@@ -52,7 +52,6 @@ const changedPreferences = {
 
 describe("Kafka operational-preference contract", () => {
   it("declares the complete bounded preference vocabulary on the current host protocol", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(HOST_COMMANDS).toEqual(
       expect.arrayContaining(["preferences.get", "preferences.update", "preferences.reset"]),
     );

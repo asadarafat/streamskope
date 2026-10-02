@@ -1,4 +1,5 @@
 import {
+  type KafkaReadCoverage,
   HOST_ERROR_CODES,
   HOST_ERROR_STAGES,
   HOST_PROTOCOL_VERSION,
@@ -55,6 +56,7 @@ export interface ActivityInput {
 }
 
 export interface ActiveFacadeConsumption {
+  coverage?: KafkaReadCoverage;
   cancelScheduledFlush: (() => void) | undefined;
   readonly correlationId: string;
   droppedMessages: number;

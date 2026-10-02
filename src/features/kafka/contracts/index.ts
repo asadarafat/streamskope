@@ -486,3 +486,11 @@ export type {
   ProfileBindingDetail,
 } from "./profile-binding";
 export { parseProfileSource } from "./profile-validation";
+
+export {
+  KAFKA_QUERY_LIMITS,
+  matchesKafkaSearchFilter,
+  parseKafkaSearchFilter,
+  parseKafkaReadCoverage,
+} from "./query-search";
+export type { KafkaSearchFilter, KafkaReadCoverage, KafkaReadReason } from "./query-search";

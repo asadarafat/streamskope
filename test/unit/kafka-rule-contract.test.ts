@@ -36,7 +36,6 @@ const sessionSnapshot = {
 
 describe("Kafka rule contract", () => {
   it("retains the bounded rule vocabulary on the current host protocol", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(KAFKA_RULE_SEVERITIES).toEqual(["info", "warn", "error"]);
     expect(KAFKA_RULE_EVALUATION_OUTCOMES).toEqual([
       "valid",

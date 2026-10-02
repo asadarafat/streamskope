@@ -134,6 +134,23 @@ beforeEach(() => {
 });
 
 describe("Platformatic Kafka fetch adapter", () => {
+  it("preserves cancelled coverage and closes an unopened iteration exactly once", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [100n]);
+    const stream = await new PlatformaticConsumerFactory().open(
+      input({ mode: "earliest", topic: "orders", maxMessages: 10 }),
+    );
+    await stream.close();
+    await stream.close();
+    expect(await collect(stream)).toEqual([]);
+    expect(stream.coverage?.()).toMatchObject({
+      reason: "cancelled",
+      scannedRecords: 0,
+      partitions: [{ nextOffset: "0", endOffset: "100" }],
+    });
+    expect(kafkaState.closeCalls).toEqual([true]);
+  });
+
   it("opens a bounded manual First N stream and closes after sparse in-range records", async () => {
     kafkaState.offsets.set("-2", [5n]);
     kafkaState.offsets.set("-1", [10n]);
@@ -148,7 +165,8 @@ describe("Platformatic Kafka fetch adapter", () => {
       }),
     );
 
-    await expect(collect(stream)).resolves.toEqual([5n]);
+    await expect(collect(stream)).resolves.toEqual([5n, 7n]);
+    expect(stream.coverage?.()).toMatchObject({ reason: "result-limit", scannedRecords: 2 });
     expect(kafkaState.consumeCalls).toEqual([
       expect.objectContaining({
         autocommit: false,

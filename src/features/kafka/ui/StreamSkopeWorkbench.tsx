@@ -476,6 +476,10 @@ export function StreamSkopeWorkbench({
         }}
       >
         <MessageWorkspace
+          readCoverage={state.readCoverage}
+          onSearch={(filter) => {
+            if (selectedTopic !== null) void startConsumption(selectedTopic, filter);
+          }}
           component="section"
           connectionAvailable={connected}
           consumptionError={state.consumptionError}

@@ -1,4 +1,5 @@
 import {
+  type KafkaReadCoverage,
   HOST_ACTIVITY_HISTORY_LIMIT,
   KAFKA_MESSAGE_LIMITS,
   KAFKA_RULE_NOTIFICATION_LIMITS,
@@ -60,6 +61,7 @@ export interface KafkaUiState {
   readonly clusterDiagnostics: KafkaClusterDiagnosticsSnapshot;
   readonly consumerGroupDetail: KafkaConsumerGroupDetailSnapshot;
   readonly consumerGroupInventory: KafkaConsumerGroupInventorySnapshot;
+  readonly readCoverage: KafkaReadCoverage | null;
   readonly consumptionError: HostError | null;
   readonly consumptionRequest: KafkaFetchRequest | null;
   readonly consumptionState: ConsumptionState;
@@ -221,6 +223,7 @@ export const initialKafkaUiState: KafkaUiState = {
   clusterDiagnostics: unavailableClusterDiagnostics,
   consumerGroupDetail: unavailableConsumerGroupDetail,
   consumerGroupInventory: unavailableConsumerGroupInventory,
+  readCoverage: null,
   consumptionError: null,
   consumptionRequest: null,
   consumptionState: "unavailable",
@@ -275,7 +278,8 @@ function sameFetchRequest(
   if (
     left.topic !== right.topic ||
     left.mode !== right.mode ||
-    left.maxMessages !== right.maxMessages
+    left.maxMessages !== right.maxMessages ||
+    JSON.stringify(left.search) !== JSON.stringify(right.search)
   ) {
     return false;
   }
@@ -566,6 +570,7 @@ export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): Kaf
       const resetMessages = event.payload.state === "loading";
       return {
         ...sequencedState,
+        readCoverage: event.payload.coverage ?? null,
         consumptionError: event.payload.error ?? null,
         consumptionRequest: event.payload.request,
         consumptionState: event.payload.state,

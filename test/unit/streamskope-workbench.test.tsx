@@ -545,7 +545,7 @@ describe("StreamSkope workbench shell", () => {
         version: HOST_PROTOCOL_VERSION,
       });
     });
-    expect(screen.getByLabelText("Consumption status")).toHaveTextContent("Snapshot complete");
+    expect(screen.getByLabelText("Consumption status")).toHaveTextContent("Read finished");
     expect(fetchMode).not.toHaveAttribute("aria-disabled", "true");
   });
 

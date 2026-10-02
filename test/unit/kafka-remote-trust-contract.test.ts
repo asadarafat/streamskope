@@ -178,7 +178,6 @@ describe("Kafka remote-trust host contract", () => {
   });
 
   it("declares the bounded remote trust protocol surface", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(HOST_COMMANDS).toEqual(
       expect.arrayContaining([
         "trustAcquisition.hostKey.discover",

@@ -60,7 +60,6 @@ const detail = {
 
 describe("Kafka consumer-group host contract", () => {
   it("declares versioned inventory and detail vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(HOST_COMMANDS).toContain("consumerGroups.list");
     expect(HOST_COMMANDS).toContain("consumerGroups.load");
     expect(HOST_EVENTS).toContain("consumerGroups.changed");

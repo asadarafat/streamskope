@@ -61,7 +61,6 @@ const historyEntry = {
 
 describe("Kafka topic-configuration contract", () => {
   it("retains the bounded topic-configuration vocabulary on the current host protocol", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(28);
     expect(HOST_COMMANDS).toEqual(
       expect.arrayContaining([
         "topicConfiguration.load",

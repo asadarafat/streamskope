@@ -130,3 +130,31 @@ To change broker settings, follow [Change topic configuration](topic-configurati
 for preparation, dry-run validation, confirmation and recovery. To measure a
 producer/consumer round trip, use [Run a latency probe](latency.md); it writes
 records to Kafka.
+
+## Search beyond the loaded sample
+
+Message filters immediately narrow the records already retained in the window.
+An empty filtered table does not establish that Kafka has no matches.
+
+1. Open **Filters** and enter key, value, timestamp, offset or partition criteria.
+2. Choose **First N**, **Newest N** or **Time window**. Broker search is finite;
+   stop a tail before starting it. Turn off **Rule matches only**, which depends
+   on the local rule inventory.
+3. Select **Search broker**. The record limit caps returned matches, independently
+   of the scan budget: at most 10,000 records, 32 MiB of record content or 30 seconds.
+   The Kafka fetch budget can end a read earlier. **Cancel fetch** closes the consumer.
+4. Check **Read coverage** and expand **Partition coverage**. Requested offsets
+   are half-open; reached offsets describe actual traversal. A result limit,
+   scan/byte/time limit, exhausted fetch budget, failure or cancellation means a
+   partial read. Large fields that could not be searched are counted separately.
+
+Search uses the current filter values at the moment it starts. Subsequent edits
+only filter the loaded result sample; run the search again to change its broker
+criteria. Text matching is case-insensitive substring matching. Values omitted
+because they exceed the payload limit cannot establish a negative match.
+
+First N searches forward from retained low offsets. Newest N searches a bounded
+recent candidate range, up to 10,000 offsets per partition, with a topic-wide scan
+budget. A time window uses Kafka timestamp lookups and tests each record against
+the selected interval. Reaching those offset ranges does not prove that deleted
+history is available or that records with out-of-order timestamps were included.

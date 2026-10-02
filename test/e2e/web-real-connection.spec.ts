@@ -234,7 +234,7 @@ test.describe("real StreamSkope browser connection", () => {
     await page.getByRole("combobox", { name: "Record limit" }).click();
     await page.getByRole("option", { name: "10", exact: true }).click();
     await page.getByRole("button", { name: `Load messages ${config.topic}` }).click();
-    await expect(page.getByLabel("Consumption status")).toContainText("Snapshot complete", {
+    await expect(page.getByLabel("Consumption status")).toContainText("Read finished", {
       timeout: 10_000,
     });
     await expect(inspector).not.toBeVisible();
@@ -258,16 +258,16 @@ test.describe("real StreamSkope browser connection", () => {
     await page.getByRole("button", { name: `Load messages ${config.topic}` }).click();
     await expect(page.getByLabel("Active fetch request")).toContainText(startTime);
     await expect(page.getByLabel("Active fetch request")).toContainText(endTime);
-    await page.getByRole("button", { name: `Cancel fetch ${config.topic}` }).click();
-    await expect(page.getByLabel("Consumption status")).toContainText("Stopped");
-    await expect(page.getByRole("textbox", { name: "Start time (inclusive)" })).toHaveValue(
-      startTime,
-    );
-    await page.getByRole("button", { name: `Load messages ${config.topic}` }).click();
-    await expect(page.getByLabel("Consumption status")).toContainText("Snapshot complete", {
+    await expect(page.getByLabel("Consumption status")).toContainText("Read finished", {
       timeout: 15_000,
     });
     await expect(messageGrid.getByText(config.seedPayload, { exact: true })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "Read coverage" })).toContainText(
+      "Requested offset ranges reached. 1 record scanned; 1 record returned.",
+    );
+    await expect(page.getByRole("textbox", { name: "Start time (inclusive)" })).toHaveValue(
+      startTime,
+    );
 
     const downloadStarted = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export filtered JSON" }).click();
@@ -720,7 +720,7 @@ test.describe("real StreamSkope browser connection", () => {
     await expect(page.getByRole("combobox", { name: "Read mode" })).toContainText("First N");
     await expect(page.getByRole("combobox", { name: "Record limit" })).toContainText("25");
     await page.getByRole("button", { name: `Load messages ${config.topic}` }).click();
-    await expect(page.getByLabel("Consumption status")).toContainText("Snapshot complete", {
+    await expect(page.getByLabel("Consumption status")).toContainText("Read finished", {
       timeout: 15_000,
     });
     const messageGrid = page.getByRole("grid", { name: "Kafka messages" });
@@ -778,7 +778,7 @@ test.describe("real StreamSkope browser connection", () => {
     expect(notificationBounds!.x).toBeGreaterThanOrEqual(
       navigationBounds!.x + navigationBounds!.width,
     );
-    await expect(page.getByLabel("Consumption status")).toContainText("Snapshot complete", {
+    await expect(page.getByLabel("Consumption status")).toContainText("Read finished", {
       timeout: 15_000,
     });
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

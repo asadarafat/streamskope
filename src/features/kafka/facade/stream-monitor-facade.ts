@@ -208,6 +208,7 @@ export function emitConsumptionState(
   context.publish({
     event: "consumption.state",
     payload: {
+      ...(consumption.coverage === undefined ? {} : { coverage: consumption.coverage }),
       droppedMessages: consumption.droppedMessages,
       ...(error === undefined ? {} : { error }),
       receivedMessages: consumption.receivedMessages,

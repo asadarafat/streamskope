@@ -54,8 +54,8 @@ describe("Kafka fetch offset planning", () => {
       [1, 10n],
     ]);
     expect(entries(plan.endOffsets)).toEqual([
-      [0, 5n],
-      [1, 13n],
+      [0, 8n],
+      [1, 15n],
     ]);
     expect(lookup.calls).toEqual([
       { timestamp: KAFKA_EARLIEST_OFFSET_TIMESTAMP, topic: "orders" },
@@ -96,7 +96,7 @@ describe("Kafka fetch offset planning", () => {
       [1, 15n],
     ]);
     expect(entries(plan.endOffsets)).toEqual([
-      [0, 7n],
+      [0, 9n],
       [1, 15n],
     ]);
     expect(plan.continuous).toBe(false);

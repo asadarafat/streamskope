@@ -6,6 +6,7 @@ import {
   KAFKA_FETCH_LIMITS,
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   parseKafkaInvestigationQuery,
+  type KafkaSearchFilter,
   type KafkaFetchMode,
   type KafkaFetchRequest,
   type StreamSkopeHost,
@@ -59,7 +60,7 @@ interface WorkbenchTopicController {
   readonly setTopicFilter: (value: string) => void;
   readonly setTopicWorkspace: (value: TopicWorkspaceView) => void;
   readonly requestTopics: () => Promise<void>;
-  readonly startConsumption: (topic: string) => Promise<void>;
+  readonly startConsumption: (topic: string, search?: KafkaSearchFilter) => Promise<void>;
   readonly activateTopic: (topic: string) => void;
   readonly stopConsumption: () => Promise<void>;
 }
@@ -191,7 +192,7 @@ export function useWorkbenchTopics(
   ]);
 
   const startConsumption = useCallback(
-    async (topic: string): Promise<void> => {
+    async (topic: string, search?: KafkaSearchFilter): Promise<void> => {
       setMessageRequestError(undefined);
       setSelectedMessageId(null);
       setSelectionNotice(undefined);
@@ -209,7 +210,10 @@ export function useWorkbenchTopics(
                 mode: fetchMode,
                 topic,
               };
-        const query = parseKafkaInvestigationQuery({ schemaVersion: 1, request });
+        const query = parseKafkaInvestigationQuery({
+          schemaVersion: 1,
+          request: { ...request, ...(search === undefined ? {} : { search }) },
+        });
         const response = await host.execute({
           command: "messages.start",
           id: globalThis.crypto.randomUUID(),

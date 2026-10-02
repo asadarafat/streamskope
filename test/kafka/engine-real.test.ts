@@ -294,6 +294,25 @@ describe("real StreamSkope Kafka engine", () => {
       const first = await openAndCollect({ maxMessages: 2, mode: "earliest", topic }, connection);
       expect(first.map((message) => message.payload)).toEqual(["record-1", "record-2"]);
 
+      const searchStream = await connection.openMessageStream(
+        {
+          maxMessages: 2,
+          mode: "earliest",
+          topic,
+          search: { key: "", value: "record-5", offset: "", timestamp: "", partition: null },
+        },
+        new AbortController().signal,
+      );
+      expect((await collectFiniteStream(searchStream)).map((message) => message.payload)).toEqual([
+        "record-5",
+      ]);
+      expect(searchStream.coverage?.()).toMatchObject({
+        reason: "range-complete",
+        scannedRecords: 6,
+        matchedRecords: 1,
+        partitions: [{ partition: 0, startOffset: "0", endOffset: "6", nextOffset: "6" }],
+      });
+
       const newestStream = await connection.openMessageStream(
         { maxMessages: 2, mode: "newest", topic },
         new AbortController().signal,
