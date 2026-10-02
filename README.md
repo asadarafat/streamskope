@@ -1,9 +1,9 @@
 <h1 align="left">
-  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" align="middle" alt="StreamSkope logo">
+  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" align="absmiddle" alt="StreamSkope logo">
   StreamSkope
 </h1>
 
-[![CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
+[![PR CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml?query=event%3Apull_request)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/asadarafat/streamskope)
 
 A desktop workbench for exploring and troubleshooting Kafka.
@@ -18,10 +18,10 @@ one application.
 
 ## Download
 
-The published release is **v0.1.0+build.1** (app version **0.1.0**), available for macOS
-**ARM64**, Windows **x64** and Linux **x64**. Download it from the
-[GitHub release](https://github.com/asadarafat/streamskope/releases/tag/v0.1.0%2Bbuild.1).
-Desktop packages are **unsigned prereleases**. Verify the installer against its release's
+Download StreamSkope for macOS **ARM64**, Windows **x64** or Linux **x64** from
+[GitHub releases](https://github.com/asadarafat/streamskope/releases). Each release
+identifies its version, source revision and automated qualification evidence.
+Desktop packages are **unsigned**. Verify the installer against its release's
 `SHA256SUMS` and follow the [platform installation instructions](website/docs/start/installation.md).
 Kafka is a separate service; the desktop installer does not require Node or Docker.
 The [qualification record](website/docs/guide/qualification.md) links the release's

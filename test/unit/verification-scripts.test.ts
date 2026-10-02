@@ -54,14 +54,14 @@ describe("development commands", () => {
     expect(ci).toContain("npm run check -- --ci");
   });
 
-  it("qualifies automatic changes without assigning a release version or packaging", () => {
+  it("qualifies PRs and release calls without repeating CI on main pushes", () => {
     const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
     const release = readFileSync(
       new URL("../../.github/workflows/release.yml", import.meta.url),
       "utf8",
     );
     expect(ci).toContain("pull_request:");
-    expect(ci).toContain("branches: [main]");
+    expect(ci).not.toMatch(/^ {2}(?:push|workflow_dispatch|schedule):/mu);
     expect(ci).toContain("workflow_call:");
     expect(ci).not.toMatch(/tags:|release-version|npm run package|contents: write/);
     expect(release).toContain("workflow_dispatch:");

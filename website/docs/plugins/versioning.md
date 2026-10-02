@@ -75,8 +75,8 @@ preview desktops can receive them when their declared host requirements match.
 The tags above are release outputs, not triggers. A maintainer selects **desktop**,
 **eda** or **nsp** and enters its version in **Actions → Release → Run workflow**
 from `main`. Release CI qualifies the exact source, assigns the version in a
-disposable build checkout and creates a draft to review and publish. PR and
-`main` checks only qualify source; a merge never assigns a final version.
+disposable build checkout and creates a draft to review and publish. PR checks
+only qualify source; merging to `main` neither repeats CI nor assigns a final version.
 
 Plugins publish independently. A desktop release does not republish them, and a
 plugin release does not rebuild the desktop. The catalog compares versions within

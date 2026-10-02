@@ -52,8 +52,8 @@ preserved.
 Maintainers start **Actions → Release → Run workflow** from `main`, select the
 desktop or an individual plugin, and enter its Semantic Version. Release CI
 qualifies the exact source, assigns the version in a disposable build checkout,
-and creates a tagged draft for review. PR and `main` CI only qualify source;
-merging does not assign a release version. Development source uses `0.0.0-dev`.
+and creates a tagged draft for review. PR CI only qualifies source; merging to
+`main` neither repeats CI nor assigns a release version. Development source uses `0.0.0-dev`.
 New releases use ordinary versions or prereleases; `+build.N` remains historical.
 Each draft includes merged PRs since that component's previous eligible published
 release, grouped by change type. Maintainers review the generated changes together

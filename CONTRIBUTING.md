@@ -207,15 +207,19 @@ handling, restore the direct audit command, and retain the signature regression.
 
 ## GitHub builds
 
-The **CI** workflow runs the required **CI** source/docs check on every PR and push
-to `main`. It uses the shared `check` command with
-`--ci`; release-note labels do not change these checks or allow relaxed modes.
-Configure the repository's branch rules to require the **CI** status before merging.
+The **CI** workflow runs the required **CI** source/docs check on every PR using
+the shared `check` command with `--ci`. It checks GitHub's temporary merge revision.
+Merging to `main` does not repeat the suite. Release-note labels do not change these
+checks or allow relaxed modes; the README badge reports PR runs.
+Keep the repository's branch rules set to require a PR, the **CI** status and an
+up-to-date branch before merging, with no bypass. These protections ensure changes
+are qualified against the current base before they reach `main`.
 
 The separate **Release** workflow is manual. Open **Actions → Release → Run workflow**,
 select branch **main**, choose **desktop**, **eda** or **nsp**, and enter a bare
 Semantic Version such as `0.2.0` or `0.2.0-rc.1`. The version belongs to the
-selected component. CI qualifies the exact selected source before stamping a
+selected component. Release calls the same **CI** workflow to qualify the exact
+selected source again before stamping a
 disposable build checkout. It does not commit a version bump to `main`. Tag pushes
 do not trigger a release.
 
