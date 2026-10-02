@@ -31,6 +31,11 @@ separate requests and can change between reads. Lag does not measure processing 
   <noscript><img src="../assets/consumers.png" alt="Consumer group offsets reported by AIO Kafka" width="2880" height="1800" loading="lazy"></noscript>
 </figure>
 
+An idle **Empty** group may retain offsets. A deleted group disappears from the
+inventory; loading a stale selection can return **Dead** with no offsets or a
+not-found response. Neither result establishes zero lag. Permission failures
+remain errors; StreamSkope does not invent member or offset data.
+
 If no groups appear, check that a consumer has created a group in your cluster
 and that your account has permission to describe it.
 

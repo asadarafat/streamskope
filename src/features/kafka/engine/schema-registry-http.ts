@@ -228,7 +228,14 @@ export class SchemaRegistryHttpAdapter {
         ? `/subjects/${encodeURIComponent(target.subject)}`
         : `/subjects/${encodeURIComponent(target.subject)}/versions/${String(target.version)}`;
     if (input.mode === "permanent") {
-      successful(await this.request(context, signal, "DELETE", `${path}?permanent=false`));
+      const soft = await this.request(context, signal, "DELETE", `${path}?permanent=false`);
+      const alreadyAbsent =
+        soft.status === 404 &&
+        soft.body !== null &&
+        typeof soft.body === "object" &&
+        "error_code" in soft.body &&
+        [40_401, 40_402, 40_404, 40_406].includes(Number(soft.body.error_code));
+      if (!alreadyAbsent) successful(soft);
     }
     const body = successful(
       await this.request(

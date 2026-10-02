@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -85,6 +85,64 @@ describe("cluster service pages", () => {
       command: "acls.delete",
       payload: { acl, confirmation: kafkaAclIdentity(acl) },
     });
+  });
+
+  it("invalidates a compatibility result when the proposed schema or references change", async () => {
+    const host = new PageHost();
+    const user = userEvent.setup();
+    const inventory = {
+      connectionName: "Local",
+      endpoint: "http://schema:8081",
+      omittedSubjects: 0,
+      refreshedAt: null,
+      state: "ready" as const,
+      subjects: [],
+    };
+    const detail = {
+      compatibilityLevel: null,
+      connectionName: "Local",
+      endpoint: "http://schema:8081",
+      refreshedAt: null,
+      schema: null,
+      state: "unavailable" as const,
+      subject: null,
+      versions: [],
+    };
+    render(
+      <SchemaRegistryPage
+        compatibility={{
+          compatible: true,
+          messages: ["The subject has no registered version."],
+          subject: "new-schema",
+          version: "latest",
+        }}
+        connected
+        detail={detail}
+        host={host}
+        inventory={inventory}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Register schema" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), {
+      target: { value: "new-schema" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Schema" }), {
+      target: { value: '{"type":"string"}' },
+    });
+    expect(screen.getByRole("button", { name: "Register" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Check compatibility" }));
+    expect(await screen.findByText("The subject has no registered version.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Register" })).toBeEnabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Schema" }), {
+      target: { value: '{"type":"int"}' },
+    });
+    expect(screen.getByRole("button", { name: "Register" })).toBeDisabled();
+    expect(screen.queryByText("The subject has no registered version.")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check compatibility" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "References" }), {
+      target: { value: '[{"name":"dep","subject":"dependency","version":1}]' },
+    });
+    expect(screen.getByRole("button", { name: "Register" })).toBeDisabled();
   });
 
   it("presents schema references and keeps soft deletion distinct from permanent deletion", async () => {

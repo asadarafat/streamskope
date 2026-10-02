@@ -19,6 +19,14 @@ deletion. Then verify the intended principal's access. A successful administrati
 request alone does not prove that the desired access works. Use an isolated
 cluster for access-policy experiments.
 
+Deletion requires the complete binding identity, including pattern, principal,
+host, operation and permission. After a change, StreamSkope reconciles that exact
+binding with refreshed inventory. If the broker acknowledged but the refresh
+failed, Activity records the acknowledgement and a warning. Refresh the inventory
+without repeating the mutation. An unacknowledged change may have reached Kafka;
+inspect the exact binding before another attempt. Authorization failures remain
+separate from an empty ACL inventory.
+
 ## Redpanda transforms
 
 This workflow needs **Redpanda** and an accessible **Admin API** configured in

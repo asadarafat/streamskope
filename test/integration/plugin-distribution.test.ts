@@ -21,7 +21,10 @@ import {
   NSP_WORKFLOW_FINGERPRINT,
 } from "../../plugins/nsp/backend/workflow";
 import { builtPluginAssets } from "../support/plugin-package-fixture";
-import { compareSemanticVersions } from "../../src/plugins/compatibility";
+import {
+  compareSemanticVersions,
+  isPluginCompatibleWithHost,
+} from "../../src/plugins/compatibility";
 import { DevelopmentPluginCatalog } from "../../tools/dev/plugin-catalog";
 
 const execute = promisify(execFile);
@@ -165,8 +168,12 @@ it("packages distinct development identities without changing source and include
   for (const packaged of [plugin, nspPlugin]) {
     expect(packaged.manifest).toMatchObject({
       apiVersion: 4,
-      compatibility: { streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" } },
+      compatibility: { streamskope: { minimum: "0.3.0", maximumExclusive: "0.4.0" } },
     });
+    const releaseManifest = { ...packaged.manifest, version: "0.1.0" };
+    expect(isPluginCompatibleWithHost(releaseManifest, "v0.3.0")).toBe(true);
+    expect(isPluginCompatibleWithHost(releaseManifest, "v0.2.0")).toBe(false);
+    expect(isPluginCompatibleWithHost(releaseManifest, "v0.4.0")).toBe(false);
     expect(packaged.manifest.version).toMatch(/^0\.0\.0-dev\.[1-9]\d*$/u);
     expect(packaged.manifest).not.toHaveProperty("revision");
   }

@@ -8,8 +8,8 @@
   "renderer": "renderer.js",
   "compatibility": {
     "streamskope": {
-      "minimum": "0.2.0",
-      "maximumExclusive": "0.3.0"
+      "minimum": "0.3.0",
+      "maximumExclusive": "0.4.0"
     },
     "target": {
       "system": "eda",

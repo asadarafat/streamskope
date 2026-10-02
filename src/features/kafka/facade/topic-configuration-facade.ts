@@ -32,6 +32,7 @@ export type TopicConfigurationHostCommand = Extract<
 >;
 
 export interface TopicConfigurationFacadeBindings {
+  readonly currentConnection?: () => object | undefined;
   readonly nextSequence: () => number;
   readonly publish: (event: HostEvent) => void;
   readonly recordActivity: (input: ActivityInput) => void;
@@ -81,6 +82,7 @@ export async function executeTopicConfigurationCommand(
   correlationId: string,
   bindings: TopicConfigurationFacadeBindings,
 ): Promise<HostCommandResponse> {
+  const startedConnection = bindings.currentConnection?.();
   const operation = operationName(command.command);
   const context = bindings.session.activeConnectionContext();
   if (command.command === "topicConfiguration.load" && context !== null) {
@@ -162,25 +164,30 @@ export async function executeTopicConfigurationCommand(
             },
             true,
           ).error;
-    bindings.publish({
-      event: "topicConfiguration.changed",
-      payload:
-        refreshError === undefined
-          ? readyConfiguration(result.configuration)
-          : {
-              ...readyConfiguration(result.configuration),
-              error: refreshError,
-              state: "stale",
-            },
-      sequence: bindings.nextSequence(),
-      version: HOST_PROTOCOL_VERSION,
-    });
-    bindings.publish({
-      event: "topicConfiguration.history",
-      payload: result.history,
-      sequence: bindings.nextSequence(),
-      version: HOST_PROTOCOL_VERSION,
-    });
+    if (
+      bindings.currentConnection === undefined ||
+      bindings.currentConnection() === startedConnection
+    ) {
+      bindings.publish({
+        event: "topicConfiguration.changed",
+        payload:
+          refreshError === undefined
+            ? readyConfiguration(result.configuration)
+            : {
+                ...readyConfiguration(result.configuration),
+                error: refreshError,
+                state: "stale",
+              },
+        sequence: bindings.nextSequence(),
+        version: HOST_PROTOCOL_VERSION,
+      });
+      bindings.publish({
+        event: "topicConfiguration.history",
+        payload: result.history,
+        sequence: bindings.nextSequence(),
+        version: HOST_PROTOCOL_VERSION,
+      });
+    }
     const historyDegraded =
       result.historyFailure !== undefined || result.history.store.state === "unavailable";
     const degraded = refreshError !== undefined || historyDegraded;
@@ -201,7 +208,7 @@ export async function executeTopicConfigurationCommand(
     });
     return successResponse(command, correlationId);
   } catch (error) {
-    const translated = translateFacadeFailure(
+    let translated = translateFacadeFailure(
       error,
       {
         activeStateChanged: false,
@@ -210,10 +217,24 @@ export async function executeTopicConfigurationCommand(
       },
       true,
     );
+    if (command.command === "topicConfiguration.apply")
+      translated = {
+        ...translated,
+        error: {
+          ...translated.error,
+          retryable: false,
+          recovery: `${translated.error.recovery} The configuration write was not acknowledged. Read back the selected keys before another attempt.`,
+        },
+      };
     const cancelled =
       error instanceof ConnectionAttemptSupersededError ||
       (error instanceof Error && error.name === "AbortError");
-    if (!cancelled && context !== null) {
+    if (
+      !cancelled &&
+      context !== null &&
+      (bindings.currentConnection === undefined ||
+        bindings.currentConnection() === startedConnection)
+    ) {
       bindings.publish({
         event: "topicConfiguration.changed",
         payload: {

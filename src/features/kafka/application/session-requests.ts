@@ -28,6 +28,7 @@ interface SessionRequestContext {
 
 // Owns in-flight requests; the session supplies connection identity and lifecycle state.
 export class KafkaSessionRequests {
+  private readonly mutationRequests = new Map<Promise<unknown>, AbortController>();
   private readonly aclRequests = new Map<Promise<unknown>, AbortController>();
   private readonly configurationRequests = new Map<Promise<unknown>, AbortController>();
   private readonly consumerGroupDetailRequests = new Map<
@@ -52,6 +53,7 @@ export class KafkaSessionRequests {
   ) {}
 
   cancelForReconnect(): readonly Promise<KafkaLatencyProbeMeasurement>[] {
+    void Promise.allSettled(this.cancelFeatureRequests(this.mutationRequests));
     void Promise.allSettled(this.cancelTopicRequests());
     void Promise.allSettled(this.cancelConfigurationRequests());
     void Promise.allSettled(this.cancelFeatureRequests(this.aclRequests));
@@ -63,6 +65,7 @@ export class KafkaSessionRequests {
 
   cancelAdministrativeRequests(): readonly Promise<unknown>[] {
     return [
+      ...this.cancelFeatureRequests(this.mutationRequests),
       ...this.cancelConfigurationRequests(),
       ...this.cancelConsumerGroupRequests(),
       ...this.cancelFeatureRequests(this.aclRequests),
@@ -143,11 +146,12 @@ export class KafkaSessionRequests {
     externalSignal?: AbortSignal,
   ): Promise<void> {
     return this.startAdminRequest(
-      this.configurationRequests,
+      validateOnly ? this.configurationRequests : this.mutationRequests,
       "changing topic configuration",
       (connection, signal) =>
         connection.alterTopicConfiguration(topic, changes, validateOnly, signal),
       externalSignal,
+      !validateOnly,
     );
   }
 
@@ -189,7 +193,7 @@ export class KafkaSessionRequests {
     externalSignal?: AbortSignal,
   ): Promise<void> {
     return this.startAdminRequest(
-      this.aclRequests,
+      this.mutationRequests,
       "creating an ACL",
       (connection, signal) => {
         if (connection.createAcl === undefined) {
@@ -200,6 +204,7 @@ export class KafkaSessionRequests {
         return connection.createAcl(acl, signal);
       },
       externalSignal,
+      true,
     );
   }
 
@@ -208,7 +213,7 @@ export class KafkaSessionRequests {
     externalSignal?: AbortSignal,
   ): Promise<void> {
     return this.startAdminRequest(
-      this.aclRequests,
+      this.mutationRequests,
       "deleting an ACL",
       (connection, signal) => {
         if (connection.deleteAcl === undefined) {
@@ -219,6 +224,7 @@ export class KafkaSessionRequests {
         return connection.deleteAcl(acl, signal);
       },
       externalSignal,
+      true,
     );
   }
 
@@ -410,15 +416,22 @@ export class KafkaSessionRequests {
     generation: number,
     controller: AbortController,
     operation: Promise<T>,
+    preserveAcknowledgement = false,
   ): Promise<T> {
     try {
       const result = await operation;
-      if (!this.isCurrentAdminRequest(connection, generation, controller)) {
+      if (
+        !preserveAcknowledgement &&
+        !this.isCurrentAdminRequest(connection, generation, controller)
+      ) {
         throw new ConnectionAttemptSupersededError();
       }
       return result;
     } catch (error) {
-      if (!this.isCurrentAdminRequest(connection, generation, controller)) {
+      if (
+        !preserveAcknowledgement &&
+        !this.isCurrentAdminRequest(connection, generation, controller)
+      ) {
         throw error instanceof ConnectionAttemptSupersededError
           ? error
           : new ConnectionAttemptSupersededError(ownedCleanupFailure(error));
@@ -455,6 +468,7 @@ export class KafkaSessionRequests {
     operationDescription: string,
     start: (connection: KafkaActiveConnection, signal: AbortSignal) => Promise<T>,
     externalSignal?: AbortSignal,
+    preserveAcknowledgement = false,
   ): Promise<T> {
     this.assertAvailable();
     const { connection, generation, connected } = this.context();
@@ -462,7 +476,7 @@ export class KafkaSessionRequests {
       return Promise.reject(new NoActiveKafkaConnectionError(operationDescription));
     }
 
-    void Promise.allSettled(this.cancelFeatureRequests(requests));
+    if (!preserveAcknowledgement) void Promise.allSettled(this.cancelFeatureRequests(requests));
     const controller = new AbortController();
     const signal = abortSignals(controller.signal, externalSignal);
     let started: Promise<T>;
@@ -475,7 +489,13 @@ export class KafkaSessionRequests {
           : new Error("The Kafka feature port threw a non-error value.", { cause: error }),
       );
     }
-    const operation = this.configurationForGeneration(connection, generation, controller, started);
+    const operation = this.configurationForGeneration(
+      connection,
+      generation,
+      controller,
+      started,
+      preserveAcknowledgement,
+    );
     requests.set(operation, controller);
     operation.then(
       () => requests.delete(operation),

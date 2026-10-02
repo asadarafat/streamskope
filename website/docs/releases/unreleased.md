@@ -12,7 +12,7 @@ key/value bytes and ordered duplicate/null headers as Base64. Null and empty
 values remain distinct. Originals above 256 KiB or the header bounds are explicitly
 unavailable; display previews must not be used for byte-exact writes. Retention
 accounting includes original envelopes, headers and previews. The paired host
-protocol is **33**; upgrade the host and renderer together. Plugin API is unchanged.
+protocol is **34**; upgrade the host and renderer together. Plugin API is unchanged.
 
 ## Read-only and record masking
 
@@ -37,3 +37,22 @@ A maintainer assigns the next desktop version when starting release CI.
   unknown outcomes require inspection before a new attempt.
 - Host protocol 34 adds typed write reviews and outcomes. Read-only mode blocks
   all write confirmations.
+
+## Administration outcomes
+
+Topic configuration, Schema Registry and ACL operations retain acknowledged writes
+when refresh or local history fails. Unacknowledged writes require inspection before
+another attempt. Schema compatibility applies to the current draft; changing it
+invalidates the displayed check. Permanent deletion handles already soft-deleted
+schemas and respects Registry dependency errors. Nested broker authorization failures
+now produce actionable permission errors instead of generic internal failures.
+
+Consumer-group qualification covers idle groups, known and zero lag, deleted groups
+and denied access. Unknown lag remains unavailable. The local Registry rehearsal
+covers Avro compatibility and Protobuf references on Karapace 5.0.3; it does not
+establish Avro-reference support or message wire-format decoding.
+
+Current source plugins declare desktop 0.3.x compatibility with unchanged plugin API 4.
+Desktop publication does not publish new plugin packages. Existing API 2/3 packages
+retain their legacy loading path; live EDA/NSP and installed upgrade rehearsals are
+separate qualification work.
