@@ -63,12 +63,21 @@ export function SavedQueriesDialog({
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const alive = useRef(true);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const focusAfterWrite = useRef(false);
   const selected = snapshot?.queries.find((query) => query.id === selectedId);
   const profileMissing =
     profileId.length > 0 && !profiles.some((profile) => profile.id === profileId);
   const nameUsed =
     snapshot?.queries.some((query) => query.name.toLowerCase() === name.trim().toLowerCase()) ??
     false;
+
+  useEffect(() => {
+    if (!busy && focusAfterWrite.current) {
+      focusAfterWrite.current = false;
+      nameInput.current?.focus();
+    }
+  }, [busy, status]);
 
   useEffect(() => {
     let current = true;
@@ -99,6 +108,7 @@ export function SavedQueriesDialog({
   }, [host]);
 
   async function execute(command: QueryCommand): Promise<boolean> {
+    focusAfterWrite.current = command.command !== "queries.list";
     setBusy(true);
     setError(undefined);
     setStatus("");
@@ -191,6 +201,7 @@ export function SavedQueriesDialog({
           </TextField>
           <TextField
             label="Query name"
+            inputRef={nameInput}
             value={name}
             disabled={busy}
             onChange={(event) => setName(event.target.value)}

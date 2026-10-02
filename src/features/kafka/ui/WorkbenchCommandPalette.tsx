@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Box from "@mui/material/Box";
 import InputAdornment from "@mui/material/InputAdornment";
 import List from "@mui/material/List";
@@ -23,6 +23,13 @@ import { WorkbenchIcon } from "./WorkbenchIcons";
 
 const resources = WORKBENCH_RESOURCE_GROUPS.flatMap((group) => group.items);
 
+export interface WorkbenchCommandAction {
+  readonly id: string;
+  readonly label: string;
+  readonly disabled: boolean;
+  readonly run: () => void;
+}
+
 export interface WorkbenchCommandPaletteProperties {
   readonly connected: boolean;
   readonly onClose: () => void;
@@ -32,6 +39,7 @@ export interface WorkbenchCommandPaletteProperties {
   readonly open: boolean;
   readonly profiles: readonly ProfileSummary[];
   readonly topics: readonly string[];
+  readonly actions?: readonly WorkbenchCommandAction[];
 }
 
 export function WorkbenchCommandPalette({
@@ -43,12 +51,43 @@ export function WorkbenchCommandPalette({
   open,
   profiles,
   topics,
+  actions = [],
 }: WorkbenchCommandPaletteProperties): React.JSX.Element {
   const [query, setQuery] = useState("");
+  const content = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) setQuery("");
   }, [open]);
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matchingActions = actions.filter((action) =>
+    action.label.toLocaleLowerCase().includes(normalizedQuery),
+  );
+  function navigateResults(event: KeyboardEvent): void {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+    const options = Array.from(
+      content.current?.querySelectorAll<HTMLElement>(
+        '[data-command-option]:not([aria-disabled="true"])',
+      ) ?? [],
+    );
+    const index = options.indexOf(globalThis.document.activeElement as HTMLElement);
+    const inSearch = event.target instanceof HTMLInputElement;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const next =
+        event.key === "ArrowDown"
+          ? (index + 1) % options.length
+          : index < 0
+            ? options.length - 1
+            : (index - 1 + options.length) % options.length;
+      options[next]?.focus();
+    } else if (inSearch && event.key === "Enter") {
+      event.preventDefault();
+      options[0]?.click();
+    } else if (!inSearch && (event.key === "Home" || event.key === "End")) {
+      event.preventDefault();
+      options[event.key === "Home" ? 0 : options.length - 1]?.focus();
+    }
+  }
   const matchingResources = useMemo(
     () =>
       resources.filter(
@@ -88,7 +127,7 @@ export function WorkbenchCommandPalette({
       open={open}
     >
       <DialogTitle id="streamskope-command-palette-title">Search and commands</DialogTitle>
-      <DialogContent dividers sx={{ p: 0 }}>
+      <DialogContent ref={content} onKeyDown={navigateResults} dividers sx={{ p: 0 }}>
         <Box sx={{ borderBottom: 1, borderColor: "divider", p: 1.25 }}>
           <TextField
             autoFocus
@@ -106,8 +145,43 @@ export function WorkbenchCommandPalette({
             }}
             value={query}
           />
+          <Typography variant="caption" color="text.secondary">
+            ↑/↓ choose · Enter run · Escape close. Disabled commands require a connection, topic or
+            valid read settings.
+          </Typography>
         </Box>
         <Box sx={{ maxHeight: "min(520px, 65vh)", overflowY: "auto", py: 0.75 }}>
+          {matchingActions.length === 0 ? null : (
+            <>
+              <Typography
+                color="text.secondary"
+                component="h2"
+                sx={{ px: 2, py: 0.5 }}
+                variant="overline"
+              >
+                Investigation
+              </Typography>
+              <List disablePadding>
+                {matchingActions.map((action) => (
+                  <ListItemButton
+                    key={action.id}
+                    data-command-option
+                    disabled={action.disabled}
+                    aria-disabled={action.disabled || undefined}
+                    onClick={() => {
+                      if (!action.disabled) {
+                        onClose();
+                        action.run();
+                      }
+                    }}
+                    sx={{ mx: 0.75, px: 1.25 }}
+                  >
+                    <Typography variant="body2">{action.label}</Typography>
+                  </ListItemButton>
+                ))}
+              </List>
+            </>
+          )}
           {matchingProfiles.length > 0 ? (
             <>
               <Typography
@@ -121,6 +195,7 @@ export function WorkbenchCommandPalette({
               <List disablePadding>
                 {matchingProfiles.map((profile) => (
                   <ListItemButton
+                    data-command-option
                     key={profile.id}
                     aria-label={`Select profile ${profile.name}`}
                     onClick={() => {
@@ -157,6 +232,7 @@ export function WorkbenchCommandPalette({
               <List disablePadding>
                 {matchingResources.map((resource) => (
                   <ListItemButton
+                    data-command-option
                     aria-disabled={!isNavigationAvailable(resource.value, connected) || undefined}
                     disabled={!isNavigationAvailable(resource.value, connected)}
                     key={resource.value}
@@ -186,6 +262,7 @@ export function WorkbenchCommandPalette({
               <List disablePadding>
                 {matchingTopics.map((topic) => (
                   <ListItemButton
+                    data-command-option
                     aria-label={`Open and read topic ${topic}`}
                     key={topic}
                     onClick={() => {
@@ -201,6 +278,7 @@ export function WorkbenchCommandPalette({
             </>
           ) : null}
           {matchingResources.length === 0 &&
+          matchingActions.length === 0 &&
           matchingTopics.length === 0 &&
           matchingProfiles.length === 0 ? (
             <Box role="status" sx={{ px: 2, py: 4, textAlign: "center" }}>

@@ -73,6 +73,8 @@ it("opens an incoming link for explicit review without connecting, reading or sa
     <StreamSkopeApp host={host} initialQueryImport={new URL(createKafkaQueryLink(query)).hash} />,
   );
   expect(await screen.findByRole("dialog", { name: "Saved queries" })).toBeVisible();
+  await user.keyboard("{Control>}k{/Control}");
+  expect(screen.queryByRole("dialog", { name: "Search and commands" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Open imported query" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Review import" }));
   await user.click(screen.getByRole("button", { name: "Open imported query" }));

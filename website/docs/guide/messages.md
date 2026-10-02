@@ -94,6 +94,29 @@ records across the whole topic.
 
 ## Save and reopen an investigation
 
+### Use the keyboard
+
+Open **Search and commands** with **Ctrl+K** (Linux/Windows) or **Cmd+K** (macOS).
+Type part of a profile name, broker address, topic or command, then use **↑/↓**
+and **Enter** to choose. **Home/End** moves to the first/last result when a result
+has focus; **Escape** closes the palette and returns focus to its opener.
+
+Selecting a profile does not connect. Run **Connect profile …** separately.
+Topic results are labelled **Open and read topic …** and start the current read
+mode. The palette also offers **Load messages …** or **Start tail …**,
+**Search broker …**, **Stop current read**, and **Saved queries**. Unavailable
+actions remain disabled until their connection, topic, filter or read prerequisites
+are satisfied. The shortcut leaves an already-open editor or query dialog in charge
+of keyboard focus.
+
+Use **Tab/Shift+Tab** to reach read controls and filters. In the message grid,
+arrow keys move through cells and **Shift+Space** selects the row for inspection.
+Tab to **Close inspector** and press **Enter** to return to the messages. Query
+save/delete operations return focus to **Query name**, so the dialog remains
+usable when the action that initiated the write becomes disabled.
+
+### Keep query settings
+
 1. Choose a topic, read mode, limit and filters. Use a custom time interval for
    a repeatable incident window. Saving **Last 2 minutes** captures absolute times
    at the moment you save; reopening does not move that interval forward.
