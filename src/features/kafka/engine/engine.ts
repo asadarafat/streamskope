@@ -25,6 +25,7 @@ import type {
   KafkaLatencyProbeMeasurement,
 } from "../application";
 
+import { PlatformaticReviewedWrites } from "./platformatic-writes";
 import { translateKafkaRecord } from "./message-record";
 import {
   KafkaEngineFailure,
@@ -189,6 +190,18 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
 }
 
 class ActiveKafkaEngineConnection implements KafkaEngineConnection {
+  reviewWrite(input: import("../contracts").KafkaWriteInput): Promise<void> {
+    return new PlatformaticReviewedWrites(this.clientInput, this.lifecycleController.signal).review(
+      input,
+    );
+  }
+  applyWrite(
+    input: import("../contracts").KafkaWriteInput,
+  ): Promise<import("../contracts").KafkaWriteOutcome> {
+    return new PlatformaticReviewedWrites(this.clientInput, this.lifecycleController.signal).apply(
+      input,
+    );
+  }
   private closePromise: Promise<void> | undefined;
   private readonly streams = new Set<TranslatedKafkaMessageStream>();
 

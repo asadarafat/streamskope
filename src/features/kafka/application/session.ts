@@ -71,6 +71,22 @@ export class KafkaApplicationSession {
     }));
   }
 
+  writeContext(): {
+    readonly connection: KafkaActiveConnection;
+    readonly generation: number;
+    readonly connectionName: string;
+  } | null {
+    return this.activeConnection !== undefined &&
+      this.currentSnapshot.state === "connected" &&
+      this.currentSnapshot.connectionName !== null
+      ? {
+          connection: this.activeConnection,
+          generation: this.generation,
+          connectionName: this.currentSnapshot.connectionName,
+        }
+      : null;
+  }
+
   activeConnectionContext(): {
     readonly connectionBrokers: readonly string[];
     readonly connectionName: string;

@@ -1,3 +1,4 @@
+import { KafkaReviewedWriteService } from "../application/reviewed-write-service";
 import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
@@ -26,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { executeWriteCommand } from "./write-facade";
 import { KafkaCommandProtection } from "./command-protection";
 import { executeQueryCommand } from "./query-facade";
 import { ConsumptionFacadeController } from "./consumption-facade";
@@ -91,6 +93,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly listeners = new Set<HostEventListener>();
   private readonly latencyProbe;
   private readonly now;
+  private readonly writes: KafkaReviewedWriteService;
   private readonly queries: KafkaQueryLibrary;
   private readonly preferences: KafkaOperationalPreferenceService;
   private readonly protection: KafkaCommandProtection;
@@ -108,6 +111,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     private readonly topicConfigurations: KafkaTopicConfigurationServicePort,
     options: KafkaBackendFacadeOptions = {},
   ) {
+    this.writes = new KafkaReviewedWriteService(() => session.writeContext());
     this.queries = options.queries ?? new KafkaQueryLibrary();
     this.clusterDiagnostics = createClusterDetailsService(session, options);
     this.latencyProbe = createLatencyService(session, options);
@@ -264,6 +268,14 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "writes.review":
+      case "writes.apply":
+        return executeWriteCommand(
+          command,
+          correlationId,
+          this.writes,
+          this.recordActivity.bind(this),
+        );
       case "queries.list":
       case "queries.put":
       case "queries.delete":
