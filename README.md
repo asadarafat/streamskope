@@ -1,8 +1,7 @@
-<p align="center">
-  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" alt="StreamSkope logo">
-</p>
-
-# StreamSkope
+<h1 align="left">
+  <img src="src/platform/ui/assets/streamskope.svg" width="72" height="72" align="middle" alt="StreamSkope logo">
+  StreamSkope
+</h1>
 
 [![CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/asadarafat/streamskope)
@@ -58,8 +57,9 @@ Configuration changes, ACL/schema operations and latency probes can write to you
 ## Documentation and help
 
 These repository guides describe this checkout. The
-[published documentation](https://asadarafat.github.io/streamskope/) is built from qualified `main`; its version notice identifies the desktop release
-it describes. Installer availability is verified before the site is published.
+[published documentation](https://asadarafat.github.io/streamskope/) is built from the exact published desktop release source. Its version notice and
+downloads identify that release; unreleased changes stay in repository/local previews.
+Installer availability is verified before the site is published.
 
 - [Messages and filtering](website/docs/guide/messages.md), [consumer lag](website/docs/guide/operations.md)
   and [Schema Registry](website/docs/guide/schema-registry.md)

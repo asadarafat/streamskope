@@ -15,6 +15,9 @@ const desktopRelease = /^desktop_release = "([^"]+)"$/mu.exec(
   await readFile("website/zensical.toml", "utf8"),
 )?.[1];
 assert(desktopRelease, "The site declares its documented desktop release");
+const developmentSource =
+  JSON.parse(await readFile("package.json", "utf8")).version === "0.0.0-dev";
+const published = process.env.STREAMSKOPE_DOCS_PUBLISH === "1";
 const prefix = "/streamskope/";
 const urlIndex = process.argv.indexOf("--url");
 let base = urlIndex < 0 ? undefined : process.argv[urlIndex + 1];
@@ -90,8 +93,13 @@ try {
     assert((await versionNotice.innerText()).includes(expectedRelease), route);
     assert.equal(
       (await versionNotice.innerText()).includes("Unreleased source changes"),
-      unreleased,
+      releaseTag === undefined && (unreleased || developmentSource),
       `${route}: the version notice matches its documented release status`,
+    );
+    assert.equal(
+      (await versionNotice.innerText()).includes("Applies to desktop"),
+      published && !unreleased && releaseTag === undefined,
+      `${route}: only a published release snapshot can claim desktop applicability`,
     );
     if (route === "plugins/versioning/") {
       for (const plugin of ["eda", "nsp"]) {

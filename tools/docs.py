@@ -283,6 +283,8 @@ def main():
     if args.action == "verify":
         verify_publication(url, args.revision, args.release)
         return
+    if args.action == "prepare" and os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1":
+        publication.prepare_publication()
     if args.action == "qualify":
         inspect_repository_commands()
         inspect_message_limits()

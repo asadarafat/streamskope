@@ -3,17 +3,25 @@
 {% endblock %} {% block content %}
 <aside class="sk-version" aria-label="Documentation version">
   <p>{{ config.extra.documentation.status }}</p>
-  {% if page.meta.unreleased %}
+  {% if page.meta.release_tag %}
+  <p>
+    {% if page.meta.release_tag != config.extra.desktop_release %}Historical release notes:{% else
+    %}Release notes:{% endif %}
+    <strong>{{ page.meta.release_tag }}</strong>.
+    <a href="{{ 'releases/' | url }}">Compare desktop releases</a>.
+  </p>
+  {% elif page.meta.unreleased or config.extra.documentation.source_release == 'development' %}
   <p>
     Unreleased source changes; release version not yet assigned. Published desktop:
     <strong>{{ config.extra.desktop_release }}</strong>.
     <a href="{{ 'start/compatibility/' | url }}">Compatibility</a> ·
     <a href="{{ 'releases/' | url }}">Release history</a>.
   </p>
-  {% elif page.meta.release_tag and page.meta.release_tag != config.extra.desktop_release %}
+  {% elif config.extra.documentation.status != 'Published documentation' %}
   <p>
-    Historical release notes: <strong>{{ page.meta.release_tag }}</strong>.
-    <a href="{{ 'releases/' | url }}">Compare desktop releases</a>.
+    Preview for desktop <strong>{{ config.extra.documentation.source_release }}</strong>. Published
+    downloads: <strong>{{ config.extra.desktop_release }}</strong>.
+    <a href="{{ 'releases/' | url }}">Release history</a>.
   </p>
   {% else %}
   <p>
