@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, realpath, rename, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -31,7 +31,7 @@ test("restores a full backup with native credential protection and reconnects", 
   expect(process.env.STREAMSKOPE_RENDERER_URL).toBeUndefined();
   const config = await loadFixtureConfig();
   const fixture = await loadFixtureConnection();
-  const root = await mkdtemp(join(tmpdir(), "streamskope-native-recovery-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "streamskope-native-recovery-")));
   const active = join(root, "active");
   const backup = join(root, "backup");
   const require = createRequire(resolve("package.json"));
