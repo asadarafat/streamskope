@@ -318,6 +318,12 @@ Collection stops at the exact selected source commit, even if `main` advances.
 Commits without an associated merged PR appear separately and use the same
 component selection rules; PR changes are not duplicated as commit entries.
 
+For native GitHub stacks, the stack's target branch identifies whether a merged
+PR belongs to `main`; an upper PR can retain its intermediate base branch after
+merging. Each PR keeps its own title, component labels and omission label. The
+collector still requires the same repository and a merge commit in the selected
+mainline history. Stacks targeting another branch remain ineligible.
+
 The prepare job freezes this selection in the `release-changelog` artifact before
 qualification and packaging. The final draft combines it with reviewed highlights,
 upgrade instructions and known limitations. Maintain desktop commentary in
