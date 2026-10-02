@@ -52,3 +52,19 @@ There is no automatic rollback button. Configuration history is bounded and can
 hide sensitive values. Do not treat it as a complete configuration backup.
 
 [Inspect records after the change →](messages.md)
+
+## Create a topic
+
+From **Topics**, choose **Create topic**. Enter its name, partition count,
+replication factor and optional settings as a JSON array of `name`/`value` pairs.
+Unspecified settings inherit broker defaults. StreamSkope checks the name,
+available brokers and that the topic does not already exist; Kafka checks
+permissions and configuration validity when you confirm.
+
+Review the connection and all requested properties, then choose **Confirm create**.
+The two-minute review applies only to that connection. Existing topics are never
+adopted or changed by creation. Creation requires read-only mode to be disabled.
+After Kafka acknowledges, the app reads back partition and replica counts and
+refreshes the inventory. If refresh fails, the acknowledgement remains valid.
+For an unknown result, refresh and inspect the topic before another attempt;
+there is no automatic retry and no rollback of an acknowledged topic.

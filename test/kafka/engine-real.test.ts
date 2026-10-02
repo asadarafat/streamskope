@@ -119,6 +119,86 @@ async function openAndCollect(
 }
 
 describe("real StreamSkope Kafka engine", () => {
+  it("creates a reviewed topic and produces exact binary/null/ordered-header records once", async () => {
+    const config = await loadFixtureConfig();
+    const fixture = await loadFixtureConnection();
+    const admin = new Admin(await fixtureClientOptions(fixture, config));
+    const engine = new StreamSkopeKafkaEngine();
+    const connection = await engine.openConnection(
+      await secureConnectionInput(fixture, config),
+      new AbortController().signal,
+    );
+    const topic = `streamskope-write-${randomUUID()}`;
+    let created = false;
+    try {
+      const create = {
+        kind: "topic",
+        topic,
+        partitions: 1,
+        replicationFactor: 1,
+        configs: [{ name: "cleanup.policy", value: "compact" }],
+      } as const;
+      await connection.reviewWrite!(create);
+      expect(await admin.listTopics()).not.toContain(topic);
+      const result = await connection.applyWrite!(create);
+      created = result.state === "acknowledged";
+      expect(result).toMatchObject({ state: "acknowledged", verification: "verified" });
+      await expect(connection.reviewWrite!(create)).rejects.toThrow(/already exists/u);
+      await expect(
+        connection.reviewWrite!({ ...create, topic: `${topic}-invalid`, replicationFactor: 32 }),
+      ).rejects.toThrow(/broker count/u);
+      expect(await admin.listTopics()).not.toContain(`${topic}-invalid`);
+      for (const [index, value] of ["AP8=", null, ""].entries()) {
+        const record = {
+          kind: "record",
+          topic,
+          partition: 0,
+          record: {
+            state: "complete",
+            encoding: "base64",
+            key: "a2V5",
+            value,
+            headers: [
+              { key: "c291cmNl", value: "Zmlyc3Q=" },
+              { key: "c291cmNl", value: null },
+              { key: "YmluYXJ5", value: "AP8=" },
+            ],
+          },
+        } as const;
+        await connection.reviewWrite!(record);
+        expect(await connection.applyWrite!(record)).toMatchObject({
+          state: "acknowledged",
+          verification: "verified",
+          receipt: { topic, partition: 0, offset: String(index) },
+        });
+      }
+      const records = await collectFiniteStream(
+        await connection.openMessageStream(
+          { mode: "earliest", topic, maxMessages: 10 },
+          new AbortController().signal,
+        ),
+      );
+      expect(records).toHaveLength(3);
+      expect(records.map((record) => record.original)).toEqual(
+        ["AP8=", null, ""].map((value) => ({
+          state: "complete",
+          encoding: "base64",
+          key: "a2V5",
+          value,
+          headers: [
+            { key: "c291cmNl", value: "Zmlyc3Q=" },
+            { key: "c291cmNl", value: null },
+            { key: "YmluYXJ5", value: "AP8=" },
+          ],
+        })),
+      );
+    } finally {
+      await connection.close();
+      if (created) await admin.deleteTopics({ topics: [topic] });
+      await admin.close();
+    }
+  }, 60_000);
+
   it("masks real Kafka records at the host boundary and blocks direct writes", async () => {
     const config = await loadFixtureConfig();
     const fixture = await loadFixtureConnection();

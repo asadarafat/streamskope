@@ -4,6 +4,7 @@ import { ResourcePageHeader, TopicSectionTabs } from "./ResourcePageHeader";
 import type { TopicWorkspaceView } from "./WorkbenchContextBar";
 
 interface TopicDetailPageProperties {
+  readonly action?: React.ReactNode;
   readonly children: React.ReactNode;
   readonly onWorkspaceChange: (workspace: TopicWorkspaceView) => void;
   readonly selectedTopic: string;
@@ -11,6 +12,7 @@ interface TopicDetailPageProperties {
 }
 
 export function TopicDetailPage({
+  action,
   children,
   onWorkspaceChange,
   selectedTopic,
@@ -28,7 +30,7 @@ export function TopicDetailPage({
         overflow: "hidden",
       }}
     >
-      <ResourcePageHeader compact title={selectedTopic} />
+      <ResourcePageHeader action={action} compact title={selectedTopic} />
       <TopicSectionTabs onChange={onWorkspaceChange} value={workspace} />
       <Box
         id="streamskope-task-workspace"

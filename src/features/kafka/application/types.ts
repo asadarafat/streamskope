@@ -48,6 +48,10 @@ export interface KafkaConsumptionObserver {
 }
 
 export interface KafkaActiveConnection {
+  reviewWrite?(input: import("../contracts").KafkaWriteInput): Promise<void>;
+  applyWrite?(
+    input: import("../contracts").KafkaWriteInput,
+  ): Promise<import("../contracts").KafkaWriteOutcome>;
   alterTopicConfiguration(
     topic: string,
     changes: readonly KafkaTopicConfigurationChange[],

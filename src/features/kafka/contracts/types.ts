@@ -71,7 +71,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 33 as const;
+export const HOST_PROTOCOL_VERSION = 34 as const;
 
 export const HOST_COMMANDS = [
   "connection.test",
@@ -104,6 +104,8 @@ export const HOST_COMMANDS = [
   "rules.validate",
   "rules.evaluate",
   "topics.list",
+  "writes.review",
+  "writes.apply",
   "consumerGroups.list",
   "consumerGroups.load",
   "schemas.list",
@@ -591,6 +593,14 @@ type HostCommandDefinition =
   | (HostCommandBase & {
       readonly command: "acls.list";
       readonly payload: Readonly<Record<string, never>>;
+    })
+  | (HostCommandBase & {
+      readonly command: "writes.review";
+      readonly payload: import("./reviewed-writes").KafkaWriteInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "writes.apply";
+      readonly payload: { readonly planId: string };
     })
   | (HostCommandBase & {
       readonly command: "acls.create";

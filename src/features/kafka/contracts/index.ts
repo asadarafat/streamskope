@@ -1,4 +1,10 @@
 export { isHostAcknowledgementCommand } from "./host-command-results";
+export {
+  parseKafkaWriteInput,
+  parseKafkaWriteReview,
+  parseKafkaWriteOutcome,
+} from "./reviewed-writes";
+export type { KafkaWriteInput, KafkaWriteReview, KafkaWriteOutcome } from "./reviewed-writes";
 export { KAFKA_ORIGINAL_RECORD_LIMITS, parseKafkaOriginalRecord } from "./record-bytes";
 export type {
   KafkaOriginalRecord,

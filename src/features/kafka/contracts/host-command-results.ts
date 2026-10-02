@@ -16,6 +16,14 @@ import type { KafkaOperationalPreferenceResult } from "./operational-preference-
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
 interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRecipeCommandResults {
+  readonly "writes.review": {
+    readonly correlationId: string;
+    readonly review: import("./reviewed-writes").KafkaWriteReview;
+  };
+  readonly "writes.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./reviewed-writes").KafkaWriteOutcome;
+  };
   readonly "queries.list": {
     readonly correlationId: string;
     readonly snapshot: KafkaQueryLibrarySnapshot;
@@ -55,6 +63,8 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "writes.review": true,
+  "writes.apply": true,
   "queries.list": true,
   "queries.put": true,
   "queries.delete": true,

@@ -14,6 +14,7 @@ import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 
+import { ReviewedWriteAction } from "./ReviewedWriteAction";
 import { initialKafkaMessageFilters } from "./message-operations";
 import { SavedQueriesDialog } from "./SavedQueriesDialog";
 import { ActivityLogDrawer } from "./ActivityLogDrawer";
@@ -593,6 +594,17 @@ export function StreamSkopeWorkbench({
       />
     ) : selectedTopic === null ? (
       <TopicInventoryPage
+        createAction={
+          <ReviewedWriteAction
+            host={host}
+            disabled={
+              !connected || state.preferenceSnapshot?.preferences.protection.readOnly !== false
+            }
+            onCreated={() => {
+              void requestTopics();
+            }}
+          />
+        }
         connected={connected}
         filter={topicFilter}
         onFilterChange={setTopicFilter}
@@ -608,6 +620,16 @@ export function StreamSkopeWorkbench({
       />
     ) : (
       <TopicDetailPage
+        action={
+          <ReviewedWriteAction
+            key={selectedTopic}
+            host={host}
+            topic={selectedTopic}
+            disabled={
+              !connected || state.preferenceSnapshot?.preferences.protection.readOnly !== false
+            }
+          />
+        }
         onWorkspaceChange={changeTopicWorkspace}
         selectedTopic={selectedTopic}
         workspace={topicWorkspace}

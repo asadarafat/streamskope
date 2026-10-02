@@ -26,3 +26,14 @@ not multi-user authorization or a plugin sandbox.
 
 Add reviewed highlights, upgrade instructions and limitations here as changes merge.
 A maintainer assigns the next desktop version when starting release CI.
+
+### Reviewed Kafka writes
+
+- Produce one bounded record with UTF-8 or Base64 bytes, null keys, tombstones and
+  ordered duplicate headers. Confirm the destination, then retain the acknowledged
+  offset independently of read-back success.
+- Create a topic with explicit partitions, replication and selected settings.
+  Existing topics are left untouched. Duplicate confirmations reuse one attempt;
+  unknown outcomes require inspection before a new attempt.
+- Host protocol 34 adds typed write reviews and outcomes. Read-only mode blocks
+  all write confirmations.

@@ -1,3 +1,8 @@
+import {
+  parseKafkaWriteInput,
+  parseKafkaWriteReview,
+  parseKafkaWriteOutcome,
+} from "./reviewed-writes";
 import { parseKafkaOriginalRecord } from "./record-bytes";
 import { parseKafkaSavedQuery, parseKafkaQueryLibrarySnapshot } from "./query-library";
 import { parseKafkaReadCoverage } from "./query-search";
@@ -236,6 +241,18 @@ export function parseHostCommand(value: unknown): HostCommand {
   }
 
   switch (command) {
+    case "writes.review":
+      return { command, id, version, payload: parseKafkaWriteInput(envelope.payload) };
+    case "writes.apply": {
+      const payload = record(envelope.payload, "command.payload");
+      exactKeys(payload, ["planId"], "command.payload");
+      return {
+        command,
+        id,
+        version,
+        payload: { planId: text(payload.planId, "command.payload.planId", 128) },
+      };
+    }
     case "connection.connect":
     case "connection.test":
       return {
@@ -453,6 +470,32 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
   }
 
   const result = record(envelope.result, "response.result");
+  if (command === "writes.review") {
+    exactKeys(result, ["correlationId", "review"], "response.result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "response.result.correlationId", 128),
+        review: parseKafkaWriteReview(result.review),
+      },
+    };
+  }
+  if (command === "writes.apply") {
+    exactKeys(result, ["correlationId", "outcome"], "response.result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "response.result.correlationId", 128),
+        outcome: parseKafkaWriteOutcome(result.outcome),
+      },
+    };
+  }
   const captureResponse = parsePluginHostResponse(command, id, result, version);
   if (captureResponse !== undefined) return captureResponse;
   const remoteResponse = parseRemoteTrustResponse(command, id, result, version);

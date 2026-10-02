@@ -21,6 +21,7 @@ import { formatUtcTimestamp } from "./timestamp-presentation";
 import { WorkbenchIcon } from "./WorkbenchIcons";
 
 interface TopicInventoryPageProperties {
+  readonly createAction?: React.ReactNode;
   readonly connected: boolean;
   readonly filter: string;
   readonly onFilterChange: (value: string) => void;
@@ -39,6 +40,7 @@ interface TopicInventoryRow {
 }
 
 export function TopicInventoryPage({
+  createAction,
   connected,
   filter,
   onFilterChange,
@@ -122,15 +124,18 @@ export function TopicInventoryPage({
     >
       <ResourcePageHeader
         action={
-          <Button
-            aria-label="Refresh topics"
-            disabled={!connected || loading}
-            onClick={onRefresh}
-            startIcon={<WorkbenchIcon name="refresh" />}
-            variant="outlined"
-          >
-            Refresh
-          </Button>
+          <Stack direction="row" spacing={1}>
+            {createAction}
+            <Button
+              aria-label="Refresh topics"
+              disabled={!connected || loading}
+              onClick={onRefresh}
+              startIcon={<WorkbenchIcon name="refresh" />}
+              variant="outlined"
+            >
+              Refresh
+            </Button>
+          </Stack>
         }
         description="Browse the topics the active Kafka principal is authorized to inspect."
         title="Topics"
