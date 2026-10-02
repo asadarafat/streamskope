@@ -68,16 +68,19 @@ class DocumentationCommandTests(unittest.TestCase):
 class DocumentationLimitTests(unittest.TestCase):
     def test_rejects_a_stale_operator_limit(self):
         source = (docs.WEBSITE / "docs/guide/data-handling.md").read_text()
-        changed, count = re.subn(
-            r"(\|\s*Retained message bytes\s*\|)[^|]+",
-            r"\1 incorrect ", source,
-        )
-        self.assertEqual(count, 1)
-        with tempfile.TemporaryDirectory() as directory:
-            page = Path(directory) / "data.md"
-            page.write_text(changed)
-            with self.assertRaisesRegex(ValueError, "Retained message bytes"):
-                docs.inspect_message_limits(page)
+        for boundary in ("Retained message bytes", "Broker search scan",
+                         "Saved query library", "Portable query document"):
+            with self.subTest(boundary=boundary):
+                changed, count = re.subn(
+                    r"(\|\s*" + re.escape(boundary) + r"\s*\|)[^|]+",
+                    r"\1 incorrect ", source,
+                )
+                self.assertEqual(count, 1)
+                with tempfile.TemporaryDirectory() as directory:
+                    page = Path(directory) / "data.md"
+                    page.write_text(changed)
+                    with self.assertRaisesRegex(ValueError, boundary):
+                        docs.inspect_message_limits(page)
 
     def test_rejects_an_omitted_operator_limit(self):
         source = (docs.WEBSITE / "docs/guide/data-handling.md").read_text()

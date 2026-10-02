@@ -112,7 +112,11 @@ service and the [AIO development fixture](../start/development.md). Do not subst
 the deterministic encryption used by other profile tests. The rehearsal creates
 its own temporary app-data directories and removes them after the test; it never
 restores over your normal desktop profile. It also creates and deletes one uniquely
-named fixture topic for the recent-window/export check.
+named fixture topic for the historical-query/export check. It saves an absolute
+query interval and filter, backs up the complete app data, deletes the temporary
+profile and query, restores both, reconnects without re-entering credentials and
+checks the known record in an export. Opening the restored query must not connect
+or read until explicitly requested.
 
 After setting up the development prerequisites:
 
@@ -127,11 +131,22 @@ PowerShell users can set `$env:STREAMSKOPE_NATIVE_RECOVERY = "1"` before the sam
 The test refuses unavailable or plaintext credential protection. Ordinary CI leaves
 this rehearsal skipped unless explicitly configured; a skip is not a pass.
 
+To include an upgrade, set `STREAMSKOPE_UPGRADE_FROM_EXECUTABLE` to the previous
+desktop executable before running the same command. On macOS this may be
+`/Applications/StreamSkope.app/Contents/MacOS/StreamSkope`. The test starts that
+binary with isolated temporary app data, creates a protected profile, quits it,
+backs up its data, then opens the same data with the current source build. Both
+applications must have the same credential identity. It does not replace the
+installed binary or use your normal profile directory. Without this variable,
+the result is a same-build recovery rehearsal and must not be reported as an upgrade.
+
 For each qualified platform, record OS/architecture, Electron version, credential
 backend, application commit, and the successful reconnect after restoring. The
-current automated scenario covers a profile with protected credentials; separate
-recipes/rules/plugin rollback still require their own evidence. Before relying on
-an upgrade or downgrade, also rehearse its exact source/target builds.
+automated scenario covers protected profile recovery, saved query settings,
+explicit historical bounds and a known-record export. Record the baseline/candidate
+versions and whether a previous executable was actually used. Installer replacement,
+other operating systems, and recipes/rules/plugin rollback still require their own
+evidence. Before relying on a downgrade, rehearse its exact source/target builds.
 
 ## Repeat the restricted-account rehearsal
 
