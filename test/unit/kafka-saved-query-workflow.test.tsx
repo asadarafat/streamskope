@@ -100,7 +100,7 @@ it("saves, reopens and deletes query settings without starting a read or keeping
       filters: { expression: '$.status == "failed"' },
     },
   });
-  await user.click(screen.getByRole("button", { name: "Close", exact: true }));
+  await user.click(screen.getByRole("button", { name: "Close" }));
   await user.clear(screen.getByRole("textbox", { name: "JSON expression" }));
   await user.click(screen.getByRole("combobox", { name: "Read mode" }));
   await user.click(screen.getByRole("option", { name: "Newest N" }));
@@ -111,7 +111,7 @@ it("saves, reopens and deletes query settings without starting a read or keeping
       sequence: 3,
       payload: {
         state: "empty",
-        request: { mode: "latest", topic: "orders", maxMessages: 1_000 },
+      request: { mode: "newest", topic: "orders", maxMessages: 1_000 },
         droppedMessages: 0,
         receivedMessages: 0,
         ruleEvaluation: { applicableRules: 0, omittedRules: 0, state: "ready" },
@@ -145,7 +145,7 @@ it("saves, reopens and deletes query settings without starting a read or keeping
   await user.click(await screen.findByRole("option", { name: "Failed orders" }));
   await user.click(screen.getByRole("button", { name: "Delete selected" }));
   expect((await host.library.list()).queries).toHaveLength(1);
-  await user.click(screen.getByRole("button", { name: "Delete query", exact: true }));
+  await user.click(screen.getByRole("button", { name: "Delete query" }));
   expect(await screen.findByText("Query deleted.")).toBeVisible();
   expect((await host.library.list()).queries).toEqual([]);
 });
