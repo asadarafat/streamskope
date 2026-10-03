@@ -98,6 +98,11 @@ class DocumentationVersionTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / "website/docs/releases").mkdir(parents=True)
+        (self.root / "website/docs/guide").mkdir()
+        self.qualification = self.root / "website/docs/guide/qualification.md"
+        self.qualification.write_text(
+            "# Qualification evidence\n\nGeneral evidence guidance.\n\n"
+            "## Published release: v0.1.0+build.1\n\nHistorical checks.\n")
         self.source_version("0.0.0-dev")
         (self.root / "website/zensical.toml").write_text(
             '[project.extra]\ndesktop_release = "v0.1.0+build.1"\n')
@@ -222,6 +227,40 @@ class DocumentationVersionTests(unittest.TestCase):
         self.assertEqual(docs.documentation_context(self.root, environment)["source_release"], "v0.3.0-rc.1")
         self.assertIn("| 0.3.0-rc.1 | Published prerelease;", (self.root / "website/docs/releases/index.md").read_text())
 
+    def test_publication_links_only_the_exact_uploaded_qualification_asset(self):
+        environment = self.release_environment()
+        event = json.loads(self.event.read_text())
+        asset = {
+            "name": "qualification-v0.2.0.json", "state": "uploaded", "size": 1200,
+            "browser_download_url": "https://github.com/asadarafat/streamskope/releases/download/v0.2.0/qualification-v0.2.0.json",
+        }
+        for assets in (None, [], [{**asset, "size": 0}], [{**asset, "size": True}],
+                       [{**asset, "state": "new"}], [{**asset, "name": "qualification-v0.1.0.json"}],
+                       [{**asset, "browser_download_url": "https://example.invalid/report"}], [asset]):
+            with self.subTest(assets=assets):
+                self.event.write_text(json.dumps({**event, "release": {**event["release"], "assets": assets}}))
+                docs.publication.prepare_publication(self.root, environment)
+                content = self.qualification.read_text()
+                self.assertEqual(content.count("## Published release:"), 1)
+                self.assertIn("## Published release: v0.2.0", content)
+                self.assertIn("## Historical qualification: v0.1.0+build.1", content)
+                self.assertIn(environment["GITHUB_SHA"], content)
+                self.assertIn("Historical checks.", content)
+                if assets == [asset]:
+                    self.assertIn(asset["browser_download_url"], content)
+                    self.assertIn("does not establish that every check passed", content)
+                else:
+                    self.assertNotIn("releases/download/", content)
+                    self.assertIn("does not mark them as passed", content)
+
+    def test_bad_qualification_structure_does_not_partially_prepare_a_release(self):
+        environment = self.release_environment()
+        self.qualification.write_text("# Qualification evidence\n")
+        original = {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()}
+        with self.assertRaisesRegex(ValueError, "release evidence section"):
+            docs.publication.prepare_publication(self.root, environment)
+        self.assertEqual(original, {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()})
+
     def test_rejects_wrong_event_revision_version_or_notes_before_preparing_publication(self):
         environment = self.release_environment()
         event = json.loads(self.event.read_text())
@@ -339,6 +378,9 @@ class PublicationTests(unittest.TestCase):
     def response(self, url, **kwargs):
         if "documentation.json" in url:
             text = json.dumps({"revision": self.revision, "desktop_release": self.release})
+        elif "/guide/qualification/" in url:
+            text = (f'<meta name="streamskope-docs-revision" content="{self.revision}">'
+                    f'<h2>Published release: {self.release}</h2>')
         elif "/guide/" in url:
             plugin = "eda" if "/eda/" in url else "nsp"
             text = f'window.location.replace("../../plugins/{plugin}/" + window.location.hash)'
@@ -349,24 +391,35 @@ class PublicationTests(unittest.TestCase):
     def test_verifies_exact_revision_pages_and_bookmark_redirects(self):
         with patch.object(docs.publication, "urlopen", side_effect=self.response) as request:
             docs.verify_publication("https://docs.example/", self.revision, self.release, attempts=1)
-        self.assertEqual(request.call_count, 7)
+        self.assertEqual(request.call_count, 8)
 
     def test_stale_marker_retries_then_verifies_routes(self):
         stale = BytesIO(b'{"revision":"old","desktop_release":"v0.1.0"}')
         with patch.object(docs.publication, "urlopen", side_effect=[stale] + [
             self.response("documentation.json"), *[self.response("") for _ in range(4)],
+            self.response("/guide/qualification/"),
             self.response("/guide/eda/"), self.response("/guide/nsp/"),
         ]) as request:
             docs.verify_publication("https://docs.example/", self.revision, self.release, attempts=2, delay=0)
-        self.assertEqual(request.call_count, 8)
+        self.assertEqual(request.call_count, 9)
 
     def test_matching_marker_does_not_hide_a_stale_page_or_broken_redirect(self):
-        for broken in ("/plugins/nsp/", "/guide/eda/"):
+        for broken in ("/plugins/nsp/", "/guide/eda/", "/guide/qualification/"):
             def response(url, **kwargs):
                 return BytesIO(b"old page") if broken in url else self.response(url, **kwargs)
             with self.subTest(broken=broken), patch.object(docs.publication, "urlopen", side_effect=response):
                 with self.assertRaisesRegex(ValueError, "Public documentation verification failed"):
                     docs.verify_publication("https://docs.example/", self.revision, self.release, attempts=1)
+
+    def test_rejects_current_revision_with_previous_release_qualification(self):
+        def response(url, **kwargs):
+            if "/guide/qualification/" in url:
+                return BytesIO((f'<meta name="streamskope-docs-revision" content="{self.revision}">'
+                                '<h2>Published release: v0.0.1</h2>').encode())
+            return self.response(url, **kwargs)
+        with patch.object(docs.publication, "urlopen", side_effect=response):
+            with self.assertRaisesRegex(ValueError, "describes another release"):
+                docs.verify_publication("https://docs.example/", self.revision, self.release, attempts=1)
 
 
 class MediaSelectionTests(unittest.TestCase):

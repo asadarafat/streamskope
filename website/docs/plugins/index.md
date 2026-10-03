@@ -88,11 +88,12 @@ EDA's cluster app or delete NSP's shared helper workflow.
 
 ## Versioning and compatibility
 
-The upcoming API 4 format gives each plugin an independent Semantic Version.
+The API 4 format gives each plugin an independent Semantic Version.
 Its manifest separately declares an inclusive minimum/exclusive maximum desktop
 interval, plugin API, target system and inclusive target versions. The
 [manifest-derived source declarations](versioning.md#declared-packages) show these
-requirements. The original published release retains API 3 packages; see the
+requirements. API 4 support in the desktop does not mean an API 4 plugin package
+has been published. The original published release retains API 3 packages; see the
 [migration steps](versioning.md#upgrade-from-the-original-packages).
 
 Read [Versioning and compatibility](versioning.md) to interpret requirements,

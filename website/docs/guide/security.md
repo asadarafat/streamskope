@@ -12,20 +12,21 @@ principal before widening access. The [qualification record](qualification.md) d
 restricted-account rehearsal from request-derived requirements that have not been
 verified across vendors.
 
-| Workflow                                    | Kafka permission/resource                                                                                                           | Effect                                                                                          |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| List topics and inspect partition offsets   | `Describe` on the selected topics                                                                                                   | Reads metadata and offsets                                                                      |
-| Read messages                               | `Read` and `Describe` on selected topics; `Read` on generated `streamskope-` groups                                                 | Fetches records with manual assignment and automatic offset commits disabled                    |
-| List and inspect consumer lag               | `Describe` on the relevant groups and topics                                                                                        | Reads membership, committed offsets and end offsets; does not reset offsets                     |
-| Preview and reset consumer offsets          | Group `Describe` and `Read`; topic `Describe` and `Read` for selected partitions; generated preview groups also need `Read`         | Preview reads positions/examples; confirmed application changes only selected committed offsets |
-| Copy or replay records                      | Target topic `Write` and `Describe`, plus `Read` and generated-group `Read` for read-back                                           | Preview does not produce; confirmed replay writes a bounded selection with new offsets          |
-| Explain topic access and review ACL changes | Cluster `Describe`; cluster `DescribeConfigs` adds policy evidence                                                                  | Reads bindings and visible policy; unknown policy is explicit                                   |
-| Read topic configuration                    | `DescribeConfigs` on the topic                                                                                                      | Reads configuration                                                                             |
-| Read broker configuration                   | `DescribeConfigs` on the cluster                                                                                                    | Reads broker configuration                                                                      |
-| Change topic configuration                  | `AlterConfigs` on the topic                                                                                                         | Writes the reviewed settings                                                                    |
-| Inspect ACLs                                | `Describe` on the cluster                                                                                                           | Reads access rules                                                                              |
-| Create or delete ACLs                       | `Alter` on the cluster                                                                                                              | Changes authorization                                                                           |
-| Run a latency probe                         | Topic `Write`, `Read` and `Describe`; Group `Read` for `streamskope-latency-` groups, plus any broker-specific producer permissions | Produces real records and consumes probe results                                                |
+| Workflow                                    | Kafka permission/resource                                                                                                              | Effect                                                                                                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| List topics and inspect partition offsets   | `Describe` on the selected topics                                                                                                      | Reads metadata and offsets                                                                                                                        |
+| Read messages                               | `Read` and `Describe` on selected topics; `Read` on generated `streamskope-` groups                                                    | Fetches records with manual assignment and automatic offset commits disabled                                                                      |
+| List and inspect consumer lag               | `Describe` on the relevant groups and topics                                                                                           | Reads membership, committed offsets and end offsets; does not reset offsets                                                                       |
+| Observe health and discover relationships   | `Describe` on selected topics and visible consumer groups; optional record sampling also needs topic `Read` and generated-group `Read` | Reads bounded metadata/positions; optional samples do not commit application offsets. Connect and Registry reads need independent HTTP permission |
+| Preview and reset consumer offsets          | Group `Describe` and `Read`; topic `Describe` and `Read` for selected partitions; generated preview groups also need `Read`            | Preview reads positions/examples; confirmed application changes only selected committed offsets                                                   |
+| Copy or replay records                      | Target topic `Write` and `Describe`, plus `Read` and generated-group `Read` for read-back                                              | Preview does not produce; confirmed replay writes a bounded selection with new offsets                                                            |
+| Explain topic access and review ACL changes | Cluster `Describe`; cluster `DescribeConfigs` adds policy evidence                                                                     | Reads bindings and visible policy; unknown policy is explicit                                                                                     |
+| Read topic configuration                    | `DescribeConfigs` on the topic                                                                                                         | Reads configuration                                                                                                                               |
+| Read broker configuration                   | `DescribeConfigs` on the cluster                                                                                                       | Reads broker configuration                                                                                                                        |
+| Change topic configuration                  | `AlterConfigs` on the topic                                                                                                            | Writes the reviewed settings                                                                                                                      |
+| Inspect ACLs                                | `Describe` on the cluster                                                                                                              | Reads access rules                                                                                                                                |
+| Create or delete ACLs                       | `Alter` on the cluster                                                                                                                 | Changes authorization                                                                                                                             |
+| Run a latency probe                         | Topic `Write`, `Read` and `Describe`; Group `Read` for `streamskope-latency-` groups, plus any broker-specific producer permissions    | Produces real records and consumes probe results                                                                                                  |
 
 Group listings may contain only authorized groups. An empty inventory is not proof
 that no groups exist. Message inspection uses generated StreamSkope consumer
@@ -43,6 +44,13 @@ needs subject/schema reads; registration, compatibility checks and deletion need
 their corresponding API access. Transform inspection needs Admin API reads, logs
 also require access to the transform log topic, and deletion needs Admin API write
 access. Kafka sign-in alone does not grant either service's access.
+
+[Relationships](relationships.md) checks Connect's reported Kafka cluster ID
+before associating its connectors with the current broker. It reads connector
+information and tracked topics without changing configuration. Registry reads
+discover only visible, bounded subject versions; missing permissions leave coverage
+unknown. Observed health records client-observed offsets and request timings,
+not broker CPU, disk utilization or application processing latency.
 
 For an inspection account, test topic listing, a bounded read and any required group
 or schema view. Have the administrator confirm that produce, configuration changes,
@@ -92,8 +100,10 @@ The installed agent uses a `ClusterRoleBinding`. Its ClusterRole grants:
 These permissions are not restricted to resource names or ownership labels.
 The application checks ownership labels before managing existing capture resources;
 that is an application safeguard, not a Kubernetes authorization boundary. Review
-the [shipped deployment manifest](https://github.com/asadarafat/streamskope/blob/v0.1.0%2Bbuild.1/vendors/streamskope/apps/capture/agent/config/deployment.yaml)
-when approving the app.
+the deployment manifest for the exact cluster-app artifact being installed when
+approving the app. The [original release manifest](https://github.com/asadarafat/streamskope/blob/v0.1.0%2Bbuild.1/vendors/streamskope/apps/capture/agent/config/deployment.yaml)
+is historical evidence; compare it with the intended artifact rather than assuming
+the original file describes every later build.
 
 ## EDA transport boundaries
 
@@ -123,8 +133,9 @@ Kafka configuration and environment promotion, Connect lifecycle actions, offset
 transform deletion, latency probes, remote credential acquisition, and plugin
 actions or installation/removal. New commands must declare their access category.
 
-Ordinary Kafka connections, bounded message reads, metadata and validation requests
-remain available. Managed plugin profiles require lifecycle hooks, so connecting
+Ordinary Kafka connections, bounded message reads, metadata and validation requests,
+health observations, relationship discovery and local history controls remain available.
+Managed plugin profiles require lifecycle hooks, so connecting
 or testing them is blocked in this mode. Use an ordinary saved Kafka profile with
 credentials that the broker restricts to reading, or deliberately disable the mode
 before managing a capture. Plugin state changes and remote cleanup also require

@@ -59,11 +59,18 @@ recovered. Never attach a full backup to an issue report.
    with empty values to dismiss an error.
 4. Open **Preferences → Plugins**. Install the compatible plugin if a saved EDA
    or NSP profile reports it missing. The original release uses API 3 packages;
-   The unreleased host introduces API 4; its release builds preserve installed API 2/3 packages. Check the
+   desktop 0.2.0 introduced API 4 support and release builds preserve installed API 2/3 packages. Check the
    [migration instructions](../plugins/versioning.md#upgrade-from-the-original-packages),
    desktop interval and target version. A stopped EDA capture needs an explicit resume.
 5. Test a reviewed profile, read a known topic and confirm the expected result.
    Retain the backup until the workflows you use have been verified.
+
+[Observed health](observed-health.md) retains bounded local history under `history/`;
+it is covered by the full backup above. **Clear all observation history** removes observations
+for every profile in this app-data directory and cannot be undone without a backup.
+It does not erase copies in backups or change Kafka data. Older desktop versions
+without Observed health do not display this history; a new history file does not
+by itself migrate the profile format.
 
 ## Choose the correct rollback snapshot
 

@@ -199,7 +199,7 @@ development artifact, separate from the signed App Store publication.
 ### Compatibility package
 
 The development API 4 package targets **EDA 26.8.2** and declares desktop
-**>=0.4.0, <0.7.0**. These are compatibility bounds, not a promised release
+**>=0.4.0, <0.8.0**. These are compatibility bounds, not a promised release
 number; the plugin version is assigned when its release workflow starts. See
 the [manifest-derived declarations](versioning.md#declared-packages) for its
 development identity, desktop bounds and inclusive target range. The official

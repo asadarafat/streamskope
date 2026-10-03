@@ -20,6 +20,16 @@ and `tools/docs/`. The `dev` entry also dispatches the source CLI (`tools/cli.ts
 
 The source distribution also supports `npm run dev -- cli --help` for bounded inspect/query/export and `npm run dev -- sandbox up|status|consume|transform|down` for an owned local consumer environment. See [CLI behavior and protection](website/docs/guide/read-only-cli.md) and [sandbox lifecycle](website/docs/guide/developer-sandbox.md). Real-system developer qualification lives in `test/kafka/developer-real.test.ts` and `test/kafka/sandbox-real.test.ts`; it is run explicitly, not inferred from shared CI.
 
+Observation and relationship regressions use `test/kafka/observations-real.test.ts`
+and `test/kafka/relationships-real.test.ts`; the latter also needs the configured
+AIO Registry fixture. `node tools/package/e2e.mjs web test/e2e/web-observations.spec.ts`
+creates disposable Kafka/Connect containers and exercises actual UI sampling,
+forecasting, stopped collection and graph interactions, with accessibility checks.
+These real-system scenarios run explicitly outside shared CI. Configured local
+EDA/NSP qualification additionally checks read-only health/relationship metadata
+against each platform's broker; that does not qualify every diagnosis or schema
+mapping on those targets.
+
 Local CI runs workflow validation, formatting, lint, TypeScript, architecture,
 unit/integration tests, EDA source and agent checks, dependency checks, a
 **60-second performance soak**, docs qualification and configured live EDA/NSP tests.
@@ -292,7 +302,12 @@ CI assigns the title and exact
 version metadata in the build checkout. A SemVer prerelease marks the draft as a
 prerelease; an ordinary version does not. Signing is a separate property: these
 desktop installers remain unsigned. Desktop releases do not republish plugins.
-Review the draft, its source and qualification evidence, then publish it on GitHub.
+Review the draft, its source and qualification evidence. Attach the sanitized,
+source-specific `qualification-vVERSION.json` report and add its digest to
+`SHA256SUMS` before publication. Record each executed check, skipped/failed checks,
+environment conditions and material limits; do not infer live passes from packaging.
+Pages links this exact report only when it appears in the publication event's assets.
+Then publish the reviewed draft on GitHub.
 For stable desktop publication, select **Set as the latest release**. Publish
 release candidates and independent plugin releases without changing the latest
 desktop destination. Creating a draft does not make its downloads public.
