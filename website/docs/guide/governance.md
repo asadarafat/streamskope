@@ -10,17 +10,19 @@ granting configuration, ACL or service mutation rights.
 1. Open **Access Control Lists** in the left navigation.
 2. Find the principal and resource you want to inspect.
 3. Read the resource name and pattern, operation, permission and host.
-4. Compare the entries with the action that principal needs to perform.
+4. Choose **Explain access** for a concrete topic, principal and broker-observed
+   client IP. Inspect supported READ decisions and any unknown policy.
 
 **You should have:** the visible authorization rules for that resource.
 
-To change an ACL, review those same fields before confirming its creation or
-deletion. Then verify the intended principal's access. A successful administrative
+To change an ACL, preview the exact binding and its supported before/after impact,
+then confirm the full change identity. Follow [access review](access-review.md)
+for stale plans, permission requirements and unknown outcomes. Verify the intended principal's access. A successful administrative
 request alone does not prove that the desired access works. Use an isolated
 cluster for access-policy experiments.
 
-Deletion requires the complete binding identity, including pattern, principal,
-host, operation and permission. After a change, StreamSkope reconciles that exact
+Creation and deletion require the action and complete binding identity, including
+pattern, principal, host, operation and permission. After a change, StreamSkope reconciles that exact
 binding with refreshed inventory. If the broker acknowledged but the refresh
 failed, Activity records the acknowledgement and a warning. Refresh the inventory
 without repeating the mutation. An unacknowledged change may have reached Kafka;

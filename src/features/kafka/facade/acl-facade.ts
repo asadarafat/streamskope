@@ -16,7 +16,10 @@ import {
   type ActivityInput,
 } from "./facade-support";
 
-type AclCommand = Extract<HostCommand, { readonly command: `acls.${string}` }>;
+type AclCommand = Extract<
+  HostCommand,
+  { readonly command: "acls.list" | "acls.create" | "acls.delete" }
+>;
 
 interface AclFacadeBindings {
   readonly available: () => boolean;

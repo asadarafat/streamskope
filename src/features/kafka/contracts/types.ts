@@ -71,7 +71,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 40 as const;
+export const HOST_PROTOCOL_VERSION = 41 as const;
 
 export const HOST_COMMANDS = [
   "records.replay.review",
@@ -126,6 +126,9 @@ export const HOST_COMMANDS = [
   "schemas.compatibility.check",
   "schemas.register",
   "schemas.delete",
+  "acls.access.explain",
+  "acls.change.review",
+  "acls.change.apply",
   "acls.list",
   "acls.create",
   "acls.delete",
@@ -393,32 +396,13 @@ export interface SecureConnectionIssue {
   readonly message: string;
 }
 
-interface HostCommandBase {
+export interface HostCommandBase {
   readonly id: string;
   readonly version: typeof HOST_PROTOCOL_VERSION;
 }
 
 type HostCommandDefinition =
-  | (HostCommandBase & {
-      readonly command: "records.replay.review";
-      readonly payload: import("./record-replay").RecordReplayInput;
-    })
-  | (HostCommandBase & {
-      readonly command: "records.replay.apply";
-      readonly payload: { readonly planId: string; readonly confirmation: string };
-    })
-  | (HostCommandBase & {
-      readonly command: "records.replay.cancel";
-      readonly payload: { readonly planId: string };
-    })
-  | (HostCommandBase & {
-      readonly command: "consumerGroups.reset.review";
-      readonly payload: import("./offset-reset").OffsetResetInput;
-    })
-  | (HostCommandBase & {
-      readonly command: "consumerGroups.reset.apply";
-      readonly payload: { readonly planId: string; readonly confirmation: string };
-    })
+  | import("./recovery-command-types").RecoveryHostCommand
   | (HostCommandBase & {
       readonly command: "records.trace";
       readonly payload: import("./correlation-trace").CorrelationTraceInput;

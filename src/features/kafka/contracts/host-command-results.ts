@@ -16,6 +16,18 @@ import type { KafkaOperationalPreferenceResult } from "./operational-preference-
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
 interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRecipeCommandResults {
+  readonly "acls.access.explain": {
+    readonly correlationId: string;
+    readonly explanation: import("./acl-review").TopicAccessExplanation;
+  };
+  readonly "acls.change.review": {
+    readonly correlationId: string;
+    readonly review: import("./acl-review").AclChangeReview;
+  };
+  readonly "acls.change.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./reviewed-writes").KafkaWriteOutcome;
+  };
   readonly "consumerGroups.reset.review": {
     readonly correlationId: string;
     readonly review: import("./offset-reset").OffsetResetReview;
@@ -103,6 +115,9 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "acls.access.explain": true,
+  "acls.change.review": true,
+  "acls.change.apply": true,
   "records.replay.review": true,
   "records.replay.apply": true,
   "consumerGroups.reset.review": true,

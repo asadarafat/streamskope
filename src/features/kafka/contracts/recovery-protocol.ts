@@ -1,3 +1,5 @@
+import { parseAclReviewCommand, parseAclReviewResponse } from "./acl-review-protocol";
+import { parseReplayCommand, parseReplayResponse } from "./replay-protocol";
 import type { HostCommand, HostCommandResponse } from "./types";
 import { record, exactKeys, text } from "./validation-primitives";
 import {
@@ -6,7 +8,7 @@ import {
   parseOffsetResetOutcome,
 } from "./offset-reset";
 
-export function parseRecoveryCommand(
+function parseOffsetResetCommand(
   command: HostCommand["command"],
   id: string,
   value: unknown,
@@ -29,7 +31,7 @@ export function parseRecoveryCommand(
   }
   return undefined;
 }
-export function parseRecoveryResponse(
+function parseOffsetResetResponse(
   command: HostCommand["command"],
   id: string,
   result: Record<string, unknown>,
@@ -62,4 +64,29 @@ export function parseRecoveryResponse(
     };
   }
   return undefined;
+}
+
+export function parseRecoveryCommand(
+  command: HostCommand["command"],
+  id: string,
+  value: unknown,
+  version: HostCommand["version"],
+): HostCommand | undefined {
+  return (
+    parseOffsetResetCommand(command, id, value, version) ??
+    parseReplayCommand(command, id, value, version) ??
+    parseAclReviewCommand(command, id, value, version)
+  );
+}
+export function parseRecoveryResponse(
+  command: HostCommand["command"],
+  id: string,
+  result: Record<string, unknown>,
+  version: HostCommand["version"],
+): HostCommandResponse | undefined {
+  return (
+    parseOffsetResetResponse(command, id, result, version) ??
+    parseReplayResponse(command, id, result, version) ??
+    parseAclReviewResponse(command, id, result, version)
+  );
 }

@@ -36,6 +36,7 @@ function request(name: HostCommand["command"]): HostCommand {
   } as HostCommand;
 }
 const writes = [
+  "acls.change.apply",
   "records.replay.apply",
   "consumerGroups.reset.apply",
   "records.batch.apply",
