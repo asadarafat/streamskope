@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { release } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -73,9 +74,7 @@ async function profiles(page: Page): Promise<readonly ProfileSummary[]> {
     ),
   ) as readonly ProfileSummary[];
 }
-async function installation(
-  page: Page,
-): Promise<
+async function installation(page: Page): Promise<
   | {
       activationId: string | undefined;
       rendererUrl: string | undefined;
@@ -164,6 +163,12 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
   ]);
   const { page, application } = fixture;
   page.setDefaultTimeout(30_000);
+  const noSandboxLaunchArgument = application.process().spawnargs.includes("--no-sandbox");
+  const nativeRuntime = await application.evaluate(() => ({
+    platform: process.platform,
+    architecture: process.arch,
+    electron: process.versions.electron,
+  }));
   const marker = `streamskope-native-qualification:${randomUUID()}`;
   const topic = ownedNspTopic();
   let admin: Awaited<ReturnType<typeof liveNspFixtureAdmin>> | undefined;
@@ -432,9 +437,10 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
             security: fixture.security,
             sandboxScope: {
               rendererPreferencesOnly: true,
-              noSandboxLaunchArgument: process.getuid?.() === 0,
+              noSandboxLaunchArgument,
               osSandboxEnforcement: "not independently measured",
             },
+            nativeRuntime: { ...nativeRuntime, kernel: release() },
             packages: [current, update].map(({ manifest, sha256 }) => ({
               version: manifest.version,
               apiVersion: manifest.apiVersion,
