@@ -338,7 +338,9 @@ export function ReplayRecordsAction({
               managed capture beforehand. Replay uses existing topics and does not install or resume
               plugins.
             </Typography>
-            <Typography variant="subtitle2">Optional transformations</Typography>
+            <Typography component="h3" variant="subtitle2">
+              Optional transformations
+            </Typography>
             <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
               <TextField
                 select
@@ -416,11 +418,15 @@ export function ReplayRecordsAction({
                     </MenuItem>
                   ))}
                 </TextField>
-                <Typography variant="subtitle2">Before (original Base64 bytes)</Typography>
+                <Typography component="h3" variant="subtitle2">
+                  Before (original Base64 bytes)
+                </Typography>
                 <StudioCodeBlock sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                   {JSON.stringify(review.input.records[Number(previewIndex)]?.original, null, 2)}
                 </StudioCodeBlock>
-                <Typography variant="subtitle2">After (exact reviewed Base64 bytes)</Typography>
+                <Typography component="h3" variant="subtitle2">
+                  After (exact reviewed Base64 bytes)
+                </Typography>
                 <StudioCodeBlock sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                   {JSON.stringify(review.batch.records[Number(previewIndex)], null, 2)}
                 </StudioCodeBlock>

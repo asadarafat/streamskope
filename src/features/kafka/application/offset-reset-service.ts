@@ -69,6 +69,11 @@ export class OffsetResetService {
                 "Could not recheck group state, offsets or permissions. Remaining partitions were not sent.";
               break;
             }
+            if (this.now() - started >= 60_000) {
+              detail =
+                "The 60-second dispatch bound was reached during revalidation. Remaining partitions were not sent.";
+              break;
+            }
             if (
               !this.plans.current(plan.context) ||
               !baseline.inactive ||

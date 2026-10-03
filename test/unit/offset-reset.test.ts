@@ -113,6 +113,27 @@ it.each(["change", "expire"] as const)("rejects %s plans", async (action) => {
   await expect(f.service.apply(review.planId, input.groupId)).rejects.toThrow();
   expect(f.send).not.toHaveBeenCalled();
 });
+it("does not dispatch when the revalidation itself crosses the execution deadline", async () => {
+  const f = fixture();
+  let now = 0,
+    reads = 0;
+  const connection = Object.assign(new RecordingActiveConnection(), {
+    offsetResetSnapshot: (): Promise<OffsetResetSnapshot> => {
+      if (++reads > 1) now = 60_000;
+      return Promise.resolve(structuredClone(f.snapshot));
+    },
+    resetGroupOffset: f.send,
+  });
+  const service = new OffsetResetService(
+    () => ({ connection, generation: 1, connectionName: "Deadline fixture" }),
+    () => now,
+  );
+  const review = await service.review(input);
+  const outcome = await service.apply(review.planId, input.groupId);
+  expect(outcome.partitions.every((p) => p.state === "unsent")).toBe(true);
+  expect(outcome.detail).toContain("60-second");
+  expect(f.send).not.toHaveBeenCalled();
+});
 it("stops after unknown dispatch and never repeats it when the same plan is confirmed", async () => {
   const f = fixture();
   f.send.mockRejectedValueOnce(new Error("Lost response"));

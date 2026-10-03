@@ -22,12 +22,26 @@ installers. Results from an earlier revision do not qualify changed source.
 | Static, unit, architecture, non-live integration and docs | The exact successful PR CI or release CI run                                                                        |
 | Linux, macOS and Windows installers                       | The release's native build/launch jobs and installer checksums                                                      |
 | 60-second performance soak                                | A local report tied to the source revision; release CI does not run it                                              |
-| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal; no current API 4 live result is recorded          |
-| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal; no current API 4 live result is recorded            |
+| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal in the exact source-specific report                |
+| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal in the exact source-specific report                  |
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
 
-## Published release: v0.4.0
+## Safe recovery source qualification
+
+The [safe recovery qualification PR](https://github.com/asadarafat/streamskope/pull/33)
+records checks of the combined offset-reset, replay and ACL-review implementation.
+Read its exact revision and results before comparing it with your installed build.
+After publication, the matching release notes link a downloadable source-specific
+report with the source tree, workflow runs, local results and limitations.
+
+Local EDA and NSP results qualify the exercised API, Kafka and cleanup paths.
+They do not establish an installed native plugin upgrade, credential-service
+restore, every vendor permission policy or every broker authentication mode.
+See the exact report for which checks passed, failed or were skipped. Publication
+and declared compatibility alone never supply missing live evidence.
+
+## Historical qualification: v0.4.0
 
 [v0.4.0](../releases/v0.4.0.md) was published on **2026-10-03** from source
 [`f1cddce`](https://github.com/asadarafat/streamskope/commit/f1cddce18a1cb97a78e17f6531e914f39449989d).
