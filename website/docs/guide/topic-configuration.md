@@ -68,3 +68,11 @@ After Kafka acknowledges, the app reads back partition and replica counts and
 refreshes the inventory. If refresh fails, the acknowledgement remains valid.
 For an unknown result, refresh and inspect the topic before another attempt;
 there is no automatic retry and no rollback of an acknowledged topic.
+
+## Acknowledgement and recovery
+
+A broker acknowledgement is retained even if the next configuration read or local
+history write fails, or the connection changes. Refresh or repair local history
+separately; do not apply the configuration again just to refresh its display.
+If the write was not acknowledged, inspect the selected keys on the broker before
+another attempt. A lost response or cancellation does not prove rollback.

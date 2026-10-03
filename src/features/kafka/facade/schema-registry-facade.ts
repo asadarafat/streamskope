@@ -52,6 +52,21 @@ function safeFailure(error: unknown, correlationId: string, target: string): Hos
       ? error.status
       : null;
   const denied = status === 401 || status === 403;
+  if (status === 400 || status === 409 || status === 422)
+    return {
+      activeStateChanged: false,
+      code: "VALIDATION",
+      correlationId,
+      retryable: false,
+      stage: "validation",
+      target,
+      summary:
+        status === 409
+          ? "Schema Registry rejected a compatibility conflict."
+          : "Schema Registry rejected the schema or dependency change.",
+      recovery:
+        "Review the schema type, references, compatibility policy and dependent subjects before making another change.",
+    };
   const cancelled =
     error instanceof Error &&
     ["AbortError", "OperationAborted", "ConnectionAttemptSupersededError"].includes(error.name);
@@ -177,12 +192,24 @@ export class SchemaRegistryFacadeController {
         outcome: "succeeded",
         severity: "warning",
       });
+      if (command.command === "schemas.register" || command.command === "schemas.delete")
+        return failureResponse(command, {
+          activeStateChanged: false,
+          code: "BACKEND_UNAVAILABLE",
+          correlationId,
+          retryable: false,
+          stage: "backend",
+          summary: "No Schema Registry is configured for this connection.",
+          recovery: "Configure and test the Registry endpoint before changing schemas.",
+        });
       return successResponse(command, correlationId);
     }
     this.controller?.abort();
     const controller = new AbortController();
     this.controller = controller;
     const target = context.baseUrl;
+    let acknowledged: string | undefined;
+    let dispatched = false;
     try {
       switch (command.command) {
         case "schemas.list":
@@ -197,6 +224,7 @@ export class SchemaRegistryFacadeController {
             command.payload,
             controller.signal,
           );
+          controller.signal.throwIfAborted();
           this.options.publish(
             compatibilityEvent(
               { ...result, subject: command.payload.subject, version: command.payload.version },
@@ -211,6 +239,7 @@ export class SchemaRegistryFacadeController {
             command.payload,
             controller.signal,
           );
+          controller.signal.throwIfAborted();
           this.options.publish(
             compatibilityEvent(
               { ...result, subject: command.payload.subject, version: command.payload.version },
@@ -231,11 +260,14 @@ export class SchemaRegistryFacadeController {
             this.recordFailure(command, correlationId, error);
             return failureResponse(command, error);
           }
+          dispatched = true;
           const registered = await this.options.port.register(
             context,
             command.payload,
             controller.signal,
           );
+          acknowledged = `Schema Registry acknowledged registration with ID ${String(registered.id)}.`;
+          controller.signal.throwIfAborted();
           await Promise.all([
             this.loadInventory(context, connectionName, controller.signal),
             this.loadLatestDetail(
@@ -256,7 +288,10 @@ export class SchemaRegistryFacadeController {
           return successResponse(command, correlationId);
         }
         case "schemas.delete":
+          dispatched = true;
           await this.options.port.delete(context, command.payload, controller.signal);
+          acknowledged = "Schema Registry acknowledged the requested deletion.";
+          controller.signal.throwIfAborted();
           await this.loadInventory(context, connectionName, controller.signal);
           this.detail = {
             compatibilityLevel: null,
@@ -281,7 +316,34 @@ export class SchemaRegistryFacadeController {
       });
       return successResponse(command, correlationId);
     } catch (error) {
-      if (this.controller !== controller) {
+      if (acknowledged !== undefined) {
+        const detail = `${acknowledged} Follow-up refresh is unavailable; do not repeat the mutation to refresh its result.`;
+        const warning: HostError = {
+          activeStateChanged: false,
+          code: "BACKEND_UNAVAILABLE",
+          stage: "backend",
+          correlationId,
+          retryable: false,
+          summary: detail,
+          recovery: "Refresh Schema Registry inventory and inspect the affected subject.",
+        };
+        if (this.controller === controller && !controller.signal.aborted) {
+          this.inventory = { ...this.inventory, state: "stale", error: warning };
+          this.detail = { ...this.detail, state: "stale", error: warning };
+          this.publishInventory();
+          this.publishDetail();
+        }
+        this.options.recordActivity({
+          correlationId,
+          detail,
+          object: this.object(command),
+          operation: this.operation(command),
+          outcome: "succeeded",
+          severity: "warning",
+        });
+        return successResponse(command, correlationId);
+      }
+      if (this.controller !== controller && !dispatched) {
         return failureResponse(
           command,
           safeFailure(
@@ -291,7 +353,14 @@ export class SchemaRegistryFacadeController {
           ),
         );
       }
-      const failure = safeFailure(error, correlationId, target);
+      const baseFailure = safeFailure(error, correlationId, target);
+      const failure = dispatched
+        ? {
+            ...baseFailure,
+            retryable: false,
+            recovery: `${baseFailure.recovery} The mutation was not acknowledged; it may have reached the Registry. Inspect the subject and versions before another attempt.`,
+          }
+        : baseFailure;
       const failureState = schemaFailureState(error, failure);
       if (command.command === "schemas.list") {
         this.inventory = {
@@ -316,6 +385,8 @@ export class SchemaRegistryFacadeController {
       return failureResponse(command, failure);
     } finally {
       if (this.controller === controller) {
+        // A sibling refresh may still be pending after Promise.all rejects.
+        controller.abort();
         this.controller = undefined;
       }
     }
@@ -326,6 +397,7 @@ export class SchemaRegistryFacadeController {
     connectionName: string | null,
     signal: AbortSignal,
   ): Promise<void> {
+    signal.throwIfAborted();
     this.inventory = {
       ...this.inventory,
       connectionName,
@@ -352,6 +424,7 @@ export class SchemaRegistryFacadeController {
     identity: Extract<SchemaCommand, { readonly command: "schemas.load" }>["payload"],
     signal: AbortSignal,
   ): Promise<void> {
+    signal.throwIfAborted();
     this.detail = {
       ...this.detail,
       connectionName,

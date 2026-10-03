@@ -37,9 +37,30 @@ subject. A subject's naming strategy determines how it relates to topic records.
 If you need to change a schema:
 
 1. Prepare the proposed schema for that subject.
-2. Check compatibility and review the result.
+2. Check compatibility and review the result for this exact draft. Changing the schema, type, subject or references requires a new check.
 3. Register the new version only when the change is appropriate for its readers.
 4. Reopen the subject and verify the newly registered version.
+
+The displayed policy comes from the Registry's subject configuration, falling back
+to its global configuration. StreamSkope checks that policy; it does not edit it.
+A new subject reports **no registered version**, not compatibility with an existing
+schema. Registration checks compatibility again before sending the write.
+
+References name another subject and an exact version; their supported formats
+depend on the Registry. The Karapace 5.0.3 fixture qualifies Protobuf references
+and Avro compatibility. It does not support Avro references; newer Karapace versions
+add that capability ([vendor support](https://aiven.io/docs/products/kafka/karapace)).
+
+If registration or deletion is acknowledged but the follow-up read fails, Activity
+retains the successful write and warns that refresh is unavailable. Refresh the
+inventory; do not repeat the write to refresh it. If no acknowledgement arrived,
+inspect the subject and its versions before another attempt: a lost response does
+not prove that nothing changed.
+
+Soft deletion hides a subject/version; permanent deletion removes it after the
+soft-delete step, including when it was already soft-deleted. Dependent schemas
+can prevent deletion. Resolve those dependencies deliberately before retrying;
+StreamSkope never cascades deletion through other subjects.
 
 Registration does not rewrite existing Kafka messages. Review the exact subject
 and version before deletion; permanent deletion can break readers that need it.

@@ -169,6 +169,21 @@ function service(
 }
 
 describe("Kafka topic-configuration application service", () => {
+  it("keeps acknowledged configuration when history persistence is cancelled", async () => {
+    const value = service(new RecordingConfigurationSession(), {
+      capability: () => ({ durability: "durable", state: "ready" }),
+      load: () => Promise.resolve(undefined),
+      commit: () => Promise.reject(new DOMException("Cancelled", "AbortError")),
+    });
+    const result = await value.service.apply(input("retention.ms", "600001"));
+    expect(result.configuration.entries).toContainEqual(
+      expect.objectContaining({ name: "retention.ms", value: "600001" }),
+    );
+    expect(result.history.store.state).toBe("unavailable");
+    expect(result.historyFailure).toBeInstanceOf(Error);
+    expect(value.session.alterCalls).toHaveLength(1);
+  });
+
   it("loads a sorted safe view for the active connection", async () => {
     const value = service();
 

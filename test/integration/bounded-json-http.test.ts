@@ -2,6 +2,7 @@ import { createServer, type RequestListener, type Server } from "node:http";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
 import { requestOAuthToken } from "../../src/features/kafka/engine/oauth";
 import { parsePemTrustMaterial } from "../../src/features/kafka/engine/trust-material-shared";
@@ -44,6 +45,25 @@ afterEach(async () => {
 });
 
 describe("bounded host JSON transport", () => {
+  it("does not send Registry credentials over an untrusted TLS connection and preserves HTTP denial", async () => {
+    const registry = await createHttpsTrustFixture((_request, response) => {
+      response.statusCode = 403;
+      response.end('{"error_code":403,"message":"Denied"}');
+    });
+    tlsFixtures.push(registry);
+    const adapter = new SchemaRegistryHttpAdapter(new NodeBoundedJsonHttp());
+    const context = {
+      baseUrl: registry.origin,
+      authorization: (): Promise<string> => Promise.resolve("Bearer fixture-only"),
+    };
+    await expect(adapter.listSubjects(context, new AbortController().signal)).rejects.toThrow();
+    expect(registry.requests).toHaveLength(0);
+    await expect(
+      adapter.listSubjects({ ...context, caPem: registry.caPem }, new AbortController().signal),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(registry.requests).toHaveLength(1);
+  });
+
   it("uses a combined profile CA bundle for separately issued OAuth and service certificates", async () => {
     const oauth = await createHttpsTrustFixture((_request, response) => {
       response.end('{"access_token":"fixture-token"}');

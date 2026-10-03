@@ -70,6 +70,27 @@ describe("real Kafka consumer-group exploration", () => {
         partition: 0,
         topic: seeded.config.topic,
       });
+      await admin.alterConsumerGroupOffsets({
+        groupId,
+        topics: [{ name: seeded.config.topic, partitionOffsets: [{ offset: 1n, partition: 0 }] }],
+      });
+      expect((await session.describeConsumerGroup(groupId)).offsets).toContainEqual({
+        committedOffset: "1",
+        endOffset: "1",
+        lag: "0",
+        partition: 0,
+        topic: seeded.config.topic,
+      });
+      await admin.deleteGroups({ groups: [groupId] });
+      expect((await session.listConsumerGroups()).groups.map((group) => group.id)).not.toContain(
+        groupId,
+      );
+      // Kafka returns a dead, empty group for an absent ID. This is not evidence of zero lag.
+      expect(await session.describeConsumerGroup(groupId)).toMatchObject({
+        state: "dead",
+        offsets: [],
+        members: [],
+      });
     } finally {
       await session.shutdown();
       await admin.deleteGroups({ groups: [groupId] }).catch(() => undefined);

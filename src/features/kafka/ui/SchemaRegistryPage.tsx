@@ -56,6 +56,10 @@ export function SchemaRegistryPage({
   const [schemaType, setSchemaType] = useState<SchemaRegistryType>("AVRO");
   const [schema, setSchema] = useState("");
   const [references, setReferences] = useState("[]");
+  const [checkedDraft, setCheckedDraft] = useState<string>();
+  const draftIdentity = JSON.stringify([subject.trim(), schemaType, schema, references]);
+  const compatibilityCurrent =
+    checkedDraft === draftIdentity && compatibility?.subject === subject.trim();
   const [requestError, setRequestError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [deletion, setDeletion] = useState<{
@@ -95,6 +99,7 @@ export function SchemaRegistryPage({
   };
 
   useEffect(() => {
+    setCheckedDraft(undefined);
     if (connected) refresh();
     else setSelectedSubject(null);
     // The active connection owns this refresh lifecycle.
@@ -419,10 +424,11 @@ export function SchemaRegistryPage({
               onChange={(event) => setReferences(event.target.value)}
               value={references}
             />
-            {compatibility?.subject === subject.trim() ? (
+            {compatibilityCurrent && compatibility !== null ? (
               <Alert severity={compatibility.compatible ? "success" : "warning"}>
                 {compatibility.compatible
-                  ? "Compatible with the latest registered version."
+                  ? compatibility.messages.join(" ") ||
+                    "The Registry accepted compatibility for this draft against the latest version."
                   : compatibility.messages.join(" ") || "The proposed schema is incompatible."}
               </Alert>
             ) : null}
@@ -436,7 +442,13 @@ export function SchemaRegistryPage({
             disabled={busy || subject.trim().length === 0 || schema.length === 0}
             onClick={() => {
               const command = registrationCommand("schemas.compatibility.check");
-              if (command !== null) void execute(command);
+              if (command !== null) {
+                const submitted = draftIdentity;
+                setCheckedDraft(undefined);
+                void execute(command).then((ok) => {
+                  if (ok) setCheckedDraft(submitted);
+                });
+              }
             }}
             variant="outlined"
           >
@@ -447,8 +459,8 @@ export function SchemaRegistryPage({
               busy ||
               subject.trim().length === 0 ||
               schema.length === 0 ||
-              compatibility?.subject !== subject.trim() ||
-              !compatibility.compatible
+              !compatibilityCurrent ||
+              compatibility?.compatible !== true
             }
             onClick={() => {
               const command = registrationCommand("schemas.register");

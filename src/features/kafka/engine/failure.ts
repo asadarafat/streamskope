@@ -32,28 +32,29 @@ export function normalizeKafkaError(error: unknown): Error {
 
 function errorChain(error: unknown): readonly unknown[] {
   const chain: unknown[] = [];
-  let current = error;
-  for (let depth = 0; depth < 8 && current !== undefined; depth += 1) {
+  const pending: unknown[] = [error];
+  const seen = new Set<unknown>();
+  while (pending.length > 0 && chain.length < 32) {
+    const current = pending.shift();
+    if (current === undefined || seen.has(current)) continue;
+    seen.add(current);
     chain.push(current);
-    if (current === null || typeof current !== "object" || !("cause" in current)) {
-      break;
+    if (current !== null && typeof current === "object") {
+      if ("cause" in current) pending.push(current.cause);
+      if ("errors" in current && Array.isArray(current.errors))
+        pending.push(...(current.errors as unknown[]).slice(0, 32));
     }
-    current = (current as { readonly cause?: unknown }).cause;
   }
   return chain;
 }
 
 function errorCodes(error: unknown): readonly string[] {
   return errorChain(error).flatMap((entry) => {
-    if (
-      entry !== null &&
-      typeof entry === "object" &&
-      "code" in entry &&
-      typeof (entry as { readonly code?: unknown }).code === "string"
-    ) {
-      return [(entry as { readonly code: string }).code.toUpperCase()];
-    }
-    return [];
+    if (entry === null || typeof entry !== "object") return [];
+    return ["code", "apiId"].flatMap((key) => {
+      const value = (entry as Record<string, unknown>)[key];
+      return typeof value === "string" ? [value.toUpperCase()] : [];
+    });
   });
 }
 
@@ -141,15 +142,18 @@ export function mapKafkaAdminFailure(
     });
   }
 
-  if (/AUTHORIZATION|NOT AUTHORIZED/u.test(text)) {
+  if (
+    codes.some((code) => code.endsWith("AUTHORIZATION_FAILED")) ||
+    /AUTHORIZATION|NOT AUTHORIZED/u.test(text)
+  ) {
     return new KafkaEngineFailure({
       cause: error,
       cleanupCause,
       code: "AUTHORIZATION_DENIED",
-      recovery: "Request permission for broker metadata access and retry.",
+      recovery: "Request the Kafka permissions required by this operation and retry.",
       retryable: false,
       stage: "authorization",
-      summary: "Kafka denied metadata access.",
+      summary: "Kafka denied this operation.",
       target,
     });
   }

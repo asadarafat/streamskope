@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createRecipeLibrary, LegacyTemplateFixture } from "../support/recipe-library";
 import {
@@ -210,6 +210,7 @@ async function fixture(): Promise<{
   readonly events: HostEvent[];
   readonly facade: KafkaBackendFacade;
   readonly service: RecordingTopicConfigurationService;
+  readonly session: KafkaApplicationSession;
 }> {
   const session = new KafkaApplicationSession(new ConnectionPort());
   await session.connect(connection);
@@ -250,7 +251,7 @@ async function fixture(): Promise<{
   facade.subscribe((event) => {
     events.push(event);
   });
-  return { events, facade, service };
+  return { events, facade, service, session };
 }
 
 describe("Kafka topic-configuration facade", () => {
@@ -471,3 +472,36 @@ describe("Kafka topic-configuration facade", () => {
     );
   });
 });
+
+it.each([true, false])(
+  "keeps a late configuration result out of a replacement connection (acknowledged=%s)",
+  async (acknowledged) => {
+    const value = await fixture();
+    let finish!: () => void;
+    const apply = vi.fn(
+      (): Promise<KafkaTopicConfigurationOperationResult> =>
+        new Promise((resolve, reject) => {
+          finish = (): void => {
+            if (acknowledged) resolve({ configuration: view, history });
+            else reject(new Error("Response lost"));
+          };
+        }),
+    );
+    value.service.apply = apply;
+    const response = value.facade.execute(topicCommand("topicConfiguration.apply", "late"));
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    await value.session.disconnect();
+    await value.session.connect({ ...connection, name: "Other cluster" });
+    value.events.length = 0;
+    finish();
+    expect((await response).ok).toBe(acknowledged);
+    expect(
+      value.events.filter(
+        (event) =>
+          event.event === "topicConfiguration.changed" ||
+          event.event === "topicConfiguration.history",
+      ),
+    ).toEqual([]);
+    await value.session.shutdown();
+  },
+);

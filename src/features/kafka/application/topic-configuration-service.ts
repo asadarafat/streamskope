@@ -239,15 +239,24 @@ export class KafkaTopicConfigurationService {
         warning = REFRESH_WARNING;
       }
     }
-    await this.recordHistory(
-      action,
-      parsed,
-      context,
-      baseline.entries,
-      true,
-      warning === undefined ? {} : { warning },
-      signal,
-    );
+    try {
+      await this.recordHistory(
+        action,
+        parsed,
+        context,
+        baseline.entries,
+        true,
+        warning === undefined ? {} : { warning },
+        signal,
+      );
+    } catch (error) {
+      // The broker already acknowledged. A cancelled/failed local history write
+      // cannot turn that acknowledgement into a retryable remote failure.
+      this.historyFailure = new Error(
+        "The acknowledged operation could not be recorded in local history.",
+        { cause: error },
+      );
+    }
     const history = this.historySnapshot(parsed.topic, context);
     return {
       configuration,

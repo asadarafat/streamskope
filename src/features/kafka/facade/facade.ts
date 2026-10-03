@@ -362,6 +362,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "topicConfiguration.apply":
       case "topicConfiguration.history":
         return executeTopicConfigurationCommand(command, correlationId, {
+          currentConnection: () => this.session.writeContext()?.connection,
           nextSequence: this.nextSequence.bind(this),
           publish: this.publish.bind(this),
           recordActivity: this.recordActivity.bind(this),

@@ -129,6 +129,50 @@ describe("Schema Registry HTTP adapter", () => {
     expect(http.requests[3]?.url).toContain("/subjects/orders-value/versions/3?permanent=true");
   });
 
+  it.each([40404, 40406])(
+    "permanently removes an already soft-deleted target (%s)",
+    async (code) => {
+      const http = new ScriptedHttp([
+        { status: 404, body: { error_code: code } },
+        { status: 200, body: [3] },
+      ]);
+      const adapter = new SchemaRegistryHttpAdapter(http);
+      expect(
+        await adapter.delete(
+          context,
+          {
+            target: { kind: "version", subject: "orders-value", version: 3 },
+            mode: "permanent",
+            confirmation: "orders-value@3",
+          },
+          new AbortController().signal,
+        ),
+      ).toEqual([3]);
+      expect(http.requests).toHaveLength(2);
+      expect(http.requests[1]?.url).toContain("permanent=true");
+    },
+  );
+
+  it.each([403, 422, 500])(
+    "does not proceed to permanent deletion after HTTP %s",
+    async (status) => {
+      const http = new ScriptedHttp([{ status, body: { error_code: 40404 } }]);
+      const adapter = new SchemaRegistryHttpAdapter(http);
+      await expect(
+        adapter.delete(
+          context,
+          {
+            target: { kind: "subject", subject: "orders-value" },
+            mode: "permanent",
+            confirmation: "orders-value",
+          },
+          new AbortController().signal,
+        ),
+      ).rejects.toMatchObject({ status });
+      expect(http.requests).toHaveLength(1);
+    },
+  );
+
   it("treats omitted AVRO type and reference metadata as protocol defaults", async () => {
     const rawSchema = '{"type":"record","name":"Fixture","fields":[]}';
     const adapter = new SchemaRegistryHttpAdapter(
