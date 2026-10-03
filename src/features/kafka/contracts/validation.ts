@@ -1,4 +1,5 @@
 import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
+import { parseEnvironmentCommand, parseEnvironmentResponse } from "./environment-protocol";
 import { parseRecoveryCommand, parseRecoveryResponse } from "./recovery-protocol";
 import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
 import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
@@ -75,7 +76,7 @@ import {
   parseKafkaLiveRuleEvaluation,
   parseKafkaRuleNotification,
 } from "./live-rule-validation";
-import { parseProtocolVersion } from "./protocol-validation";
+import { parseProtocolVersion, parseBackendAvailability } from "./protocol-validation";
 import { kafkaMessageRetainedBytes, kafkaRawMessageRetainedBytes } from "./message-limits";
 import {
   HOST_COMMANDS,
@@ -239,6 +240,7 @@ export function parseHostCommand(value: unknown): HostCommand {
   const command = declaredValue(envelope.command, HOST_COMMANDS, "command.command");
   const clusterServiceCommand =
     parseConnectCommand(command, id, envelope.payload, version) ??
+    parseEnvironmentCommand(command, id, envelope.payload, version) ??
     parseRecoveryCommand(command, id, envelope.payload, version) ??
     parseCorrelationCommand(command, id, envelope.payload, version) ??
     parseSampleCommand(command, id, envelope.payload, version) ??
@@ -486,6 +488,7 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
   const result = record(envelope.result, "response.result");
   const sampleResponse =
     parseConnectResponse(command, id, result, version) ??
+    parseEnvironmentResponse(command, id, result, version) ??
     parseRecoveryResponse(command, id, result, version) ??
     parseCorrelationResponse(command, id, result, version) ??
     parseSampleResponse(command, id, version, result);
@@ -748,32 +751,8 @@ export function parseHostEvent(value: unknown): HostEvent {
   }
 
   switch (event) {
-    case "backend.availability": {
-      exactKeys(payload, ["recovery", "state"], "event.payload");
-      const recovery = optionalText(payload, "recovery", "event.payload", 2_048);
-      return {
-        event,
-        payload:
-          recovery === undefined
-            ? {
-                state: declaredValue(
-                  payload.state,
-                  ["ready", "unavailable"],
-                  "event.payload.state",
-                ),
-              }
-            : {
-                recovery,
-                state: declaredValue(
-                  payload.state,
-                  ["ready", "unavailable"],
-                  "event.payload.state",
-                ),
-              },
-        sequence,
-        version,
-      };
-    }
+    case "backend.availability":
+      return { event, payload: parseBackendAvailability(payload), sequence, version };
     case "connection.state": {
       exactKeys(payload, ["connectionName", "error", "state"], "event.payload");
       const connectionPayload = withOptionalError(

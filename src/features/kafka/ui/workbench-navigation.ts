@@ -1,5 +1,6 @@
 export type NavigationView =
   | "connect"
+  | "environments"
   | "acls"
   | "consumer-groups"
   | "overview"
@@ -33,6 +34,7 @@ export const WORKBENCH_RESOURCE_GROUPS: readonly WorkbenchResourceGroup[] = Obje
       { label: "Schema Registry", value: "schemas" },
       { label: "Transforms", value: "transforms" },
       { label: "Kafka Connect", value: "connect" },
+      { label: "Compare environments", value: "environments" },
     ],
     label: "Governance",
   },

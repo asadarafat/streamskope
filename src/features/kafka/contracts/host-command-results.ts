@@ -36,6 +36,18 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
     readonly correlationId: string;
     readonly outcome: import("./connect").ConnectOutcome;
   };
+  readonly "environments.capture": {
+    readonly correlationId: string;
+    readonly snapshot: import("./environment-snapshot").EnvironmentSnapshot;
+  };
+  readonly "environments.review": {
+    readonly correlationId: string;
+    readonly review: import("./environment-snapshot").EnvironmentReview;
+  };
+  readonly "environments.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./environment-snapshot").EnvironmentOutcome;
+  };
 
   readonly "acls.access.explain": {
     readonly correlationId: string;
@@ -141,6 +153,9 @@ const structuredResults = {
   "connect.validate": true,
   "connect.review": true,
   "connect.apply": true,
+  "environments.capture": true,
+  "environments.review": true,
+  "environments.apply": true,
 
   "acls.access.explain": true,
   "acls.change.review": true,

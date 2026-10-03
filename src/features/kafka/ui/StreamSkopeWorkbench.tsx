@@ -15,6 +15,7 @@ import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 
 import { ConnectPage } from "./ConnectPage";
+import { EnvironmentPage } from "./EnvironmentPage";
 import { ReviewedWriteAction } from "./ReviewedWriteAction";
 import { initialKafkaMessageFilters } from "./message-operations";
 import { SavedQueriesDialog } from "./SavedQueriesDialog";
@@ -586,6 +587,14 @@ export function StreamSkopeWorkbench({
         host={host}
         canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
         onOpenTopic={activateTopic}
+      />
+    ) : navigation === "environments" ? (
+      <EnvironmentPage
+        key={state.connectionName ?? "disconnected"}
+        host={host}
+        profiles={state.profiles}
+        transfer={textDocumentTransfer}
+        canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
       />
     ) : navigation === "schemas" ? (
       <SchemaRegistryPage

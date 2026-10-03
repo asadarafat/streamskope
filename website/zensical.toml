@@ -32,6 +32,7 @@ nav = [
     { "Reset consumer offsets" = "guide/offset-recovery.md" },
     { "Copy or replay records" = "guide/record-replay.md" },
     { "Manage Kafka Connect" = "guide/kafka-connect.md" },
+    { "Compare environments" = "guide/environment-comparison.md" },
     { "Change topic configuration" = "guide/topic-configuration.md" },
     { "Run a latency probe" = "guide/latency.md" },
     { "Configure certificate trust" = "guide/tls-trust.md" },

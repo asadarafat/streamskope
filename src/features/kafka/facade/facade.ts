@@ -1,3 +1,4 @@
+import { SavedReplayDestinations } from "../application/replay-destination";
 import { KafkaReviewedWriteService } from "../application/reviewed-write-service";
 import {
   HOST_PROTOCOL_VERSION,
@@ -28,6 +29,7 @@ import {
 import { ActivityHistory } from "../../../platform/activity";
 
 import { ConnectFacade } from "./connect-facade";
+import { EnvironmentFacade } from "./environment-facade";
 import { AclReviewFacade } from "./acl-review-facade";
 import { RecordReplayFacade } from "./record-replay-facade";
 import { OffsetResetFacade } from "./offset-reset-facade";
@@ -98,6 +100,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly clusterDiagnostics;
   private readonly clusterServices;
   private readonly connectService: ConnectFacade;
+  private readonly environments: EnvironmentFacade;
   private readonly plugins;
   private readonly listeners = new Set<HostEventListener>();
   private readonly latencyProbe;
@@ -196,6 +199,13 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.connectService = new ConnectFacade(
       session,
       options.connect,
+      this.recordActivity.bind(this),
+    );
+    this.environments = new EnvironmentFacade(
+      session,
+      options.replayConnections
+        ? new SavedReplayDestinations(profiles, options.replayConnections)
+        : undefined,
       this.recordActivity.bind(this),
     );
     this.clusterServices = new ClusterServiceFacadeController({
@@ -317,6 +327,10 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "connect.review":
       case "connect.apply":
         return this.connectService.execute(command, correlationId);
+      case "environments.capture":
+      case "environments.review":
+      case "environments.apply":
+        return this.environments.execute(command, correlationId);
       case "acls.access.explain":
       case "acls.change.review":
       case "acls.change.apply":

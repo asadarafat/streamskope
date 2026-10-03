@@ -43,13 +43,16 @@ const zeroRuleEvaluation = {
 
 describe("Kafka host contract", () => {
   it("declares the complete current command and event vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(42);
+    expect(HOST_PROTOCOL_VERSION).toBe(43);
     expect(HOST_COMMANDS).toEqual([
       "connect.list",
       "connect.load",
       "connect.validate",
       "connect.review",
       "connect.apply",
+      "environments.capture",
+      "environments.review",
+      "environments.apply",
       "records.replay.review",
       "records.replay.apply",
       "records.replay.cancel",
