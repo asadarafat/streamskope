@@ -60,6 +60,7 @@ export type KafkaClientInput = KafkaClientInputBase &
 export type KafkaAdminInput = KafkaClientInput;
 
 export interface KafkaAdminPort {
+  observeTopicHealth?(topic: string): Promise<import("../contracts/observations").TopicHealth>;
   alterTopicConfiguration(
     topic: string,
     changes: readonly KafkaTopicConfigurationChange[],

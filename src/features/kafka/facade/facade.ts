@@ -28,6 +28,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { ObservationFacade } from "./observation-facade";
 import { ConnectFacade } from "./connect-facade";
 import { EnvironmentFacade } from "./environment-facade";
 import { AclReviewFacade } from "./acl-review-facade";
@@ -100,6 +101,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly clusterDiagnostics;
   private readonly clusterServices;
   private readonly connectService: ConnectFacade;
+  private readonly observations: ObservationFacade;
   private readonly environments: EnvironmentFacade;
   private readonly plugins;
   private readonly listeners = new Set<HostEventListener>();
@@ -196,6 +198,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     });
     const publish = this.publish.bind(this);
     const nextSequence = this.nextSequence.bind(this);
+    this.observations = new ObservationFacade(
+      session,
+      options.observationStore,
+      this.recordActivity.bind(this),
+    );
     this.connectService = new ConnectFacade(
       session,
       options.connect,
@@ -321,6 +328,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "observations.capture":
+      case "observations.history":
+      case "observations.cancel":
+      case "observations.clear":
+        return this.observations.execute(command, correlationId);
       case "connect.list":
       case "connect.load":
       case "connect.validate":
@@ -608,6 +620,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         this.session.shutdown(),
         this.plugins.close(),
         this.queries.idle(),
+        this.observations.idle(),
       ]);
     } catch (error) {
       shutdownFailure = error;
@@ -852,6 +865,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   }
 
   private invalidateClusterState(): void {
+    this.observations.cancel();
     void this.recordReplay.invalidate().catch(() => undefined);
     this.correlationTrace.invalidate();
     this.recordCodecs.invalidate();

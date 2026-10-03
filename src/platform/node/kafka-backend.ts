@@ -87,6 +87,7 @@ export function createKafkaBackend(
   recipeStore: KafkaTrustRecipeStore = new InMemoryKafkaTrustRecipeStore(browserRecipeCapability),
   plugins?: PluginRuntimePort,
   queryStore?: KafkaQueryStore,
+  observationStore?: import("../../features/kafka/application/observation-store").ObservationStore,
 ): KafkaBackendFacade {
   const evaluator = new StreamSkopeKafkaRuleEvaluator();
   const rules = new KafkaRuleService(ruleStore, evaluator);
@@ -129,6 +130,7 @@ export function createKafkaBackend(
     new KafkaLiveRuleRuntime(rules, evaluator),
     new KafkaTopicConfigurationService(session, topicConfigurationHistoryStore),
     {
+      ...(observationStore ? { observationStore } : {}),
       replayConnections: new StreamSkopeKafkaEngine(),
       ...(plugins === undefined ? {} : { plugins }),
       preferences,

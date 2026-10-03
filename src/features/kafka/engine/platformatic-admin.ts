@@ -75,7 +75,11 @@ export interface PlatformaticAdminClient {
     }>;
   }): Promise<ListedOffsetsTopic[]>;
   listTopics(): Promise<readonly string[]>;
-  metadata(options: { readonly forceUpdate: true }): Promise<ClusterMetadata>;
+  metadata(options: {
+    readonly forceUpdate: true;
+    readonly topics?: string[];
+    readonly autocreateTopics?: false;
+  }): Promise<ClusterMetadata>;
 }
 
 function kafkaAclValue(acl: KafkaAclBinding): Acl {
@@ -418,6 +422,63 @@ export class PlatformaticAdminPort implements KafkaAdminPort {
       ],
     });
     return configurationEntries(descriptions, ConfigResourceTypes.BROKER, resourceName);
+  }
+
+  async observeTopicHealth(
+    topic: string,
+  ): Promise<import("../contracts/observations").TopicHealth> {
+    const metadata = await this.admin.metadata({
+      forceUpdate: true,
+      topics: [topic],
+      autocreateTopics: false,
+    });
+    const selected = metadata.topics.get(topic);
+    if (
+      !metadata.id ||
+      !selected?.id ||
+      !selected.partitions.length ||
+      selected.partitions.length > 128
+    )
+      throw new Error("Topic health requires a cluster/topic identity and 1–128 partitions.");
+    let ends = new Map<number, string | null>();
+    try {
+      const offsets = await this.admin.listOffsets({
+        topics: [
+          {
+            name: topic,
+            partitions: selected.partitions.map((_, partitionIndex) => ({
+              partitionIndex,
+              timestamp: ListOffsetTimestamps.LATEST,
+            })),
+          },
+        ],
+      });
+      ends = new Map(
+        offsets
+          .filter((t) => t.name === topic)
+          .flatMap((t) =>
+            t.partitions.map(
+              (p) => [p.partitionIndex, p.offset >= 0n ? p.offset.toString() : null] as const,
+            ),
+          ),
+      );
+    } catch {
+      /* Metadata remains useful; unavailable offsets are never reported as zero. */
+    }
+    return {
+      clusterId: metadata.id,
+      topicId: selected.id,
+      topic,
+      brokerCount: metadata.brokers.size,
+      controllerKnown: metadata.brokers.has(metadata.controllerId),
+      partitions: selected.partitions.map((p, partition) => ({
+        partition,
+        leader: p.leader >= 0 ? p.leader : null,
+        replicas: p.replicas.length,
+        inSyncReplicas: p.isr.length,
+        endOffset: ends.get(partition) ?? null,
+      })),
+    };
   }
 
   async describeClusterMetadata(): Promise<KafkaClusterMetadata> {

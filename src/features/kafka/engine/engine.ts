@@ -355,6 +355,22 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     );
   }
 
+  observeTopicHealth(
+    topic: string,
+    signal?: AbortSignal,
+  ): Promise<import("../contracts/observations").TopicHealth> {
+    return this.runAdminOperation(
+      () => {
+        if (!this.admin.observeTopicHealth) throw new Error("Topic health is unavailable.");
+        return this.admin.observeTopicHealth(topic);
+      },
+      signal,
+      this.target,
+      mapKafkaAdminFailure,
+      "broker",
+    );
+  }
+
   describeClusterMetadata(cancellationSignal?: AbortSignal): Promise<KafkaClusterMetadata> {
     return this.runAdminOperation(
       () => this.admin.describeClusterMetadata(),

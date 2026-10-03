@@ -1,4 +1,5 @@
 export type NavigationView =
+  | "observations"
   | "connect"
   | "environments"
   | "acls"
@@ -24,6 +25,7 @@ export const WORKBENCH_RESOURCE_GROUPS: readonly WorkbenchResourceGroup[] = Obje
     items: [
       { label: "Connection Profiles", value: "profiles" },
       { label: "Overview", value: "overview" },
+      { label: "Observed health", value: "observations" },
       { label: "Topics", value: "topics" },
       { label: "Consumer Groups", value: "consumer-groups" },
     ],

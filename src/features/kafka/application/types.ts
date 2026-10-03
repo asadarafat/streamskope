@@ -48,6 +48,10 @@ export interface KafkaConsumptionObserver {
 }
 
 export interface KafkaActiveConnection {
+  observeTopicHealth?(
+    topic: string,
+    signal?: AbortSignal,
+  ): Promise<import("../contracts/observations").TopicHealth>;
   describeTopicIdentity?(
     topic: string,
   ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination>;
