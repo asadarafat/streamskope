@@ -48,6 +48,7 @@ it("retains only validated bounded history across restart with private permissio
                 },
               ],
               alerts: [],
+              records: null,
             },
           ],
         },

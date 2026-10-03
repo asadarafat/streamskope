@@ -6,6 +6,8 @@ import {
   StudioAlert as Alert,
   StudioTextField as TextField,
   StudioMenuItem as MenuItem,
+  StudioCheckbox as Checkbox,
+  StudioLabeledControl as FormControlLabel,
 } from "../../../platform/ui/controls";
 import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
 import {
@@ -16,6 +18,7 @@ import {
   type ObservationSnapshot,
 } from "../contracts/observations";
 
+import { ObservationAnalysisPanel } from "./ObservationAnalysisPanel";
 import { MetricPlot } from "./MetricPlot";
 
 function nullableThreshold(value: string): number | null {
@@ -33,6 +36,7 @@ export function ObservedHealthPage({
     [groupId, setGroupId] = useState("");
   const [lagThreshold, setLagThreshold] = useState(""),
     [latencyThreshold, setLatencyThreshold] = useState("");
+  const [sampleRecords, setSampleRecords] = useState(false);
   const [snapshot, setSnapshot] = useState<ObservationSnapshot>({
     schemaVersion: 1,
     series: [],
@@ -114,6 +118,7 @@ export function ObservedHealthPage({
         version: HOST_PROTOCOL_VERSION,
         payload: {
           topic: topic.trim(),
+          sampleRecords,
           groupId: groupId.trim() || null,
           thresholds: {
             lag: nullableThreshold(lagThreshold),
@@ -244,6 +249,21 @@ export function ObservedHealthPage({
           onChange={(e) => setLatencyThreshold(e.target.value)}
         />
       </Stack>
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={sampleRecords}
+            disabled={busy || running}
+            onChange={(e) => setSampleRecords(e.target.checked)}
+          />
+        }
+        label="Sample records for size and key distribution"
+      />
+      <Typography variant="body2">
+        Optional reads cover the preceding minute, up to 200 protected records / 2 MiB and five
+        seconds. They use a separate reader and do not change the active message view. Raw keys and
+        payloads are discarded after aggregation.
+      </Typography>
       <Stack direction="row" spacing={1}>
         <Button
           disabled={busy || running || !topic.trim()}
@@ -326,6 +346,7 @@ export function ObservedHealthPage({
             issue several Kafka requests).
           </Typography>
           <ObservationHistoryPlots series={series} />
+          <ObservationAnalysisPanel series={series} fresh={fresh} />
           <Table size="small" aria-label="Observed partition positions">
             <TableHead>
               <TableRow>

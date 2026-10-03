@@ -68,10 +68,18 @@ it("observes real known offsets/lag and replication, retains history across rest
     await session.connect(fixture.connection);
     const store = new AtomicObservationFileStore(join(dir, "history.json"));
     const service = new ObservationService(() => session.writeContext(), store);
-    const input = { topic, groupId, thresholds: { lag: 15, requestMs: null } };
+    const input = { topic, groupId, sampleRecords: true, thresholds: { lag: 15, requestMs: null } };
     const first = (await service.capture(input)).series.samples.at(-1)!;
     expect(observationLag(first)).toBe(20);
     expect(first.groupCoverage).toBe("complete");
+    expect(first.records).toMatchObject({
+      count: 20,
+      state: "complete",
+      knownKeys: 20,
+      distinctKeys: 1,
+    });
+    expect(first.records?.topKeys[0]?.count).toBe(20);
+    expect(JSON.stringify(first)).not.toMatch(/fixture-key|fixture-value/);
     expect(first.partitions.map((p) => p.endOffset)).toEqual(["10", "10"]);
     expect(
       first.partitions.every(

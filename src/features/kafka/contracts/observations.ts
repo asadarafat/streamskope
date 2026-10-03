@@ -13,6 +13,7 @@ export const OBSERVATION_LIMITS = {
 } as const;
 
 export interface ObservationInput {
+  readonly sampleRecords?: boolean;
   readonly topic: string;
   readonly groupId: string | null;
   readonly thresholds: { readonly lag: number | null; readonly requestMs: number | null };
@@ -55,6 +56,7 @@ export interface KafkaObservation {
   readonly controllerKnown: boolean;
   readonly groupCoverage: "complete" | "partial" | "unavailable" | "not-selected";
   readonly partitions: readonly ObservationPartition[];
+  readonly records: import("./observation-records").ObservationRecords | null;
   readonly alerts: readonly {
     readonly metric: "lag" | "requestMs";
     readonly observed: number;
