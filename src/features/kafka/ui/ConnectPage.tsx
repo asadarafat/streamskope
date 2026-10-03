@@ -105,7 +105,12 @@ export function ConnectPage({
       config: action === "create" || action === "update" ? (JSON.parse(config) as unknown) : {},
     });
   return (
-    <Stack spacing={2} sx={{ p: 3, overflow: "auto", height: "100%" }}>
+    <Stack
+      component="main"
+      aria-label="Kafka Connect page"
+      spacing={2}
+      sx={{ p: 3, overflow: "auto", height: "100%" }}
+    >
       <Typography variant="h5" component="h1">
         Kafka Connect
       </Typography>
