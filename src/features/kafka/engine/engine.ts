@@ -216,6 +216,17 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       target,
     );
   }
+  describeTopicIdentity(
+    topic: string,
+  ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination> {
+    // Review performs bounded metadata reads only; it never produces a record.
+    return this.reviewWrite({
+      kind: "record",
+      topic,
+      partition: 0,
+      record: { state: "complete", encoding: "base64", key: null, value: null, headers: [] },
+    });
+  }
   reviewWrite(
     input: import("../contracts").KafkaWriteInput,
   ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination> {

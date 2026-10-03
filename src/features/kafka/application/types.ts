@@ -48,6 +48,9 @@ export interface KafkaConsumptionObserver {
 }
 
 export interface KafkaActiveConnection {
+  describeTopicIdentity?(
+    topic: string,
+  ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination>;
   offsetResetSnapshot?(
     input: import("../contracts/offset-reset").OffsetResetInput,
   ): Promise<import("../contracts/offset-reset").OffsetResetSnapshot>;
