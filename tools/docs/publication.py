@@ -91,11 +91,49 @@ def prepare_publication(root=ROOT, environment=None):
         raise ValueError("Release index needs one unreleased row or this publication's row")
     notes = (f"---\ntitle: StreamSkope {tag}\nrelease_version: {version}\n"
              f"release_tag: {tag}\n---\n\n" + release["body"])
+    qualification = root / "website/docs/guide/qualification.md"
+    evidence = publication_qualification(qualification.read_text(), release,
+                                         subprocess.check_output(
+                                             ["git", "rev-parse", "HEAD"], cwd=root, text=True).strip())
     # Validate all inputs before changing the disposable checkout. Main is never stamped.
     (root / f"website/docs/releases/{tag}.md").write_text(notes)
     config.write_text(source)
     index.write_text(contents)
+    qualification.write_text(evidence)
     (root / "website/docs/releases/unreleased.md").unlink(missing_ok=True)
+
+
+def publication_qualification(content, release, revision):
+    """Link recorded evidence without inferring test outcomes from publication."""
+    tag = release["tag_name"]
+    repository = "https://github.com/asadarafat/streamskope"
+    name = f"qualification-{tag}.json"
+    url = f"{repository}/releases/download/{tag}/{name}"
+    assets = release.get("assets", [])
+    recorded = isinstance(assets, list) and any(
+        isinstance(asset, dict) and asset.get("name") == name
+        and asset.get("browser_download_url") == url and asset.get("state") == "uploaded"
+        and type(asset.get("size")) is int and asset["size"] > 0
+        for asset in assets)
+    content = re.sub(r"<!-- publication-qualification -->[\s\S]*?"
+                     r"<!-- /publication-qualification -->\n*", "", content)
+    content = re.sub(r"^## Published release:", "## Historical qualification:", content, flags=re.M)
+    if not re.search(r"^## Historical qualification:", content, re.M):
+        raise ValueError("Qualification page needs a release evidence section")
+    report = (f"The [source-specific qualification report]({url}) was included in the "
+              "publication event. Read its executed checks, source identity, environment "
+              "and limitations; the link alone does not establish that every check passed."
+              if recorded else
+              "No source-specific qualification report was included in the publication event. "
+              "Live tests and other local rehearsals are unrecorded here; publication does "
+              "not mark them as passed.")
+    block = (f"<!-- publication-qualification -->\n## Published release: {tag}\n\n"
+             f"These pages describe [{tag}](../releases/{tag}.md) at source "
+             f"[`{revision[:7]}`]({repository}/commit/{revision}). The release notes link "
+             "the packaging workflow; earlier release results below are historical.\n\n"
+             f"{report}\n<!-- /publication-qualification -->\n\n")
+    return re.sub(r"(?=^## Historical qualification:)", lambda _: block,
+                  content, count=1, flags=re.M)
 
 
 def documentation_context(root=ROOT, environment=None):
@@ -147,7 +185,7 @@ def verify_publication(url, revision, release, attempts=12, delay=5):
     """Bound CDN propagation waits; verify public bytes, not just deployment status."""
     if not revision or not release:
         raise ValueError("Publication verification requires --revision and --release")
-    routes = ("", "start/installation/", "plugins/eda/", "plugins/nsp/")
+    routes = ("", "start/installation/", "plugins/eda/", "plugins/nsp/", "guide/qualification/")
     failure = None
     deadline = time.monotonic() + 90
     for attempt in range(attempts):
@@ -165,6 +203,8 @@ def verify_publication(url, revision, release, attempts=12, delay=5):
                 html = fetch(route)
                 if f'name="streamskope-docs-revision" content="{revision}"' not in html:
                     raise ValueError(f"Published route is stale: {route}")
+                if route == "guide/qualification/" and f"Published release: {release}" not in html:
+                    raise ValueError("Published qualification page describes another release")
             for plugin in ("eda", "nsp"):
                 html = fetch(f"guide/{plugin}/")
                 if f"../../plugins/{plugin}/" not in html or "location.hash" not in html:

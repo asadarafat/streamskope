@@ -36,7 +36,12 @@ Pages deploys only after a desktop release is published, including prereleases.
 Merging to `main`, creating a tag or draft, and publishing plugins do not replace
 the site. Documentation changes become public with the next desktop release.
 The publication build includes the release event's final notes and checks installer
-availability. Plugin and signed EDA cluster-app publication remain independent.
+availability. It also updates the qualification page to the exact desktop release
+and links `qualification-vX.Y.Z.json` only when that uploaded asset appears in the
+publication event. Maintainers must attach the source-specific report and include
+it in `SHA256SUMS` before publishing the draft. Without a report, the site explicitly
+leaves live/local qualification unrecorded; publication does not mark it passed.
+Plugin and signed EDA cluster-app publication remain independent.
 
 Maintainers review unversioned notes, then start **Actions → Release → Run workflow**
 from `main`, select **desktop**, **eda** or **nsp** and enter its version. CI collects

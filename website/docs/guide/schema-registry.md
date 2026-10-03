@@ -89,6 +89,12 @@ Limits and failures remain visible rather than appearing as an empty dependency
 list. These are schema relationships, not evidence of events flowing through
 producers, topics or consumers.
 
+For a proposed change, [Relationships → Potential schema impact](relationships.md#before-changing-a-schema)
+adds bounded reverse references and known topic, consumer-group and connector
+links for the selected exact version. Its source coverage and inferred links stay
+visible. It can miss historical versions, externally configured clients and unseen
+records; an empty impact view is not permission to change or delete a schema.
+
 ## Generate samples
 
 Select an exact schema version, then **Generate samples** to preview seeded,

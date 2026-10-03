@@ -39,6 +39,8 @@ version when starting release CI; PR checks only qualify changes for `main`.
 - Preview and apply consumer offset resets, copy records across topics or clusters, and review exact ACL changes.
 - Use host read-only controls and deterministic record masking.
 - Investigate consumer lag, stream activity and producer/consumer probe latency.
+- Retain bounded health observations, inspect lag trends and review evidence-linked diagnostic hints.
+- Explore observed topic, consumer and connector relationships and partial schema-change impact.
 - Manage topic configuration, Schema Registry and ACLs.
 - Manage Kafka Connect, validate connector configuration and inspect supported DLQ context.
 - Compare topic settings across clusters and promote selected, reviewed differences.
@@ -71,6 +73,8 @@ Installer availability is verified before the site is published.
 
 - [Messages and filtering](website/docs/guide/messages.md), [consumer lag](website/docs/guide/operations.md)
   and [Schema Registry](website/docs/guide/schema-registry.md)
+- [Observed health and diagnostic limits](website/docs/guide/observed-health.md)
+  and [relationships and schema impact](website/docs/guide/relationships.md)
 - [Security and permissions](website/docs/guide/security.md),
   [backup and recovery](website/docs/guide/recovery.md), and [data and export limits](website/docs/guide/data-handling.md)
 - [Troubleshoot a problem](website/docs/guide/troubleshooting.md)
