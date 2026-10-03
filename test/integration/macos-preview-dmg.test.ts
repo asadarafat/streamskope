@@ -29,8 +29,8 @@ it("stages only the app, shortcut and warning, verifies the image, then publishe
   const output = await createMacosPreviewDmg(root, {
     platform: "darwin",
     arch: "arm64",
-    detachOwnedImage: async () => undefined,
-    settle: async () => undefined,
+    detachOwnedImage: (): Promise<void> => Promise.resolve(),
+    settle: (): Promise<void> => Promise.resolve(),
     run: async (command, args) => {
       calls.push(`${command} ${args[0] ?? ""}`);
       if (command === "ditto") {
@@ -74,8 +74,8 @@ it.each(["create", "verify"])(
       createMacosPreviewDmg(root, {
         platform: "darwin",
         arch: "arm64",
-        detachOwnedImage: async () => undefined,
-        settle: async () => undefined,
+        detachOwnedImage: (): Promise<void> => Promise.resolve(),
+        settle: (): Promise<void> => Promise.resolve(),
         run: async (command, args) => {
           if (command === "ditto") return;
           if (args[0] === "create") stage = args[args.indexOf("-srcfolder") + 1] ?? "";
@@ -99,8 +99,8 @@ it.each([
     createMacosPreviewDmg(root, {
       platform: platform ?? "",
       arch: arch ?? "",
-      detachOwnedImage: async () => undefined,
-      settle: async () => undefined,
+      detachOwnedImage: (): Promise<void> => Promise.resolve(),
+      settle: (): Promise<void> => Promise.resolve(),
       run: () => Promise.reject(new Error("must not run")),
     }),
   ).rejects.toThrow("macOS ARM64");
@@ -113,8 +113,8 @@ it("rejects unsafe artifact versions before running native commands", async () =
     createMacosPreviewDmg(root, {
       platform: "darwin",
       arch: "arm64",
-      detachOwnedImage: async () => undefined,
-      settle: async () => undefined,
+      detachOwnedImage: (): Promise<void> => Promise.resolve(),
+      settle: (): Promise<void> => Promise.resolve(),
       run: () => Promise.reject(new Error("must not run")),
     }),
   ).rejects.toThrow("version");
@@ -129,11 +129,13 @@ it("retries transient busy images with fresh staging and mandatory verification 
   const output = await createMacosPreviewDmg(root, {
     platform: "darwin",
     arch: "arm64",
-    settle: async () => {
+    settle: (): Promise<void> => {
       settles += 1;
+      return Promise.resolve();
     },
-    detachOwnedImage: async (image) => {
+    detachOwnedImage: (image): Promise<void> => {
       detached.push(image);
+      return Promise.resolve();
     },
     run: async (command, args) => {
       if (command === "ditto") return;
@@ -164,9 +166,10 @@ it("stops after three busy attempts without publishing an unverified image", asy
     createMacosPreviewDmg(root, {
       platform: "darwin",
       arch: "arm64",
-      settle: async () => undefined,
-      detachOwnedImage: async (image) => {
+      settle: (): Promise<void> => Promise.resolve(),
+      detachOwnedImage: (image): Promise<void> => {
         detached.push(image);
+        return Promise.resolve();
       },
       run: async (command, args) => {
         if (command === "ditto") return;
@@ -189,12 +192,9 @@ it("retains an owned image when its backing device cannot be detached", async ()
     createMacosPreviewDmg(root, {
       platform: "darwin",
       arch: "arm64",
-      settle: async () => {
-        throw new Error("must not retry failed cleanup");
-      },
-      detachOwnedImage: async () => {
-        throw new Error("owned device cleanup failed");
-      },
+      settle: (): Promise<void> => Promise.reject(new Error("must not retry failed cleanup")),
+      detachOwnedImage: (): Promise<void> =>
+        Promise.reject(new Error("owned device cleanup failed")),
       run: async (command, args) => {
         if (command === "ditto") return;
         image = args.at(-1)!;
