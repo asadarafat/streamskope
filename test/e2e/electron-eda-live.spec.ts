@@ -199,6 +199,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
   const checks: string[] = [];
   let passed = false;
   let scenarioFailure: unknown;
+  const cleanupFailures: { operation: string; error: string }[] = [];
   const sanitizedError = (error: unknown): string => {
     let text =
       error instanceof Error
@@ -568,7 +569,6 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     } catch {
       /* Earlier failures still leave profile/session identifiers for bounded cleanup. */
     }
-    const cleanupFailures: { operation: string; error: string }[] = [];
     try {
       await closePort(occupied.server);
     } catch (error) {
@@ -624,7 +624,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
       ),
       contentType: "application/json",
     });
-    if (scenarioFailure) throw new Error("EDA lifecycle scenario failed; see sanitized evidence.");
-    assert.equal(cleanupFailures.length, 0, "EDA qualification cleanup could not be confirmed.");
   }
+  if (scenarioFailure) throw new Error("EDA lifecycle scenario failed; see sanitized evidence.");
+  assert.equal(cleanupFailures.length, 0, "EDA qualification cleanup could not be confirmed.");
 });
