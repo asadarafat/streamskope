@@ -1,3 +1,4 @@
+import { parseObservationRecords } from "./observation-records";
 import {
   declaredValue,
   exactKeys,
@@ -38,7 +39,7 @@ function array(value: unknown, maximum: number): unknown[] {
 }
 export function parseObservationInput(value: unknown): ObservationInput {
   const p = record(value, "observation");
-  exactKeys(p, ["topic", "groupId", "thresholds"], "observation");
+  exactKeys(p, ["topic", "groupId", "thresholds", "sampleRecords"], "observation");
   const topic = text(p.topic, "topic", 249);
   if (!/^[A-Za-z0-9._-]+$/.test(topic) || topic === "." || topic === "..")
     throw new Error("Select one valid topic.");
@@ -46,6 +47,7 @@ export function parseObservationInput(value: unknown): ObservationInput {
   exactKeys(t, ["lag", "requestMs"], "thresholds");
   return {
     topic,
+    sampleRecords: p.sampleRecords === undefined ? false : truth(p.sampleRecords, "sampleRecords"),
     groupId: nullableText(p.groupId, "groupId", 512),
     thresholds: {
       lag: nullableNumber(t.lag, Number.MAX_SAFE_INTEGER),
@@ -73,6 +75,7 @@ export function parseObservation(value: unknown): KafkaObservation {
       "groupCoverage",
       "partitions",
       "alerts",
+      "records",
     ],
     "sample",
   );
@@ -118,6 +121,8 @@ export function parseObservation(value: unknown): KafkaObservation {
       "groupCoverage",
     ),
     partitions,
+    records:
+      p.records === null || p.records === undefined ? null : parseObservationRecords(p.records),
     alerts: array(p.alerts, 2).map((item) => {
       const a = record(item, "alert");
       exactKeys(a, ["metric", "observed", "threshold"], "alert");

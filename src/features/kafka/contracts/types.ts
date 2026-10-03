@@ -71,7 +71,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 45 as const;
+export const HOST_PROTOCOL_VERSION = 46 as const;
 
 export const HOST_COMMANDS = [
   "observations.capture",

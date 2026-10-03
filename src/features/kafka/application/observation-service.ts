@@ -11,6 +11,7 @@ import {
 import { parseObservation, parseObservationInput } from "../contracts/observation-validation";
 import type { KafkaConsumerGroupDetails } from "../contracts";
 
+import { sampleObservationRecords } from "./observation-record-sample";
 import type { KafkaApplicationSession } from "./session";
 import {
   MemoryObservationStore,
@@ -143,6 +144,10 @@ export class ObservationService {
       groupCoverage === "complete" && partitions.some((p) => p.lag === null)
         ? "partial"
         : groupCoverage;
+    const records = input.sampleRecords
+      ? await sampleObservationRecords(context.connection, input.topic, this.now(), signal)
+      : null;
+    this.current(context, signal);
     const requestMs = this.now() - startedAt;
     let sample: KafkaObservation = parseObservation({
       id: crypto.randomUUID(),
@@ -151,10 +156,11 @@ export class ObservationService {
       observedAt: this.now(),
       source: "kafka-api",
       requestMs,
-      providerCalls: input.groupId === null ? 1 : 2,
+      providerCalls: (input.groupId === null ? 1 : 2) + (input.sampleRecords ? 1 : 0),
       state:
         coverage === "partial" ||
         coverage === "unavailable" ||
+        (records !== null && records.state !== "complete") ||
         partitions.some((p) => p.endOffset === null)
           ? "partial"
           : "ready",
@@ -165,6 +171,7 @@ export class ObservationService {
       groupCoverage: coverage,
       partitions,
       alerts: [],
+      records,
     });
     const lag = observationLag(sample);
     sample = {
