@@ -2,7 +2,8 @@
 
 | Desktop release                     | App/installer version  | Status and contents                                                                                          |
 | ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| [Unreleased changes](unreleased.md) | Assigned by release CI | Development changes after v0.3.0                                                                             |
+| [Unreleased changes](unreleased.md) | Assigned by release CI | Development changes after v0.4.0                                                                             |
+| [v0.4.0](v0.4.0.md)                 | 0.4.0                  | Published unsigned release: structured decoding, comparisons, schema samples and correlation tracing         |
 | [v0.3.0](v0.3.0.md)                 | 0.3.0                  | Published unsigned release: original records, reviewed writes, read-only/masking and reliable administration |
 | [v0.2.0](v0.2.0.md)                 | 0.2.0                  | Published unsigned release: historical queries, saved/shared investigations and plugin API 4                 |
 | [v0.1.0+build.1](v0.1.0+build.1.md) | 0.1.0                  | Published unsigned prerelease: Kafka workbench, hot plugin lifecycle, API 3 EDA and NSP packages             |

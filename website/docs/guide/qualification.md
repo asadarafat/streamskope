@@ -27,7 +27,31 @@ installers. Results from an earlier revision do not qualify changed source.
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
 
-## Published release: v0.3.0
+## Published release: v0.4.0
+
+[v0.4.0](../releases/v0.4.0.md) was published on **2026-10-03** from source
+[`f1cddce`](https://github.com/asadarafat/streamskope/commit/f1cddce18a1cb97a78e17f6531e914f39449989d).
+The [release workflow](https://github.com/asadarafat/streamskope/actions/runs/37110089585) passed on its first attempt. The
+[source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.4.0/qualification-v0.4.0.json)
+records the source/tree, executed checks, limits and evidence hashes.
+
+| Check                                     | Recorded result and evidence                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shared qualification                      | [CI passed](https://github.com/asadarafat/streamskope/actions/runs/37110089585/job/111166213587): 2,267 tests across 266 files; 36 documentation pages and 31 browser routes, including media playback                                                                                                             |
+| Native installers and packaged-app checks | [Linux x64](https://github.com/asadarafat/streamskope/actions/runs/37110089585/job/111167119621), [macOS ARM64](https://github.com/asadarafat/streamskope/actions/runs/37110089585/job/111167119636) and [Windows x64](https://github.com/asadarafat/streamskope/actions/runs/37110089585/job/111167119616) passed |
+| Real Kafka and Registry                   | Two scenarios passed on Apache Kafka 4.3.1 and Karapace 5.0.3: writer IDs/references, exact Avro/Protobuf bytes and int64 values, no-write sample previews, reviewed publication without duplicate sends, cross-topic correlation and explicit permission denial                                                   |
+| Browser and bundled worker                | Decoding, pinned comparison, trace coverage, active-reader continuity, schema references and sample preview passed; no detected dialog accessibility violations. An isolated copy of the bundled worker generated and decoded JSON/Avro/Protobuf without repository dependencies                                   |
+| 60-second performance soak                | Passed configured limits: 59,987 generated records, 59,136 delivered, 851 accounted display-buffer drops, 40.30% of one CPU core and 739 MiB peak RSS. This measures application ingestion; real IPC, Kafka network-fetch and UI interaction latency remain unmeasured                                             |
+| Unsigned EDA OCI application              | [Packaging passed](https://github.com/asadarafat/streamskope/actions/runs/37110089585/job/111167119589); no live-cluster or signing result implied                                                                                                                                                                 |
+| Download integrity                        | [SHA256SUMS](https://github.com/asadarafat/streamskope/releases/download/v0.4.0/SHA256SUMS) matches all three installer digests and includes the qualification report                                                                                                                                              |
+
+Live EDA/NSP were unconfigured and skipped. Installed native plugin migrations and
+credential-backed recovery were not rehearsed for this source. The installers are
+unsigned; plugin packages remain separately versioned and published. Avro-reference
+behavior was checked with bounded adapter/worker fixtures; Karapace 5.0.3 does not
+support that live scenario.
+
+## Historical qualification: v0.3.0
 
 [v0.3.0](../releases/v0.3.0.md) was published on **2026-10-03** from source
 [`002430b`](https://github.com/asadarafat/streamskope/commit/002430b024944f1209fba2747389909f38545571).
