@@ -76,7 +76,7 @@ import {
   parseKafkaLiveRuleEvaluation,
   parseKafkaRuleNotification,
 } from "./live-rule-validation";
-import { parseProtocolVersion } from "./protocol-validation";
+import { parseProtocolVersion, parseBackendAvailability } from "./protocol-validation";
 import { kafkaMessageRetainedBytes, kafkaRawMessageRetainedBytes } from "./message-limits";
 import {
   HOST_COMMANDS,
@@ -751,32 +751,8 @@ export function parseHostEvent(value: unknown): HostEvent {
   }
 
   switch (event) {
-    case "backend.availability": {
-      exactKeys(payload, ["recovery", "state"], "event.payload");
-      const recovery = optionalText(payload, "recovery", "event.payload", 2_048);
-      return {
-        event,
-        payload:
-          recovery === undefined
-            ? {
-                state: declaredValue(
-                  payload.state,
-                  ["ready", "unavailable"],
-                  "event.payload.state",
-                ),
-              }
-            : {
-                recovery,
-                state: declaredValue(
-                  payload.state,
-                  ["ready", "unavailable"],
-                  "event.payload.state",
-                ),
-              },
-        sequence,
-        version,
-      };
-    }
+    case "backend.availability":
+      return { event, payload: parseBackendAvailability(payload), sequence, version };
     case "connection.state": {
       exactKeys(payload, ["connectionName", "error", "state"], "event.payload");
       const connectionPayload = withOptionalError(
