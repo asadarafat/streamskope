@@ -1,3 +1,4 @@
+import { offsetPosition } from "./offset-reset";
 import type { KafkaCompleteRecord } from "./record-bytes";
 import { parseKafkaOriginalRecord, kafkaOriginalRecordByteLength } from "./record-bytes";
 import { parseSchemaInspectionInput, type SchemaInspectionInput } from "./schema-inspection";
@@ -38,6 +39,7 @@ export interface SchemaSamples {
   readonly samples: readonly { readonly json: string; readonly record: KafkaCompleteRecord }[];
 }
 export interface RecordBatchInput {
+  readonly timestamps?: readonly (string | null)[];
   readonly topic: string;
   readonly partition: number;
   readonly ratePerSecond: number;
@@ -54,7 +56,12 @@ export interface RecordBatchOutcome {
   readonly unsent: number;
   readonly outcomes: readonly KafkaWriteOutcome[];
   readonly stopReason:
-    "complete" | "cancelled" | "connection-changed" | "write-failed" | "deadline";
+    | "complete"
+    | "cancelled"
+    | "connection-changed"
+    | "destination-changed"
+    | "write-failed"
+    | "deadline";
 }
 function boundedRecords(values: unknown, path: string): KafkaCompleteRecord[] {
   if (!Array.isArray(values) || values.length < 1 || values.length > SCHEMA_SAMPLE_LIMITS.count)
@@ -116,8 +123,16 @@ export function parseSchemaSamples(value: unknown): SchemaSamples {
 }
 export function parseRecordBatchInput(value: unknown): RecordBatchInput {
   const input = record(value, "batch");
-  exactKeys(input, ["topic", "partition", "ratePerSecond", "records"], "batch");
+  exactKeys(input, ["topic", "partition", "ratePerSecond", "records", "timestamps"], "batch");
   const records = boundedRecords(input.records, "batch.records");
+  let timestamps: readonly (string | null)[] | undefined;
+  if (input.timestamps !== undefined) {
+    if (!Array.isArray(input.timestamps) || input.timestamps.length !== records.length)
+      throw new HostContractValidationError("timestamps", "one timestamp per record is required");
+    timestamps = input.timestamps.map((v: unknown) =>
+      v === null ? null : offsetPosition(v, "timestamp"),
+    );
+  }
   const validated = parseKafkaWriteInput({
     kind: "record",
     topic: input.topic,
@@ -126,6 +141,7 @@ export function parseRecordBatchInput(value: unknown): RecordBatchInput {
   });
   if (validated.kind !== "record") throw new Error("Invalid batch destination");
   return {
+    ...(timestamps === undefined ? {} : { timestamps }),
     topic: validated.topic,
     partition: validated.partition,
     records,
@@ -158,6 +174,7 @@ export function parseRecordBatchOutcome(value: unknown): RecordBatchOutcome {
     reason !== "complete" &&
     reason !== "cancelled" &&
     reason !== "connection-changed" &&
+    reason !== "destination-changed" &&
     reason !== "write-failed" &&
     reason !== "deadline"
   )

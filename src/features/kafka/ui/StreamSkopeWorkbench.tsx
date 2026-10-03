@@ -487,6 +487,8 @@ export function StreamSkopeWorkbench({
         }}
       >
         <MessageWorkspace
+          profiles={state.profiles}
+          canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
           host={host}
           unavailableFilterRecords={messageSelection.unavailable}
           readCoverage={state.readCoverage}

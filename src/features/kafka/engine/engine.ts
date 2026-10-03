@@ -216,7 +216,9 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       target,
     );
   }
-  reviewWrite(input: import("../contracts").KafkaWriteInput): Promise<void> {
+  reviewWrite(
+    input: import("../contracts").KafkaWriteInput,
+  ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination> {
     return new PlatformaticReviewedWrites(this.clientInput, this.lifecycleController.signal).review(
       input,
     );

@@ -30,6 +30,7 @@ nav = [
   ] },
   { "Operate safely" = [
     { "Reset consumer offsets" = "guide/offset-recovery.md" },
+    { "Copy or replay records" = "guide/record-replay.md" },
     { "Change topic configuration" = "guide/topic-configuration.md" },
     { "Run a latency probe" = "guide/latency.md" },
     { "Configure certificate trust" = "guide/tls-trust.md" },

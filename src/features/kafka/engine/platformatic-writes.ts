@@ -44,7 +44,9 @@ export class PlatformaticReviewedWrites {
     private readonly lifetime: AbortSignal,
   ) {}
 
-  async review(input: KafkaWriteInput): Promise<void> {
+  async review(
+    input: KafkaWriteInput,
+  ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination> {
     const parsed = parseKafkaWriteInput(input);
     const admin = new Admin(platformaticClientOptions(this.input, "streamskope-write-review"));
     const signal = AbortSignal.any([
@@ -53,7 +55,7 @@ export class PlatformaticReviewedWrites {
     ]);
     try {
       signal.throwIfAborted();
-      await this.validate(admin, parsed, signal);
+      return await this.validate(admin, parsed, signal);
     } finally {
       await admin.close();
     }
@@ -143,6 +145,7 @@ export class PlatformaticReviewedWrites {
             messages: [
               {
                 topic: parsed.topic,
+                ...(parsed.timestamp === undefined ? {} : { timestamp: BigInt(parsed.timestamp) }),
                 partition: parsed.partition,
                 key: decode(parsed.record.key),
                 value: decode(parsed.record.value),
@@ -228,7 +231,11 @@ export class PlatformaticReviewedWrites {
     return outcome;
   }
 
-  private async validate(admin: Admin, input: KafkaWriteInput, signal: AbortSignal): Promise<void> {
+  private async validate(
+    admin: Admin,
+    input: KafkaWriteInput,
+    signal: AbortSignal,
+  ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination> {
     const exists = (await abortable(admin.listTopics(), signal)).includes(input.topic);
     const metadata = await abortable(
       admin.metadata({
@@ -239,6 +246,11 @@ export class PlatformaticReviewedWrites {
       signal,
     );
     validateDestination(input, metadata, exists);
+    return {
+      clusterId: metadata.id,
+      topicId: metadata.topics.get(input.topic)?.id ?? "",
+      partitions: metadata.topics.get(input.topic)?.partitionsCount ?? 0,
+    };
   }
 
   private async verifyRecord(

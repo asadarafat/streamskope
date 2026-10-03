@@ -27,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { RecordReplayFacade } from "./record-replay-facade";
 import { OffsetResetFacade } from "./offset-reset-facade";
 import { CorrelationTraceFacade } from "./correlation-trace-facade";
 import { SchemaSamplesFacade } from "./schema-samples-facade";
@@ -99,6 +100,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly latencyProbe;
   private readonly now;
   private readonly offsetResets: OffsetResetFacade;
+  private readonly recordReplay: RecordReplayFacade;
   private readonly writes: KafkaReviewedWriteService;
   private readonly schemaSamples: SchemaSamplesFacade;
   private readonly correlationTrace: CorrelationTraceFacade;
@@ -127,6 +129,12 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       options.schemaLookup,
     );
     this.offsetResets = new OffsetResetFacade(session, this.recordActivity.bind(this));
+    this.recordReplay = new RecordReplayFacade(
+      session,
+      profiles,
+      options.replayConnections,
+      this.recordActivity.bind(this),
+    );
     this.writes = new KafkaReviewedWriteService(() => session.writeContext());
     this.schemaSamples = new SchemaSamplesFacade(
       session,
@@ -293,6 +301,10 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "records.replay.review":
+      case "records.replay.apply":
+      case "records.replay.cancel":
+        return this.recordReplay.execute(command, correlationId);
       case "records.trace":
       case "records.trace.cancel":
         return this.correlationTrace.execute(command, correlationId);
@@ -556,7 +568,12 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     const finishConsumption = this.consumption.prepareShutdown();
     let shutdownFailure: unknown;
     try {
-      await Promise.all([this.session.shutdown(), this.plugins.close(), this.queries.idle()]);
+      await Promise.all([
+        this.recordReplay.invalidate(),
+        this.session.shutdown(),
+        this.plugins.close(),
+        this.queries.idle(),
+      ]);
     } catch (error) {
       shutdownFailure = error;
     }
@@ -800,6 +817,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   }
 
   private invalidateClusterState(): void {
+    void this.recordReplay.invalidate().catch(() => undefined);
     this.correlationTrace.invalidate();
     this.recordCodecs.invalidate();
     this.schemaInspection.invalidate();

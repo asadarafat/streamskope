@@ -24,6 +24,14 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
     readonly correlationId: string;
     readonly outcome: import("./offset-reset").OffsetResetOutcome;
   };
+  readonly "records.replay.review": {
+    readonly correlationId: string;
+    readonly review: import("./record-replay").RecordReplayReview;
+  };
+  readonly "records.replay.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./record-replay").RecordReplayOutcome;
+  };
   readonly "records.trace": {
     readonly correlationId: string;
     readonly trace: import("./correlation-trace").CorrelationTraceResult;
@@ -95,6 +103,8 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "records.replay.review": true,
+  "records.replay.apply": true,
   "consumerGroups.reset.review": true,
   "consumerGroups.reset.apply": true,
   "records.trace": true,

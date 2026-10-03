@@ -1,3 +1,4 @@
+import { offsetPosition } from "./offset-reset";
 import {
   kafkaOriginalRecordByteLength,
   parseKafkaOriginalRecord,
@@ -17,6 +18,7 @@ import {
 export type KafkaWriteInput =
   | {
       readonly kind: "record";
+      readonly timestamp?: string;
       readonly topic: string;
       readonly partition: number;
       readonly record: KafkaCompleteRecord;
@@ -53,7 +55,7 @@ export function parseKafkaWriteInput(value: unknown, path = "write"): KafkaWrite
   if (!/^[a-zA-Z0-9._-]+$/u.test(topic) || topic === "." || topic === "..")
     throw new HostContractValidationError(`${path}.topic`, "must be a valid Kafka topic name");
   if (input.kind === "record") {
-    exactKeys(input, ["kind", "topic", "partition", "record"], path);
+    exactKeys(input, ["kind", "topic", "partition", "record", "timestamp"], path);
     const bytes = parseKafkaOriginalRecord(input.record, `${path}.record`);
     if (bytes.state !== "complete" || kafkaOriginalRecordByteLength(bytes) > 65_536)
       throw new HostContractValidationError(
@@ -62,6 +64,9 @@ export function parseKafkaWriteInput(value: unknown, path = "write"): KafkaWrite
       );
     return {
       kind: "record",
+      ...(input.timestamp === undefined
+        ? {}
+        : { timestamp: offsetPosition(input.timestamp, "timestamp") }),
       topic,
       partition: nonNegativeInteger(input.partition, `${path}.partition`),
       record: bytes,
@@ -135,4 +140,10 @@ export function parseKafkaWriteOutcome(value: unknown): KafkaWriteOutcome {
             offset: text(receipt.offset, "outcome.receipt.offset", 32),
           },
   };
+}
+
+export interface KafkaWriteDestination {
+  readonly clusterId: string;
+  readonly topicId: string;
+  readonly partitions: number;
 }
