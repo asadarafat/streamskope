@@ -9,6 +9,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/application/session.ts",
     // Reviewed batches own only abortable delays between explicit writes.
     "src/features/kafka/application/record-batch-service.ts",
+    // Two-minute review expiry closes idle isolated destination connections.
+    "src/features/kafka/application/record-replay-service.ts",
     "src/features/kafka/application/trust-acquisition-lifecycle.ts",
     "src/features/kafka/facade/facade-support.ts",
     "src/features/kafka/engine/engine.ts",
