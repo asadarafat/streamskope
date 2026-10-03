@@ -290,7 +290,7 @@ export async function startNativeKafkaFixture(): Promise<{
       "java",
       [
         ...java,
-        "org.apache.kafka.tools.StorageTool",
+        "kafka.tools.StorageTool",
         "format",
         "--standalone",
         "--cluster-id",
@@ -355,7 +355,15 @@ export async function startNativeKafkaFixture(): Promise<{
     };
   } catch (error: unknown) {
     // Keep no test credentials, tokens, certificates or raw broker logs in public evidence.
-    const logs = await readFile(join(directory, "broker.log"), "utf8").catch(() => "");
+    const formatStderr =
+      error !== null &&
+      typeof error === "object" &&
+      "stderr" in error &&
+      typeof error.stderr === "string"
+        ? error.stderr
+        : "";
+    const logs =
+      formatStderr + (await readFile(join(directory, "broker.log"), "utf8").catch(() => ""));
     const classes = [
       ...new Set(
         logs.match(/(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:Exception|Error)\b/gu) ?? [],
