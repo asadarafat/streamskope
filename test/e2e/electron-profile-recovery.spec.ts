@@ -23,7 +23,11 @@ import {
   type SeededFixtureTopic,
 } from "../support/kafka-fixture";
 import { startProtectedStorageSession } from "../support/protected-storage-session";
-import { openProfileAction, openTopicDetail } from "../support/workbench-browser";
+import {
+  openProfileAction,
+  openTopicDetail,
+  openWorkbenchResource,
+} from "../support/workbench-browser";
 
 // Real credentials are entered in the UI; never retain DOM traces.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -250,6 +254,7 @@ test("restores a full backup with native credential protection and reconnects", 
         config.seedPayload,
       ]),
     );
+    await openWorkbenchResource(page, "Connection Profiles");
     await page.getByRole("button", { name: "Disconnect profile Electron local aio" }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     await openProfileAction(page, "Electron local aio", "Delete");
