@@ -1,14 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Stack,
-  Typography,
-  Table,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableCell,
-  FormControlLabel,
-} from "@mui/material";
+import { Stack, Typography, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material";
 
 import {
   StudioButton as Button,
@@ -16,6 +7,7 @@ import {
   StudioTextField as TextField,
   StudioMenuItem as MenuItem,
   StudioCheckbox as Checkbox,
+  StudioLabeledControl as FormControlLabel,
 } from "../../../platform/ui/controls";
 import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
 import {
