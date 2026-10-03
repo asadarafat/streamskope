@@ -16,6 +16,7 @@ import {
   provisionSeededFixtureTopic,
   type SeededFixtureTopic,
 } from "../support/kafka-fixture";
+import { startProtectedStorageSession } from "../support/protected-storage-session";
 import { openProfileAction, openTopicDetail } from "../support/workbench-browser";
 
 // Real credentials are entered in the UI; never retain DOM traces.
@@ -41,6 +42,7 @@ test("restores a full backup with native credential protection and reconnects", 
   const plan = planPath === undefined ? undefined : await readRecoveryPlan(planPath);
   let installed: Awaited<ReturnType<typeof installNativeRelease>> | undefined;
   let initialInstall: typeof installed;
+  let protectedStorage: Awaited<ReturnType<typeof startProtectedStorageSession>> | undefined;
   let application: ElectronApplication | undefined;
   let seeded: SeededFixtureTopic | undefined;
   const environment = Object.fromEntries(
@@ -59,12 +61,15 @@ test("restores a full backup with native credential protection and reconnects", 
         (previous && previousExecutable ? previousExecutable : (require("electron") as string)),
       args: [
         ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
+        ...(protectedStorage?.electronArguments ?? []),
         `--user-data-dir=${active}`,
         // Load package.json as Electron would in a package, preserving the app's credential identity.
         ...(installed !== undefined || (previous && previousExecutable) ? [] : [resolve(".")]),
       ],
     });
   try {
+    protectedStorage = await startProtectedStorageSession(join(root, "protected-storage"));
+    Object.assign(environment, protectedStorage.environment);
     installed = plan === undefined ? undefined : await installNativeRelease(plan, plan.from);
     initialInstall = installed;
     seeded = await provisionSeededFixtureTopic();
@@ -289,7 +294,11 @@ test("restores a full backup with native credential protection and reconnects", 
       try {
         await seeded?.dispose();
       } finally {
-        await rm(root, { recursive: true, force: true, maxRetries: 3 });
+        try {
+          await protectedStorage?.dispose();
+        } finally {
+          await rm(root, { recursive: true, force: true, maxRetries: 3 });
+        }
       }
     }
   }

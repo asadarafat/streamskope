@@ -74,14 +74,20 @@ export async function fileSha256(path: string): Promise<string> {
 export async function nativeCommand(
   command: string,
   args: readonly string[],
-  cwd?: string,
-  quiet = false,
+  options: { readonly cwd?: string; readonly quiet?: boolean; readonly timeoutMs?: number } = {},
 ): Promise<void> {
   await new Promise<void>((resolvePromise, reject) => {
+    const verbatim =
+      process.platform === "win32" &&
+      args.some((arg) => arg.startsWith("/D=") || arg.startsWith("_?="));
     const child = spawn(command, [...args], {
-      cwd,
-      stdio: ["ignore", quiet ? "ignore" : "inherit", "inherit"],
+      ...(verbatim ? { argv0: `"${command}"` } : {}),
+      cwd: options.cwd,
+      stdio: ["ignore", options.quiet ? "ignore" : "inherit", "inherit"],
       windowsHide: true,
+      // NSIS consumes the final path verbatim, including spaces, without quotes.
+      windowsVerbatimArguments: verbatim,
+      timeout: options.timeoutMs ?? 120_000,
     });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
@@ -193,7 +199,7 @@ export async function installNativeRelease(
     // Run only in an ephemeral Actions account, never the user's normal desktop.
     if (process.env.GITHUB_ACTIONS !== "true")
       throw new Error("Windows installer recovery requires a disposable GitHub Actions account.");
-    await nativeCommand(installer.path, ["/S", `/D=${destination}`]);
+    await nativeCommand(installer.path, ["/S", "/currentuser", `/D=${destination}`]);
     executablePath = join(destination, "StreamSkope.exe");
     archivePath = join(destination, "resources", "app.asar");
     method = "NSIS installer installs and upgrades the same isolated directory";
@@ -202,7 +208,7 @@ export async function installNativeRelease(
     await copyFile(installer.path, appImage);
     await chmod(appImage, 0o700);
     await rm(join(destination, "squashfs-root"), { recursive: true, force: true });
-    await nativeCommand(appImage, ["--appimage-extract"], destination, true);
+    await nativeCommand(appImage, ["--appimage-extract"], { cwd: destination, quiet: true });
     executablePath = join(destination, "squashfs-root", "StreamSkope");
     archivePath = join(destination, "squashfs-root", "resources", "app.asar");
     method =
@@ -217,14 +223,15 @@ export async function installNativeRelease(
 export async function uninstallNativeRecovery(plan: NativeRecoveryPlan): Promise<void> {
   if (process.platform !== "win32") return;
   const destination = join(plan.root, "installed", "StreamSkope");
-  const uninstallers = (await readdir(destination).catch(() => [])).filter((name) =>
-    /^Uninstall.*\.exe$/u.test(name),
-  );
+  const entries = await readdir(destination).catch(() => []);
+  const uninstallers = entries.filter((name) => /^Uninstall.*\.exe$/u.test(name));
+  if (entries.includes("StreamSkope.exe") && uninstallers.length === 0)
+    throw new Error("Installed application has no owned uninstaller.");
   if (uninstallers.length > 1) throw new Error("Unexpected extra native uninstallers.");
   if (uninstallers[0]) {
     // Keep the uninstaller outside its own installation directory during cleanup.
     const uninstaller = join(plan.root, "cleanup.exe");
     await cp(join(destination, uninstallers[0]), uninstaller);
-    await nativeCommand(uninstaller, ["/S", `_?=${destination}`]);
+    await nativeCommand(uninstaller, ["/S", "/currentuser", "/KEEP_APP_DATA", `_?=${destination}`]);
   }
 }

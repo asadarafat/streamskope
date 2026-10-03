@@ -33,8 +33,12 @@ async function main(): Promise<void> {
     if (!process.env[name])
       throw new Error(`Provide ${name} for the disposable TLS/OAuth Kafka fixture.`);
   }
-  const root = await realpath(await mkdtemp(join(tmpdir(), "streamskope-native-recovery-")));
+  const output = resolve("dist", "native-recovery");
+  const outputPath = join(output, `${process.platform}-${process.arch}.json`);
+  await rm(outputPath, { force: true });
+  const root = await realpath(await mkdtemp(join(tmpdir(), "streamskope native-recovery-")));
   let plan: NativeRecoveryPlan | undefined;
+  let report: Record<string, unknown> | undefined;
   try {
     plan = {
       schemaVersion: 1,
@@ -46,30 +50,13 @@ async function main(): Promise<void> {
     };
     process.env.STREAMSKOPE_NATIVE_RECOVERY_PLAN = await writeRecoveryPlan(plan);
     process.env.STREAMSKOPE_NATIVE_RECOVERY = "1";
-    await nativeCommand(process.execPath, [
-      "tools/package/e2e.mjs",
-      "electron",
-      "test/e2e/electron-profile-recovery.spec.ts",
-    ]);
-    const reportPath = resolve("test-results", "electron", "native-recovery.json");
-    const report = JSON.parse(await readFile(reportPath, "utf8")) as Record<string, unknown>;
-    const output = resolve("dist", "native-recovery");
-    await mkdir(output, { recursive: true });
-    await writeFile(
-      join(output, `${process.platform}-${process.arch}.json`),
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          outcome: "passed",
-          capturedAt: new Date().toISOString(),
-          command: `node --import tsx tools/check/native-recovery.ts --from ${from} --to ${to}`,
-          installers: [plan.from, plan.to].map(({ path: _path, ...published }) => published),
-          ...report,
-        },
-        null,
-        2,
-      )}\n`,
+    await nativeCommand(
+      process.execPath,
+      ["tools/package/e2e.mjs", "electron", "test/e2e/electron-profile-recovery.spec.ts"],
+      { timeoutMs: 480_000 },
     );
+    const reportPath = resolve("test-results", "electron", "native-recovery.json");
+    report = JSON.parse(await readFile(reportPath, "utf8")) as Record<string, unknown>;
   } finally {
     try {
       if (plan !== undefined) await uninstallNativeRecovery(plan);
@@ -77,6 +64,25 @@ async function main(): Promise<void> {
       await rm(root, { recursive: true, force: true, maxRetries: 3 });
     }
   }
+  if (plan === undefined || report === undefined)
+    throw new Error("Native recovery evidence was not completed.");
+  await mkdir(output, { recursive: true });
+  await writeFile(
+    outputPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        outcome: "passed",
+        ownedInstallationCleanup: "passed",
+        capturedAt: new Date().toISOString(),
+        command: `node --import tsx tools/check/native-recovery.ts --from ${from} --to ${to}`,
+        installers: [plan.from, plan.to].map(({ path: _path, ...published }) => published),
+        ...report,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 void main().catch((error: unknown) => {
