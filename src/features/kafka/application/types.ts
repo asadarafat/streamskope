@@ -60,7 +60,9 @@ export interface KafkaActiveConnection {
     groupId: string,
     target: import("../contracts/offset-reset").OffsetResetTarget,
   ): Promise<import("../contracts/offset-reset").OffsetResetResult>;
-  reviewWrite?(input: import("../contracts").KafkaWriteInput): Promise<void>;
+  reviewWrite?(
+    input: import("../contracts").KafkaWriteInput,
+  ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination | void>;
   applyWrite?(
     input: import("../contracts").KafkaWriteInput,
   ): Promise<import("../contracts").KafkaWriteOutcome>;

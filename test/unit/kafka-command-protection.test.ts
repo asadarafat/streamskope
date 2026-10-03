@@ -36,6 +36,7 @@ function request(name: HostCommand["command"]): HostCommand {
   } as HostCommand;
 }
 const writes = [
+  "records.replay.apply",
   "consumerGroups.reset.apply",
   "records.batch.apply",
   "writes.apply",
@@ -58,7 +59,12 @@ const writes = [
 ] as const;
 
 describe("host record protection", () => {
-  it.each(["consumerGroups.reset.review", "records.decode", "records.trace"] as const)(
+  it.each([
+    "records.replay.review",
+    "consumerGroups.reset.review",
+    "records.decode",
+    "records.trace",
+  ] as const)(
     "rejects direct %s while masking is enabled before reaching record data",
     async (operation) => {
       const service = new KafkaOperationalPreferenceService(
@@ -84,18 +90,41 @@ describe("host record protection", () => {
             id: "no-bypass",
             version: HOST_PROTOCOL_VERSION,
             payload:
-              operation === "consumerGroups.reset.review"
-                ? { groupId: "g", targets: [{ topic: "events", partition: 0, offset: "0" }] }
-                : operation === "records.decode"
-                  ? { format: "json", bytes: "e30=" }
-                  : {
-                      traceId: "trace",
-                      topics: ["events"],
-                      startTimeMs: 1000,
-                      endTimeMs: 2000,
-                      value: "secret",
-                      selector: { source: "key", path: "", format: "json" },
-                    },
+              operation === "records.replay.review"
+                ? {
+                    targetProfile: null,
+                    topic: "events",
+                    partition: 0,
+                    ratePerSecond: 1,
+                    records: [
+                      {
+                        topic: "source",
+                        partition: 0,
+                        offset: "0",
+                        timestampMs: null,
+                        original: {
+                          state: "complete",
+                          encoding: "base64",
+                          key: null,
+                          value: "e30=",
+                          headers: [],
+                        },
+                      },
+                    ],
+                    transform: { key: null, removeHeaders: [], appendHeaders: [], valueText: null },
+                  }
+                : operation === "consumerGroups.reset.review"
+                  ? { groupId: "g", targets: [{ topic: "events", partition: 0, offset: "0" }] }
+                  : operation === "records.decode"
+                    ? { format: "json", bytes: "e30=" }
+                    : {
+                        traceId: "trace",
+                        topics: ["events"],
+                        startTimeMs: 1000,
+                        endTimeMs: 2000,
+                        value: "secret",
+                        selector: { source: "key", path: "", format: "json" },
+                      },
           }),
         ),
       ).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });

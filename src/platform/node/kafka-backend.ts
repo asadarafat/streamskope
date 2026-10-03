@@ -128,6 +128,7 @@ export function createKafkaBackend(
     new KafkaLiveRuleRuntime(rules, evaluator),
     new KafkaTopicConfigurationService(session, topicConfigurationHistoryStore),
     {
+      replayConnections: new StreamSkopeKafkaEngine(),
       ...(plugins === undefined ? {} : { plugins }),
       preferences,
       queries: new KafkaQueryLibrary(queryStore),

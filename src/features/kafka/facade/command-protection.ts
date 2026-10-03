@@ -8,6 +8,9 @@ type Access = "local" | "remote-read" | "remote-write" | "profile";
 
 // Exhaustive by design: adding a host command requires an explicit access decision.
 export const KAFKA_COMMAND_ACCESS = {
+  "records.replay.review": "remote-read",
+  "records.replay.apply": "remote-write",
+  "records.replay.cancel": "local",
   "records.trace": "remote-read",
   "records.trace.cancel": "local",
   "records.decode": "remote-read",
@@ -183,7 +186,8 @@ export class KafkaCommandProtection {
         "Review Preferences → Protection. Broker permissions remain authoritative; disable read-only deliberately to perform remote changes or plugin actions.",
       );
     if (
-      (command.command === "consumerGroups.reset.review" ||
+      (command.command === "records.replay.review" ||
+        command.command === "consumerGroups.reset.review" ||
         command.command === "records.trace" ||
         command.command === "records.decode" ||
         (command.command === "messages.start" && command.payload.search !== undefined)) &&

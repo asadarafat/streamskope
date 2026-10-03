@@ -26,6 +26,7 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import { ReplayRecordsAction } from "./ReplayRecordsAction";
 import { CorrelationTracePanel } from "./CorrelationTracePanel";
 import { QueryReadCoverage } from "./QueryReadCoverage";
 import {
@@ -57,6 +58,8 @@ const FETCH_MAXIMUM_PRESETS = [10, 100, 500, 1_000] as const;
 
 export function MessageWorkspace({
   host,
+  profiles = [],
+  canWrite = false,
   component = "main",
   connectionAvailable,
   unavailableFilterRecords = 0,
@@ -94,6 +97,8 @@ export function MessageWorkspace({
   transfer = browserTextDocumentTransfer,
 }: {
   readonly host?: import("../contracts").StreamSkopeHost;
+  readonly profiles?: readonly import("../contracts").ProfileSummary[];
+  readonly canWrite?: boolean;
   readonly component?: "main" | "section";
   readonly connectionAvailable: boolean;
   readonly unavailableFilterRecords?: number;
@@ -458,6 +463,16 @@ export function MessageWorkspace({
             >
               {exporting ? "Preparing…" : "Export"}
             </Button>
+            {host && (
+              <ReplayRecordsAction
+                host={host}
+                profiles={profiles}
+                messages={visibleMessages}
+                selected={selectedMessage}
+                enabled={connectionAvailable && !messagesStale}
+                canWrite={canWrite}
+              />
+            )}
             <StatusIndicator
               ariaLabel="Consumption status"
               label={statusLabel}

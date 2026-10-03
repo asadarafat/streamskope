@@ -39,6 +39,7 @@ export class RecordBatchService {
     private readonly context: () => Context | null,
     private readonly now = Date.now,
     private readonly wait = pause,
+    private readonly beforeDispatch?: () => Promise<boolean>,
   ) {}
   invalidate(): void {
     for (const plan of this.plans.values()) plan.controller.abort();
@@ -120,13 +121,37 @@ export class RecordBatchService {
         stopReason = "deadline";
         break;
       }
+      if (plan.controller.signal.aborted) {
+        stopReason = "cancelled";
+        break;
+      }
       if (!this.current(plan.context)) {
         stopReason = "connection-changed";
         break;
       }
-      if (plan.controller.signal.aborted) {
-        stopReason = "cancelled";
-        break;
+      if (this.beforeDispatch) {
+        let valid = false;
+        try {
+          valid = await this.beforeDispatch();
+        } catch {
+          /* Fail closed before dispatch. */
+        }
+        if (plan.controller.signal.aborted) {
+          stopReason = "cancelled";
+          break;
+        }
+        if (!this.current(plan.context)) {
+          stopReason = "connection-changed";
+          break;
+        }
+        if (!valid) {
+          stopReason = "destination-changed";
+          break;
+        }
+        if (this.now() - started >= SCHEMA_SAMPLE_LIMITS.durationMs) {
+          stopReason = "deadline";
+          break;
+        }
       }
       let outcome: KafkaWriteOutcome;
       try {
@@ -135,6 +160,9 @@ export class RecordBatchService {
           topic: input.topic,
           partition: input.partition,
           record,
+          ...(input.timestamps?.[outcomes.length] == null
+            ? {}
+            : { timestamp: input.timestamps[outcomes.length]! }),
         });
       } catch {
         outcome = {

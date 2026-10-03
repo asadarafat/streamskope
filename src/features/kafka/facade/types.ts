@@ -9,6 +9,7 @@ import type {
 } from "../application";
 
 export interface KafkaBackendFacadeOptions {
+  readonly replayConnections?: import("../application").KafkaConnectionPort;
   readonly sampleGenerator?: import("../application/record-codec-types").SchemaSamplePort;
   readonly recordCodec?: import("../application/record-codec-types").RecordCodecPort;
   readonly schemaLookup?: import("../application/record-codec-types").SchemaLookupPort;
