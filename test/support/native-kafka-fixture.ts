@@ -9,7 +9,7 @@ import {
 } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, win32 } from "node:path";
 import { Readable } from "node:stream";
 import { finished, pipeline } from "node:stream/promises";
 import type { ReadableStream } from "node:stream/web";
@@ -32,6 +32,18 @@ async function digest(path: string): Promise<string> {
   const hash = createHash("sha512");
   for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
   return hash.digest("hex");
+}
+
+export function nativeArchiveExtractor(
+  platform = process.platform,
+  systemRoot = process.env.SystemRoot,
+): string {
+  if (platform !== "win32") return "tar";
+  if (systemRoot === undefined || !win32.isAbsolute(systemRoot))
+    throw new Error("Windows native fixture requires an absolute SystemRoot.");
+  // The PATH can contain Git/MSYS GNU tar, which treats native drive-letter
+  // archive arguments as remote paths. Windows ships a native bsdtar binary.
+  return win32.join(systemRoot, "System32", "tar.exe");
 }
 
 async function kafkaDistribution(): Promise<string> {
@@ -65,7 +77,7 @@ async function kafkaDistribution(): Promise<string> {
   // Extract into a new owned directory; do not trust a previously extracted executable tree.
   const extracted = await mkdtemp(join(cache, "distribution-"));
   try {
-    await run("tar", ["-xzf", archive, "-C", extracted], { timeout: 60_000 });
+    await run(nativeArchiveExtractor(), ["-xzf", archive, "-C", extracted], { timeout: 60_000 });
     return extracted;
   } catch (error) {
     await rm(extracted, { recursive: true, force: true });

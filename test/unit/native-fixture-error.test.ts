@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 
 import { NativeKafkaFixtureError } from "../support/native-fixture-error";
+import { nativeArchiveExtractor } from "../support/native-kafka-fixture";
 
 it("retains a safe Java failure identity without command arguments or exception messages", () => {
   const password = "fixture-secret-sentinel";
@@ -40,4 +41,12 @@ it("retains only allowlisted system codes and records cleanup failures separatel
     cleanup: "not started",
   });
   expect(JSON.stringify(untrusted)).not.toContain("secret-value");
+});
+
+it("uses native Windows archive extraction without depending on Git or MSYS PATH tools", () => {
+  expect(nativeArchiveExtractor("win32", "C:\\Windows")).toBe("C:\\Windows\\System32\\tar.exe");
+  expect(nativeArchiveExtractor("win32", "D:\\Windows")).toBe("D:\\Windows\\System32\\tar.exe");
+  expect(() => nativeArchiveExtractor("win32", "relative")).toThrow("absolute SystemRoot");
+  expect(nativeArchiveExtractor("darwin", "irrelevant")).toBe("tar");
+  expect(nativeArchiveExtractor("linux", "irrelevant")).toBe("tar");
 });
