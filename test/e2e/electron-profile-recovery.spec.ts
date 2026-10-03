@@ -3,7 +3,13 @@ import { createRequire } from "node:module";
 import { release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
+import {
+  _electron as electron,
+  expect,
+  test,
+  type ElectronApplication,
+  type Page,
+} from "@playwright/test";
 
 import { installNativeRelease, readRecoveryPlan } from "../../tools/check/native-installers";
 import {
@@ -21,6 +27,42 @@ import { openProfileAction, openTopicDetail } from "../support/workbench-browser
 
 // Real credentials are entered in the UI; never retain DOM traces.
 test.use({ trace: "off", screenshot: "off", video: "off" });
+
+async function reconnectSavedProfile(
+  page: Page,
+  phase: string,
+  sensitiveValues: readonly string[],
+): Promise<{ readonly phase: string; readonly elapsedMs: number }> {
+  const started = performance.now();
+  await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
+  try {
+    // OAuth, native credential access and broker discovery run sequentially.
+    // This is an operation completion bound, not a latency qualification budget.
+    await expect(page.getByLabel("Connection status")).toContainText("Connected", {
+      timeout: 20_000,
+    });
+    return { phase, elapsedMs: Math.round(performance.now() - started) };
+  } catch (error) {
+    const alerts = await page.getByRole("alert").allTextContents();
+    const redact = (value: string): string =>
+      sensitiveValues
+        .reduce(
+          (text, secret) => (secret.length === 0 ? text : text.replaceAll(secret, "[redacted]")),
+          value,
+        )
+        .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu, "[redacted token]")
+        .slice(0, 512);
+    await test.info().attach("native-connection-failure", {
+      body: JSON.stringify({
+        phase,
+        elapsedMs: Math.round(performance.now() - started),
+        alerts: alerts.slice(0, 4).map(redact),
+      }),
+      contentType: "application/json",
+    });
+    throw error;
+  }
+}
 
 // Explicit operator rehearsal: requires a real, unlocked OS credential service
 // and the disposable AIO fixture. Never substitute deterministic safeStorage.
@@ -45,6 +87,7 @@ test("restores a full backup with native credential protection and reconnects", 
   let protectedStorage: Awaited<ReturnType<typeof startProtectedStorageSession>> | undefined;
   let application: ElectronApplication | undefined;
   let seeded: SeededFixtureTopic | undefined;
+  const reconnects: { readonly phase: string; readonly elapsedMs: number }[] = [];
   const environment = Object.fromEntries(
     Object.entries(process.env).filter(
       (entry): entry is [string, string] => entry[1] !== undefined,
@@ -121,8 +164,12 @@ test("restores a full backup with native credential protection and reconnects", 
     await cp(active, join(root, "pre-upgrade"), { recursive: true, preserveTimestamps: true });
     application = await launch(previousExecutable !== undefined);
     page = await application.firstWindow();
-    await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
-    await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    reconnects.push(
+      await reconnectSavedProfile(page, "baseline restart", [
+        config.oauthClientSecret,
+        config.seedPayload,
+      ]),
+    );
     await application.close();
     application = undefined;
     if (plan !== undefined) installed = await installNativeRelease(plan, plan.to);
@@ -148,8 +195,12 @@ test("restores a full backup with native credential protection and reconnects", 
     await page.getByRole("option", { name: "Native incident" }).click();
     await queries.getByRole("button", { name: "Open query" }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
-    await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
-    await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    reconnects.push(
+      await reconnectSavedProfile(page, "after installer replacement", [
+        config.oauthClientSecret,
+        config.seedPayload,
+      ]),
+    );
     await expect(page.getByRole("textbox", { name: "Start time (inclusive)" })).toHaveValue(
       startTime,
     );
@@ -212,8 +263,12 @@ test("restores a full backup with native credential protection and reconnects", 
     await page.getByRole("option", { name: "Native incident" }).click();
     await queries.getByRole("button", { name: "Open query" }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
-    await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
-    await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    reconnects.push(
+      await reconnectSavedProfile(page, "after backup restoration", [
+        config.oauthClientSecret,
+        config.seedPayload,
+      ]),
+    );
     const readMode = page.getByRole("combobox", { name: "Read mode" });
     await expect(readMode).toBeEnabled();
     await expect(readMode).toContainText("Time window");
@@ -275,6 +330,7 @@ test("restores a full backup with native credential protection and reconnects", 
       explicitAbsoluteBoundsRestored: true,
       restoredProfileReconnected: true,
       credentialsReentered: false,
+      reconnects,
       historicalFilteredExportVerified: true,
       scope:
         "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
