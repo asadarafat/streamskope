@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { NspApiClient } from "../../plugins/nsp/backend/api-client";
 import { parseRecovery } from "../../plugins/nsp/backend/recovery";
 import {
   fromPluginProfileSource,
@@ -29,6 +28,7 @@ import {
   startElectronPluginFixture,
 } from "../support/electron-plugin";
 import {
+  liveNspApiClient,
   liveNspFixtureAdmin,
   ownedNspTopic,
   removeOwnedNspTopic,
@@ -138,7 +138,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     await run(process.execPath, ["--import", "tsx", "tools/package/plugin.ts", "nsp"], {
       maxBuffer: 4 * 1_048_576,
     });
-  const client = new NspApiClient(input);
+  const client = await liveNspApiClient(input);
   const targetVersion = await client.readVersion().finally(() => client.close());
   const { current, update } = await pluginPackageFixtures("nsp");
   const fixture = await startElectronPluginFixture(current.bytes, info, [
@@ -147,6 +147,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     input.username,
   ]);
   const { page, application } = fixture;
+  page.setDefaultTimeout(30_000);
   const marker = `streamskope-native-qualification:${randomUUID()}`;
   const topic = ownedNspTopic();
   let admin: Awaited<ReturnType<typeof liveNspFixtureAdmin>> | undefined;
@@ -365,7 +366,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
           await writeFile(info.outputPath("nsp-recovery-private.json"), JSON.stringify(pending), {
             mode: 0o600,
           });
-          const cleanup = new NspApiClient(input);
+          const cleanup = await liveNspApiClient(input);
           try {
             await cleanup.cleanupExecution(pending.requestId, pending.executionId);
             await store.writeRecoveryState(NSP_PLUGIN_ID, null);
