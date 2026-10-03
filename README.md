@@ -33,7 +33,9 @@ version when starting release CI; PR checks only qualify changes for `main`.
 
 ## What you can do
 
-- Browse topics, read and filter messages, inspect payloads and export filtered JSON.
+- Browse topics, read and filter messages, inspect original record bytes and export filtered JSON.
+- Create topics and produce reviewed records with explicit destinations and outcomes.
+- Use host read-only controls and deterministic record masking.
 - Investigate consumer lag, stream activity and producer/consumer probe latency.
 - Manage topic configuration, Schema Registry and ACLs.
 - Test message rules and inspect deployed Redpanda transforms.
@@ -52,7 +54,8 @@ for implemented capabilities, tested environments and limitations.
 3. [Read your first message](website/docs/start/quickstart.md#3-open-a-record) from a known topic.
 
 Use an inspection account with the [required permissions](website/docs/guide/security.md).
-Configuration changes, ACL/schema operations and latency probes can write to your services.
+Producing records, creating topics, configuration changes, ACL/schema operations
+and latency probes can write to your services.
 
 ## Documentation and help
 
