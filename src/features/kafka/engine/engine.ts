@@ -25,6 +25,7 @@ import type {
   KafkaLatencyProbeMeasurement,
 } from "../application";
 
+import { PlatformaticOffsetReset } from "./platformatic-offset-reset";
 import { PlatformaticReviewedWrites } from "./platformatic-writes";
 import { translateKafkaRecord } from "./message-record";
 import {
@@ -190,6 +191,31 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
 }
 
 class ActiveKafkaEngineConnection implements KafkaEngineConnection {
+  offsetResetSnapshot(
+    input: import("../contracts/offset-reset").OffsetResetInput,
+  ): Promise<import("../contracts/offset-reset").OffsetResetSnapshot> {
+    return new PlatformaticOffsetReset(this.clientInput, this.lifecycleController.signal).snapshot(
+      input,
+    );
+  }
+  offsetResetExamples(
+    input: import("../contracts/offset-reset").OffsetResetInput,
+  ): Promise<
+    Pick<import("../contracts/offset-reset").OffsetResetReview, "examples" | "exampleStatus">
+  > {
+    return new PlatformaticOffsetReset(this.clientInput, this.lifecycleController.signal).examples(
+      input,
+    );
+  }
+  resetGroupOffset(
+    groupId: string,
+    target: import("../contracts/offset-reset").OffsetResetTarget,
+  ): Promise<import("../contracts/offset-reset").OffsetResetResult> {
+    return new PlatformaticOffsetReset(this.clientInput, this.lifecycleController.signal).apply(
+      groupId,
+      target,
+    );
+  }
   reviewWrite(input: import("../contracts").KafkaWriteInput): Promise<void> {
     return new PlatformaticReviewedWrites(this.clientInput, this.lifecycleController.signal).review(
       input,

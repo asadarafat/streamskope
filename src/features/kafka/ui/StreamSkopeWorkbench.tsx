@@ -563,6 +563,8 @@ export function StreamSkopeWorkbench({
       />
     ) : navigation === "consumer-groups" ? (
       <ConsumerGroupsPage
+        host={host}
+        canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
         connected={connected}
         detail={state.consumerGroupDetail}
         filter={consumerGroupFilter}

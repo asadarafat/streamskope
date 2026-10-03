@@ -27,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { OffsetResetFacade } from "./offset-reset-facade";
 import { CorrelationTraceFacade } from "./correlation-trace-facade";
 import { SchemaSamplesFacade } from "./schema-samples-facade";
 import { SchemaInspectionFacade } from "./schema-inspection-facade";
@@ -97,6 +98,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly listeners = new Set<HostEventListener>();
   private readonly latencyProbe;
   private readonly now;
+  private readonly offsetResets: OffsetResetFacade;
   private readonly writes: KafkaReviewedWriteService;
   private readonly schemaSamples: SchemaSamplesFacade;
   private readonly correlationTrace: CorrelationTraceFacade;
@@ -124,6 +126,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       options.recordCodec,
       options.schemaLookup,
     );
+    this.offsetResets = new OffsetResetFacade(session, this.recordActivity.bind(this));
     this.writes = new KafkaReviewedWriteService(() => session.writeContext());
     this.schemaSamples = new SchemaSamplesFacade(
       session,
@@ -388,6 +391,9 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
               correlationId: requestId,
             }),
         });
+      case "consumerGroups.reset.review":
+      case "consumerGroups.reset.apply":
+        return this.offsetResets.execute(command, correlationId);
       case "consumerGroups.list":
       case "consumerGroups.load":
         return this.consumerGroups.execute(command, correlationId);

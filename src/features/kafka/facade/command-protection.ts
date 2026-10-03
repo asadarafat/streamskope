@@ -48,6 +48,8 @@ export const KAFKA_COMMAND_ACCESS = {
   "topics.list": "remote-read",
   "writes.review": "remote-read",
   "writes.apply": "remote-write",
+  "consumerGroups.reset.review": "remote-read",
+  "consumerGroups.reset.apply": "remote-write",
   "consumerGroups.list": "remote-read",
   "consumerGroups.load": "remote-read",
   "schemas.list": "remote-read",
@@ -181,7 +183,8 @@ export class KafkaCommandProtection {
         "Review Preferences → Protection. Broker permissions remain authoritative; disable read-only deliberately to perform remote changes or plugin actions.",
       );
     if (
-      (command.command === "records.trace" ||
+      (command.command === "consumerGroups.reset.review" ||
+        command.command === "records.trace" ||
         command.command === "records.decode" ||
         (command.command === "messages.start" && command.payload.search !== undefined)) &&
       hasRecordMasking(snapshot.preferences.protection)
