@@ -6,6 +6,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { EDA_CAPTURE_DEFAULTS } from "../../plugins/eda/contracts";
+import { ObservationService } from "../../src/features/kafka/application/observation-service";
+import { RelationshipService } from "../../src/features/kafka/application/relationship-service";
 import type { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import type { EdaAgentTunnel } from "../../plugins/eda/backend/eda-agent-tunnel";
 
@@ -160,6 +162,25 @@ async function main(): Promise<void> {
       "No real EDA Kafka record was received within 60 seconds; generate an event in the selected producer.",
     );
     checks.push("kafka-record-receipt");
+    const context = { connection, generation: 0, connectionName: "Local EDA CI capture" };
+    const observation = await new ObservationService(() => context).capture({
+      topic,
+      groupId: null,
+      sampleRecords: false,
+      thresholds: { lag: null, requestMs: null },
+    });
+    assert.equal(observation.series.topic, topic);
+    assert(observation.series.samples[0]!.partitions.some((p) => p.endOffset !== null));
+    checks.push("observed-health");
+    const graph = await new RelationshipService(() => context, undefined, undefined).capture({
+      topics: [topic],
+      subject: null,
+      version: null,
+      sampleRecords: false,
+    });
+    assert(graph.nodes.some((n) => n.kind === "topic" && n.label === topic));
+    assert.equal(graph.coverage.find((c) => c.source === "Kafka metadata")?.state, "complete");
+    checks.push("relationship-discovery");
     assert.deepEqual(
       (await client.getProducer(source)).spec,
       original,

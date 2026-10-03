@@ -85,10 +85,12 @@ async function main(): Promise<void> {
     runtime,
   );
   let profiles: readonly ProfileSummary[] = [];
+  let topics: readonly string[] = [];
   const safeEvents: unknown[] = [];
   facade.subscribe((event) => {
     safeEvents.push(event);
     if (event.event === "profiles.changed") profiles = event.payload.profiles;
+    if (event.event === "topics.changed") topics = event.payload.topics;
   });
   const checks: string[] = [];
   let topicCount: number | undefined;
@@ -143,19 +145,38 @@ async function main(): Promise<void> {
       payload: {},
     });
     assert(listed.ok, listed.ok ? "" : listed.error.summary);
-    for (const event of safeEvents) {
-      if (
-        event &&
-        typeof event === "object" &&
-        "event" in event &&
-        event.event === "topics.changed" &&
-        "payload" in event
-      ) {
-        const payload = event.payload as { topics: readonly unknown[] };
-        topicCount = payload.topics.length;
-      }
-    }
+    topicCount = topics.length;
     checks.push("saved-profile-connect", "topic-discovery");
+    const topic = topics.find((name) => !name.startsWith("_"));
+    assert(topic, "A visible NSP topic is required for read-only observation qualification.");
+    const observed = await facade.execute({
+      command: "observations.capture",
+      id: randomUUID(),
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        topic,
+        groupId: null,
+        sampleRecords: false,
+        thresholds: { lag: null, requestMs: null },
+      },
+    });
+    assert(observed.ok, "NSP Kafka health observation failed.");
+    assert.equal(observed.result.capture.series.topic, topic);
+    assert(observed.result.capture.series.samples[0]!.partitions.some((p) => p.endOffset !== null));
+    checks.push("observed-health");
+    const relationships = await facade.execute({
+      command: "relationships.capture",
+      id: randomUUID(),
+      version: HOST_PROTOCOL_VERSION,
+      payload: { topics: [topic], subject: null, version: null, sampleRecords: false },
+    });
+    assert(relationships.ok, "NSP Kafka relationship discovery failed.");
+    assert(relationships.result.graph.nodes.some((n) => n.kind === "topic" && n.label === topic));
+    assert.equal(
+      relationships.result.graph.coverage.find((c) => c.source === "Kafka metadata")?.state,
+      "complete",
+    );
+    checks.push("relationship-discovery");
     await runtime.remove(NSP_PLUGIN_ID);
     assert.equal(profiles.length, 1);
     assert.equal(await store.readRecoveryState(NSP_PLUGIN_ID), null);
