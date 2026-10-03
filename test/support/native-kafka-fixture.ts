@@ -19,6 +19,7 @@ import { promisify } from "node:util";
 import { Admin } from "@platformatic/kafka";
 
 import { loadFixtureConfig } from "./kafka-fixture";
+import { NativeKafkaFixtureError, type NativeFixturePhase } from "./native-fixture-error";
 
 const run = promisify(execFile);
 const KAFKA_VERSION = "4.3.1";
@@ -68,7 +69,7 @@ async function kafkaDistribution(): Promise<string> {
     return extracted;
   } catch (error) {
     await rm(extracted, { recursive: true, force: true });
-    throw error;
+    throw new NativeKafkaFixtureError("extract Kafka distribution", error, "", "passed");
   }
 }
 
@@ -104,7 +105,13 @@ export async function startNativeKafkaFixture(): Promise<{
   readonly metadata: { kafkaVersion: string; archiveSha512: string; transport: string };
   dispose(): Promise<void>;
 }> {
-  const extracted = await kafkaDistribution();
+  let extracted: string;
+  try {
+    extracted = await kafkaDistribution();
+  } catch (error) {
+    if (error instanceof NativeKafkaFixtureError) throw error;
+    throw new NativeKafkaFixtureError("prepare Kafka distribution", error);
+  }
   const distribution = join(extracted, `kafka_2.13-${KAFKA_VERSION}`);
   const directory = await mkdtemp(join(tmpdir(), "streamskope-native-kafka-"));
   const config = await loadFixtureConfig();
@@ -165,7 +172,7 @@ export async function startNativeKafkaFixture(): Promise<{
   let admin: Admin | undefined;
   const log = createWriteStream(join(directory, "broker.log"), { mode: 0o600 });
   let disposed = false;
-  let phase = "initialize OAuth";
+  let phase: NativeFixturePhase = "initialize OAuth";
   const dispose = async (): Promise<void> => {
     if (disposed) return;
     disposed = true;
@@ -374,18 +381,12 @@ export async function startNativeKafkaFixture(): Promise<{
         : "";
     const logs =
       formatStderr + (await readFile(join(directory, "broker.log"), "utf8").catch(() => ""));
-    const classes = [
-      ...new Set(
-        logs.match(/(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*(?:Exception|Error)\b/gu) ?? [],
-      ),
-    ].slice(0, 5);
-    const code =
-      error !== null && typeof error === "object" && "code" in error ? String(error.code) : "";
-    const diagnostic = [...classes, ...(/^[A-Z0-9_-]{1,30}$/u.test(code) ? [code] : [])].join(", ");
-    await dispose();
-    throw new Error(
-      `Native Kafka fixture failed during ${phase}${diagnostic ? ` (${diagnostic})` : ""}; its owned processes and temporary data were removed.`,
-      { cause: error },
-    );
+    let cleanup: "passed" | "failed" = "passed";
+    try {
+      await dispose();
+    } catch {
+      cleanup = "failed";
+    }
+    throw new NativeKafkaFixtureError(phase, error, logs, cleanup);
   }
 }
