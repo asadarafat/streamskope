@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { startNativeKafkaFixture } from "../../test/support/native-kafka-fixture";
+import {
+  NativeKafkaFixtureError,
+  type NativeFixtureDiagnostic,
+} from "../../test/support/native-fixture-error";
 
 import {
   downloadNativeInstaller,
@@ -62,7 +66,7 @@ async function main(): Promise<void> {
   let report: Record<string, unknown> | undefined;
   let fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>> | undefined;
   let phase = "target installer";
-  let failure: { phase: string; code: string } | undefined;
+  let failure: { phase: string; code: string; fixture?: NativeFixtureDiagnostic } | undefined;
   const cleanup: Record<string, { outcome: "passed" | "failed"; code?: string }> = {};
   const clean = async (name: string, action: () => Promise<void>): Promise<void> => {
     try {
@@ -75,6 +79,11 @@ async function main(): Promise<void> {
     }
   };
   try {
+    if (supplied.length === 0) {
+      phase = "disposable Kafka fixture";
+      fixture = await startNativeKafkaFixture();
+    }
+    phase = "target installer";
     const target = candidate
       ? await loadCandidateInstaller(args[3]!, to, root)
       : await downloadNativeInstaller(to, root);
@@ -90,11 +99,8 @@ async function main(): Promise<void> {
         ? {}
         : { candidateSourceRevision: target.sourceRevision }),
     };
-    if (supplied.length === 0) {
-      phase = "disposable Kafka fixture";
-      fixture = await startNativeKafkaFixture();
-      Object.assign(process.env, fixture.environment);
-    }
+    // Keep the owned fixture out of build/package tests; expose it only to recovery.
+    if (fixture !== undefined) Object.assign(process.env, fixture.environment);
     process.env.STREAMSKOPE_NATIVE_RECOVERY_PLAN = await writeRecoveryPlan(plan);
     process.env.STREAMSKOPE_NATIVE_RECOVERY = "1";
     phase = "native installer replacement and profile recovery";
@@ -108,7 +114,11 @@ async function main(): Promise<void> {
   } catch (error) {
     // Public failure evidence contains fixed phase names and allowlisted codes only.
     // Keep arbitrary process messages, fixture credentials and raw renderer data out.
-    failure = { phase, code: failureCode(error) };
+    failure = {
+      phase,
+      code: failureCode(error),
+      ...(error instanceof NativeKafkaFixtureError ? { fixture: error.diagnostic } : {}),
+    };
   } finally {
     const ownedPlan = plan;
     const ownedFixture = fixture;
