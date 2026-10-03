@@ -101,7 +101,7 @@ async function main(): Promise<void> {
   let profiles: readonly ProfileSummary[] = [];
   let topics: readonly string[] = [];
   const safeEvents: unknown[] = [];
-  const received: string[] = [];
+  const received: (string | null)[] = [];
   const subscribe = (): void => {
     facade.subscribe((event) => {
       safeEvents.push(event);

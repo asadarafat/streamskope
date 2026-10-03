@@ -47,6 +47,7 @@ async function interruptedHost(root: string): Promise<void> {
       value !== null &&
       typeof value === "object" &&
       !Array.isArray(value) &&
+      "executionId" in value &&
       typeof value.executionId === "string"
     ) {
       process.send?.({ executionJournaled: true });

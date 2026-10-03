@@ -47,12 +47,17 @@ async function execute<C extends HostCommand>(
   page: Page,
   command: C,
 ): Promise<HostCommandResponse<C["command"]>> {
+  // The host protocol is JSON; avoid recursively instantiating Playwright's serializer types.
   const response = await page.evaluate(
-    async (input: HostCommand): Promise<HostCommandResponse> =>
-      (window as unknown as LiveWindow).streamSkopeHost.execute(input),
-    command,
+    async (input: string): Promise<string> =>
+      JSON.stringify(
+        await (window as unknown as LiveWindow).streamSkopeHost.execute(
+          JSON.parse(input) as HostCommand,
+        ),
+      ),
+    JSON.stringify(command),
   );
-  return response as HostCommandResponse<C["command"]>;
+  return JSON.parse(response) as HostCommandResponse<C["command"]>;
 }
 async function profiles(page: Page): Promise<readonly ProfileSummary[]> {
   const response = await execute(page, {
@@ -62,11 +67,22 @@ async function profiles(page: Page): Promise<readonly ProfileSummary[]> {
     payload: {},
   });
   assert(response.ok, "Profile listing failed.");
-  return page.evaluate(() => (window as unknown as LiveWindow).nspEvidence.profiles);
+  return JSON.parse(
+    await page.evaluate(() =>
+      JSON.stringify((window as unknown as LiveWindow).nspEvidence.profiles),
+    ),
+  ) as readonly ProfileSummary[];
 }
 async function installation(
   page: Page,
-): Promise<{ activationId?: string; rendererUrl?: string; version?: string } | undefined> {
+): Promise<
+  | {
+      activationId: string | undefined;
+      rendererUrl: string | undefined;
+      version: string | undefined;
+    }
+  | undefined
+> {
   const response = await execute(page, {
     command: "plugins.list",
     id: randomUUID(),
@@ -414,6 +430,11 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
             apiCertificateVerification: input.verifyCertificate,
             ownedTopic: topic,
             security: fixture.security,
+            sandboxScope: {
+              rendererPreferencesOnly: true,
+              noSandboxLaunchArgument: process.getuid?.() === 0,
+              osSandboxEnforcement: "not independently measured",
+            },
             packages: [current, update].map(({ manifest, sha256 }) => ({
               version: manifest.version,
               apiVersion: manifest.apiVersion,
