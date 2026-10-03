@@ -2,7 +2,11 @@ import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { createServer as createHttpServer } from "node:http";
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -111,7 +115,7 @@ export async function startNativeKafkaFixture(): Promise<{
     use: "sig",
   };
   const issuer = "streamskope-native-fixture";
-  const oauth = createHttpServer(async (request, response) => {
+  const handleOAuth = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     response.setHeader("content-type", "application/json");
     if (request.method === "GET" && request.url === "/.well-known/jwks.json") {
       response.end(JSON.stringify({ keys: [jwk] }));
@@ -152,6 +156,9 @@ export async function startNativeKafkaFixture(): Promise<{
     })}`;
     const token = `${unsigned}.${sign("RSA-SHA256", Buffer.from(unsigned), privateKey).toString("base64url")}`;
     response.end(JSON.stringify({ access_token: token, expires_in: 600, token_type: "bearer" }));
+  };
+  const oauth = createHttpServer((request, response) => {
+    void handleOAuth(request, response).catch(() => response.destroy());
   });
   let broker: ChildProcess | undefined;
   let admin: Admin | undefined;
@@ -375,6 +382,7 @@ export async function startNativeKafkaFixture(): Promise<{
     await dispose();
     throw new Error(
       `Native Kafka fixture failed during ${phase}${diagnostic ? ` (${diagnostic})` : ""}; its owned processes and temporary data were removed.`,
+      { cause: error },
     );
   }
 }
