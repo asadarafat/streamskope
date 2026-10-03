@@ -29,6 +29,8 @@ it("stages only the app, shortcut and warning, verifies the image, then publishe
   const output = await createMacosPreviewDmg(root, {
     platform: "darwin",
     arch: "arm64",
+    detachOwnedImage: async () => undefined,
+    settle: async () => undefined,
     run: async (command, args) => {
       calls.push(`${command} ${args[0] ?? ""}`);
       if (command === "ditto") {
@@ -72,6 +74,8 @@ it.each(["create", "verify"])(
       createMacosPreviewDmg(root, {
         platform: "darwin",
         arch: "arm64",
+        detachOwnedImage: async () => undefined,
+        settle: async () => undefined,
         run: async (command, args) => {
           if (command === "ditto") return;
           if (args[0] === "create") stage = args[args.indexOf("-srcfolder") + 1] ?? "";
@@ -95,6 +99,8 @@ it.each([
     createMacosPreviewDmg(root, {
       platform: platform ?? "",
       arch: arch ?? "",
+      detachOwnedImage: async () => undefined,
+      settle: async () => undefined,
       run: () => Promise.reject(new Error("must not run")),
     }),
   ).rejects.toThrow("macOS ARM64");
@@ -107,7 +113,96 @@ it("rejects unsafe artifact versions before running native commands", async () =
     createMacosPreviewDmg(root, {
       platform: "darwin",
       arch: "arm64",
+      detachOwnedImage: async () => undefined,
+      settle: async () => undefined,
       run: () => Promise.reject(new Error("must not run")),
     }),
   ).rejects.toThrow("version");
+});
+
+it("retries transient busy images with fresh staging and mandatory verification after owned detach", async () => {
+  const root = await fixture();
+  const images: string[] = [];
+  const detached: string[] = [];
+  const verified: string[] = [];
+  let settles = 0;
+  const output = await createMacosPreviewDmg(root, {
+    platform: "darwin",
+    arch: "arm64",
+    settle: async () => {
+      settles += 1;
+    },
+    detachOwnedImage: async (image) => {
+      detached.push(image);
+    },
+    run: async (command, args) => {
+      if (command === "ditto") return;
+      if (args[0] === "create") {
+        const image = args.at(-1)!;
+        images.push(image);
+        await writeFile(image, "complete image");
+        if (images.length === 1) throw new Error("hdiutil: create failed - Resource busy");
+      } else if (args[0] === "verify") {
+        expect(detached).toContain(args[1]);
+        verified.push(args[1]!);
+      }
+    },
+  });
+  expect(images).toHaveLength(2);
+  expect(images[0]).not.toBe(images[1]);
+  expect(detached).toContain(images[0]);
+  expect(verified).toEqual([images[1]]);
+  expect(settles).toBe(1);
+  expect(await readFile(output, "utf8")).toBe("complete image");
+});
+
+it("stops after three busy attempts without publishing an unverified image", async () => {
+  const root = await fixture();
+  let attempts = 0;
+  const detached: string[] = [];
+  await expect(
+    createMacosPreviewDmg(root, {
+      platform: "darwin",
+      arch: "arm64",
+      settle: async () => undefined,
+      detachOwnedImage: async (image) => {
+        detached.push(image);
+      },
+      run: async (command, args) => {
+        if (command === "ditto") return;
+        if (args[0] === "create") {
+          attempts += 1;
+          await writeFile(args.at(-1)!, "image");
+        } else throw new Error("hdiutil: verify failed - Resource temporarily unavailable");
+      },
+    }),
+  ).rejects.toThrow("Resource temporarily unavailable");
+  expect(attempts).toBe(3);
+  expect(new Set(detached).size).toBe(3);
+  await expect(readdir(join(root, "dist/release"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("retains an owned image when its backing device cannot be detached", async () => {
+  const root = await fixture();
+  let image = "";
+  await expect(
+    createMacosPreviewDmg(root, {
+      platform: "darwin",
+      arch: "arm64",
+      settle: async () => {
+        throw new Error("must not retry failed cleanup");
+      },
+      detachOwnedImage: async () => {
+        throw new Error("owned device cleanup failed");
+      },
+      run: async (command, args) => {
+        if (command === "ditto") return;
+        image = args.at(-1)!;
+        await writeFile(image, "retain mounted backing image");
+      },
+    }),
+  ).rejects.toThrow("owned device cleanup failed");
+  expect(await readFile(image, "utf8")).toBe("retain mounted backing image");
+  await expect(readdir(join(root, "dist/release"))).rejects.toMatchObject({ code: "ENOENT" });
+  await rm(join(image, "../.."), { recursive: true, force: true });
 });
