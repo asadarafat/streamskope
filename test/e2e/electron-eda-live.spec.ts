@@ -98,10 +98,11 @@ async function openPlugins(page: Page): Promise<void> {
   await page.getByRole("tab", { name: "Plugins", exact: true }).click();
 }
 async function closePreferences(page: Page): Promise<void> {
-  await page
-    .getByRole("dialog", { name: "Workbench Preferences" })
-    .getByRole("button", { name: "Close", exact: true })
-    .click();
+  const dialog = page.getByRole("dialog", { name: "Workbench Preferences" });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  // Wait until the modal exit restores the desktop sidebar to the accessibility tree.
+  await expect(page.getByRole("navigation", { name: "StreamSkope resources" })).toBeVisible();
 }
 async function credentials(page: Page, input: EdaApiCredentialsInput): Promise<void> {
   const dialog = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
@@ -606,7 +607,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
           platform: process.platform,
           architecture: process.arch,
           rendererSecurityPreferences: fixture.security,
-          rootTestLaunchDisablesProcessSandbox: process.getuid?.() === 0,
+          processSandboxDisabled: application.process().spawnargs.includes("--no-sandbox"),
           packageSha256: current.sha256,
           expectedFixtureTextSha256: createHash("sha256").update(expectedRecordText).digest("hex"),
           recordPredicate: "configured known fixture text is present in received Kafka payload",
