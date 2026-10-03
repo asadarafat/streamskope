@@ -25,6 +25,6 @@ revision and artifact hashes; they do not change the qualification of previously
 published installers.
 
 See the [current-source qualification record](../guide/qualification.md#current-source-qualification)
-for installed EDA/NSP lifecycle results, passing Linux/macOS installer recovery,
-and the remaining Windows recovery gap. These results do not imply publication
+for installed EDA/NSP lifecycle results and passing Linux, macOS and Windows
+installer recovery. These results do not imply publication
 of a new desktop or plugin package.

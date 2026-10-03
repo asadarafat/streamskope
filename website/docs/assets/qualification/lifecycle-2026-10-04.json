@@ -143,10 +143,10 @@
     {
       "id": "native-installer-linux-x64",
       "outcome": "passed",
-      "checkedAt": "2026-10-03T22:49:41.884Z",
-      "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
-      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
-      "retainedReportSha256": "12080274b96da3f588806bd20dd57fa073d3e08b7d32779b1e444fedf865df51",
+      "checkedAt": "2026-10-03T23:11:50.583Z",
+      "sourceCommit": "c284afcfd35b7084d02abfea14ce018d3fb99ef4",
+      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37160807855",
+      "retainedReportSha256": "4df95e1b22b450da166443b03cde9434170b54682cae93379fda7a2afa9e8d48",
       "platform": "linux",
       "architecture": "x64",
       "targetKind": "unreleased source installer",
@@ -159,7 +159,7 @@
         {
           "version": "0.0.0-dev",
           "name": "StreamSkope-0.0.0-dev-linux-x64.AppImage",
-          "sha256": "0bc80e9ab900bf76280deffd1df83370c019e8c2569a9646892370cb0e99f6dd"
+          "sha256": "2dc58c2711fd8fc647c19624ebc98b265a981b554bf315bc0782bc07edd8b32c"
         }
       ],
       "cleanup": {
@@ -183,15 +183,35 @@
         "Known filtered record exported without re-entering credentials; restored query does not auto-connect/read"
       ],
       "scope": "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
-      "installerMethod": "Replace the same AppImage and launch its extracted native application (no FUSE dependency)"
+      "installerMethod": "Replace the same AppImage and launch its extracted native application (no FUSE dependency)",
+      "priorAttempts": [
+        {
+          "outcome": "passed",
+          "checkedAt": "2026-10-03T22:49:41.884Z",
+          "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
+          "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
+          "retainedReportSha256": "12080274b96da3f588806bd20dd57fa073d3e08b7d32779b1e444fedf865df51",
+          "cleanup": {
+            "owned installation": {
+              "outcome": "passed"
+            },
+            "disposable Kafka fixture": {
+              "outcome": "passed"
+            },
+            "temporary files": {
+              "outcome": "passed"
+            }
+          }
+        }
+      ]
     },
     {
       "id": "native-installer-darwin-arm64",
       "outcome": "passed",
-      "checkedAt": "2026-10-03T22:50:32.242Z",
-      "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
-      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
-      "retainedReportSha256": "51bbdb7842b2bb47384a78553dca777edd90211ef28f71e2aac82c1b807f359a",
+      "checkedAt": "2026-10-03T23:12:03.877Z",
+      "sourceCommit": "c284afcfd35b7084d02abfea14ce018d3fb99ef4",
+      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37160807855",
+      "retainedReportSha256": "f3e025e0670e92ae2418620fd2182b74960000b73e67697eaf95bd6ea66d71e4",
       "platform": "darwin",
       "architecture": "arm64",
       "targetKind": "unreleased source installer",
@@ -204,7 +224,7 @@
         {
           "version": "0.0.0-dev",
           "name": "StreamSkope-0.0.0-dev-darwin-arm64.dmg",
-          "sha256": "a07a8f3ef4c016895dd5fdd00f2010587337365f871c23724a108da63fbbd552"
+          "sha256": "badce4d479ef23956743ad8bff988b1c9d1f3e4b1e646bb4b1d25d7b8205b378"
         }
       ],
       "cleanup": {
@@ -228,15 +248,35 @@
         "Known filtered record exported without re-entering credentials; restored query does not auto-connect/read"
       ],
       "scope": "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
-      "installerMethod": "Replace isolated .app with the application from the verified DMG"
+      "installerMethod": "Replace isolated .app with the application from the verified DMG",
+      "priorAttempts": [
+        {
+          "outcome": "passed",
+          "checkedAt": "2026-10-03T22:50:32.242Z",
+          "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
+          "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
+          "retainedReportSha256": "51bbdb7842b2bb47384a78553dca777edd90211ef28f71e2aac82c1b807f359a",
+          "cleanup": {
+            "owned installation": {
+              "outcome": "passed"
+            },
+            "disposable Kafka fixture": {
+              "outcome": "passed"
+            },
+            "temporary files": {
+              "outcome": "passed"
+            }
+          }
+        }
+      ]
     },
     {
       "id": "native-installer-win32-x64",
-      "outcome": "failed",
-      "checkedAt": "2026-10-03T22:52:36.270Z",
-      "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
-      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
-      "retainedReportSha256": "9b62e1765d9f3668e87faa8398e97c03a08733229deeb2ef09eeca3d46daedbb",
+      "outcome": "passed",
+      "checkedAt": "2026-10-03T23:15:23.484Z",
+      "sourceCommit": "c284afcfd35b7084d02abfea14ce018d3fb99ef4",
+      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37160807855",
+      "retainedReportSha256": "6ebc96897e76ad9c8c33c527e4e27bd07eb1e5128cbe3704c9f134a97ad1b1f9",
       "platform": "win32",
       "architecture": "x64",
       "targetKind": "unreleased source installer",
@@ -249,22 +289,103 @@
         {
           "version": "0.0.0-dev",
           "name": "StreamSkope-0.0.0-dev-win32-x64-Setup.exe",
-          "sha256": "f5af7290d471988075598ca320c9073328bc2de28bd601f39d47ee584054509d"
+          "sha256": "70655d58d9c49aa182997908b308f05267e11df7dfe2b4b8b052502f33fea880"
         }
       ],
       "cleanup": {
         "owned installation": {
           "outcome": "passed"
         },
+        "disposable Kafka fixture": {
+          "outcome": "passed"
+        },
         "temporary files": {
           "outcome": "passed"
         }
       },
-      "failure": {
-        "phase": "disposable Kafka fixture",
-        "code": "VERIFICATION_FAILED"
+      "scope": "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
+      "priorAttempts": [
+        {
+          "outcome": "failed",
+          "checkedAt": "2026-10-03T22:52:36.270Z",
+          "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
+          "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
+          "retainedReportSha256": "9b62e1765d9f3668e87faa8398e97c03a08733229deeb2ef09eeca3d46daedbb",
+          "cleanup": {
+            "owned installation": {
+              "outcome": "passed"
+            },
+            "temporary files": {
+              "outcome": "passed"
+            }
+          },
+          "failure": {
+            "phase": "disposable Kafka fixture",
+            "code": "VERIFICATION_FAILED"
+          }
+        }
+      ],
+      "credentialService": "Windows DPAPI",
+      "baselineRestartReconnected": "not run; qualification starts from the pre-restart baseline backup",
+      "checkedCapabilities": [
+        "Same installation directory replaced using actual native installers",
+        "Protected profile and absolute historical query retained",
+        "Candidate restart and reconnection",
+        "Complete baseline backup restored under same OS account and credential service",
+        "Known filtered record exported without re-entering credentials; restored query does not auto-connect/read"
+      ],
+      "installerMethod": "Silent per-user NSIS installation and replacement in a disposable Actions account; real Windows DPAPI"
+    },
+    {
+      "id": "integrated-local-qualification",
+      "outcome": "passed",
+      "checkedAt": "2026-10-03T23:10:24.522Z",
+      "sourceCommit": "34547c61dda7d1fcb7895ac75a0a43a8858b33fb",
+      "gitTree": "10c0b1ece5f44a02fea4173b2acfbf9b3b9353bb",
+      "identicalMergedMain": "552de737cfc38caf0590abf89108454b573124d4",
+      "command": "taskset -c 0 npm run check",
+      "workingTree": "clean before and after check",
+      "testFiles": 290,
+      "tests": 2379,
+      "documentation": {
+        "toolingTests": 48,
+        "htmlPages": 50,
+        "browserRoutes": 45,
+        "media": "passed",
+        "searchThemesMobileAccessibility": "passed",
+        "javascriptAccessibilityTests": 4
       },
-      "scope": "NSIS installer built; fixture failure occurred before recovery assertions. Windows recovery remains unqualified pending a successful rerun."
+      "sharedChecks": [
+        "format",
+        "ESLint",
+        "TypeScript",
+        "unit/architecture/non-live integration",
+        "Go race",
+        "dependency licenses",
+        "mitigated dependency audit"
+      ],
+      "soak": {
+        "outcome": "passed",
+        "seconds": 60,
+        "cpuAffinity": "0",
+        "colocatedEdaLab": "running",
+        "budgets": "unchanged",
+        "generated": 59991,
+        "delivered": 59711,
+        "cpuPercentOneCore": 39.60970794489834,
+        "eventLoopP99Ms": 64.061439,
+        "scope": "Application ingestion and reducer replay; does not measure real Kafka fetch, IPC or UI interaction latency."
+      },
+      "liveChecks": {
+        "eda": 12,
+        "nsp": 23
+      },
+      "retainedReports": {
+        "local-check.json": "bea477a31604eb37472aa1501c719cff56e640ac4a253e12daf256bb5703fcae",
+        "local-soak.json": "7916e2c752788cf81577818aa7a493ecbe8b6e693e1aee9f57f688e8e88c52a7",
+        "eda-live.json": "47e51dd96f97b5b7837c45d9ae606a4117b624bd6c55550c9cf3984388c89a64",
+        "nsp-live.json": "02030bc2af070a8eddf94c11f342d7011860f2953809db037dcfbb3a0f57913c"
+      }
     }
   ],
   "limitations": [
@@ -274,5 +395,46 @@
     "Native installer recovery uses published 0.6.0 as baseline and unreleased 0.0.0-dev as candidate. Candidate mode starts with the pre-restart baseline backup and does not claim baseline restart passed.",
     "Linux installer recovery uses the extracted AppImage payload; FUSE and desktop launcher integration were not qualified.",
     "Same-account backup restoration does not establish cross-account credential transfer, lost credential-store recovery, downgrade or plugin rollback."
-  ]
+  ],
+  "applicationSourceEquivalence": {
+    "scope": "Application src, all plugin source and root npm manifests/lockfile have identical Git objects across the passing native/plugin runs and integrated merged main. Test and documentation trees differ; this does not retroactively qualify different published releases.",
+    "identities": {
+      "f26f406e604ba5289452cad5845111527a7a1c1c": {
+        "src": "ae3c7012cca7406e37131d9ea1ebbf9e1285eccf",
+        "plugins": "ff639fa2f07a39fe54de0dedb042d91feea132ff",
+        "package.json": "48929967a33c028aa415d05ca316681251981f15",
+        "package-lock.json": "7c3f2e3a4062400e187b14f9ce2bd1765cf52ca4"
+      },
+      "99f7f2d0ec319d6ec7ba6683e3e2ffdda0792982": {
+        "src": "ae3c7012cca7406e37131d9ea1ebbf9e1285eccf",
+        "plugins": "ff639fa2f07a39fe54de0dedb042d91feea132ff",
+        "package.json": "48929967a33c028aa415d05ca316681251981f15",
+        "package-lock.json": "7c3f2e3a4062400e187b14f9ce2bd1765cf52ca4"
+      },
+      "74db7768417bfcf5adacb7069151727326d699a5": {
+        "src": "ae3c7012cca7406e37131d9ea1ebbf9e1285eccf",
+        "plugins": "ff639fa2f07a39fe54de0dedb042d91feea132ff",
+        "package.json": "48929967a33c028aa415d05ca316681251981f15",
+        "package-lock.json": "7c3f2e3a4062400e187b14f9ce2bd1765cf52ca4"
+      },
+      "34547c61dda7d1fcb7895ac75a0a43a8858b33fb": {
+        "src": "ae3c7012cca7406e37131d9ea1ebbf9e1285eccf",
+        "plugins": "ff639fa2f07a39fe54de0dedb042d91feea132ff",
+        "package.json": "48929967a33c028aa415d05ca316681251981f15",
+        "package-lock.json": "7c3f2e3a4062400e187b14f9ce2bd1765cf52ca4"
+      },
+      "552de737cfc38caf0590abf89108454b573124d4": {
+        "src": "ae3c7012cca7406e37131d9ea1ebbf9e1285eccf",
+        "plugins": "ff639fa2f07a39fe54de0dedb042d91feea132ff",
+        "package.json": "48929967a33c028aa415d05ca316681251981f15",
+        "package-lock.json": "7c3f2e3a4062400e187b14f9ce2bd1765cf52ca4"
+      },
+      "c284afcfd35b7084d02abfea14ce018d3fb99ef4": {
+        "src": "ae3c7012cca7406e37131d9ea1ebbf9e1285eccf",
+        "plugins": "ff639fa2f07a39fe54de0dedb042d91feea132ff",
+        "package.json": "48929967a33c028aa415d05ca316681251981f15",
+        "package-lock.json": "7c3f2e3a4062400e187b14f9ce2bd1765cf52ca4"
+      }
+    }
+  }
 }
