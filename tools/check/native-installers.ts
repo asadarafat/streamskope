@@ -149,9 +149,13 @@ export async function loadCandidateInstaller(
   if (currentVersion !== version)
     throw new Error("Candidate version differs from the source checkout.");
   // Build here so a stale, same-named artifact cannot be attributed to this checkout.
-  await nativeCommand(process.execPath, ["--import", "tsx", "tools/package.ts"], {
-    timeoutMs: 1_200_000,
-  });
+  // Enter through npm so verification subprocesses receive npm_execpath.
+  // Windows npm.cmd needs cmd.exe; the shell command is fixed, without input interpolation.
+  await nativeCommand(
+    process.platform === "win32" ? "cmd.exe" : "npm",
+    process.platform === "win32" ? ["/d", "/s", "/c", "npm run package"] : ["run", "package"],
+    { timeoutMs: 1_200_000 },
+  );
   await run("git", ["diff", "--quiet", "HEAD", "--"]);
   const after = await run("git", ["rev-parse", "HEAD"]);
   if (after.stdout.trim() !== sourceRevision)
