@@ -14,7 +14,9 @@ See [qualification evidence](../guide/qualification.md) for what was actually ex
 | Kafka authentication | OAuth 2.0 client-credentials token retrieval with SASL OAUTHBEARER, or no SASL   | SASL PLAIN, SCRAM and Kerberos are not configurable                                                                                             |
 | Broker trust         | PEM CA, JKS and PKCS12 trust material                                            | Truststores provide CA trust, not client identity                                                                                               |
 | Message inspection   | UTF-8 views plus explicit JSON, Confluent Avro/Protobuf decoding                 | Declared schema-ID framing only; bounded complete originals required; decoded projections do not replace original bytes or change table filters |
-| Reviewed writes      | Create a topic or produce one bounded record after destination/content review    | No bulk replay; unknown outcomes require inspection before another attempt                                                                      |
+| Reviewed writes      | Create topics, produce records and replay a bounded selection after exact review | Replay is limited to 50 complete records; unknown outcomes require reconciliation before another attempt                                        |
+| Offset recovery      | Preview per-partition positions and apply to an inactive group                   | Up to 32 partitions; no atomic reset or automatic rollback; stale and partial results are explicit                                              |
+| Topic access review  | Explain one topic/principal/client address and review exact ACL changes          | Kafka StandardAuthorizer evidence only; unknown broker policy and external authorization remain explicit                                        |
 | Record protection    | Host read-only guard and deterministic key/header/JSON-path masking              | Local operator controls; broker permissions remain authoritative                                                                                |
 | Message reads        | Tail, Newest N, First N and recent or custom Time window                         | Reads retained Kafka records within explicit limits; see [read semantics](../guide/messages.md#choose-a-read-mode)                              |
 | Schema Registry      | Confluent-compatible HTTP API; Avro, JSON Schema and Protobuf schema definitions | Writer schema IDs/references support explicit decoding; auth is none or the profile's OAuth token, not HTTP Basic                               |
@@ -47,7 +49,7 @@ not part of the installation procedure.
 | Package generation          | Desktop requirement      | Plugin versioning                                                                           |
 | --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
 | Published API 3 packages    | Minimum `v0.1.0+build.1` | Original combined compatibility/revision labels, preserved unchanged                        |
-| Development API 4 EDA / NSP | `>=0.3.0, <0.4.0`        | Independent Semantic Versions; supported host/target intervals are separate manifest fields |
+| Development API 4 EDA / NSP | `>=0.4.0, <0.6.0`        | Independent Semantic Versions; supported host/target intervals are separate manifest fields |
 
 Release builds supporting API 4 preserve installed API 2 and API 3 packages.
 The declared desktop interval is a compatibility bound, not a scheduled release
