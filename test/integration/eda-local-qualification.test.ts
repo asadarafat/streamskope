@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { sourceFromResource } from "../../plugins/eda/backend/eda-capture-source";
-import { selectLiveEdaTopic } from "../../tools/check/eda-live";
+import { selectLiveEdaTopic } from "../../tools/check/eda-fixture";
 
 const script = fileURLToPath(new URL("../../tools/check/eda-live.ts", import.meta.url));
 const loader = fileURLToPath(new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url));

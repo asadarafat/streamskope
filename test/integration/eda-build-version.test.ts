@@ -62,6 +62,10 @@ async function run(
   if (options.package) {
     await mkdir(join(cwd, "tools/check"), { recursive: true });
     await copyFile(script, join(cwd, "tools/check/eda-version.ts"));
+    await copyFile(
+      join(root, "tools/check/eda-fixture.ts"),
+      join(cwd, "tools/check/eda-fixture.ts"),
+    );
     await symlink(
       join(root, "tools/check/eda-source.mjs"),
       join(cwd, "tools/check/eda-source.mjs"),

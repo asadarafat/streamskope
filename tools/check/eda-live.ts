@@ -11,27 +11,7 @@ import { RelationshipService } from "../../src/features/kafka/application/relati
 import type { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import type { EdaAgentTunnel } from "../../plugins/eda/backend/eda-agent-tunnel";
 
-import { localEdaClient, requireTargetEdaVersion } from "./eda-version";
-
-export function selectLiveEdaTopic(spec: unknown, topics: readonly string[]): string | undefined {
-  const exports =
-    spec !== null && typeof spec === "object" && "exports" in spec ? spec.exports : [];
-  if (Array.isArray(exports)) {
-    for (const entry of exports as readonly unknown[]) {
-      if (
-        entry !== null &&
-        typeof entry === "object" &&
-        "mode" in entry &&
-        entry.mode === "periodic" &&
-        "topic" in entry &&
-        typeof entry.topic === "string" &&
-        topics.includes(entry.topic)
-      )
-        return entry.topic;
-    }
-  }
-  return topics[0];
-}
+import { localEdaClient, requireTargetEdaVersion, selectLiveEdaTopic } from "./eda-fixture";
 
 async function evidence(
   outcome: string,
