@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { installerChecksum, installerName } from "../../tools/check/native-installers";
+import {
+  installerChecksum,
+  installerName,
+  loadCandidateInstaller,
+} from "../../tools/check/native-installers";
 
 describe("native recovery release identity", () => {
+  it("refuses to label an arbitrary local installer as a published release", async () => {
+    await expect(loadCandidateInstaller("untrusted-installer", "0.7.0", "/unused")).rejects.toThrow(
+      "development version 0.0.0-dev",
+    );
+  });
   it("selects the actual published installer on each supported native runner", () => {
     expect(installerName("0.6.0", "darwin", "arm64")).toBe("StreamSkope-0.6.0-darwin-arm64.dmg");
     expect(installerName("0.7.0", "win32", "x64")).toBe("StreamSkope-0.7.0-win32-x64-Setup.exe");

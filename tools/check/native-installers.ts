@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
 import {
   access,
@@ -16,12 +16,14 @@ import { basename, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream } from "node:stream/web";
+import { promisify } from "node:util";
 
 export interface NativeInstaller {
   readonly version: string;
   readonly name: string;
   readonly sha256: string;
-  readonly url: string;
+  readonly url?: string;
+  readonly sourceRevision?: string;
   readonly path: string;
 }
 
@@ -32,6 +34,7 @@ export interface NativeRecoveryPlan {
   readonly architecture: string;
   readonly from: NativeInstaller;
   readonly to: NativeInstaller;
+  readonly candidateSourceRevision?: string;
 }
 
 const repository = "asadarafat/streamskope";
@@ -123,6 +126,44 @@ export async function downloadNativeInstaller(
   return { version, name, sha256, url, path };
 }
 
+/** Qualification of a locally built installer never creates a release identity. */
+export async function loadCandidateInstaller(
+  candidatePath: string,
+  version: string,
+  root: string,
+): Promise<NativeInstaller & { sourceRevision: string }> {
+  if (version !== "0.0.0-dev")
+    throw new Error("Source qualification retains the development version 0.0.0-dev.");
+  const name = installerName(version);
+  if (resolve(candidatePath) !== resolve("dist", "installers", name))
+    throw new Error("Use the matching candidate from dist/installers after npm run package.");
+  const run = promisify(execFile);
+  await run("git", ["diff", "--quiet", "HEAD", "--"]);
+  const { stdout } = await run("git", ["rev-parse", "HEAD"]);
+  const sourceRevision = stdout.trim();
+  if (!/^[a-f0-9]{40}$/u.test(sourceRevision))
+    throw new Error("Candidate source revision is unavailable.");
+  const { version: currentVersion } = JSON.parse(await readFile("package.json", "utf8")) as {
+    version: string;
+  };
+  if (currentVersion !== version)
+    throw new Error("Candidate version differs from the source checkout.");
+  // Build here so a stale, same-named artifact cannot be attributed to this checkout.
+  await nativeCommand(process.execPath, ["--import", "tsx", "tools/package.ts"], {
+    timeoutMs: 1_200_000,
+  });
+  await run("git", ["diff", "--quiet", "HEAD", "--"]);
+  const after = await run("git", ["rev-parse", "HEAD"]);
+  if (after.stdout.trim() !== sourceRevision)
+    throw new Error("Candidate source changed during packaging.");
+  const sha256 = await fileSha256(candidatePath);
+  const path = join(root, name);
+  await copyFile(candidatePath, path);
+  if ((await fileSha256(path)) !== sha256)
+    throw new Error("Candidate changed while preparing qualification.");
+  return { version, name, sha256, path, sourceRevision };
+}
+
 export async function writeRecoveryPlan(plan: NativeRecoveryPlan): Promise<string> {
   const path = join(plan.root, "plan.json");
   await writeFile(
@@ -144,6 +185,14 @@ export async function readRecoveryPlan(path: string): Promise<NativeRecoveryPlan
   ) {
     throw new Error("Native recovery plan does not match this native runner.");
   }
+  if (
+    plan.candidateSourceRevision !== undefined &&
+    (!/^[a-f0-9]{40}$/u.test(plan.candidateSourceRevision) ||
+      plan.to.version !== "0.0.0-dev" ||
+      plan.to.sourceRevision !== plan.candidateSourceRevision ||
+      plan.to.url !== undefined)
+  )
+    throw new Error("Candidate recovery must identify an unreleased source build.");
   await access(join(plan.root, marker));
   for (const installer of [plan.from, plan.to]) {
     if (

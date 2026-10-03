@@ -7,6 +7,7 @@ import { startNativeKafkaFixture } from "../../test/support/native-kafka-fixture
 import {
   downloadNativeInstaller,
   installerName,
+  loadCandidateInstaller,
   nativeCommand,
   uninstallNativeRecovery,
   writeRecoveryPlan,
@@ -15,13 +16,17 @@ import {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  if (args.length !== 4 || args[0] !== "--from" || args[2] !== "--to" || args[1] === args[3]) {
+  const candidate =
+    args.length === 6 && args[2] === "--candidate" && args[4] === "--candidate-version";
+  const published = args.length === 4 && args[2] === "--to";
+  if (args[0] !== "--from" || (!candidate && !published)) {
     throw new Error(
-      "Usage: node --import tsx tools/check/native-recovery.ts --from 0.6.0 --to 0.7.0",
+      "Usage: native-recovery.ts --from VERSION (--to VERSION | --candidate dist/installers/FILE --candidate-version 0.0.0-dev)",
     );
   }
   const from = args[1]!;
-  const to = args[3]!;
+  const to = candidate ? args[5]! : args[3]!;
+  if (from === to) throw new Error("Choose distinct baseline and target versions.");
   installerName(from);
   installerName(to);
   if (process.platform === "win32" && process.env.GITHUB_ACTIONS !== "true") {
@@ -46,13 +51,19 @@ async function main(): Promise<void> {
   let report: Record<string, unknown> | undefined;
   let fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>> | undefined;
   try {
+    const target = candidate
+      ? await loadCandidateInstaller(args[3]!, to, root)
+      : await downloadNativeInstaller(to, root);
     plan = {
       schemaVersion: 1,
       root,
       platform: process.platform,
       architecture: process.arch,
       from: await downloadNativeInstaller(from, root),
-      to: await downloadNativeInstaller(to, root),
+      to: target,
+      ...(target.sourceRevision === undefined
+        ? {}
+        : { candidateSourceRevision: target.sourceRevision }),
     };
     if (supplied.length === 0) {
       fixture = await startNativeKafkaFixture();
@@ -89,7 +100,10 @@ async function main(): Promise<void> {
         outcome: "passed",
         ownedInstallationCleanup: "passed",
         capturedAt: new Date().toISOString(),
-        command: `node --import tsx tools/check/native-recovery.ts --from ${from} --to ${to}`,
+        command: candidate
+          ? `node --import tsx tools/check/native-recovery.ts --from ${from} --candidate dist/installers/${plan.to.name} --candidate-version ${to}`
+          : `node --import tsx tools/check/native-recovery.ts --from ${from} --to ${to}`,
+        targetKind: candidate ? "unreleased source installer" : "published installer",
         installers: [plan.from, plan.to].map(({ path: _path, ...published }) => published),
         fixture: fixture?.metadata ?? { source: "explicit external disposable fixture" },
         ...report,

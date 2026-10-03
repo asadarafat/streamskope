@@ -8,9 +8,15 @@ on:
         required: true
         type: string
       to_version:
-        description: Published desktop version to upgrade to (without v)
-        required: true
+        description: Target published version (only for published-release mode, without v)
+        required: false
         type: string
+      target:
+        description: Build the current source or test an existing published installer
+        required: true
+        type: choice
+        default: current-source
+        options: [current-source, published-release]
 
 permissions:
   contents: read
@@ -27,9 +33,10 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ${{ inputs.target == 'published-release' && '1' || '' }}
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
       RECOVERY_FROM: ${{ inputs.from_version }}
       RECOVERY_TO: ${{ inputs.to_version }}
     steps:
@@ -60,7 +67,13 @@ jobs:
           security list-keychains -d user -s "$keychain_path"
           security default-keychain -d user -s "$keychain_path"
       - name: Replace released installer and verify protected recovery
+        if: inputs.target == 'published-release'
         run: node --import tsx tools/check/native-recovery.ts --from "$RECOVERY_FROM" --to "$RECOVERY_TO"
+      - name: Build source installer and verify protected upgrade recovery
+        if: inputs.target == 'current-source'
+        run: |
+          candidate=$(node --import tsx -e 'process.stdout.write("dist/installers/" + require("./tools/check/native-installers.ts").installerName("0.0.0-dev"))')
+          node --import tsx tools/check/native-recovery.ts --from "$RECOVERY_FROM" --candidate "$candidate" --candidate-version 0.0.0-dev
       - name: Remove disposable macOS Keychain
         if: always() && runner.os == 'macOS'
         run: |

@@ -88,9 +88,11 @@ For Electron/web system tests, use `node tools/package/e2e.mjs electron`
 (or `web`) with their runtime prerequisites available. Benchmarks and fixture
 utilities can be invoked directly through `node --import tsx PATH`.
 
-The manual **Native recovery** workflow takes two already published desktop
-versions and rehearses installer replacement on Linux x64, Windows x64 and macOS
-ARM64. It downloads each release's installer and verifies `SHA256SUMS`, creates
+The manual **Native recovery** workflow takes a published baseline and either a
+published target or the current source, and rehearses installer replacement on
+Linux x64, Windows x64 and macOS ARM64. It verifies published installers against
+`SHA256SUMS`; source targets are rebuilt from the clean checkout, retain
+`0.0.0-dev`, and record the exact source revision and installer hash. It creates
 an isolated application-data directory, saves a protected profile and query in
 the old release, replaces the app, and restores the complete old backup in the
 new release. Reconnection and a filtered known-record export must pass without
@@ -99,6 +101,13 @@ credentials, browser traces and broker logs are removed.
 
 Run the same check locally on a supported native platform with
 `node --import tsx tools/check/native-recovery.ts --from 0.6.0 --to 0.7.0`.
+For an unreleased fix, use `--from 0.6.0 --candidate dist/installers/StreamSkope-0.0.0-dev-darwin-arm64.dmg --candidate-version 0.0.0-dev`
+instead, substituting the native installer filename on Linux or Windows. This
+builds the candidate before testing it and does not publish or assign a release.
+Published-to-published mode also requires the baseline to reconnect after a
+restart. Candidate mode records that baseline restart separately: an old release
+with a known restart defect can still supply the original profile and backup to
+the fixed candidate; the old defect must remain explicit in the evidence.
 It needs Java 17+ and an unlocked credential service. Without explicit fixture
 connection variables, it starts a checksum-pinned, loopback-only JVM Kafka
 broker with TLS and RS256 OAuth authentication. Linux also requires Xvfb, D-Bus
