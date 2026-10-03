@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -82,6 +82,12 @@ test("restores a full backup with native credential protection and reconnects", 
   const previousExecutable = process.env.STREAMSKOPE_UPGRADE_FROM_EXECUTABLE;
   const planPath = process.env.STREAMSKOPE_NATIVE_RECOVERY_PLAN;
   const plan = planPath === undefined ? undefined : await readRecoveryPlan(planPath);
+  const candidateSourceRevision =
+    plan !== undefined &&
+    "candidateSourceRevision" in plan &&
+    typeof plan.candidateSourceRevision === "string"
+      ? plan.candidateSourceRevision
+      : undefined;
   let installed: Awaited<ReturnType<typeof installNativeRelease>> | undefined;
   let initialInstall: typeof installed;
   let protectedStorage: Awaited<ReturnType<typeof startProtectedStorageSession>> | undefined;
@@ -162,16 +168,19 @@ test("restores a full backup with native credential protection and reconnects", 
 
     // Copy the previous release's full backup before the installer replacement.
     await cp(active, join(root, "pre-upgrade"), { recursive: true, preserveTimestamps: true });
-    application = await launch(previousExecutable !== undefined);
-    page = await application.firstWindow();
-    reconnects.push(
-      await reconnectSavedProfile(page, "baseline restart", [
-        config.oauthClientSecret,
-        config.seedPayload,
-      ]),
-    );
-    await application.close();
-    application = undefined;
+    expect((await stat(join(active, "Preferences"))).isFile()).toBe(true);
+    if (candidateSourceRevision === undefined) {
+      application = await launch(previousExecutable !== undefined);
+      page = await application.firstWindow();
+      reconnects.push(
+        await reconnectSavedProfile(page, "baseline restart", [
+          config.oauthClientSecret,
+          config.seedPayload,
+        ]),
+      );
+      await application.close();
+      application = undefined;
+    }
     if (plan !== undefined) installed = await installNativeRelease(plan, plan.to);
     application = await launch();
     expect(await application.evaluate(({ app }) => app.getName())).toBe(baseline.name);
@@ -235,6 +244,14 @@ test("restores a full backup with native credential protection and reconnects", 
 
     application = await launch();
     page = await application.firstWindow();
+    reconnects.push(
+      await reconnectSavedProfile(page, "candidate restart", [
+        config.oauthClientSecret,
+        config.seedPayload,
+      ]),
+    );
+    await page.getByRole("button", { name: "Disconnect profile Electron local aio" }).click();
+    await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     await openProfileAction(page, "Electron local aio", "Delete");
     await page
       .getByRole("dialog", { name: "Delete Kafka profile Electron local aio" })
@@ -296,6 +313,9 @@ test("restores a full backup with native credential protection and reconnects", 
       filters: { key: "streamskope-seed" },
       messages: [{ key: "streamskope-seed", payload: config.seedPayload }],
     });
+    await application.close();
+    application = undefined;
+    expect((await stat(join(active, "Preferences"))).isFile()).toBe(true);
     const evidence = {
       platform: process.platform,
       architecture: process.arch,
@@ -320,7 +340,12 @@ test("restores a full backup with native credential protection and reconnects", 
               candidateArchiveSha256: installed!.archiveSha256,
               installationDirectoryReused: true,
             },
-      baselineRestartReconnected: true,
+      baselineRestartReconnected:
+        candidateSourceRevision === undefined
+          ? true
+          : "not run; qualification starts from the pre-restart baseline backup",
+      ...(candidateSourceRevision === undefined ? {} : { candidateSourceRevision }),
+      chromiumPreferencesRetainedAsFile: true,
       upgradedProfileReconnected:
         plan === undefined && previousExecutable === undefined ? "not-run" : true,
       upgradedSavedQueryRetained: true,
