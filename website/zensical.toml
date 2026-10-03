@@ -34,6 +34,7 @@ nav = [
     { "Change topic configuration" = "guide/topic-configuration.md" },
     { "Run a latency probe" = "guide/latency.md" },
     { "Configure certificate trust" = "guide/tls-trust.md" },
+    { "Review topic access and ACLs" = "guide/access-review.md" },
     { "Security and permissions" = "guide/security.md" },
     { "Upgrade, back up and recover" = "guide/recovery.md" },
     { "Data, exports and limits" = "guide/data-handling.md" },

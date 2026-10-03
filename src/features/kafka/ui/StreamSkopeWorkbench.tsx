@@ -588,7 +588,12 @@ export function StreamSkopeWorkbench({
         inventory={state.schemaInventory}
       />
     ) : navigation === "acls" ? (
-      <AclPage connected={connected} host={host} snapshot={state.aclSnapshot} />
+      <AclPage
+        connected={connected}
+        canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
+        host={host}
+        snapshot={state.aclSnapshot}
+      />
     ) : navigation === "transforms" ? (
       <TransformsPage
         connected={connected}

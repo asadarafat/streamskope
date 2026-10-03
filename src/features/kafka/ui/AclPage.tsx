@@ -35,6 +35,7 @@ import {
 } from "../../../platform/ui/controls";
 
 import { ResourcePageHeader, resourcePageGutter } from "./ResourcePageHeader";
+import { AclReviewDialog, type AclReviewSelection } from "./AclReviewDialog";
 import { WorkbenchIcon } from "./WorkbenchIcons";
 
 const emptyAcl: KafkaAclBinding = {
@@ -49,18 +50,19 @@ const emptyAcl: KafkaAclBinding = {
 
 export function AclPage({
   connected,
+  canWrite = true,
   host,
   snapshot,
 }: {
   readonly connected: boolean;
+  readonly canWrite?: boolean;
   readonly host: StreamSkopeHost;
   readonly snapshot: KafkaAclSnapshot;
 }): React.JSX.Element {
   const [filter, setFilter] = useState("");
   const [draft, setDraft] = useState<KafkaAclBinding>(emptyAcl);
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleting, setDeleting] = useState<KafkaAclBinding | null>(null);
-  const [confirmation, setConfirmation] = useState("");
+  const [reviewing, setReviewing] = useState<AclReviewSelection | null | undefined>();
   const [requestError, setRequestError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const run = async (command: HostCommand): Promise<boolean> => {
@@ -103,7 +105,6 @@ export function AclPage({
       ),
     [normalized, snapshot.acls],
   );
-  const deleteIdentity = deleting === null ? "" : kafkaAclIdentity(deleting);
   const inventoryMessage =
     snapshot.state === "unavailable"
       ? "Connect a profile to load ACLs."
@@ -125,6 +126,9 @@ export function AclPage({
       <ResourcePageHeader
         action={
           <Stack direction="row" spacing={1}>
+            <Button disabled={!connected || busy} onClick={() => setReviewing(null)}>
+              Explain access
+            </Button>
             <Button
               disabled={!connected || busy}
               onClick={() => setCreateOpen(true)}
@@ -143,7 +147,7 @@ export function AclPage({
             </Button>
           </Stack>
         }
-        description="Inspect and change exact Kafka ACL bindings. Broad deletion is not available."
+        description="Explain topic READ and review exact binding changes before applying them."
         title="Access Control Lists"
       />
       <Box sx={{ px: resourcePageGutter, py: 3 }}>
@@ -201,8 +205,7 @@ export function AclPage({
                       <Button
                         color="error"
                         onClick={() => {
-                          setDeleting(acl);
-                          setConfirmation("");
+                          setReviewing({ action: "delete", acl });
                         }}
                         variant="text"
                       >
@@ -322,14 +325,8 @@ export function AclPage({
               draft.host.trim().length === 0
             }
             onClick={() => {
-              void run({
-                command: "acls.create",
-                id: globalThis.crypto.randomUUID(),
-                payload: draft,
-                version: HOST_PROTOCOL_VERSION,
-              }).then((ok) => {
-                if (ok) setCreateOpen(false);
-              });
+              setCreateOpen(false);
+              setReviewing({ action: "create", acl: draft });
             }}
             variant="contained"
           >
@@ -337,54 +334,20 @@ export function AclPage({
           </Button>
         </DialogActions>
       </Dialog>
-      <Dialog
-        fullWidth
-        maxWidth="sm"
-        onClose={() => !busy && setDeleting(null)}
-        open={deleting !== null}
-      >
-        <DialogTitle>Delete exact ACL binding</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            <Alert severity="warning">
-              Only the displayed binding will be deleted. Type the complete identity to confirm.
-            </Alert>
-            <Box component="code" sx={{ overflowWrap: "anywhere" }}>
-              {deleteIdentity}
-            </Box>
-            <TextField
-              autoFocus
-              fullWidth
-              label="Exact ACL identity"
-              onChange={(event) => setConfirmation(event.target.value)}
-              value={confirmation}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button disabled={busy} onClick={() => setDeleting(null)}>
-            Cancel
-          </Button>
-          <Button
-            color="error"
-            disabled={busy || deleting === null || confirmation !== deleteIdentity}
-            onClick={() => {
-              if (deleting === null) return;
-              void run({
-                command: "acls.delete",
-                id: globalThis.crypto.randomUUID(),
-                payload: { acl: deleting, confirmation },
-                version: HOST_PROTOCOL_VERSION,
-              }).then((ok) => {
-                if (ok) setDeleting(null);
-              });
-            }}
-            variant="contained"
-          >
-            Delete binding
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {reviewing !== undefined && (
+        <AclReviewDialog
+          key={
+            reviewing === null
+              ? "explain"
+              : `${reviewing.action}:${kafkaAclIdentity(reviewing.acl)}`
+          }
+          host={host}
+          selection={reviewing}
+          canWrite={canWrite && connected}
+          onClose={() => setReviewing(undefined)}
+          onApplied={refresh}
+        />
+      )}
     </Box>
   );
 }

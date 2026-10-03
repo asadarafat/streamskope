@@ -13,4 +13,8 @@ unreleased: true
   profile with explicit transformations, exact destination review, cancellation
   and per-record acknowledgement/uncertainty accounting. See [record replay](../guide/record-replay.md).
 
+- Explain topic READ with prefix/wildcard and DENY semantics, explicit unknown
+  broker policy, and reviewed ACL changes that reject stale inputs and retain
+  uncertain outcomes. See [access review](../guide/access-review.md).
+
 A maintainer assigns the next desktop version when starting release CI.

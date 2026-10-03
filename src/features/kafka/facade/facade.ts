@@ -27,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { AclReviewFacade } from "./acl-review-facade";
 import { RecordReplayFacade } from "./record-replay-facade";
 import { OffsetResetFacade } from "./offset-reset-facade";
 import { CorrelationTraceFacade } from "./correlation-trace-facade";
@@ -99,6 +100,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly listeners = new Set<HostEventListener>();
   private readonly latencyProbe;
   private readonly now;
+  private readonly aclReviews: AclReviewFacade;
   private readonly offsetResets: OffsetResetFacade;
   private readonly recordReplay: RecordReplayFacade;
   private readonly writes: KafkaReviewedWriteService;
@@ -128,6 +130,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       options.recordCodec,
       options.schemaLookup,
     );
+    this.aclReviews = new AclReviewFacade(session, this.recordActivity.bind(this));
     this.offsetResets = new OffsetResetFacade(session, this.recordActivity.bind(this));
     this.recordReplay = new RecordReplayFacade(
       session,
@@ -301,6 +304,10 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "acls.access.explain":
+      case "acls.change.review":
+      case "acls.change.apply":
+        return this.aclReviews.execute(command, correlationId);
       case "records.replay.review":
       case "records.replay.apply":
       case "records.replay.cancel":

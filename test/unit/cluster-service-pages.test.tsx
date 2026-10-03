@@ -27,6 +27,42 @@ class PageHost implements StreamSkopeHost {
   ): Promise<HostCommandResponse<Command["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
     this.commands.push(command);
+    if (command.command === "acls.change.review")
+      return Promise.resolve({
+        command: command.command,
+        id: command.id,
+        version: command.version,
+        ok: true,
+        result: {
+          correlationId: "acl",
+          review: {
+            planId: "acl-review",
+            input: command.payload,
+            connectionName: "Local",
+            expiresAt: new Date(Date.now() + 120_000).toISOString(),
+            beforePresent: true,
+            afterPresent: false,
+            beforeAccess: null,
+            afterAccess: null,
+          },
+        },
+      });
+    if (command.command === "acls.change.apply")
+      return Promise.resolve({
+        command: command.command,
+        id: command.id,
+        version: command.version,
+        ok: true,
+        result: {
+          correlationId: "acl",
+          outcome: {
+            state: "acknowledged",
+            verification: "verified",
+            receipt: null,
+            detail: "Deleted exact binding",
+          },
+        },
+      });
     return Promise.resolve(testHostAccepted(command, command.id));
   }
 
@@ -52,7 +88,7 @@ const acl: KafkaAclBinding = {
 };
 
 describe("cluster service pages", () => {
-  it("requires the complete ACL identity before exact deletion", async () => {
+  it("reviews the selected ACL before an exactly confirmed deletion", async () => {
     const host = new PageHost();
     const user = userEvent.setup();
     render(
@@ -72,19 +108,34 @@ describe("cluster service pages", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
-    const dialog = screen.getByRole("dialog", { name: "Delete exact ACL binding" });
-    const deleteButton = within(dialog).getByRole("button", { name: "Delete binding" });
+    const dialog = screen.getByRole("dialog", { name: "Review ACL delete" });
+    const deleteButton = within(dialog).getByRole("button", { name: "Apply reviewed ACL change" });
     expect(deleteButton).toBeDisabled();
     await user.type(
-      within(dialog).getByRole("textbox", { name: "Exact ACL identity" }),
-      kafkaAclIdentity(acl),
+      within(dialog).getByRole("textbox", { name: "Client IP seen by Kafka" }),
+      "127.0.0.1",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Preview ACL change" }));
+    expect(host.commands.at(-1)).toMatchObject({
+      command: "acls.change.review",
+      payload: {
+        action: "delete",
+        acl,
+        access: { topic: acl.resourceName, principal: acl.principal, host: "127.0.0.1" },
+      },
+    });
+    expect(deleteButton).toBeDisabled();
+    await user.type(
+      await within(dialog).findByRole("textbox", { name: "Exact change confirmation" }),
+      `delete ${kafkaAclIdentity(acl)}`,
     );
     await user.click(deleteButton);
-
-    expect(host.commands.at(-1)).toMatchObject({
-      command: "acls.delete",
-      payload: { acl, confirmation: kafkaAclIdentity(acl) },
+    expect(host.commands.find((command) => command.command === "acls.change.apply")).toMatchObject({
+      command: "acls.change.apply",
+      payload: { planId: "acl-review", confirmation: `delete ${kafkaAclIdentity(acl)}` },
     });
+    expect(deleteButton).toBeDisabled();
+    expect(host.commands.some((command) => command.command === "acls.delete")).toBe(false);
   });
 
   it("invalidates a compatibility result when the proposed schema or references change", async () => {
