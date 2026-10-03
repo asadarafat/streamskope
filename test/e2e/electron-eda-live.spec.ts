@@ -360,7 +360,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     checks.push(
       "actual-package-ui-install",
       "protected-profile-store",
-      "sandboxed-production-shell",
+      "renderer-context-isolation-and-node-disabled",
     );
     await closePreferences(page);
     // Observe the shared cluster application; installing it again could roll other users’ captures.
@@ -605,6 +605,8 @@ test("qualifies live EDA capture through an installed plugin in one protected El
           targetVersion: observedVersion.releaseVersion,
           platform: process.platform,
           architecture: process.arch,
+          rendererSecurityPreferences: fixture.security,
+          rootTestLaunchDisablesProcessSandbox: process.getuid?.() === 0,
           packageSha256: current.sha256,
           expectedFixtureTextSha256: createHash("sha256").update(expectedRecordText).digest("hex"),
           recordPredicate: "configured known fixture text is present in received Kafka payload",
