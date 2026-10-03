@@ -1,35 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { EDA_TARGET_VERSION } from "../../plugins/eda/contracts/eda-capture-types";
 import { EdaApiClient } from "../../plugins/eda/backend/eda-api-client";
 
-export async function localEdaClient(signal?: AbortSignal): Promise<EdaApiClient | undefined> {
-  const baseUrl = process.env.STREAMSKOPE_EDA_API_URL;
-  const username = process.env.STREAMSKOPE_EDA_API_USERNAME;
-  const password = process.env.STREAMSKOPE_EDA_API_PASSWORD;
-  if (!baseUrl && !username && !password) return undefined;
-  assert(baseUrl && username && password, "Configure EDA API URL, username and password together.");
-  return new EdaApiClient(
-    { baseUrl, username, password },
-    {
-      ...(process.env.STREAMSKOPE_EDA_API_CA
-        ? { caPem: await readFile(process.env.STREAMSKOPE_EDA_API_CA, "utf8") }
-        : {}),
-      ...(process.env.STREAMSKOPE_EDA_API_CLIENT_SECRET
-        ? { clientSecret: process.env.STREAMSKOPE_EDA_API_CLIENT_SECRET }
-        : {}),
-      rejectUnauthorized: true,
-    },
-    signal,
-  );
-}
-
-export function requireTargetEdaVersion(releaseVersion: string): void {
-  assert.equal(releaseVersion, EDA_TARGET_VERSION, "Running EDA must match the declared target.");
-}
+import { localEdaClient, requireTargetEdaVersion } from "./eda-fixture";
 
 async function main(): Promise<void> {
   let observed: Awaited<ReturnType<EdaApiClient["clusterVersion"]>> | undefined;
