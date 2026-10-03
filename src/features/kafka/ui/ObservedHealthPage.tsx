@@ -49,6 +49,7 @@ export function ObservedHealthPage({
     inFlight = useRef(false);
   const series = snapshot.series.find((s) => observationIdentity(s) === selected);
   const latest = series?.samples.at(-1);
+  const observedAt = latest?.observedAt;
   const fresh =
     latest !== undefined && now >= latest.observedAt && now - latest.observedAt <= limits.staleMs;
   const update = (next: ObservationSnapshot): void => {
@@ -78,11 +79,9 @@ export function ObservedHealthPage({
       .catch(() => {
         if (mounted.current) setError("Observation history could not be loaded.");
       });
-    const clock = setInterval(() => setNow(Date.now()), 1000);
     return (): void => {
       mounted.current = false;
       generation.current++;
-      clearInterval(clock);
       void host
         .execute({
           command: "observations.cancel",
@@ -93,6 +92,15 @@ export function ObservedHealthPage({
         .catch(() => undefined);
     };
   }, [host]);
+  useEffect(() => {
+    const current = Date.now();
+    setNow(current);
+    if (observedAt === undefined) return;
+    const remaining = observedAt + limits.staleMs + 1 - current;
+    if (remaining <= 0) return;
+    const expiry = setTimeout(() => setNow(Date.now()), remaining);
+    return (): void => clearTimeout(expiry);
+  }, [observedAt]);
   const capture = async (): Promise<void> => {
     if (inFlight.current) return;
     inFlight.current = true;

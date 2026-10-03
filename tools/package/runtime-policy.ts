@@ -20,6 +20,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     // Each explicit decode owns a worker deadline cleared on every settlement path.
     "src/features/kafka/engine/record-codec.ts",
     "src/features/kafka/ui/LatencyWorkspace.tsx",
+    // Opted-in observation collection and one-shot sample freshness expiry.
+    "src/features/kafka/ui/ObservedHealthPage.tsx",
     "src/features/kafka/ui/OperationalPreferencesDialog.tsx",
     "src/features/kafka/ui/TrustRecipeManager.tsx",
     "src/features/kafka/ui/stream-monitor-observer.ts",
