@@ -523,7 +523,6 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     await expect.poll(async () => (await profiles(page)).length, { timeout: 30_000 }).toBe(0);
     await removed(reinstalledSource.sessionId!);
     assert.deepEqual((await client.getProducer(selected)).spec, originalSpec);
-    assert.deepEqual((await client.getProducer(selected)).spec, originalSpec);
     checks.push("ui-stop-cleans-session-and-profile", "original-producer-preserved");
     expect(await page.evaluate(() => performance.timeOrigin)).toBe(fixture.origin);
     expect(application.process().pid).toBe(fixture.processId);
