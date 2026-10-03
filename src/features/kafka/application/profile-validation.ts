@@ -74,6 +74,9 @@ export function canonicalServices(
     return undefined;
   }
   return {
+    ...(services.connect === undefined
+      ? {}
+      : { connect: canonicalServiceEndpoint(services.connect) }),
     ...(services.redpandaAdmin === undefined
       ? {}
       : { redpandaAdmin: canonicalServiceEndpoint(services.redpandaAdmin) }),
@@ -187,6 +190,7 @@ export function createIssues(
     }
   }
   const services = [
+    ["connect", input.services?.connect],
     ["redpandaAdmin", input.services?.redpandaAdmin],
     ["schemaRegistry", input.services?.schemaRegistry],
   ] as const;

@@ -1,3 +1,4 @@
+import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
 import { parseRecoveryCommand, parseRecoveryResponse } from "./recovery-protocol";
 import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
 import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
@@ -237,6 +238,7 @@ export function parseHostCommand(value: unknown): HostCommand {
   const id = text(envelope.id, "command.id", 128);
   const command = declaredValue(envelope.command, HOST_COMMANDS, "command.command");
   const clusterServiceCommand =
+    parseConnectCommand(command, id, envelope.payload, version) ??
     parseRecoveryCommand(command, id, envelope.payload, version) ??
     parseCorrelationCommand(command, id, envelope.payload, version) ??
     parseSampleCommand(command, id, envelope.payload, version) ??
@@ -483,6 +485,7 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
 
   const result = record(envelope.result, "response.result");
   const sampleResponse =
+    parseConnectResponse(command, id, result, version) ??
     parseRecoveryResponse(command, id, result, version) ??
     parseCorrelationResponse(command, id, result, version) ??
     parseSampleResponse(command, id, version, result);

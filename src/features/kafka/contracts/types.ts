@@ -71,9 +71,14 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 41 as const;
+export const HOST_PROTOCOL_VERSION = 42 as const;
 
 export const HOST_COMMANDS = [
+  "connect.list",
+  "connect.load",
+  "connect.validate",
+  "connect.review",
+  "connect.apply",
   "records.replay.review",
   "records.replay.apply",
   "records.replay.cancel",
@@ -383,6 +388,8 @@ export type SecureConnectionField =
   | "oauth.clientSecret"
   | "oauth.scope"
   | "oauth.tokenEndpoint"
+  | "services.connect.authentication"
+  | "services.connect.baseUrl"
   | "services.redpandaAdmin.authentication"
   | "services.redpandaAdmin.baseUrl"
   | "services.schemaRegistry.authentication"
@@ -402,6 +409,7 @@ export interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | import("./connect").ConnectHostCommand
   | import("./recovery-command-types").RecoveryHostCommand
   | (HostCommandBase & {
       readonly command: "records.trace";

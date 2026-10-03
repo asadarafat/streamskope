@@ -76,7 +76,7 @@ export interface KafkaActiveConnection {
   createAcl?(acl: KafkaAclBinding, signal?: AbortSignal): Promise<void>;
   deleteAcl?(acl: KafkaAclBinding, signal?: AbortSignal): Promise<void>;
   clusterServiceContext?(
-    service: "redpandaAdmin" | "schemaRegistry",
+    service: "connect" | "redpandaAdmin" | "schemaRegistry",
   ): KafkaClusterServiceContext | null;
   describeBrokerConfiguration(
     brokerId: number,

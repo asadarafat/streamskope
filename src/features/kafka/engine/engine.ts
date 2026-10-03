@@ -294,7 +294,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   }
 
   clusterServiceContext(
-    service: "redpandaAdmin" | "schemaRegistry",
+    service: "connect" | "redpandaAdmin" | "schemaRegistry",
   ): import("../application").KafkaClusterServiceContext | null {
     const endpoint = this.services?.[service];
     if (endpoint === undefined) {

@@ -16,6 +16,27 @@ import type { KafkaOperationalPreferenceResult } from "./operational-preference-
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
 interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRecipeCommandResults {
+  readonly "connect.list": {
+    readonly correlationId: string;
+    readonly inventory: import("./connect").ConnectInventory;
+  };
+  readonly "connect.load": {
+    readonly correlationId: string;
+    readonly detail: import("./connect").ConnectDetail;
+  };
+  readonly "connect.validate": {
+    readonly correlationId: string;
+    readonly validation: import("./connect").ConnectValidation;
+  };
+  readonly "connect.review": {
+    readonly correlationId: string;
+    readonly review: import("./connect").ConnectReview;
+  };
+  readonly "connect.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./connect").ConnectOutcome;
+  };
+
   readonly "acls.access.explain": {
     readonly correlationId: string;
     readonly explanation: import("./acl-review").TopicAccessExplanation;
@@ -115,6 +136,12 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "connect.list": true,
+  "connect.load": true,
+  "connect.validate": true,
+  "connect.review": true,
+  "connect.apply": true,
+
   "acls.access.explain": true,
   "acls.change.review": true,
   "acls.change.apply": true,

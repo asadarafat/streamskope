@@ -14,6 +14,7 @@ import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 
+import { ConnectPage } from "./ConnectPage";
 import { ReviewedWriteAction } from "./ReviewedWriteAction";
 import { initialKafkaMessageFilters } from "./message-operations";
 import { SavedQueriesDialog } from "./SavedQueriesDialog";
@@ -578,6 +579,13 @@ export function StreamSkopeWorkbench({
         {...(consumerGroupRequestError === undefined
           ? {}
           : { requestError: consumerGroupRequestError })}
+      />
+    ) : navigation === "connect" ? (
+      <ConnectPage
+        key={state.connectionName ?? "disconnected"}
+        host={host}
+        canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
+        onOpenTopic={activateTopic}
       />
     ) : navigation === "schemas" ? (
       <SchemaRegistryPage

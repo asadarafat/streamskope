@@ -27,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { ConnectFacade } from "./connect-facade";
 import { AclReviewFacade } from "./acl-review-facade";
 import { RecordReplayFacade } from "./record-replay-facade";
 import { OffsetResetFacade } from "./offset-reset-facade";
@@ -96,6 +97,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly createCorrelationId;
   private readonly clusterDiagnostics;
   private readonly clusterServices;
+  private readonly connectService: ConnectFacade;
   private readonly plugins;
   private readonly listeners = new Set<HostEventListener>();
   private readonly latencyProbe;
@@ -191,6 +193,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     });
     const publish = this.publish.bind(this);
     const nextSequence = this.nextSequence.bind(this);
+    this.connectService = new ConnectFacade(
+      session,
+      options.connect,
+      this.recordActivity.bind(this),
+    );
     this.clusterServices = new ClusterServiceFacadeController({
       ...options,
       nextSequence,
@@ -304,6 +311,12 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "connect.list":
+      case "connect.load":
+      case "connect.validate":
+      case "connect.review":
+      case "connect.apply":
+        return this.connectService.execute(command, correlationId);
       case "acls.access.explain":
       case "acls.change.review":
       case "acls.change.apply":

@@ -1,0 +1,45 @@
+---
+title: Manage Kafka Connect
+description: Validate connector configuration, review lifecycle actions and investigate supported dead-letter queues.
+---
+
+# Manage Kafka Connect
+
+Connect to Kafka, then open **Kafka Connect** in the sidebar. Add the **Kafka Connect URL** under your profile's cluster services first. The endpoint must be reachable from the desktop host. HTTPS verifies certificates using the profile's trust bundle; HTTP authorization can reuse its protected OAuth bearer token. Basic authentication and a separate Connect token are not supported in this version.
+
+## Discover and validate
+
+Refresh connectors to list connector names and classes installed on the responding worker. During rolling upgrades, workers can have different installed plugins. Select a connector to see its connector/task states and observation time. Arbitrary remote configuration values and raw worker stack traces are withheld because they may contain secrets.
+
+For a new connector, enter a name containing letters, digits, dots, underscores or hyphens and a JSON object of string values. For example, with the Apache FileStream sink installed:
+
+```json
+{
+    "connector.class": "org.apache.kafka.connect.file.FileStreamSinkConnector",
+    "tasks.max": "1",
+    "topics": "orders.events",
+    "file": "/tmp/orders.txt"
+}
+```
+
+The file belongs to the Connect worker, not your desktop. **Validate configuration** calls Connect's validation endpoint without creating or changing a connector. Local checks require a connector class, a positive `tasks.max` when supplied, and a DLQ topic when `errors.tolerance` is `all`. Remote validation failures identify the field; inspect worker diagnostics securely for details that cannot safely be shown.
+
+For updates, enter only changed fields. Omitted fields keep their current values, including credentials. This initial editor replaces values but does not remove configuration keys.
+
+## Review and apply
+
+Choose create, update, pause, resume, restart failed tasks or delete. **Review action** validates the configuration where applicable, captures the current configuration/task state and expires after two minutes. Confirm the exact action and name before applying. Read-only mode prevents application.
+
+A changed connector, connection or expired review is rejected before dispatch. One review identifier permits one attempt. A successful HTTP response means **acknowledged**; asynchronous task transitions can still be pending. Refresh until the expected state appears. An interrupted request can be **unknown**: inspect the connector before making another review. StreamSkope does not automatically resend mutations. Concurrent changes after the final read cannot be made atomic by the Connect REST API.
+
+Delete removes the connector configuration, not its Kafka topics or external data. Restart failed tasks requests `includeTasks=true&onlyFailed=true`; it does not rewind offsets, repair a converter or guarantee delivery.
+
+## Investigate a dead-letter queue
+
+When a connector declares `errors.deadletterqueue.topic.name`, **Browse DLQ** opens that topic. For sink connectors that support Connect error handling, enable `errors.deadletterqueue.context.headers.enable` to include original topic, partition, offset, connector, task and processing stage.
+
+The message inspector interprets complete, unmasked Connect context headers as **reported metadata**, not independently verified provenance. Missing, masked or truncated context stays unavailable. Ordinary message inspection remains available.
+
+Use [Copy or replay records](record-replay.md) to choose an explicit destination and inspect exact original/transformed bytes. The same bounded replay preserves key, value, nulls and ordered headers and reports acknowledged, rejected, unknown and unsent records. Copying back to a source can fail again or loop. This workflow does not skip a task's bad record, delete the DLQ record or commit a source offset. Connector-specific DLQ support must be verified with that connector.
+
+REST behavior follows the [Apache Kafka Connect guide](https://kafka.apache.org/43/kafka-connect/user-guide/). Live qualification uses Apache Kafka/Connect 4.3.1 with its FileStream sink; it does not qualify every connector plugin.

@@ -8,6 +8,11 @@ type Access = "local" | "remote-read" | "remote-write" | "profile";
 
 // Exhaustive by design: adding a host command requires an explicit access decision.
 export const KAFKA_COMMAND_ACCESS = {
+  "connect.list": "remote-read",
+  "connect.load": "remote-read",
+  "connect.validate": "remote-read",
+  "connect.review": "remote-read",
+  "connect.apply": "remote-write",
   "records.replay.review": "remote-read",
   "records.replay.apply": "remote-write",
   "records.replay.cancel": "local",

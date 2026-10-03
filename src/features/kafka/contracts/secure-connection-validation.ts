@@ -88,6 +88,7 @@ export function validateSecureConnectionInput(
     }
   }
   const services = [
+    ["connect", connection.services?.connect],
     ["redpandaAdmin", connection.services?.redpandaAdmin],
     ["schemaRegistry", connection.services?.schemaRegistry],
   ] as const;

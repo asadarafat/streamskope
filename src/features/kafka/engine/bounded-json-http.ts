@@ -4,6 +4,7 @@ import { request as requestHttps } from "node:https";
 export interface BoundedJsonHttpRequest {
   readonly authorization?: string;
   readonly body?: unknown;
+  readonly contentType?: string;
   readonly caPem?: string;
   readonly method: "DELETE" | "GET" | "POST" | "PUT";
   readonly signal: AbortSignal;
@@ -74,7 +75,7 @@ export class NodeBoundedJsonHttp implements BoundedJsonHttpPort {
               ? {}
               : {
                   "content-length": Buffer.byteLength(encodedBody, "utf8"),
-                  "content-type": "application/vnd.schemaregistry.v1+json",
+                  "content-type": input.contentType ?? "application/vnd.schemaregistry.v1+json",
                 }),
           },
           method: input.method,

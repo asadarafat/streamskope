@@ -40,6 +40,7 @@ export interface ClusterServiceEndpointInput {
 }
 
 export interface ClusterServiceEndpointsInput {
+  readonly connect?: ClusterServiceEndpointInput;
   readonly redpandaAdmin?: ClusterServiceEndpointInput;
   readonly schemaRegistry?: ClusterServiceEndpointInput;
 }

@@ -20,6 +20,8 @@ export interface ProfileForm {
   readonly name: string;
   readonly oauthEnabled: boolean;
   readonly scope: string;
+  readonly connectAuthentication: ClusterServiceAuthenticationMode;
+  readonly connectUrl: string;
   readonly redpandaAdminAuthentication: ClusterServiceAuthenticationMode;
   readonly redpandaAdminUrl: string;
   readonly schemaRegistryAuthentication: ClusterServiceAuthenticationMode;
@@ -40,6 +42,7 @@ export interface ProfileFormIssues {
   readonly clientId?: string;
   readonly clientSecret?: string;
   readonly name?: string;
+  readonly connectUrl?: string;
   readonly redpandaAdminUrl?: string;
   readonly schemaRegistryUrl?: string;
   readonly scope?: string;
@@ -58,6 +61,7 @@ export function validateProfileForm(
     clientId?: string;
     clientSecret?: string;
     name?: string;
+    connectUrl?: string;
     redpandaAdminUrl?: string;
     schemaRegistryUrl?: string;
     scope?: string;
@@ -111,6 +115,7 @@ export function validateProfileForm(
       form.schemaRegistryAuthentication,
     ],
     ["redpandaAdminUrl", "Redpanda Admin", form.redpandaAdminUrl, form.redpandaAdminAuthentication],
+    ["connectUrl", "Kafka Connect", form.connectUrl, form.connectAuthentication],
   ] as const) {
     if (value.trim().length === 0) continue;
     try {
@@ -147,6 +152,8 @@ export function initialProfileForm(profile?: ProfileSummary): ProfileForm {
       name: "",
       oauthEnabled: false,
       scope: "",
+      connectAuthentication: "none",
+      connectUrl: "",
       redpandaAdminAuthentication: "none",
       redpandaAdminUrl: "",
       schemaRegistryAuthentication: "none",
@@ -171,6 +178,8 @@ export function initialProfileForm(profile?: ProfileSummary): ProfileForm {
     name: profile.name,
     oauthEnabled: profile.oauth !== undefined,
     scope: profile.oauth?.scope ?? "",
+    connectAuthentication: profile.services?.connect?.authentication ?? "none",
+    connectUrl: profile.services?.connect?.baseUrl ?? "",
     redpandaAdminAuthentication: profile.services?.redpandaAdmin?.authentication ?? "none",
     redpandaAdminUrl: profile.services?.redpandaAdmin?.baseUrl ?? "",
     schemaRegistryAuthentication: profile.services?.schemaRegistry?.authentication ?? "none",
