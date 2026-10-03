@@ -14,9 +14,9 @@ import type {
   SchemaRegistrySubjectDetail,
   SchemaRegistrySubjectInventory,
 } from "../application/schema-registry-types";
+import type { RegisteredSchema } from "../application/record-codec-types";
 
 import type { BoundedJsonHttpPort, BoundedJsonHttpResponse } from "./bounded-json-http";
-import type { RegisteredSchema } from "../application/record-codec-types";
 
 type UnknownRecord = Record<string, unknown>;
 
