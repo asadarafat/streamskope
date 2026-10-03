@@ -25,12 +25,16 @@ Paths below are relative to the [application-data directory](recovery.md#find-yo
 | Read messages and activity history          | Bounded workbench memory                         | No durable message archive; closing/replacing a view or process can discard it                                                                                                                                                            |
 | Downloaded JSON and copied text             | User-selected file or OS clipboard               | Plaintext; remains outside the profile store and is not removed by uninstalling a plugin                                                                                                                                                  |
 
-Valid legacy `preferences/` directories migrate into `workbench/` without changing
+The `workbench/` preference location is an **unreleased change after v0.7.0**;
+published v0.7.0 uses the legacy location. In current source, valid legacy
+`preferences/` directories migrate into `workbench/` without changing
 read-only or masking settings. Original directories are retained under
 `workbench/migrations/preferences-*/preferences/`; include these in backups.
 Chromium owns the separate `Preferences` file, which StreamSkope does not reset or
 replace. Corrupt workbench preferences block connection until restored or deliberately
-reset; the browser file is never treated as workbench configuration.
+[reset while disconnected](recovery.md#unreleased-operational-preference-recovery);
+the browser file is never treated as workbench configuration. Operational
+preferences remain ordinary JSON, separate from OS-backed credential encryption.
 
 Browser development profiles are session-only. Its installed plugins live in
 `.cache/development-plugins`; a development checkout is not a desktop backup.

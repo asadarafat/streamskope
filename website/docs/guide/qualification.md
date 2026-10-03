@@ -27,12 +27,53 @@ installers. Results from an earlier revision do not qualify changed source.
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Separate source-specific native evidence; published v0.7.0 has no recorded installed credential-service restore     |
 
-Current-source installer rehearsals are separate from the published-release records
-below. The [Native recovery workflow](https://github.com/asadarafat/streamskope/actions/workflows/native-recovery.yml)
-can build `0.0.0-dev` installers and record source revisions, installer hashes and
-individual cleanup results. Hosted native qualification is pending; this page
-will link the exact run and its sanitized reports when it completes. These results
-do not change the historical qualification of published installers.
+## Current-source qualification
+
+The following checks exercised unreleased source on **2026-10-03 UTC**. They do
+not update the published v0.7.0 installers or assign a desktop or plugin release.
+The [sanitized qualification summary](../assets/qualification/lifecycle-2026-10-04.json)
+records the individual source revisions, package and retained-report hashes,
+results and limits. Plugin checks used built API 4 packages through an isolated
+local catalog; they do not establish public package availability.
+
+| Check                               | Recorded result                                                                                                                                                                                | Source and evidence                                                                                |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| EDA 26.8.2 installed lifecycle      | 26 checks passed on Linux ARM64 with genuine GNOME credential storage: install, occupied-port recovery, known record in the UI, reconnect, active update, removal, reinstall and owned cleanup | Source `f26f406`; [sanitized summary](../assets/qualification/lifecycle-2026-10-04.json)           |
+| NSP 26.4.0 installed host lifecycle | 23 checks passed: workflow trust retrieval, profile reuse, known generated record, update/removal/reinstall, interruption recovery, ownership refusal and cleanup                              | Source `e40e3b7`; [sanitized summary](../assets/qualification/lifecycle-2026-10-04.json)           |
+| NSP 26.4.0 installed native UI      | 12 checks passed on Linux ARM64 with genuine GNOME credential storage: install, refresh/reuse, known record in the UI, hot update, removal/reinstall/reconnect and owned cleanup               | Source `99f7f2d`; [sanitized summary](../assets/qualification/lifecycle-2026-10-04.json)           |
+| Linux x64 installer recovery        | Passed: published 0.6.0 AppImage replaced by a source `0.0.0-dev` installer; candidate restart, full baseline-backup restoration and filtered export without re-entering credentials           | Source `c284afc`; [hosted run](https://github.com/asadarafat/streamskope/actions/runs/37160807855) |
+| macOS ARM64 installer recovery      | Passed: published 0.6.0 DMG replaced by a source `0.0.0-dev` installer; candidate restart, full baseline-backup restoration and filtered export without re-entering credentials                | Source `c284afc`; [hosted run](https://github.com/asadarafat/streamskope/actions/runs/37160807855) |
+| Windows x64 installer recovery      | Passed: published 0.6.0 NSIS installer replaced by a source `0.0.0-dev` installer; candidate restart, full baseline-backup restoration and filtered export using Windows DPAPI                 | Source `c284afc`; [hosted run](https://github.com/asadarafat/streamskope/actions/runs/37160807855) |
+
+The merged application and plugin source, plus npm manifests and lockfile, match
+the passing EDA, NSP native UI and native installer runs listed above. The summary
+records those Git object identities. A complete local check on tree `10c0b1e`
+(identical to merged `552de73`) passed 2,379 tests across 290 files, Go race and
+dependency checks, the original 60-second soak, 50 HTML pages and 45 documentation
+browser routes including media. Configured live EDA (12 checks) and NSP (23 checks)
+also passed on that integrated tree; these do not replace the separate native UI runs.
+
+The NSP host run used an isolated in-memory profile store; the separate native UI
+run exercised OS-protected profiles on later core source. Their results are not
+combined into a single run. EDA used the existing cluster application and verified
+that its original Producer stayed unchanged. NSP used uniquely owned fixture
+topics and generated records; it removed its executions and topics while retaining
+the shared immutable helper. Both plugins retained the desktop process/window
+through hot lifecycle changes. Update fixtures used unchanged built code with a
+newer manifest, not a published upgrade. EDA API certificate verification remained
+enabled with the lab CA trusted by the host; Kafka used its loopback tunnel over
+an authenticated TLS WebSocket. NSP lab API certificate verification was disabled;
+NSP Kafka broker TLS verification remained enabled. These results do not
+qualify NSP Kafka OAuth, fresh EDA cluster-app installation, API 2/3 migration or
+OS process sandbox enforcement.
+
+The native [recovery procedure](#repeat-the-same-account-recovery-rehearsal) uses
+the same OS account and credential service, and deliberately starts from the
+baseline's pre-restart backup. Candidate restart passed; baseline restart is not
+claimed. Linux launches the AppImage's extracted payload, leaving FUSE and desktop
+launcher integration outside this check. None of these installer recovery results
+establishes cross-account credential transfer, lost-keyring recovery or plugin
+rollback. Historical published-release evidence below remains unchanged.
 
 ## Published release: v0.7.0
 

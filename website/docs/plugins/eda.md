@@ -209,6 +209,11 @@ A desktop plugin version does not rename the running EDA product or cluster
 app. A compatible desktop plugin still requires the matching signed cluster app
 and its readiness check.
 
+The [current-source qualification record](../guide/qualification.md#current-source-qualification)
+describes the installed API 4 lifecycle exercised on Linux ARM64 against an
+already installed EDA 26.8.2 cluster app. That result does not qualify a fresh
+cluster-app installation or a published plugin upgrade.
+
 ## Administrator prerequisites
 
 Before approving cluster installation, check:

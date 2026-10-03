@@ -112,8 +112,10 @@ Share the desktop/plugin versions, failing step and redacted correlation ID from
 The plugin runs in the desktop host; **`streamskopeNspCaptureV1`** runs inside
 NSP's workflow service. See the [compatibility matrix](../start/compatibility.md)
 for desktop and plugin requirements. The
-[qualification record](../guide/qualification.md)
+[current-source qualification record](../guide/qualification.md#current-source-qualification)
 states which environment and operations were actually exercised.
+The installed API 4 checks use an isolated local package catalog; they do not
+establish qualification of a published plugin upgrade or NSP Kafka OAuth.
 
 ### Compatibility package
 

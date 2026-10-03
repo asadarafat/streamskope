@@ -23,3 +23,8 @@ The manual native recovery workflow can build and qualify unreleased installers
 without assigning a release version. Candidate results identify their source
 revision and artifact hashes; they do not change the qualification of previously
 published installers.
+
+See the [current-source qualification record](../guide/qualification.md#current-source-qualification)
+for installed EDA/NSP lifecycle results and passing Linux, macOS and Windows
+installer recovery. These results do not imply publication
+of a new desktop or plugin package.
