@@ -1,9 +1,15 @@
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
 import { describe, expect, it } from "vitest";
 
 import {
   installerChecksum,
   installerName,
   loadCandidateInstaller,
+  nativeCommand,
 } from "../../tools/check/native-installers";
 
 describe("native recovery release identity", () => {
@@ -39,4 +45,52 @@ describe("native recovery release identity", () => {
     expect(() => installerChecksum(entry + entry, name)).toThrow("exactly one");
     expect(() => installerChecksum(`not-a-digest  ${name}`, name)).toThrow("exactly one");
   });
+});
+
+it("a timed-out launcher cannot leave its owned worker writing after cleanup", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "streamskope-native-process-test-"));
+  const workerPid = join(directory, "worker.pid");
+  const heartbeat = join(directory, "heartbeat");
+  let pid: number | undefined;
+  const worker = `
+    const fs = require("node:fs");
+    fs.writeFileSync(process.argv[1], String(process.pid));
+    process.on("SIGTERM", () => {});
+    setInterval(() => fs.appendFileSync(process.argv[2], "."), 20);
+  `;
+  const launcher = `
+    require("node:child_process").spawn(process.execPath,
+      ["-e", process.argv[1], process.argv[2], process.argv[3]], { stdio: "ignore" });
+    setInterval(() => {}, 1000);
+  `;
+  const outcome = nativeCommand(process.execPath, ["-e", launcher, worker, workerPid, heartbeat], {
+    timeoutMs: 1_500,
+    quiet: true,
+  }).catch((error: unknown) => error);
+  try {
+    await expect.poll(() => readFile(workerPid, "utf8").catch(() => "")).not.toBe("");
+    pid = Number(await readFile(workerPid, "utf8"));
+    expect(Number.isSafeInteger(pid) && pid > 0).toBe(true);
+    await expect
+      .poll(() =>
+        stat(heartbeat)
+          .then((value) => value.size)
+          .catch(() => 0),
+      )
+      .toBeGreaterThan(0);
+    expect(await outcome).toMatchObject({ code: "ETIMEDOUT" });
+    const finalSize = (await stat(heartbeat)).size;
+    await delay(200);
+    expect((await stat(heartbeat)).size).toBe(finalSize);
+  } finally {
+    await outcome;
+    if (pid !== undefined) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // A passing command already removed the worker; fallback cleanup is best effort.
+      }
+    }
+    await rm(directory, { recursive: true, force: true, maxRetries: 3 });
+  }
 });

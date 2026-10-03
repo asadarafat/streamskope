@@ -16,6 +16,7 @@ import { basename, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream } from "node:stream/web";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 export interface NativeInstaller {
@@ -79,25 +80,65 @@ export async function nativeCommand(
   args: readonly string[],
   options: { readonly cwd?: string; readonly quiet?: boolean; readonly timeoutMs?: number } = {},
 ): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
-    const verbatim =
-      process.platform === "win32" &&
-      args.some((arg) => arg.startsWith("/D=") || arg.startsWith("_?="));
-    const child = spawn(command, [...args], {
-      ...(verbatim ? { argv0: `"${command}"` } : {}),
-      cwd: options.cwd,
-      stdio: ["ignore", options.quiet ? "ignore" : "inherit", "inherit"],
-      windowsHide: true,
-      // NSIS consumes the final path verbatim, including spaces, without quotes.
-      windowsVerbatimArguments: verbatim,
-      timeout: options.timeoutMs ?? 120_000,
-    });
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) resolvePromise();
-      else reject(new Error(`${basename(command)} failed (${code ?? signal}).`));
-    });
+  const verbatim =
+    process.platform === "win32" &&
+    args.some((arg) => arg.startsWith("/D=") || arg.startsWith("_?="));
+  const child = spawn(command, [...args], {
+    ...(verbatim ? { argv0: `"${command}"` } : {}),
+    cwd: options.cwd,
+    stdio: ["ignore", options.quiet ? "ignore" : "inherit", "inherit"],
+    windowsHide: true,
+    // NSIS consumes the final path verbatim, including spaces, without quotes.
+    windowsVerbatimArguments: verbatim,
+    // Own a process group so a timed-out launcher cannot leave Electron/Playwright alive.
+    detached: process.platform !== "win32",
   });
+  const exited = new Promise<
+    { code: number | null; signal: NodeJS.Signals | null } | { error: Error }
+  >((resolveExit) => {
+    child.once("error", (error) => resolveExit({ error }));
+    child.once("exit", (code, signal) => resolveExit({ code, signal }));
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"timeout">((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout("timeout"), options.timeoutMs ?? 120_000);
+  });
+  const outcome = await Promise.race([exited, deadline]);
+  clearTimeout(timer);
+  if (outcome === "timeout") {
+    if (child.pid !== undefined) {
+      if (process.platform === "win32") {
+        // /T targets descendants of this owned launcher; no process-name matching.
+        await promisify(execFile)("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+          windowsHide: true,
+          timeout: 5_000,
+        }).catch(() => {
+          if (child.exitCode === null && child.signalCode === null)
+            throw new Error("Native process-tree cleanup failed.");
+        });
+      } else {
+        const signalGroup = (signal: NodeJS.Signals | 0): boolean => {
+          try {
+            process.kill(-child.pid!, signal);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+            throw error;
+          }
+        };
+        signalGroup("SIGTERM");
+        for (let attempt = 0; attempt < 10 && signalGroup(0); attempt += 1) await delay(200);
+        signalGroup("SIGKILL");
+      }
+    }
+    await Promise.race([exited, delay(2_000)]);
+    throw Object.assign(new Error(`${basename(command)} exceeded its execution deadline.`), {
+      code: "ETIMEDOUT",
+    });
+  }
+  if ("error" in outcome) throw outcome.error;
+  if (outcome.code !== 0)
+    throw new Error(`${basename(command)} failed (${outcome.code ?? outcome.signal}).`);
 }
 
 export async function downloadNativeInstaller(
