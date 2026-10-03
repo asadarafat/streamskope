@@ -169,7 +169,10 @@ export function SchemaSamplesPanel({
         payload: { planId: review.planId },
       });
       if (request !== generation.current) return;
-      if (!response.ok) throw new Error(`${response.error.summary} ${response.error.recovery}`);
+      if (!response.ok) {
+        setError(`${response.error.summary} ${response.error.recovery}`);
+        return;
+      }
       setOutcome(response.result.outcome);
     } catch {
       if (request === generation.current)
@@ -177,7 +180,7 @@ export function SchemaSamplesPanel({
           "The batch result is unavailable. Inspect the destination; do not automatically resend this batch.",
         );
     } finally {
-      activePlan.current = undefined;
+      if (activePlan.current === review.planId) activePlan.current = undefined;
       if (request === generation.current) {
         setBusy(undefined);
         setReview(undefined);

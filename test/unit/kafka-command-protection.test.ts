@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   HOST_PROTOCOL_VERSION,
+  parseHostCommand,
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   type HostCommand,
 } from "../../src/features/kafka/contracts";
@@ -56,32 +57,47 @@ const writes = [
 ] as const;
 
 describe("host record protection", () => {
-  it("rejects direct decoding while masking is enabled before reaching a codec", async () => {
-    const service = new KafkaOperationalPreferenceService(
-      new InMemoryKafkaOperationalPreferenceStore(
-        { durability: "session", state: "ready" },
-        {
-          ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
-          protection: { readOnly: false, maskKey: true, maskHeaders: [], valuePaths: [] },
-        },
-      ),
-    );
-    const facade = createFacade(
-      new RecordingConnectionPort(),
-      undefined,
-      undefined,
-      undefined,
-      service,
-    );
-    expect(
-      await facade.execute({
-        command: "records.decode",
-        id: "no-bypass",
-        version: HOST_PROTOCOL_VERSION,
-        payload: { format: "json", bytes: "e30=" },
-      }),
-    ).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });
-  });
+  it.each(["records.decode", "records.trace"] as const)(
+    "rejects direct %s while masking is enabled before reaching record data",
+    async (operation) => {
+      const service = new KafkaOperationalPreferenceService(
+        new InMemoryKafkaOperationalPreferenceStore(
+          { durability: "session", state: "ready" },
+          {
+            ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+            protection: { readOnly: false, maskKey: true, maskHeaders: [], valuePaths: [] },
+          },
+        ),
+      );
+      const facade = createFacade(
+        new RecordingConnectionPort(),
+        undefined,
+        undefined,
+        undefined,
+        service,
+      );
+      expect(
+        await facade.execute(
+          parseHostCommand({
+            command: operation,
+            id: "no-bypass",
+            version: HOST_PROTOCOL_VERSION,
+            payload:
+              operation === "records.decode"
+                ? { format: "json", bytes: "e30=" }
+                : {
+                    traceId: "trace",
+                    topics: ["events"],
+                    startTimeMs: 1000,
+                    endTimeMs: 2000,
+                    value: "secret",
+                    selector: { source: "key", path: "", format: "json" },
+                  },
+          }),
+        ),
+      ).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });
+    },
+  );
   it.each(writes)("rejects direct %s before it reaches any adapter or plugin", async (name) => {
     const port = new RecordingConnectionPort();
     const open = vi.spyOn(port, "openConnection");

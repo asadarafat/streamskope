@@ -26,6 +26,7 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import { CorrelationTracePanel } from "./CorrelationTracePanel";
 import { QueryReadCoverage } from "./QueryReadCoverage";
 import {
   KafkaMessageOperationError,
@@ -336,6 +337,13 @@ export function MessageWorkspace({
       >
         {selectedTopic === null ? null : (
           <TopicWorkspaceToolbar label="Message controls">
+            {host ? (
+              <CorrelationTracePanel
+                host={host}
+                topic={selectedTopic}
+                enabled={connectionAvailable}
+              />
+            ) : null}
             {readPlanningControlsVisible ? (
               <>
                 <Stack direction="row" sx={{ alignItems: "center", flex: "0 0 auto", gap: 0.5 }}>

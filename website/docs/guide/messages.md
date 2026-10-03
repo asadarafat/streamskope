@@ -300,3 +300,5 @@ unknown** result means Kafka may have accepted the record: inspect the destinati
 before making a new attempt. The app never automatically resends a record. If the
 host response is lost, **Check attempt result** uses the same plan without sending
 again. Attempt results are session-local and bounded; after restart, inspect Kafka.
+
+[Trace a correlation ID across topics →](structured-events.md#trace-a-correlation-id-across-topics)

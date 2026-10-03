@@ -165,7 +165,7 @@ release availability claim. Local plugin packaging assigns
 `0.0.0-dev.<numeric timestamp>` so a rebuild can be installed without reusing an
 immutable identity. Only development hosts load current-API development packages;
 released desktops reject them. Test published packages with a compatible released
-desktop. The declared `>=0.3.0, <0.4.0` host interval remains the requirement for
+desktop. The declared `>=0.4.0, <0.5.0` host interval remains the requirement for
 released API 4 packages; it does not assign the desktop's next release number.
 
 The browser development host offers locally built packages through the same
@@ -174,7 +174,7 @@ Preserve existing development data and cleanup state; use the previous compatibl
 build to clean up and remove an older release-versioned development installation
 before installing a development package.
 
-Source plugins now target desktop 0.3.x. This declaration does not widen an
+Source plugins now target desktop 0.4.x. This declaration does not widen an
 already-published package's compatibility or certify live EDA/NSP behavior. Plugin
 release qualification and publication remain separate from the desktop release.
 

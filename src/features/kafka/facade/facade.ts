@@ -1,3 +1,4 @@
+import { CorrelationTraceFacade } from "./correlation-trace-facade";
 import { KafkaReviewedWriteService } from "../application/reviewed-write-service";
 import {
   HOST_PROTOCOL_VERSION,
@@ -98,6 +99,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly now;
   private readonly writes: KafkaReviewedWriteService;
   private readonly schemaSamples: SchemaSamplesFacade;
+  private readonly correlationTrace: CorrelationTraceFacade;
   private readonly schemaInspection: SchemaInspectionFacade;
   private readonly recordCodecs: RecordCodecFacade;
   private readonly queries: KafkaQueryLibrary;
@@ -117,6 +119,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     private readonly topicConfigurations: KafkaTopicConfigurationServicePort,
     options: KafkaBackendFacadeOptions = {},
   ) {
+    this.correlationTrace = new CorrelationTraceFacade(
+      session,
+      options.recordCodec,
+      options.schemaLookup,
+    );
     this.writes = new KafkaReviewedWriteService(() => session.writeContext());
     this.schemaSamples = new SchemaSamplesFacade(
       session,
@@ -283,6 +290,9 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "records.trace":
+      case "records.trace.cancel":
+        return this.correlationTrace.execute(command, correlationId);
       case "schemas.samples":
       case "records.batch.review":
       case "records.batch.apply":
@@ -784,6 +794,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   }
 
   private invalidateClusterState(): void {
+    this.correlationTrace.invalidate();
     this.recordCodecs.invalidate();
     this.schemaInspection.invalidate();
     this.schemaSamples.invalidate();

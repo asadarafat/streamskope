@@ -398,10 +398,12 @@ export function MessageInspector({
         sx={{
           borderBottom: 1,
           borderColor: "divider",
-          "& .MuiTab-root": { minWidth: 0, px: 0.5 },
+          "& .MuiTab-root": { minWidth: "max-content", flexShrink: 0, px: 1.5 },
         }}
         value={section}
-        variant="fullWidth"
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
       >
         <Tab label="Metadata" value="metadata" />
         <Tab label="Key" value="key" />

@@ -126,3 +126,49 @@ result and Activity entry separately count acknowledged, rejected, uncertain and
 unsent records. The first rejected or uncertain write stops publication. Inspect
 Kafka before creating a new review after uncertainty: do not assume cancellation
 undoes a record already dispatched.
+
+## Trace a correlation ID across topics
+
+Open a topic's **Messages** workspace and select **Trace correlation**. Enter one
+to eight explicit **Trace topics** and an **Exact correlation value**, then choose:
+
+| Correlation source | Selector                                                                    | Matching behavior                                                                                         |
+| ------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Header (UTF-8)     | Case-sensitive header name                                                  | Any duplicate header with that name and exact UTF-8 value can match                                       |
+| Key (UTF-8)        | Entire key                                                                  | Exact, case-sensitive UTF-8 equality; a null key does not match                                           |
+| Payload field      | JSON Pointer such as `/metadata/correlationId` and explicit writer encoding | Compare scalar text in JSON, Confluent Avro or Protobuf; choose the same encoding for all selected topics |
+
+JSON Pointer escapes `/` as `~1` and `~` as `~0`; an empty pointer selects a root
+scalar. Numeric JSON tokens use their exact source text, so a large integer ID
+never rounds to a neighboring value. Strings and boolean text can also match;
+null, missing paths and compound values do not. Avro unions retain their decoded
+branch wrappers. Avro/Protobuf use the active profile's Registry and decoding
+rules above. Mixed encodings require separate traces.
+
+Use **Last 2 minutes** or an explicit time interval, then **Start trace**. Time is
+start inclusive and end exclusive, based on Kafka record timestamps. The result
+keeps each topic, partition, offset and timestamp and a bounded preview. Records
+with the same value at different offsets remain separate. Topic scan order and
+matching IDs do not establish causality or a global event order.
+
+Read the coverage for **every** selected topic:
+
+- **searched:** the captured retained offset ranges were reached and every returned
+  candidate was evaluated. Zero matches applies only to this range and selector.
+- **partial:** a record was unreadable or a time, byte, count or cancellation limit
+  stopped evaluation. Missing schemas and malformed payloads remain unavailable,
+  never evidence of a non-match.
+- **denied / failed:** access or another read failure prevented qualification.
+- **not-searched:** an earlier bound or cancellation prevented this topic's start.
+
+Each topic admits at most 1,000 candidates; the whole trace retains at most 200
+matches, evaluates at most 32 MiB and has a 30-second deadline. The underlying
+finite reader also has its per-topic fetch/scan limits. Streams are closed on
+completion, cancellation or connection changes. Cleanup and an in-flight broker
+operation may settle after the deadline; no new topic starts afterward. The
+trace is independent of the current message reader and does not commit consumer
+offsets. It is read-only; masking blocks tracing at the host.
+
+**Cancel trace** returns partial evidence after cleanup. Editing the request clears
+old results. Retention and compaction still apply: timestamp lookup cannot restore
+deleted data or prove that matching events never existed outside the searched range.

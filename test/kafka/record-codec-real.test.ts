@@ -53,6 +53,8 @@ it("decodes real Kafka original bytes using authenticated Registry IDs and Proto
     if (event.event === "messages.batch") messages.push(...event.payload.messages);
   });
   let created = false;
+  let secondCreated = false;
+  const secondTopic = `${topic}-trace`;
   try {
     const register = async (
       suffix: string,
@@ -157,7 +159,10 @@ it("decodes real Kafka original bytes using authenticated Registry IDs and Proto
         throw new Error("Host rejected decode");
       decoded.push(result.result.decoded);
     }
-    expect(decoded[0]).toMatchObject({ state: "decoded", schemaId: avroId });
+    expect(decoded[0], JSON.stringify(decoded[0])).toMatchObject({
+      state: "decoded",
+      schemaId: avroId,
+    });
     expect(decoded[1]).toMatchObject({
       state: "decoded",
       schemaId: protoId,
@@ -265,11 +270,126 @@ it("decodes real Kafka original bytes using authenticated Registry IDs and Proto
     for (const [index, sample] of generated.entries()) {
       expect(messages[index + 4]?.original).toEqual(sample.record);
     }
+    await admin.createTopics({ topics: [secondTopic], partitions: 1, replicas: 1 });
+    secondCreated = true;
+    await producer.send({
+      messages: [
+        {
+          topic: secondTopic,
+          partition: 0,
+          key: Buffer.from("fixture"),
+          value: Buffer.from('{"cid":"fixture"}'),
+          headers: new Map([[Buffer.from("cid"), Buffer.from("fixture")]]),
+        },
+        {
+          topic: secondTopic,
+          partition: 0,
+          key: Buffer.from("fixture"),
+          value: Buffer.from('{"cid":"fixture"}'),
+          headers: new Map([[Buffer.from("cid"), Buffer.from("fixture")]]),
+        },
+        {
+          topic: secondTopic,
+          partition: 0,
+          key: Buffer.from("different"),
+          value: Buffer.from('{"cid":"different"}'),
+        },
+      ],
+    });
+    const traceInput = {
+      traceId: "real-trace",
+      topics: [topic, secondTopic],
+      startTimeMs: Date.now() - 120_000,
+      endTimeMs: Date.now() + 1_000,
+      value: "fixture",
+      selector: { source: "key" as const, path: "", format: "json" as const },
+    };
+    const traced = parseHostCommandResponse(
+      await backend.execute({
+        command: "records.trace",
+        id: "real-trace",
+        version: HOST_PROTOCOL_VERSION,
+        payload: traceInput,
+      }),
+    );
+    expect(traced).toMatchObject({
+      ok: true,
+      command: "records.trace",
+      result: {
+        trace: {
+          topics: [
+            { topic, state: "searched", matches: 4 },
+            { topic: secondTopic, state: "searched", matches: 2 },
+          ],
+        },
+      },
+    });
+    if (!traced.ok || traced.command !== "records.trace") throw new Error("Trace failed");
+    expect(traced.result.trace.matches.map((item) => [item.topic, item.offset])).toEqual([
+      [topic, "0"],
+      [topic, "1"],
+      [topic, "2"],
+      [topic, "3"],
+      [secondTopic, "0"],
+      [secondTopic, "1"],
+    ]);
+    const payloadTrace = await backend.execute({
+      command: "records.trace",
+      id: "payload-trace",
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        ...traceInput,
+        traceId: "payload-trace",
+        topics: [secondTopic],
+        selector: { source: "payload", path: "/cid", format: "json" },
+      },
+    });
+    expect(payloadTrace).toMatchObject({
+      ok: true,
+      result: { trace: { topics: [{ state: "searched", matches: 2 }] } },
+    });
+    expect(
+      await backend.execute({
+        command: "records.trace",
+        id: "header-trace",
+        version: HOST_PROTOCOL_VERSION,
+        payload: {
+          ...traceInput,
+          traceId: "header-trace",
+          topics: [secondTopic],
+          selector: { source: "header", path: "cid", format: "json" },
+        },
+      }),
+    ).toMatchObject({
+      ok: true,
+      result: { trace: { topics: [{ state: "searched", matches: 2 }] } },
+    });
+    expect(
+      await backend.execute({
+        command: "records.trace",
+        id: "protobuf-trace",
+        version: HOST_PROTOCOL_VERSION,
+        payload: {
+          ...traceInput,
+          traceId: "protobuf-trace",
+          topics: [topic],
+          value: "ok",
+          selector: { source: "payload", path: "/detail/name", format: "protobuf" },
+        },
+      }),
+    ).toMatchObject({
+      ok: true,
+      result: {
+        trace: { matches: [{ topic, offset: "1" }], topics: [{ state: "partial", matches: 1 }] },
+      },
+    });
+    expect(await endOffset()).toBe(before! + 4n); // Trace never writes or changes the earlier sample count.
   } finally {
     await backend.shutdown();
     await producer.close();
     try {
       if (created) await admin.deleteTopics({ topics: [topic] });
+      if (secondCreated) await admin.deleteTopics({ topics: [secondTopic] });
     } finally {
       await admin.close();
     }
