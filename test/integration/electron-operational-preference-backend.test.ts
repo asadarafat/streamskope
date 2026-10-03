@@ -43,7 +43,7 @@ async function temporaryUserData(): Promise<string> {
 }
 
 function preferencePath(userDataPath: string): string {
-  return join(userDataPath, "preferences", "kafka-operational-preferences.json");
+  return join(userDataPath, "workbench", "kafka-operational-preferences.json");
 }
 
 afterEach(async () => {

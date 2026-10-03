@@ -38,7 +38,8 @@ the app before retrying. A copied profile file alone does not recreate OS keys.
 3. Quit every StreamSkope process using this data directory.
 4. Make a dated, access-restricted copy of the **entire** directory outside the
    live app directory. Include `profiles/` and every recovery generation,
-   `templates/`, `rules/`, `queries/`, `history/`, `preferences/`, `plugins/` and Electron's
+   `templates/`, `rules/`, `queries/`, `history/`, `workbench/`, any legacy
+   `preferences/`, `plugins/` and Electron's
    supporting files. Compare file sizes or hashes with the originals.
 5. Preserve the same OS user and credential-service context. Store exported message
    files separately if needed; they are outside this directory. Review the
@@ -71,6 +72,15 @@ for every profile in this app-data directory and cannot be undone without a back
 It does not erase copies in backups or change Kafka data. Older desktop versions
 without Observed health do not display this history; a new history file does not
 by itself migrate the profile format.
+
+Operational preferences now use `workbench/kafka-operational-preferences.json`,
+separate from Chromium's `Preferences` file. Valid older `preferences/` directories
+are migrated with every protection choice preserved; the original directory is
+archived under `workbench/migrations/preferences-*/preferences/`. Malformed or
+unreadable workbench data stays blocked instead of silently loading permissive
+defaults. Do not remove or replace Chromium's file to recover workbench settings.
+For a downgrade, restore the complete pre-upgrade backup; older apps do not read
+the new location, and later changes are not copied back into archived settings.
 
 ## Choose the correct rollback snapshot
 
