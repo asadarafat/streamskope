@@ -117,18 +117,58 @@ export async function nativeCommand(
             throw new Error("Native process-tree cleanup failed.");
         });
       } else {
-        const signalGroup = (signal: NodeJS.Signals | 0): boolean => {
+        // Playwright starts Electron in another session. Snapshot actual ancestry before
+        // terminating its launcher, otherwise those detached children become untraceable.
+        const { stdout } = await promisify(execFile)("ps", ["-axo", "pid=,ppid=,pgid="], {
+          timeout: 5_000,
+          maxBuffer: 4 * 1_048_576,
+        });
+        const rows = stdout.split("\n").flatMap((line) => {
+          const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/u.exec(line);
+          return match
+            ? [{ pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]) }]
+            : [];
+        });
+        const owner = rows.find((row) => row.pid === child.pid);
+        // A PID observed after its original child exited is not authority to kill it.
+        if (
+          child.exitCode !== null ||
+          child.signalCode !== null ||
+          owner === undefined ||
+          owner.parent !== process.pid ||
+          owner.group !== child.pid
+        )
+          throw new Error("Native process ownership changed before timeout cleanup.");
+        const owned = new Set([child.pid]);
+        for (let previous = -1; previous !== owned.size;) {
+          previous = owned.size;
+          for (const row of rows) if (owned.has(row.parent)) owned.add(row.pid);
+        }
+        // Only groups whose leader is in the captured owned tree may be signalled.
+        const groups = new Set(
+          rows.filter((row) => owned.has(row.pid) && owned.has(row.group)).map((row) => row.group),
+        );
+        const targets = [
+          ...[...groups].map((group) => -group),
+          ...rows
+            .filter((row) => owned.has(row.pid) && !groups.has(row.group))
+            .map((row) => row.pid),
+        ];
+        const signalTarget = (target: number, signal: NodeJS.Signals | 0): boolean => {
           try {
-            process.kill(-child.pid!, signal);
+            process.kill(target, signal);
             return true;
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
             throw error;
           }
         };
-        signalGroup("SIGTERM");
-        for (let attempt = 0; attempt < 10 && signalGroup(0); attempt += 1) await delay(200);
-        signalGroup("SIGKILL");
+        for (const target of targets) signalTarget(target, "SIGTERM");
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          if (!targets.some((target) => signalTarget(target, 0))) break;
+          await delay(200);
+        }
+        for (const target of targets) signalTarget(target, "SIGKILL");
       }
     }
     await Promise.race([exited, delay(2_000)]);

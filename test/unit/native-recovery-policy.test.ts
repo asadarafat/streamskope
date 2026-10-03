@@ -60,7 +60,9 @@ it("a timed-out launcher cannot leave its owned worker writing after cleanup", a
   `;
   const launcher = `
     require("node:child_process").spawn(process.execPath,
-      ["-e", process.argv[1], process.argv[2], process.argv[3]], { stdio: "ignore" });
+      ["-e", process.argv[1], process.argv[2], process.argv[3]], {
+        stdio: "ignore", detached: process.platform !== "win32"
+      });
     setInterval(() => {}, 1000);
   `;
   const outcome = nativeCommand(process.execPath, ["-e", launcher, worker, workerPid, heartbeat], {
