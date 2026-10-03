@@ -34,15 +34,17 @@ version when starting release CI; PR checks only qualify changes for `main`.
 ## What you can do
 
 - Browse topics, read and filter messages, inspect original record bytes and export filtered JSON.
-- Create topics and produce reviewed records with explicit destinations and outcomes.
+- Decode JSON, Confluent Avro and Protobuf, compare records and trace correlation values across topics.
+- Create topics and publish reviewed records or bounded schema-generated samples.
 - Use host read-only controls and deterministic record masking.
 - Investigate consumer lag, stream activity and producer/consumer probe latency.
 - Manage topic configuration, Schema Registry and ACLs.
 - Test message rules and inspect deployed Redpanda transforms.
 - Save TLS and OAuth connection profiles, with optional SSH or HTTPS secret retrieval.
 
-Kafka authentication supports **OAUTHBEARER or no SASL**. Schema Registry is a
-separate service; browsing schemas does not decode Avro/Protobuf message bytes.
+Kafka authentication supports **OAUTHBEARER or no SASL**. Avro/Protobuf inspection
+requires a separate Schema Registry and an explicit encoding selection in
+[Message details → Decoded](website/docs/guide/structured-events.md).
 Transform operations require Redpanda. Check the [compatibility matrix](website/docs/start/compatibility.md)
 for implemented capabilities, tested environments and limitations.
 

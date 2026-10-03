@@ -52,8 +52,7 @@ One decode accepts at most 256 KiB of original bytes. Each schema is limited to
 256 KiB, with at most 32 schema entries, eight reference levels and 1 MiB of
 resolved schema input. Inspection, sample generation and tracing each use a
 schema cache of at most 32 entries and 2 MiB; all are cleared when the connection
-changes. Decoded JSON is limited to
-256 Ki characters, 20,000 nodes and 32 levels.
+changes. Decoded JSON is limited to 256 Ki characters, 20,000 nodes and 32 levels.
 
 At most two decodes run concurrently. Parsing runs in an isolated worker with
 bounded heap and a three-second deadline; the entire lookup/decode request has a
