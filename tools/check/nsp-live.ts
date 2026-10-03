@@ -78,7 +78,10 @@ async function main(): Promise<void> {
     const runtime = new PluginRuntime({
       store,
       // Only the catalog is local. Package verification, installation and module loading are real.
-      catalog: { list: () => Promise.resolve([]), download: () => Promise.resolve(available) },
+      catalog: {
+        list: (): Promise<never[]> => Promise.resolve([]),
+        download: (): Promise<typeof available> => Promise.resolve(available),
+      },
     });
     return {
       runtime,

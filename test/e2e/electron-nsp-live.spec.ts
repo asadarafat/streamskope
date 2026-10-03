@@ -154,6 +154,25 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
   let fixtureAttempted = false;
   const checks: string[] = [];
   let passed = false;
+  const failures: { phase: string; message: string }[] = [];
+  const recordFailure = (phase: string, error: unknown): void => {
+    passed = false;
+    let message = error instanceof Error ? error.message : "Native NSP qualification failed.";
+    for (const value of [input.password, input.apiUrl, input.username])
+      if (value) message = message.replaceAll(value, "[redacted]");
+    message = message.replace(
+      /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu,
+      "[redacted token]",
+    );
+    failures.push({ phase, message: message.slice(0, 1024) });
+  };
+  const finish = async (phase: string, action: () => Promise<void>): Promise<void> => {
+    try {
+      await action();
+    } catch (error) {
+      recordFailure(phase, error);
+    }
+  };
   try {
     await page.evaluate(
       ({ topic, marker }) => {
@@ -315,6 +334,8 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
       "owned-topic-deletion-confirmed",
     );
     passed = true;
+  } catch (error) {
+    recordFailure("scenario", error);
   } finally {
     const active = await installation(page).catch(() => undefined);
     if (active?.activationId) {
@@ -357,38 +378,36 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
         }
       })
       .catch(() => undefined);
-    try {
+    await finish("owned NSP execution cleanup", async () => {
       const store = new PluginStore(join(fixture.userDataPath, "plugins"));
       const pending = parseRecovery(await store.readRecoveryState(NSP_PLUGIN_ID));
-      try {
-        if (pending !== undefined) {
-          // Keep identifiers even if the host disappeared before its final cleanup response.
-          await writeFile(info.outputPath("nsp-recovery-private.json"), JSON.stringify(pending), {
-            mode: 0o600,
-          });
-          const cleanup = await liveNspApiClient(input);
-          try {
-            await cleanup.cleanupExecution(pending.requestId, pending.executionId);
-            await store.writeRecoveryState(NSP_PLUGIN_ID, null);
-          } catch {
-            passed = false;
-            throw new Error(
-              "NSP fixture cleanup is pending; private recovery identifiers were retained.",
-            );
-          } finally {
-            await cleanup.close();
-          }
+      if (pending !== undefined) {
+        // Keep identifiers even if the host disappeared before its final cleanup response.
+        await writeFile(info.outputPath("nsp-recovery-private.json"), JSON.stringify(pending), {
+          mode: 0o600,
+        });
+        const cleanup = await liveNspApiClient(input);
+        try {
+          await cleanup.cleanupExecution(pending.requestId, pending.executionId);
+          await store.writeRecoveryState(NSP_PLUGIN_ID, null);
+        } finally {
+          await finish("NSP cleanup token revocation", () => cleanup.close());
         }
-      } finally {
-        if (fixtureAttempted && admin) await removeOwnedNspTopic(admin, topic);
       }
-    } finally {
+    });
+    await finish("owned Kafka topic cleanup", async () => {
+      if (fixtureAttempted && admin) await removeOwnedNspTopic(admin, topic);
+    });
+    await finish("fixture Kafka client close", async () => {
       await admin?.close();
-      await fixture.close();
+    });
+    await finish("native host close", () => fixture.close());
+    await finish("qualification evidence", async () => {
       await info.attach("nsp-native-live-evidence", {
         body: JSON.stringify(
           {
             outcome: passed ? "passed" : "failed",
+            ...(failures.length === 0 ? {} : { failures }),
             checks,
             target: targetVersion,
             hostProtocol: HOST_PROTOCOL_VERSION,
@@ -409,6 +428,8 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
         ),
         contentType: "application/json",
       });
-    }
+    });
   }
+  if (failures.length > 0)
+    throw new Error("Native NSP qualification failed; inspect its sanitized failure evidence.");
 });
