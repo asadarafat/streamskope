@@ -194,6 +194,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
       : {},
   );
   const { page, application } = fixture;
+  const processSandboxDisabled = application.process().spawnargs.includes("--no-sandbox");
   page.setDefaultTimeout(30_000);
   const occupied = await bindPort();
   const owned = new Set<string>();
@@ -533,6 +534,24 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     passed = true;
   } catch (error) {
     scenarioFailure = error;
+    await info.attach("eda-scenario-failure", {
+      body: JSON.stringify({
+        error: sanitizedError(error),
+        checks,
+        ui: await page
+          .evaluate(() => ({
+            dialogs: [...document.querySelectorAll('[role="dialog"]')].map((element) =>
+              element.getAttribute("aria-labelledby"),
+            ),
+            navigation: [...document.querySelectorAll("nav")].map((element) => ({
+              label: element.getAttribute("aria-label"),
+              hiddenByModal: element.closest('[aria-hidden="true"]') !== null,
+            })),
+          }))
+          .catch(() => undefined),
+      }),
+      contentType: "application/json",
+    });
   } finally {
     // Playwright can attach an error-context DOM snapshot even when tracing is disabled.
     await page
@@ -606,7 +625,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
           platform: process.platform,
           architecture: process.arch,
           rendererSecurityPreferences: fixture.security,
-          processSandboxDisabled: application.process().spawnargs.includes("--no-sandbox"),
+          processSandboxDisabled,
           packageSha256: current.sha256,
           expectedFixtureTextSha256: createHash("sha256").update(expectedRecordText).digest("hex"),
           recordPredicate: "configured known fixture text is present in received Kafka payload",
