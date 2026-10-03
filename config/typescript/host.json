@@ -7,7 +7,11 @@
     "types": ["node"]
   },
   "files": [],
-  "exclude": ["../../tools/docs/capture.ts", "../../tools/check/native-recovery.ts"],
+  "exclude": [
+    "../../tools/docs/capture.ts",
+    "../../tools/check/native-recovery.ts",
+    "../../tools/check/nsp-live.ts"
+  ],
   "include": [
     "../../src/features/kafka/contracts/**/*.ts",
     "../../src/features/kafka/application/**/*.ts",

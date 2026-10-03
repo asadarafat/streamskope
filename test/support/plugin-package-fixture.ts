@@ -30,13 +30,15 @@ export async function builtPluginAssets(
   return officialPluginAssets(plugin, manifest.version);
 }
 
-/** Fixture releases reuse the actual built EDA code; no synthetic version is published. */
-export async function pluginPackageFixtures(): Promise<{
+/** Fixture releases reuse actual built plugin code; no synthetic version is published. */
+export async function pluginPackageFixtures(
+  directory: OfficialPlugin["directory"] = "eda",
+): Promise<{
   readonly current: ReturnType<typeof fixture>;
   readonly update: ReturnType<typeof fixture>;
   readonly broken: ReturnType<typeof fixture>;
 }> {
-  const assets = await builtPluginAssets("eda");
+  const assets = await builtPluginAssets(directory);
   const current = fixture(await readFile(join("dist/plugin-package", assets.packageAsset)));
   const parsed = parsePluginPackage(current.bytes, current.sha256);
   const revised = (offset: number): typeof parsed.manifest => {
