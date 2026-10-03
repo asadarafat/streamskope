@@ -25,6 +25,10 @@ it("compiles a pinned validating client with exact Registry framing and rejects 
     bundle,
   });
   await mkdir(".artifacts", { recursive: true });
+  expect(client.source).toContain("Copyright (c) 2015-2021 Evgeny Poberezkin");
+  expect(client.source).toContain(
+    "The above copyright notice and this permission notice shall be included",
+  );
   const folder = await mkdtemp(join(process.cwd(), ".artifacts", "streamskope-client-"));
   try {
     const path = join(folder, "client.cjs");
