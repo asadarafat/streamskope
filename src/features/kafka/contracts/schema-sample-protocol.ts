@@ -1,6 +1,8 @@
 import type { HostCommand, HostCommandResponse } from "./types";
-import { exactKeys, text } from "./validation-primitives";
+import { exactKeys, text, record } from "./validation-primitives";
 import {
+  parseSchemaSampleInput,
+  parseRecordBatchInput,
   parseSchemaSamples,
   parseRecordBatchReview,
   parseRecordBatchOutcome,
@@ -50,6 +52,32 @@ export function parseSampleResponse(
         outcome: parseRecordBatchOutcome(result.outcome),
       },
     };
+  }
+  return undefined;
+}
+
+export function parseSampleCommand(
+  command: HostCommand["command"],
+  id: string,
+  value: unknown,
+  version: HostCommand["version"],
+): HostCommand | undefined {
+  switch (command) {
+    case "schemas.samples":
+      return { command, id, version, payload: parseSchemaSampleInput(value) };
+    case "records.batch.review":
+      return { command, id, version, payload: parseRecordBatchInput(value) };
+    case "records.batch.apply":
+    case "records.batch.cancel": {
+      const payload = record(value, "command.payload");
+      exactKeys(payload, ["planId"], "command.payload");
+      return {
+        command,
+        id,
+        version,
+        payload: { planId: text(payload.planId, "command.payload.planId", 128) },
+      };
+    }
   }
   return undefined;
 }

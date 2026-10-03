@@ -1,5 +1,4 @@
-import { parseSampleResponse } from "./schema-sample-protocol";
-import { parseSchemaSampleInput, parseRecordBatchInput } from "./schema-samples";
+import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
 import { parseSchemaInspectionInput, parseSchemaInspection } from "./schema-inspection";
 import {
   parseKafkaWriteInput,
@@ -236,6 +235,7 @@ export function parseHostCommand(value: unknown): HostCommand {
   const id = text(envelope.id, "command.id", 128);
   const command = declaredValue(envelope.command, HOST_COMMANDS, "command.command");
   const clusterServiceCommand =
+    parseSampleCommand(command, id, envelope.payload, version) ??
     parsePluginHostCommand(command, id, envelope.payload, version) ??
     parseTrustEditorCommand(command, id, envelope.payload, version) ??
     parseTrustRecipeHostCommand(command, id, envelope.payload, version) ??
@@ -245,21 +245,6 @@ export function parseHostCommand(value: unknown): HostCommand {
   }
 
   switch (command) {
-    case "schemas.samples":
-      return { command, id, version, payload: parseSchemaSampleInput(envelope.payload) };
-    case "records.batch.review":
-      return { command, id, version, payload: parseRecordBatchInput(envelope.payload) };
-    case "records.batch.apply":
-    case "records.batch.cancel": {
-      const payload = record(envelope.payload, "command.payload");
-      exactKeys(payload, ["planId"], "command.payload");
-      return {
-        command,
-        id,
-        version,
-        payload: { planId: text(payload.planId, "command.payload.planId", 128) },
-      };
-    }
     case "schemas.inspect":
       return { command, id, version, payload: parseSchemaInspectionInput(envelope.payload) };
     case "records.decode":
