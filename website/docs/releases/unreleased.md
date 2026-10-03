@@ -17,3 +17,5 @@ The paired host/renderer protocol advances to 44. The plugin API remains unchang
 - Generate JavaScript CommonJS clients for self-contained Registry JSON Schema draft-07, with Ajv 8.20.0 validation, exact Registry framing and provenance. Other client languages and schema formats are not supported in this slice.
 
 Upgrade: keep a complete pre-upgrade backup. Saving a Kafka Connect endpoint adds profile fields that older desktops do not understand; use that backup for downgrade rather than opening the updated store in an older app.
+
+The source API 4 EDA and NSP plugins declare desktop compatibility `>=0.4.0, <0.7.0`. This does not change previously published plugin packages or assign a plugin release version; plugin publication remains independent.

@@ -104,7 +104,12 @@ export function EnvironmentPage({
   };
   const diff = source && target ? environmentDiff(source, target) : [];
   return (
-    <Stack spacing={2} sx={{ p: 3, overflow: "auto", height: "100%" }}>
+    <Stack
+      component="main"
+      aria-label="Environment comparison page"
+      spacing={2}
+      sx={{ p: 3, overflow: "auto", height: "100%" }}
+    >
       <Typography component="h1" variant="h5">
         Compare environments
       </Typography>

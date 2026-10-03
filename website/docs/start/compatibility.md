@@ -55,7 +55,7 @@ not part of the installation procedure.
 | Package generation          | Desktop requirement      | Plugin versioning                                                                           |
 | --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
 | Published API 3 packages    | Minimum `v0.1.0+build.1` | Original combined compatibility/revision labels, preserved unchanged                        |
-| Development API 4 EDA / NSP | `>=0.4.0, <0.6.0`        | Independent Semantic Versions; supported host/target intervals are separate manifest fields |
+| Development API 4 EDA / NSP | `>=0.4.0, <0.7.0`        | Independent Semantic Versions; supported host/target intervals are separate manifest fields |
 
 Release builds supporting API 4 preserve installed API 2 and API 3 packages.
 The declared desktop interval is a compatibility bound, not a scheduled release
