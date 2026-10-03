@@ -6,9 +6,21 @@ import {
   type RecordDecodeInput,
   type RecordDecodeResult,
 } from "../contracts/record-codec";
-import type { CodecSchemaBundle, RecordCodecPort } from "../application/record-codec-types";
+import {
+  parseSchemaSamples,
+  type SchemaSampleInput,
+  type SchemaSamples,
+} from "../contracts/schema-samples";
+import type {
+  CodecSchemaBundle,
+  RecordCodecPort,
+  SchemaSamplePort,
+  RecordCodecWorkerInput,
+} from "../application/record-codec-types";
 
-export class BoundedRecordCodec implements RecordCodecPort {
+import type { SchemaSampleWorkerInput, SchemaSampleWorkerResult } from "./schema-sample-parser";
+
+export class BoundedRecordCodec implements RecordCodecPort, SchemaSamplePort {
   private active = 0;
   constructor(private readonly worker: { script: string; execArgv: readonly string[] }) {}
 
@@ -17,6 +29,33 @@ export class BoundedRecordCodec implements RecordCodecPort {
     bundle: CodecSchemaBundle | null,
     signal: AbortSignal,
   ): Promise<RecordDecodeResult> {
+    return this.run({ input, bundle }, signal, parseRecordDecodeResult);
+  }
+
+  generate(
+    input: SchemaSampleInput,
+    bundle: CodecSchemaBundle,
+    signal: AbortSignal,
+  ): Promise<SchemaSamples> {
+    return this.run({ kind: "generate", input, bundle }, signal, (value: unknown) => {
+      if (!value || typeof value !== "object" || !("ok" in value))
+        throw new Error("Invalid generator response.");
+      const response = value as SchemaSampleWorkerResult;
+      if (!response.ok)
+        throw new Error(
+          typeof response.detail === "string"
+            ? response.detail.slice(0, 256)
+            : "Generation failed.",
+        );
+      return parseSchemaSamples(response.samples);
+    });
+  }
+
+  private run<T>(
+    data: RecordCodecWorkerInput | SchemaSampleWorkerInput,
+    signal: AbortSignal,
+    parse: (value: unknown) => T,
+  ): Promise<T> {
     signal.throwIfAborted();
     if (this.active >= 2) return Promise.reject(new Error("Decoder capacity reached"));
     this.active++;
@@ -25,7 +64,7 @@ export class BoundedRecordCodec implements RecordCodecPort {
       try {
         worker = new Worker(this.worker.script, {
           execArgv: [...this.worker.execArgv],
-          workerData: { input, bundle },
+          workerData: data,
           resourceLimits: {
             maxOldGenerationSizeMb: 64,
             maxYoungGenerationSizeMb: 16,
@@ -56,7 +95,7 @@ export class BoundedRecordCodec implements RecordCodecPort {
       worker.once("message", (value: unknown) =>
         finish(() => {
           try {
-            resolve(parseRecordDecodeResult(value));
+            resolve(parse(value));
           } catch (error) {
             reject(error instanceof Error ? error : new Error("Decoder failed"));
           }

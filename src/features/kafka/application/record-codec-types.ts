@@ -36,3 +36,11 @@ export interface RecordCodecWorkerInput {
   readonly input: RecordDecodeInput;
   readonly bundle: CodecSchemaBundle | null;
 }
+
+export interface SchemaSamplePort {
+  generate(
+    input: import("../contracts/schema-samples").SchemaSampleInput,
+    bundle: CodecSchemaBundle,
+    signal: AbortSignal,
+  ): Promise<import("../contracts/schema-samples").SchemaSamples>;
+}

@@ -27,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { SchemaSamplesFacade } from "./schema-samples-facade";
 import { SchemaInspectionFacade } from "./schema-inspection-facade";
 import { executeWriteCommand } from "./write-facade";
 import { RecordCodecFacade } from "./record-codec-facade";
@@ -96,6 +97,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly latencyProbe;
   private readonly now;
   private readonly writes: KafkaReviewedWriteService;
+  private readonly schemaSamples: SchemaSamplesFacade;
   private readonly schemaInspection: SchemaInspectionFacade;
   private readonly recordCodecs: RecordCodecFacade;
   private readonly queries: KafkaQueryLibrary;
@@ -116,6 +118,13 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     options: KafkaBackendFacadeOptions = {},
   ) {
     this.writes = new KafkaReviewedWriteService(() => session.writeContext());
+    this.schemaSamples = new SchemaSamplesFacade(
+      session,
+      options.recordCodec,
+      options.schemaLookup,
+      options.sampleGenerator,
+      this.recordActivity.bind(this),
+    );
     this.schemaInspection = new SchemaInspectionFacade(session, options.schemaLookup);
     this.recordCodecs = new RecordCodecFacade(session, options.recordCodec, options.schemaLookup);
     this.queries = options.queries ?? new KafkaQueryLibrary();
@@ -274,6 +283,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "schemas.samples":
+      case "records.batch.review":
+      case "records.batch.apply":
+      case "records.batch.cancel":
+        return this.schemaSamples.execute(command, correlationId);
       case "schemas.inspect":
         return this.schemaInspection.execute(command, correlationId);
       case "records.decode":
@@ -772,6 +786,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private invalidateClusterState(): void {
     this.recordCodecs.invalidate();
     this.schemaInspection.invalidate();
+    this.schemaSamples.invalidate();
     this.clusterDiagnostics.clear();
     this.invalidateLatency();
     this.invalidateConsumerGroups();

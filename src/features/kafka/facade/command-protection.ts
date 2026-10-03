@@ -10,6 +10,10 @@ type Access = "local" | "remote-read" | "remote-write" | "profile";
 export const KAFKA_COMMAND_ACCESS = {
   "records.decode": "remote-read",
   "schemas.inspect": "remote-read",
+  "schemas.samples": "remote-read",
+  "records.batch.review": "remote-read",
+  "records.batch.apply": "remote-write",
+  "records.batch.cancel": "local",
   "connection.test": "remote-read",
   "connection.connect": "remote-read",
   "connection.disconnect": "local",

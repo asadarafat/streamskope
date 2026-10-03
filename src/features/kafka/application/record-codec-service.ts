@@ -120,6 +120,20 @@ export class RecordCodecService {
     return bundle;
   }
 
+  async resolveVersion(
+    context: KafkaClusterServiceContext,
+    subject: string,
+    version: number,
+    signal: AbortSignal,
+  ): Promise<CodecSchemaBundle> {
+    const schema = await this.cached(
+      `version:${JSON.stringify([subject, version])}`,
+      () => this.lookup.byVersion(context, subject, version, signal),
+      signal,
+    );
+    return this.resolve(context, schema.id, signal);
+  }
+
   async decode(
     input: RecordDecodeInput,
     context: KafkaClusterServiceContext | null,

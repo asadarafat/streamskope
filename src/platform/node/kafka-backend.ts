@@ -119,6 +119,7 @@ export function createKafkaBackend(
   });
   const serviceHttp = new NodeBoundedJsonHttp();
   const schemaRegistry = new SchemaRegistryHttpAdapter(serviceHttp);
+  const structuredWorker = createHostRecordCodec();
   return new KafkaBackendFacade(
     session,
     profiles,
@@ -132,7 +133,8 @@ export function createKafkaBackend(
       queries: new KafkaQueryLibrary(queryStore),
       schemaRegistry,
       schemaLookup: schemaRegistry,
-      recordCodec: createHostRecordCodec(),
+      recordCodec: structuredWorker,
+      sampleGenerator: structuredWorker,
       transforms: new RedpandaTransformHttpAdapter(serviceHttp),
       trustAcquisitions,
     },
