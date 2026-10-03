@@ -36,6 +36,7 @@ version when starting release CI; PR checks only qualify changes for `main`.
 - Browse topics, read and filter messages, inspect original record bytes and export filtered JSON.
 - Decode JSON, Confluent Avro and Protobuf, compare records and trace correlation values across topics.
 - Create topics and publish reviewed records or bounded schema-generated samples.
+- Preview and apply consumer offset resets, copy records across topics or clusters, and review exact ACL changes.
 - Use host read-only controls and deterministic record masking.
 - Investigate consumer lag, stream activity and producer/consumer probe latency.
 - Manage topic configuration, Schema Registry and ACLs.
@@ -56,7 +57,7 @@ for implemented capabilities, tested environments and limitations.
 3. [Read your first message](website/docs/start/quickstart.md#3-open-a-record) from a known topic.
 
 Use an inspection account with the [required permissions](website/docs/guide/security.md).
-Producing records, creating topics, configuration changes, ACL/schema operations
+Producing or replaying records, resetting offsets, creating topics, configuration changes, ACL/schema operations
 and latency probes can write to your services.
 
 ## Documentation and help

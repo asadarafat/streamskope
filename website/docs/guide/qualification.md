@@ -27,19 +27,34 @@ installers. Results from an earlier revision do not qualify changed source.
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
 
-## Safe recovery source qualification
+## Published release: v0.5.0
 
-The [safe recovery qualification PR](https://github.com/asadarafat/streamskope/pull/33)
-records checks of the combined offset-reset, replay and ACL-review implementation.
-Read its exact revision and results before comparing it with your installed build.
-After publication, the matching release notes link a downloadable source-specific
-report with the source tree, workflow runs, local results and limitations.
+[v0.5.0](../releases/v0.5.0.md) was published on **2026-10-03** from source
+[`0253681`](https://github.com/asadarafat/streamskope/commit/0253681d2761c66cfe2d20ec1e1438ad948b0ce2).
+The [release workflow](https://github.com/asadarafat/streamskope/actions/runs/37122792469) passed. The
+[source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.5.0/qualification-v0.5.0.json)
+records the identical qualified source tree, local and native checks, environment
+versions, limits and evidence hashes.
 
-Local EDA and NSP results qualify the exercised API, Kafka and cleanup paths.
-They do not establish an installed native plugin upgrade, credential-service
-restore, every vendor permission policy or every broker authentication mode.
-See the exact report for which checks passed, failed or were skipped. Publication
-and declared compatibility alone never supply missing live evidence.
+| Check                                     | Recorded result and evidence                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shared qualification                      | [CI passed](https://github.com/asadarafat/streamskope/actions/runs/37122792469/job/111202135645): 2,310 tests across 272 files; 40 documentation pages and 35 browser routes, including media playback                                                                                                             |
+| Native installers and packaged-app checks | [Linux x64](https://github.com/asadarafat/streamskope/actions/runs/37122792469/job/111203511387), [macOS ARM64](https://github.com/asadarafat/streamskope/actions/runs/37122792469/job/111203511411) and [Windows x64](https://github.com/asadarafat/streamskope/actions/runs/37122792469/job/111203511393) passed |
+| Real recovery behavior                    | Four tests passed against owned Apache Kafka 4.3.1 fixtures: stopped-group reset/read-back, stale and denied operations, same-topic/other-topic/separate-broker replay with tombstones and duplicate headers, and exact ACL changes with StandardAuthorizer access behavior                                        |
+| Browser recovery                          | Replay, offset reset and ACL review/application passed through the real browser host; source reader remained active after replay; no detected Axe violations in all three dialogs or browser diagnostics                                                                                                           |
+| 60-second performance soak                | 59,991 records generated and delivered, zero host display drops, 30.56% of one CPU core, 679 MiB peak RSS and 23.82 ms event-loop p99; all unchanged limits passed                                                                                                                                                 |
+| Live EDA 26.8.2                           | API version, installed cluster app, capture readiness, lease, real Kafka receipt, source preservation, owned-resource cleanup and repeated stop passed                                                                                                                                                             |
+| Live NSP 26.4.0                           | Combined workflow, tested/saved profile, idempotent profile reuse, connection and discovery of 176 topics, execution cleanup, and hot removal preserving the profile passed; renderer events excluded secrets                                                                                                      |
+| Unsigned EDA OCI application              | [Packaging passed](https://github.com/asadarafat/streamskope/actions/runs/37122792469/job/111203511367); signing and publication remain separate                                                                                                                                                                   |
+| Download integrity                        | [SHA256SUMS](https://github.com/asadarafat/streamskope/releases/download/v0.5.0/SHA256SUMS) matches all three installer digests and includes the qualification report                                                                                                                                              |
+
+The complete local check passed with one test worker after an earlier four-worker
+run was interrupted by memory-pressure timeouts. Limits and tests were not relaxed.
+The soak measures application ingestion, not real Electron IPC, Kafka network-fetch
+or UI interaction latency. Live capture checks exercise the source plugin/API
+paths; installed native plugin migrations and credential-service recovery were
+not rehearsed. NSP Kafka SASL OAuth and other vendor permission policies remain
+outside this result. Installers are unsigned; plugin releases remain independent.
 
 ## Historical qualification: v0.4.0
 
