@@ -3,6 +3,7 @@ import process from "node:process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { evaluateDependencyAudit, runNpmAudit, type AuditExecution } from "../../tools/check/audit";
+import { BUILD_DEPENDENCY_PATCHES } from "../../tools/check/build-dependency-patch-data";
 
 const verifiedPaths = ["node_modules/node-forge"];
 const knownAdvisory = {
@@ -73,6 +74,80 @@ function execution(findings: readonly FixtureFinding[]): AuditExecution {
 
 describe("dependency audit qualification", () => {
   afterEach(() => vi.unstubAllEnvs());
+
+  it.each(BUILD_DEPENDENCY_PATCHES)(
+    "accepts only verified $name mitigation and exclusively inherited findings",
+    (patch) => {
+      const direct: FixtureFinding = {
+        name: patch.name,
+        severity: "high",
+        isDirect: false,
+        range: "*",
+        nodes: [`node_modules/${patch.name}`],
+        via: [
+          {
+            source: 9991001,
+            name: patch.name,
+            dependency: patch.name,
+            severity: "high",
+            url: patch.advisoryUrl,
+            range: `<=${patch.version}`,
+          },
+        ],
+      };
+      const verified = [{ name: patch.name, advisoryUrl: patch.advisoryUrl, paths: direct.nodes }];
+      const parent = inheritedFinding("build-consumer", patch.name);
+      const ancestor = inheritedFinding("build-tool", parent.name);
+      parent.via.push(ancestor.name);
+      expect(
+        evaluateDependencyAudit(execution([direct, parent, ancestor]), [], verified)
+          .remainingHighOrCriticalPackages,
+      ).toEqual([]);
+      expect(
+        evaluateDependencyAudit(execution([direct, parent, ancestor]), [])
+          .remainingHighOrCriticalPackages,
+      ).toHaveLength(3);
+      parent.via.pop();
+      for (const change of [
+        { url: `${patch.advisoryUrl}?changed` },
+        { range: "*" },
+        { severity: "critical" },
+        { dependency: "other" },
+      ]) {
+        const changed = { ...direct, via: [{ ...(direct.via[0] as object), ...change }] };
+        const changedParent = { ...parent, severity: change.severity ?? parent.severity };
+        changed.severity = change.severity ?? changed.severity;
+        expect(
+          evaluateDependencyAudit(execution([changed, changedParent]), [], verified)
+            .remainingHighOrCriticalPackages,
+        ).toEqual([parent.name, patch.name].sort());
+      }
+      const unverified = {
+        ...direct,
+        nodes: [...direct.nodes, `node_modules/other/node_modules/${patch.name}`],
+      };
+      expect(
+        evaluateDependencyAudit(execution([unverified, parent]), [], verified)
+          .remainingHighOrCriticalPackages,
+      ).toHaveLength(2);
+      const independent = {
+        ...parent,
+        via: [
+          ...parent.via,
+          {
+            ...knownAdvisory,
+            name: parent.name,
+            dependency: parent.name,
+            url: "https://github.com/advisories/GHSA-new-advisory",
+          },
+        ],
+      };
+      expect(
+        evaluateDependencyAudit(execution([direct, independent]), [], verified)
+          .remainingHighOrCriticalPackages,
+      ).toEqual([parent.name]);
+    },
+  );
 
   it("overrides inherited offline, registry and omitted dependency configuration at the npm CLI", () => {
     vi.stubEnv("npm_config_offline", "true");

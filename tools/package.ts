@@ -30,6 +30,7 @@ async function desktop(): Promise<void> {
     throw new Error(`Unsupported native package target: ${target}`);
   }
   node("tools/check/forge-patch.ts", "--apply");
+  node("tools/check/build-dependency-patches.ts", "--apply");
   node("tools/package/e2e.mjs", "boundary");
   node("tools/build.mjs");
   node("tools/package/verify.ts");

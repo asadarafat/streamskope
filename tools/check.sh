@@ -11,6 +11,7 @@ elif [[ $# -ne 0 ]]; then
 fi
 
 node tools/check/forge-patch.ts --apply
+node --import tsx tools/check/build-dependency-patches.ts --apply
 bash tools/check/workflows.sh
 npx --no-install prettier --check . --ignore-unknown
 npx --no-install eslint . --max-warnings=0

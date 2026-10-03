@@ -7,8 +7,10 @@ import { build } from "vite";
 import { OFFICIAL_PLUGINS } from "../src/platform/node/plugins/official.ts";
 import { buildPlugin } from "./build/plugin.ts";
 import { applyForgePatch } from "./check/forge-patch.ts";
+import { applyBuildDependencyPatches } from "./check/build-dependency-patches.ts";
 
 await applyForgePatch(process.cwd());
+await applyBuildDependencyPatches(process.cwd());
 // Compile all projects once before producing renderer and Electron bundles.
 const compilation = spawnSync(
   process.execPath,
