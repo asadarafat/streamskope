@@ -81,7 +81,7 @@ describe("Electron Kafka profile protection", () => {
   it("waits for a legitimate encrypted credential service that initializes after one second", async () => {
     vi.useFakeTimers();
     const safeStorage = new FakeSafeStorage();
-    safeStorage.isAsyncEncryptionAvailable = () =>
+    safeStorage.isAsyncEncryptionAvailable = (): Promise<boolean> =>
       new Promise((resolve) => {
         setTimeout(() => resolve(true), 1_500);
       });
