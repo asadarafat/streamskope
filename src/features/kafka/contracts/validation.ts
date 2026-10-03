@@ -1,3 +1,5 @@
+import { parseSampleResponse } from "./schema-sample-protocol";
+import { parseSchemaSampleInput, parseRecordBatchInput } from "./schema-samples";
 import { parseSchemaInspectionInput, parseSchemaInspection } from "./schema-inspection";
 import {
   parseKafkaWriteInput,
@@ -243,6 +245,21 @@ export function parseHostCommand(value: unknown): HostCommand {
   }
 
   switch (command) {
+    case "schemas.samples":
+      return { command, id, version, payload: parseSchemaSampleInput(envelope.payload) };
+    case "records.batch.review":
+      return { command, id, version, payload: parseRecordBatchInput(envelope.payload) };
+    case "records.batch.apply":
+    case "records.batch.cancel": {
+      const payload = record(envelope.payload, "command.payload");
+      exactKeys(payload, ["planId"], "command.payload");
+      return {
+        command,
+        id,
+        version,
+        payload: { planId: text(payload.planId, "command.payload.planId", 128) },
+      };
+    }
     case "schemas.inspect":
       return { command, id, version, payload: parseSchemaInspectionInput(envelope.payload) };
     case "records.decode":
@@ -476,6 +493,8 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
   }
 
   const result = record(envelope.result, "response.result");
+  const sampleResponse = parseSampleResponse(command, id, version, result);
+  if (sampleResponse) return sampleResponse;
   if (command === "schemas.inspect") {
     exactKeys(result, ["correlationId", "inspection"], "response.result");
     return {

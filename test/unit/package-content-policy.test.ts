@@ -131,6 +131,7 @@ describe("Electron verification package content policy", () => {
       "ssh2",
     ]);
     for (const dependency of [
+      "ajv",
       "avsc",
       "protobufjs",
       "@emotion/react",

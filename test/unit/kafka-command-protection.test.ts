@@ -35,6 +35,7 @@ function request(name: HostCommand["command"]): HostCommand {
   } as HostCommand;
 }
 const writes = [
+  "records.batch.apply",
   "writes.apply",
   "schemas.register",
   "schemas.delete",

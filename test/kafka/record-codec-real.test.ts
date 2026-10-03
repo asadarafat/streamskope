@@ -197,6 +197,74 @@ it("decodes real Kafka original bytes using authenticated Registry IDs and Proto
         },
       },
     });
+    const endOffset = async (): Promise<bigint | undefined> =>
+      (
+        await admin.listOffsets({
+          topics: [{ name: topic, partitions: [{ partitionIndex: 0, timestamp: -1n }] }],
+        })
+      )[0]?.partitions[0]?.offset;
+    const before = await endOffset();
+    const generated = [];
+    for (const suffix of ["avro", "proto"]) {
+      const response = parseHostCommandResponse(
+        await backend.execute({
+          command: "schemas.samples",
+          id: `sample-${suffix}`,
+          version: HOST_PROTOCOL_VERSION,
+          payload: {
+            subject: `${topic}-${suffix}`,
+            version: 1,
+            seed: 42,
+            count: 2,
+            messageType: "",
+          },
+        }),
+      );
+      if (!response.ok || response.command !== "schemas.samples")
+        throw new Error(JSON.stringify(response));
+      generated.push(...response.result.samples.samples);
+    }
+    expect(await endOffset()).toBe(before); // Preview has no broker side effect.
+    const review = parseHostCommandResponse(
+      await backend.execute({
+        command: "records.batch.review",
+        id: "sample-review",
+        version: HOST_PROTOCOL_VERSION,
+        payload: {
+          topic,
+          partition: 0,
+          ratePerSecond: 10,
+          records: generated.map((sample) => sample.record),
+        },
+      }),
+    );
+    if (!review.ok || review.command !== "records.batch.review")
+      throw new Error(JSON.stringify(review));
+    expect(await endOffset()).toBe(before); // Destination validation also does not produce.
+    const apply = {
+      command: "records.batch.apply" as const,
+      id: "sample-apply",
+      version: HOST_PROTOCOL_VERSION,
+      payload: { planId: review.result.review.planId },
+    };
+    expect(await backend.execute(apply)).toMatchObject({
+      ok: true,
+      result: { outcome: { total: 4, unsent: 0, stopReason: "complete" } },
+    });
+    expect(await endOffset()).toBe(before! + 4n);
+    await backend.execute({ ...apply, id: "duplicate-confirmation" });
+    expect(await endOffset()).toBe(before! + 4n);
+    messages.length = 0;
+    await backend.execute({
+      command: "messages.start",
+      id: "sample-readback",
+      version: HOST_PROTOCOL_VERSION,
+      payload: { mode: "earliest", topic, maxMessages: 8 },
+    });
+    await vi.waitFor(() => expect(messages).toHaveLength(8), { timeout: 10_000 });
+    for (const [index, sample] of generated.entries()) {
+      expect(messages[index + 4]?.original).toEqual(sample.record);
+    }
   } finally {
     await backend.shutdown();
     await producer.close();

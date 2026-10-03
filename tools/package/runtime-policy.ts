@@ -7,6 +7,8 @@ const MEBIBYTE = 1_048_576;
 export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
   backgroundWorkOwnerFiles: Object.freeze([
     "src/features/kafka/application/session.ts",
+    // Reviewed batches own only abortable delays between explicit writes.
+    "src/features/kafka/application/record-batch-service.ts",
     "src/features/kafka/application/trust-acquisition-lifecycle.ts",
     "src/features/kafka/facade/facade-support.ts",
     "src/features/kafka/engine/engine.ts",

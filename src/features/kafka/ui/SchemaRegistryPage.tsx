@@ -31,6 +31,7 @@ import {
 } from "../../../platform/ui/controls";
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
 
+import { SchemaSamplesPanel } from "./SchemaSamplesPanel";
 import { SchemaHistoryPanel } from "./SchemaHistoryPanel";
 import { ResourcePageHeader } from "./ResourcePageHeader";
 import { WorkbenchIcon } from "./WorkbenchIcons";
@@ -348,6 +349,12 @@ export function SchemaRegistryPage({
                   >
                     {selectedSchema.schema}
                   </StudioCodeBlock>
+                  <SchemaSamplesPanel
+                    key={inventory.connectionName}
+                    schema={selectedSchema}
+                    host={host}
+                    enabled={connected && !busy && detail.state === "ready"}
+                  />
                   <SchemaHistoryPanel
                     schema={selectedSchema}
                     versions={detail.versions}

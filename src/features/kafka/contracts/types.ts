@@ -71,11 +71,15 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 36 as const;
+export const HOST_PROTOCOL_VERSION = 37 as const;
 
 export const HOST_COMMANDS = [
   "records.decode",
   "schemas.inspect",
+  "schemas.samples",
+  "records.batch.review",
+  "records.batch.apply",
+  "records.batch.cancel",
   "connection.test",
   "connection.connect",
   "connection.disconnect",
@@ -388,6 +392,18 @@ interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | (HostCommandBase & {
+      readonly command: "schemas.samples";
+      readonly payload: import("./schema-samples").SchemaSampleInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "records.batch.review";
+      readonly payload: import("./schema-samples").RecordBatchInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "records.batch.apply" | "records.batch.cancel";
+      readonly payload: { readonly planId: string };
+    })
   | (HostCommandBase & {
       readonly command: "schemas.inspect";
       readonly payload: import("./schema-inspection").SchemaInspectionInput;

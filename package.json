@@ -42,6 +42,7 @@
     "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "6.0.4",
     "@vitest/coverage-v8": "4.1.11",
+    "ajv": "8.20.0",
     "avsc": "5.7.9",
     "electron": "43.7.6",
     "electron-builder": "26.15.3",

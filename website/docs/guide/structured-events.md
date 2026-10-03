@@ -78,3 +78,51 @@ paths; individual cells show at most 512 characters. Comparison stops at 500 cha
 20,000 visited nodes, depth 32 or 512 KiB of text per input and labels a partial
 result. **No differences** applies only to the selected representation, not to the
 record's timestamp, offset or other unselected fields.
+
+## Generate schema-valid samples
+
+In **Schema Registry**, select an exact subject version and **Generate samples**.
+Set **Seed**, **Sample count** and (for Protobuf) an optional fully qualified
+**Protobuf message type**. **Generate preview** produces the same records for the
+same schema, seed and application version. It performs no Kafka writes and does
+not register schemas. Keys are null and headers empty.
+
+| Schema      | Generated representation                          | Supported constraints and limits                                                                                                                 |
+| ----------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Avro        | Confluent writer-ID framing                       | Records, declared references, defaults, enums, unions, arrays, maps, fixed and primitives; logical types are explicitly unsupported              |
+| Protobuf    | Confluent writer ID plus selected message indexes | Declared imports, nested messages, defaults, enums, oneof, repeated and map fields                                                               |
+| JSON Schema | Plain UTF-8 JSON, without a Confluent header      | Draft-07 types, declared references/JSON Pointer fragments, defaults, enum/const, unions, numeric/string/array bounds; final validation required |
+
+Unsupported constraints fail explicitly. For example, JSON Schema regex patterns,
+formats, conditional schemas and `allOf` are unsupported; reference URI resolution
+requires an exact declared name. No arbitrary URL or file is read. Recursive
+schemas may exceed the depth limit. Generation never substitutes an unchecked
+payload when constraints cannot be satisfied. Logical Avro types can still be
+inspected in **Decoded**, but cannot generate samples.
+
+Generation shares the isolated decoder's two-worker limit, three-second parsing
+budget and bounded Registry lookup. A request accepts at most 50 records, 16 KiB
+each and 512 KiB total; generated structures stop at eight levels and 128 fields
+per object. JSON arrays have at most eight generated items. A failing constraint
+or limit returns an error, not a partial batch.
+
+### Review and publish a batch
+
+Choose a **Destination topic**, **Destination partition** and **Maximum records
+per second**, then **Review batch destination**. Review checks the destination
+without producing. Read the connection, exact topic, partition, count and rate;
+type the topic to confirm and select **Publish reviewed batch**. Changing the
+destination invalidates the review. Read-only mode blocks publishing at the host.
+
+Publishing is sequential, at most ten records per second. Reviews expire after
+two minutes and are tied to one connection. Duplicate confirmation of the same
+retained review returns its existing result; it never resends the batch. This is
+not broker-level exactly-once delivery across application restarts.
+
+**Cancel remaining records** stops future sends after an in-flight record settles.
+Closing the workspace or changing connections also cancels the remaining batch.
+No new send starts after 60 seconds; an in-flight request may settle later. The
+result and Activity entry separately count acknowledged, rejected, uncertain and
+unsent records. The first rejected or uncertain write stops publication. Inspect
+Kafka before creating a new review after uncertainty: do not assume cancellation
+undoes a record already dispatched.
