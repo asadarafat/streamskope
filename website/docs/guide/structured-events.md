@@ -59,3 +59,22 @@ bounded heap and a three-second deadline; the entire lookup/decode request has a
 15-second deadline. A limit failure leaves original bytes unchanged.
 
 [Inspect original record evidence →](messages.md#inspect-a-record)
+
+## Compare two records
+
+In **Message details → Compare**, select **Pin as baseline**, then select another
+record in the same topic. The baseline is a snapshot: rolling-window eviction does
+not change it. Changing topic, connection or protection settings clears it.
+
+Choose **Value**, **Key** or **Ordered headers**, then **Compare records**. Original
+bytes compare the exact Base64 representation. JSON, Avro and Protobuf compare the
+decoded projection using the active Registry. A Kafka null remains distinct from
+an encoded JSON null; missing properties differ from explicit null values. Arrays
+and duplicate headers retain their order. Comparison never writes to Kafka.
+
+Both records require complete, unmasked original bytes. A retained preview cannot
+prove equality. The table labels additions, removals and changes using JSON Pointer
+paths; individual cells show at most 512 characters. Comparison stops at 500 changes,
+20,000 visited nodes, depth 32 or 512 KiB of text per input and labels a partial
+result. **No differences** applies only to the selected representation, not to the
+record's timestamp, offset or other unselected fields.

@@ -14,6 +14,9 @@ inspection, including writer schema IDs, declared references and per-record erro
 Original bytes are unchanged. Integer precision, schema lookup, worker execution
 and disclosure limits are explicit; see [structured records](../guide/structured-events.md).
 
-The paired host/renderer protocol is **35**; upgrade them together. Plugin API
+The paired host/renderer protocol is **36**; upgrade them together. Plugin API
 compatibility is unchanged. This adds inspection, not automatic table decoding,
 custom codecs or a general serializer configuration for producers.
+
+- Compare pinned records by original bytes or decoded structure, including ordered headers and explicit incomplete-input limits.
+- Compare exact schema versions and explore a bounded declared reference tree with missing, cyclic and limited edges.

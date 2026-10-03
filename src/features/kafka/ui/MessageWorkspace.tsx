@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { useEffect, lazy, Suspense, useMemo, useState } from "react";
 import { Box, Drawer, Skeleton, Stack, Typography, useMediaQuery } from "@mui/material";
 
 import {
@@ -141,6 +141,10 @@ export function MessageWorkspace({
     streamSkopeLayout.inspectorMinimumWidth,
     streamSkopeLayout.inspectorMaximumWidth,
   );
+  const [baseline, setBaseline] = useState<KafkaExploredMessage | null>(null);
+  useEffect(() => {
+    if (!connectionAvailable || messagesStale) setBaseline(null);
+  }, [connectionAvailable, messagesStale]);
   const [exportError, setExportError] = useState<string>();
   const [exportStatus, setExportStatus] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -292,6 +296,8 @@ export function MessageWorkspace({
         fallback={<Skeleton aria-label="Loading message inspector" variant="rectangular" />}
       >
         <LazyMessageInspector
+          baseline={baseline}
+          onPin={setBaseline}
           {...(host === undefined ? {} : { host })}
           decodingAvailable={connectionAvailable && !messagesStale}
           message={selectedMessage}

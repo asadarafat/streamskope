@@ -1,3 +1,4 @@
+import { parseSchemaInspectionInput, parseSchemaInspection } from "./schema-inspection";
 import {
   parseKafkaWriteInput,
   parseKafkaWriteReview,
@@ -242,6 +243,8 @@ export function parseHostCommand(value: unknown): HostCommand {
   }
 
   switch (command) {
+    case "schemas.inspect":
+      return { command, id, version, payload: parseSchemaInspectionInput(envelope.payload) };
     case "records.decode":
       return { command, id, version, payload: parseRecordDecodeInput(envelope.payload) };
     case "writes.review":
@@ -473,6 +476,19 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
   }
 
   const result = record(envelope.result, "response.result");
+  if (command === "schemas.inspect") {
+    exactKeys(result, ["correlationId", "inspection"], "response.result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "response.result.correlationId", 128),
+        inspection: parseSchemaInspection(result.inspection),
+      },
+    };
+  }
   if (command === "records.decode") {
     exactKeys(result, ["correlationId", "decoded"], "response.result");
     return {

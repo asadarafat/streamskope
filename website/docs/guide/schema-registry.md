@@ -69,3 +69,22 @@ and version before deletion; permanent deletion can break readers that need it.
 ## Next: read the record
 
 [Inspect a message's value and headers →](messages.md#inspect-a-record)
+
+## Compare versions and follow references
+
+Select a subject and version. **Version history** opens a specific version; it does
+not silently move to latest. Select **Compare from version**, then **Compare schema
+versions** to see additions, removals and changes against the displayed version.
+The comparison names both subject/version pairs and schema IDs. Avro and JSON
+Schema compare structure by default; Protobuf uses source lines. **Compare source
+text** also exposes formatting changes. This view does not replace the Registry's
+compatibility check or prove compatibility for deployed consumers.
+
+**Show reference tree** reads the references declared by that exact version and
+follows their pinned subject/version identities. Follow **Inspect referenced
+version** to open a dependency. A cycle is labelled and not traversed again;
+an unavailable edge may mean a missing version or denied access. A graph can stop
+at 32 nodes, 64 edges, eight levels, 1 MiB of schema data or a 15-second deadline.
+Limits and failures remain visible rather than appearing as an empty dependency
+list. These are schema relationships, not evidence of events flowing through
+producers, topics or consumers.
