@@ -43,6 +43,10 @@ To change where a stopped group resumes, follow
 [Preview and reset consumer offsets](offset-recovery.md). Preview is read-only;
 application requires exact confirmation and a fresh inactive-group baseline.
 
+For timestamped selected-topic history and local thresholds, use
+[Observed health](observed-health.md). Its bounded samples distinguish gaps,
+missing offsets and stale evidence.
+
 ## Stream monitor
 
 If messages stop updating or the display falls behind:

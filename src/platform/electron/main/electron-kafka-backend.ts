@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { AtomicObservationFileStore } from "../../node/kafka-observation-file-store";
 import { AtomicKafkaQueryFileStore } from "../../node/kafka-query-file-store";
 import { UnavailableKafkaProfileStore } from "../../../features/kafka/application";
 import type { KafkaBackendFacade } from "../../../features/kafka/facade";
@@ -69,6 +70,9 @@ export async function createElectronKafkaBackend(
     ),
     plugins,
     new AtomicKafkaQueryFileStore(join(options.userDataPath, "queries", "kafka-queries.json")),
+    new AtomicObservationFileStore(
+      join(options.userDataPath, "history", "kafka-observations.json"),
+    ),
   );
   await plugins.start();
   return backend;
