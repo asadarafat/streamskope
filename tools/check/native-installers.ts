@@ -239,7 +239,7 @@ export async function installNativeRelease(
       await nativeCommand("ditto", [join(mount, "StreamSkope.app"), app]);
       executablePath = join(app, "Contents", "MacOS", "StreamSkope");
       archivePath = join(app, "Contents", "Resources", "app.asar");
-      method = "Replace isolated .app with the application from the published DMG";
+      method = "Replace isolated .app with the application from the verified DMG";
     } finally {
       await nativeCommand("hdiutil", ["detach", mount]);
     }
