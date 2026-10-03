@@ -66,6 +66,10 @@ export function CorrelationTracePanel({
   useEffect(() => {
     setResult(undefined);
     setError(undefined);
+    setBusy(false);
+    setCancelling(false);
+    setTopics(topic);
+    if (!enabled) setOpen(false);
     return (): void => {
       generation.current++;
       const traceId = active.current;
