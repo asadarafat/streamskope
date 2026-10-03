@@ -223,7 +223,7 @@ export async function installNativeRelease(
 export async function uninstallNativeRecovery(plan: NativeRecoveryPlan): Promise<void> {
   if (process.platform !== "win32") return;
   const destination = join(plan.root, "installed", "StreamSkope");
-  const entries = await readdir(destination).catch(() => []);
+  const entries = await readdir(destination).catch((): string[] => []);
   const uninstallers = entries.filter((name) => /^Uninstall.*\.exe$/u.test(name));
   if (entries.includes("StreamSkope.exe") && uninstallers.length === 0)
     throw new Error("Installed application has no owned uninstaller.");
