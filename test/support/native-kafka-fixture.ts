@@ -81,8 +81,13 @@ async function kafkaDistribution(): Promise<string> {
     await run(nativeArchiveExtractor(), ["-xzf", archive, "-C", extracted], { timeout: 60_000 });
     return extracted;
   } catch (error) {
-    await rm(extracted, { recursive: true, force: true });
-    throw new NativeKafkaFixtureError("extract Kafka distribution", error, "", "passed");
+    let cleanup: "passed" | "failed" = "passed";
+    try {
+      await rm(extracted, { recursive: true, force: true });
+    } catch {
+      cleanup = "failed";
+    }
+    throw new NativeKafkaFixtureError("extract Kafka distribution", error, "", cleanup);
   }
 }
 
