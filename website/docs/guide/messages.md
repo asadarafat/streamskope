@@ -302,3 +302,6 @@ host response is lost, **Check attempt result** uses the same plan without sendi
 again. Attempt results are session-local and bounded; after restart, inspect Kafka.
 
 [Trace a correlation ID across topics →](structured-events.md#trace-a-correlation-id-across-topics)
+
+For reviewed recovery, see [copy or replay records](record-replay.md) and
+[preview consumer offset resets](offset-recovery.md).

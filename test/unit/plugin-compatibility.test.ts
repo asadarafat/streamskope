@@ -373,7 +373,7 @@ describe("plugin compatibility declarations", () => {
 });
 
 it.each(["eda", "nsp"])(
-  "qualifies the %s source package for the 0.4 desktop interval without assigning its release version",
+  "qualifies the %s source package for the 0.4 and 0.5 desktop interval without assigning its release version",
   async (plugin) => {
     const value: unknown = JSON.parse(
       await readFile(new URL(`../../plugins/${plugin}/manifest.json`, import.meta.url), "utf8"),
@@ -384,6 +384,8 @@ it.each(["eda", "nsp"])(
     expect(isPluginCompatibleWithHost(released, "v0.4.0")).toBe(true);
     expect(isPluginCompatibleWithHost(released, "v0.4.99")).toBe(true);
     expect(isPluginCompatibleWithHost(released, "v0.3.99")).toBe(false);
-    expect(isPluginCompatibleWithHost(released, "v0.5.0")).toBe(false);
+    expect(isPluginCompatibleWithHost(released, "v0.5.0")).toBe(true);
+    expect(isPluginCompatibleWithHost(released, "v0.5.99")).toBe(true);
+    expect(isPluginCompatibleWithHost(released, "v0.6.0")).toBe(false);
   },
 );
