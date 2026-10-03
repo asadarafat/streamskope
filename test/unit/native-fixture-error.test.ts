@@ -1,7 +1,15 @@
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
 import { expect, it } from "vitest";
 
 import { NativeKafkaFixtureError } from "../support/native-fixture-error";
-import { nativeArchiveExtractor } from "../support/native-kafka-fixture";
+import {
+  nativeArchiveExtractor,
+  startNativeKafkaFixture,
+  disposeNativeFixtureResources,
+} from "../support/native-kafka-fixture";
 
 it("retains a safe Java failure identity without command arguments or exception messages", () => {
   const password = "fixture-secret-sentinel";
@@ -49,4 +57,35 @@ it("uses native Windows archive extraction without depending on Git or MSYS PATH
   expect(() => nativeArchiveExtractor("win32", "relative")).toThrow("absolute SystemRoot");
   expect(nativeArchiveExtractor("darwin", "irrelevant")).toBe("tar");
   expect(nativeArchiveExtractor("linux", "irrelevant")).toBe("tar");
+});
+
+it("removes both owned directories when configuration fails before OAuth or JVM startup", async () => {
+  const extraction = await mkdtemp(join(tmpdir(), "native-extract-test-"));
+  const directory = await mkdtemp(join(tmpdir(), "native-data-test-"));
+  await expect(
+    startNativeKafkaFixture({
+      distribution: () => Promise.resolve(extraction),
+      directory: () => Promise.resolve(directory),
+      configuration: () => Promise.reject(new Error("private configuration failure")),
+    }),
+  ).rejects.toMatchObject({ diagnostic: { phase: "initialize fixture", cleanup: "passed" } });
+  await expect(stat(extraction)).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("still removes later resources when closing an earlier resource fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "native-cleanup-test-"));
+  let subsequentClose = false;
+  await expect(
+    disposeNativeFixtureResources([
+      (): Promise<void> => Promise.reject(new Error("simulated stream close failure")),
+      (): Promise<void> => {
+        subsequentClose = true;
+        return Promise.resolve();
+      },
+      (): Promise<void> => rm(directory, { recursive: true, force: true }),
+    ]),
+  ).rejects.toThrow("Native fixture cleanup failed");
+  expect(subsequentClose).toBe(true);
+  await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
 });

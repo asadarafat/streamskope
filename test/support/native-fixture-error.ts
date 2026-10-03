@@ -1,6 +1,7 @@
 export type NativeFixturePhase =
   | "prepare Kafka distribution"
   | "extract Kafka distribution"
+  | "initialize fixture"
   | "initialize OAuth"
   | "generate fixture TLS key"
   | "format broker storage"
