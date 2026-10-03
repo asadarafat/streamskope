@@ -2,7 +2,8 @@
 
 | Desktop release                     | App/installer version  | Status and contents                                                                                          |
 | ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| [Unreleased changes](unreleased.md) | Assigned by release CI | Development changes after v0.4.0                                                                             |
+| [Unreleased changes](unreleased.md) | Assigned by release CI | Development changes after v0.5.0                                                                             |
+| [v0.5.0](v0.5.0.md)                 | 0.5.0                  | Published unsigned release: offset recovery, record replay and exact ACL access review                       |
 | [v0.4.0](v0.4.0.md)                 | 0.4.0                  | Published unsigned release: structured decoding, comparisons, schema samples and correlation tracing         |
 | [v0.3.0](v0.3.0.md)                 | 0.3.0                  | Published unsigned release: original records, reviewed writes, read-only/masking and reliable administration |
 | [v0.2.0](v0.2.0.md)                 | 0.2.0                  | Published unsigned release: historical queries, saved/shared investigations and plugin API 4                 |
