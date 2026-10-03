@@ -54,7 +54,8 @@ export async function startProtectedStorageSession(root: string): Promise<{
           failure ??= error;
       }
     }
-    if (failure !== undefined) throw failure;
+    if (failure !== undefined)
+      throw failure instanceof Error ? failure : new Error("Protected storage cleanup failed.");
   }
   try {
     const bus = await run(
