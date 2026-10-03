@@ -13,6 +13,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/engine/platformatic-latency.ts",
     // Finite reads own a deadline that is cleared when iteration ends.
     "src/features/kafka/engine/platformatic-consumer.ts",
+    // Each explicit decode owns a worker deadline cleared on every settlement path.
+    "src/features/kafka/engine/record-codec.ts",
     "src/features/kafka/ui/LatencyWorkspace.tsx",
     "src/features/kafka/ui/OperationalPreferencesDialog.tsx",
     "src/features/kafka/ui/TrustRecipeManager.tsx",

@@ -14,6 +14,7 @@ import type {
   SchemaRegistrySubjectDetail,
   SchemaRegistrySubjectInventory,
 } from "../application/schema-registry-types";
+import type { RegisteredSchema } from "../application/record-codec-types";
 
 import type { BoundedJsonHttpPort, BoundedJsonHttpResponse } from "./bounded-json-http";
 
@@ -98,6 +99,49 @@ function serviceUrl(context: KafkaClusterServiceContext, path: string): string {
 
 export class SchemaRegistryHttpAdapter {
   constructor(private readonly http: BoundedJsonHttpPort) {}
+
+  async byId(
+    context: KafkaClusterServiceContext,
+    id: number,
+    signal: AbortSignal,
+  ): Promise<RegisteredSchema> {
+    const body = record(
+      successful(await this.request(context, signal, "GET", `/schemas/ids/${String(id)}`)),
+    );
+    const parsed = schemaVersion({ ...body, id, subject: "schema-id", version: 1 });
+    return {
+      id: parsed.id,
+      schema: parsed.schema,
+      schemaType: parsed.schemaType,
+      references: parsed.references,
+    };
+  }
+
+  async byVersion(
+    context: KafkaClusterServiceContext,
+    subject: string,
+    version: number,
+    signal: AbortSignal,
+  ): Promise<RegisteredSchema> {
+    const parsed = schemaVersion(
+      successful(
+        await this.request(
+          context,
+          signal,
+          "GET",
+          `/subjects/${encodeURIComponent(subject)}/versions/${String(version)}`,
+        ),
+      ),
+    );
+    if (parsed.subject !== subject || parsed.version !== version)
+      throw new SchemaRegistryResponseError(null);
+    return {
+      id: parsed.id,
+      schema: parsed.schema,
+      schemaType: parsed.schemaType,
+      references: parsed.references,
+    };
+  }
 
   async listSubjects(
     context: KafkaClusterServiceContext,

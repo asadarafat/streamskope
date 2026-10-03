@@ -37,6 +37,7 @@ import type { PluginRuntimePort } from "../../plugins/api";
 
 import { NodeHttpsTrustAcquisition } from "./https-trust-acquisition";
 import { createHostTrustMaterialDecoder } from "./trust-material-decoder";
+import { createHostRecordCodec } from "./record-codec";
 import { Ssh2KafkaRemoteTrustAdapter } from "./ssh2-kafka-remote-trust-adapter";
 
 const browserProfileCapability = {
@@ -117,6 +118,7 @@ export function createKafkaBackend(
     resolveRecipe: recipes.resolve.bind(recipes),
   });
   const serviceHttp = new NodeBoundedJsonHttp();
+  const schemaRegistry = new SchemaRegistryHttpAdapter(serviceHttp);
   return new KafkaBackendFacade(
     session,
     profiles,
@@ -128,7 +130,9 @@ export function createKafkaBackend(
       ...(plugins === undefined ? {} : { plugins }),
       preferences,
       queries: new KafkaQueryLibrary(queryStore),
-      schemaRegistry: new SchemaRegistryHttpAdapter(serviceHttp),
+      schemaRegistry,
+      schemaLookup: schemaRegistry,
+      recordCodec: createHostRecordCodec(),
       transforms: new RedpandaTransformHttpAdapter(serviceHttp),
       trustAcquisitions,
     },

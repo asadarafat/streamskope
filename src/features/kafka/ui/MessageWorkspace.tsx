@@ -55,6 +55,7 @@ const LazyMessageInspector = lazy(() => import("./MessageInspector"));
 const FETCH_MAXIMUM_PRESETS = [10, 100, 500, 1_000] as const;
 
 export function MessageWorkspace({
+  host,
   component = "main",
   connectionAvailable,
   unavailableFilterRecords = 0,
@@ -91,6 +92,7 @@ export function MessageWorkspace({
   selectionNotice,
   transfer = browserTextDocumentTransfer,
 }: {
+  readonly host?: import("../contracts").StreamSkopeHost;
   readonly component?: "main" | "section";
   readonly connectionAvailable: boolean;
   readonly unavailableFilterRecords?: number;
@@ -290,6 +292,8 @@ export function MessageWorkspace({
         fallback={<Skeleton aria-label="Loading message inspector" variant="rectangular" />}
       >
         <LazyMessageInspector
+          {...(host === undefined ? {} : { host })}
+          decodingAvailable={connectionAvailable && !messagesStale}
           message={selectedMessage}
           onClose={onClearSelection}
           transfer={transfer}

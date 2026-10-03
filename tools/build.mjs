@@ -48,6 +48,11 @@ const entries = [
     input: resolve(repositoryRoot, "src/features/kafka/engine/trust-material-worker.ts"),
     name: "trust-material-worker",
   },
+  {
+    emptyOutDir: false,
+    input: resolve(repositoryRoot, "src/features/kafka/engine/record-codec-worker.ts"),
+    name: "record-codec-worker",
+  },
 ];
 
 for (const entry of entries) {

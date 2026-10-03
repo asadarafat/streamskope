@@ -55,6 +55,32 @@ const writes = [
 ] as const;
 
 describe("host record protection", () => {
+  it("rejects direct decoding while masking is enabled before reaching a codec", async () => {
+    const service = new KafkaOperationalPreferenceService(
+      new InMemoryKafkaOperationalPreferenceStore(
+        { durability: "session", state: "ready" },
+        {
+          ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+          protection: { readOnly: false, maskKey: true, maskHeaders: [], valuePaths: [] },
+        },
+      ),
+    );
+    const facade = createFacade(
+      new RecordingConnectionPort(),
+      undefined,
+      undefined,
+      undefined,
+      service,
+    );
+    expect(
+      await facade.execute({
+        command: "records.decode",
+        id: "no-bypass",
+        version: HOST_PROTOCOL_VERSION,
+        payload: { format: "json", bytes: "e30=" },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });
+  });
   it.each(writes)("rejects direct %s before it reaches any adapter or plugin", async (name) => {
     const port = new RecordingConnectionPort();
     const open = vi.spyOn(port, "openConnection");

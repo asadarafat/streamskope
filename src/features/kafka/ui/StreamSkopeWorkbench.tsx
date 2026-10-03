@@ -487,6 +487,7 @@ export function StreamSkopeWorkbench({
         }}
       >
         <MessageWorkspace
+          host={host}
           unavailableFilterRecords={messageSelection.unavailable}
           readCoverage={state.readCoverage}
           onSearch={(filter) => {

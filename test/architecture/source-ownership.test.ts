@@ -75,6 +75,7 @@ it("keeps source modules reachable from production and development entrypoints",
     "src/platform/electron/main/electron-entry.ts",
     "src/platform/electron/preload/index.ts",
     "src/features/kafka/engine/trust-material-worker.ts",
+    "src/features/kafka/engine/record-codec-worker.ts",
   ];
   const build = readFileSync(resolve(root, "tools/build.mjs"), "utf8");
   for (const entry of entries) expect(build).toContain(entry);

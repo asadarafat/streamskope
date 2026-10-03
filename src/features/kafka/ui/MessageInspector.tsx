@@ -6,6 +6,7 @@ import {
   type KafkaExploredMessage,
   type KafkaLiveRuleMatch,
   type KafkaLiveRuleUnavailableReason,
+  type StreamSkopeHost,
 } from "../contracts";
 import { StudioDetailRow } from "../../../platform/ui/StudioPropertyRow";
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
@@ -30,8 +31,11 @@ import {
 } from "./text-document-transfer";
 import { formatUtcTimestamp } from "./timestamp-presentation";
 import { OriginalRecordEvidence } from "./OriginalRecordEvidence";
+import { RecordDecodePanel } from "./RecordDecodePanel";
 
 export interface MessageInspectorProperties {
+  readonly host?: StreamSkopeHost;
+  readonly decodingAvailable?: boolean;
   readonly message: KafkaExploredMessage;
   readonly onClose: () => void;
   readonly transfer?: TextDocumentTransferPort;
@@ -256,6 +260,8 @@ function MessageScratchEditor({
 }
 
 export function MessageInspector({
+  host,
+  decodingAvailable = false,
   message,
   onClose,
   transfer = browserTextDocumentTransfer,
@@ -269,9 +275,9 @@ export function MessageInspector({
   const [payloadView, setPayloadView] = useState<"formatted" | "raw">(
     formatted === null ? "raw" : "formatted",
   );
-  const [section, setSection] = useState<"key" | "metadata" | "rules" | "value" | "original">(
-    "metadata",
-  );
+  const [section, setSection] = useState<
+    "key" | "metadata" | "rules" | "value" | "original" | "decoded"
+  >("metadata");
   const [copying, setCopying] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [operationError, setOperationError] = useState<string>();
@@ -378,7 +384,10 @@ export function MessageInspector({
       </Box>
       <Tabs
         aria-label="Message evidence"
-        onChange={(_event, value: "key" | "metadata" | "rules" | "value" | "original") => {
+        onChange={(
+          _event,
+          value: "key" | "metadata" | "rules" | "value" | "original" | "decoded",
+        ) => {
           setSection(value);
         }}
         sx={{
@@ -393,6 +402,7 @@ export function MessageInspector({
         <Tab label="Key" value="key" />
         <Tab label="Value" value="value" />
         <Tab label="Original" value="original" />
+        {host === undefined ? null : <Tab label="Decoded" value="decoded" />}
         <Tab label="Rules" value="rules" />
       </Tabs>
       <Box
@@ -401,6 +411,14 @@ export function MessageInspector({
         sx={{ minHeight: 0, overflow: "auto" }}
         tabIndex={0}
       >
+        {section === "decoded" && host !== undefined ? (
+          <RecordDecodePanel
+            key={message.id}
+            original={message.original}
+            host={host}
+            enabled={decodingAvailable}
+          />
+        ) : null}
         {section === "original" ? (
           <OriginalRecordEvidence
             key={message.id}
