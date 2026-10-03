@@ -88,6 +88,28 @@ For Electron/web system tests, use `node tools/package/e2e.mjs electron`
 (or `web`) with their runtime prerequisites available. Benchmarks and fixture
 utilities can be invoked directly through `node --import tsx PATH`.
 
+The manual **Native recovery** workflow takes two already published desktop
+versions and rehearses installer replacement on Linux x64, Windows x64 and macOS
+ARM64. It downloads each release's installer and verifies `SHA256SUMS`, creates
+an isolated application-data directory, saves a protected profile and query in
+the old release, replaces the app, and restores the complete old backup in the
+new release. Reconnection and a filtered known-record export must pass without
+re-entering credentials. Only the sanitized report is uploaded; app data,
+credentials, browser traces and broker logs are removed.
+
+Run the same check locally on a supported native platform with
+`node --import tsx tools/check/native-recovery.ts --from 0.6.0 --to 0.7.0`.
+It needs Java 17+ and an unlocked credential service. Without explicit fixture
+connection variables, it starts a checksum-pinned, loopback-only JVM Kafka
+broker with TLS and RS256 OAuth authentication. Linux also requires Xvfb, D-Bus
+and GNOME Keyring; it creates a temporary Secret Service session. Windows runs
+only on disposable Actions accounts because NSIS also changes user registration
+and shortcuts. macOS copies the DMG application into an isolated directory;
+Linux replaces the AppImage and launches its extracted native application.
+This qualifies the native payload and credential recovery, not Linux FUSE or
+desktop launcher integration. The workflow is separate from ordinary PR CI and
+does not publish a release or authorize cross-account credential portability.
+
 Within `src/features/kafka`, keep behavior with its owner. The UI's
 `StreamSkopeWorkbench` composes views; `useWorkbenchActivity`, `useWorkbenchProfiles`
 and `useWorkbenchTopics` own their interaction state and effects. The facade's

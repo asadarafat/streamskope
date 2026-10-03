@@ -1,0 +1,75 @@
+name: Native recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_version:
+        description: Published desktop version to upgrade from (without v)
+        required: true
+        type: string
+      to_version:
+        description: Published desktop version to upgrade to (without v)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  recovery:
+    name: Recovery (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      RECOVERY_FROM: ${{ inputs.from_version }}
+      RECOVERY_TO: ${{ inputs.to_version }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.12.0
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci --no-audit --no-fund
+      - name: Install Linux desktop credential service
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y dbus-x11 gnome-keyring libsecret-1-0 xvfb
+          npx --no-install playwright install-deps chromium
+      - name: Prepare disposable macOS Keychain
+        if: runner.os == 'macOS'
+        run: |
+          keychain_password=$(openssl rand -hex 32)
+          keychain_path="$RUNNER_TEMP/streamskope-recovery.keychain-db"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 3600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -d user -s "$keychain_path"
+      - name: Replace released installer and verify protected recovery
+        run: node --import tsx tools/check/native-recovery.ts --from "$RECOVERY_FROM" --to "$RECOVERY_TO"
+      - name: Remove disposable macOS Keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          keychain_path="$RUNNER_TEMP/streamskope-recovery.keychain-db"
+          if [[ -f "$keychain_path" ]]; then security delete-keychain "$keychain_path"; fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: native-recovery-${{ runner.os }}-${{ runner.arch }}
+          path: dist/native-recovery/*.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -2,6 +2,8 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { startNativeKafkaFixture } from "../../test/support/native-kafka-fixture";
+
 import {
   downloadNativeInstaller,
   installerName,
@@ -25,13 +27,16 @@ async function main(): Promise<void> {
   if (process.platform === "win32" && process.env.GITHUB_ACTIONS !== "true") {
     throw new Error("Windows installer recovery requires a disposable GitHub Actions account.");
   }
-  for (const name of [
+  const fixtureVariables = [
     "STREAMSKOPE_TEST_KAFKA_ENDPOINT",
     "STREAMSKOPE_TEST_OAUTH_ENDPOINT",
     "STREAMSKOPE_TEST_CA_PATH",
-  ]) {
-    if (!process.env[name])
-      throw new Error(`Provide ${name} for the disposable TLS/OAuth Kafka fixture.`);
+  ];
+  const supplied = fixtureVariables.filter((name) => process.env[name]);
+  if (supplied.length !== 0 && supplied.length !== fixtureVariables.length) {
+    throw new Error(
+      "Provide all three STREAMSKOPE_TEST_* connection variables, or none to start the owned fixture.",
+    );
   }
   const output = resolve("dist", "native-recovery");
   const outputPath = join(output, `${process.platform}-${process.arch}.json`);
@@ -39,6 +44,7 @@ async function main(): Promise<void> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "streamskope native-recovery-")));
   let plan: NativeRecoveryPlan | undefined;
   let report: Record<string, unknown> | undefined;
+  let fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>> | undefined;
   try {
     plan = {
       schemaVersion: 1,
@@ -48,6 +54,10 @@ async function main(): Promise<void> {
       from: await downloadNativeInstaller(from, root),
       to: await downloadNativeInstaller(to, root),
     };
+    if (supplied.length === 0) {
+      fixture = await startNativeKafkaFixture();
+      Object.assign(process.env, fixture.environment);
+    }
     process.env.STREAMSKOPE_NATIVE_RECOVERY_PLAN = await writeRecoveryPlan(plan);
     process.env.STREAMSKOPE_NATIVE_RECOVERY = "1";
     await nativeCommand(
@@ -61,7 +71,11 @@ async function main(): Promise<void> {
     try {
       if (plan !== undefined) await uninstallNativeRecovery(plan);
     } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 3 });
+      try {
+        await fixture?.dispose();
+      } finally {
+        await rm(root, { recursive: true, force: true, maxRetries: 3 });
+      }
     }
   }
   if (plan === undefined || report === undefined)
@@ -77,6 +91,7 @@ async function main(): Promise<void> {
         capturedAt: new Date().toISOString(),
         command: `node --import tsx tools/check/native-recovery.ts --from ${from} --to ${to}`,
         installers: [plan.from, plan.to].map(({ path: _path, ...published }) => published),
+        fixture: fixture?.metadata ?? { source: "explicit external disposable fixture" },
         ...report,
       },
       null,
