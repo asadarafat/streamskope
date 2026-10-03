@@ -88,3 +88,10 @@ at 32 nodes, 64 edges, eight levels, 1 MiB of schema data or a 15-second deadlin
 Limits and failures remain visible rather than appearing as an empty dependency
 list. These are schema relationships, not evidence of events flowing through
 producers, topics or consumers.
+
+## Generate samples
+
+Select an exact schema version, then **Generate samples** to preview seeded,
+schema-valid records without writing to Kafka. Publishing uses a separate
+destination review and confirmation. See [supported schema forms, batch limits
+and cancellation outcomes](structured-events.md#generate-schema-valid-samples).

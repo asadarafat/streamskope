@@ -45,12 +45,21 @@ const object = (value: unknown): Record<string, unknown> => {
 };
 const numeric = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
+const parseSchema = (source: string): unknown =>
+  JSON.parse(source, (_key: string, value: unknown) => {
+    if (
+      typeof value === "number" &&
+      (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value)))
+    )
+      throw new Error("JSON sample schemas require finite numbers and safe integer values.");
+    return value;
+  }) as unknown;
 
 export function jsonSampleGenerator(
   bundle: CodecSchemaBundle,
   random: () => number,
 ): () => unknown {
-  const root: unknown = JSON.parse(bundle.root.schema);
+  const root = parseSchema(bundle.root.schema);
   const documents = new Map<string, unknown>([["", root]]);
   const validator = new Ajv({
     strict: true,
@@ -59,6 +68,10 @@ export function jsonSampleGenerator(
     logger: false,
     code: { optimize: false },
   });
+  validator.addMetaSchema(
+    { $ref: "http://json-schema.org/draft-07/schema#" },
+    "https://json-schema.org/draft-07/schema#",
+  );
   const checkKeywords = (schema: unknown, depth: number): void => {
     if (depth > 32) throw new Error("JSON Schema is too deeply nested.");
     if (typeof schema === "boolean") return;
@@ -85,7 +98,7 @@ export function jsonSampleGenerator(
   for (const { name, schema } of bundle.dependencies) {
     if (schema.schemaType !== "JSON")
       throw new Error("JSON references require JSON Schema definitions.");
-    const parsed: unknown = JSON.parse(schema.schema);
+    const parsed = parseSchema(schema.schema);
     checkKeywords(parsed, 0);
     documents.set(name, parsed);
     validator.addSchema(parsed as object, name);

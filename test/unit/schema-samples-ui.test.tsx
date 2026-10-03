@@ -23,6 +23,7 @@ const schema: SchemaVersionDetail = {
 };
 class Host implements StreamSkopeHost {
   commands: HostCommand[] = [];
+  rejectPublish = false;
   settle?: (outcome: RecordBatchOutcome) => void;
   execute<C extends HostCommand>(command: C): Promise<HostCommandResponse<C["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
@@ -66,6 +67,22 @@ class Host implements StreamSkopeHost {
             expiresAt: "2026-10-03T10:00:00Z",
             input: command.payload,
           },
+        },
+      });
+    if (command.command === "records.batch.apply" && this.rejectPublish)
+      return Promise.resolve({
+        command: command.command,
+        id: command.id,
+        version: command.version,
+        ok: false,
+        error: {
+          code: "AUTHORIZATION_DENIED",
+          stage: "authorization",
+          correlationId: "c",
+          activeStateChanged: false,
+          retryable: false,
+          summary: "Read-only mode blocks this operation.",
+          recovery: "Review Protection before publishing.",
         },
       });
     if (command.command === "records.batch.apply")
@@ -144,4 +161,16 @@ it("waits for in-flight accounting after cancellation and does not offer to rese
     "records.batch.apply",
     "records.batch.cancel",
   ]);
+});
+
+it("shows a known host rejection without claiming an uncertain dispatch", async () => {
+  const host = new Host();
+  host.rejectPublish = true;
+  const user = await preview(host);
+  await user.type(screen.getByLabelText("Destination topic"), "test.events");
+  await user.click(screen.getByRole("button", { name: "Review batch destination" }));
+  await user.type(await screen.findByLabelText("Type destination topic to confirm"), "test.events");
+  await user.click(screen.getByRole("button", { name: "Publish reviewed batch" }));
+  expect(await screen.findByText(/Read-only mode blocks this operation/u)).toBeVisible();
+  expect(screen.queryByText(/batch result is unavailable/u)).not.toBeInTheDocument();
 });

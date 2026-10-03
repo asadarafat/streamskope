@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import packageMetadata from "../../package.json";
@@ -369,3 +371,19 @@ describe("plugin compatibility declarations", () => {
     ).toThrow(/unsupported/u);
   });
 });
+
+it.each(["eda", "nsp"])(
+  "qualifies the %s source package for the 0.4 desktop interval without assigning its release version",
+  async (plugin) => {
+    const value: unknown = JSON.parse(
+      await readFile(new URL(`../../plugins/${plugin}/manifest.json`, import.meta.url), "utf8"),
+    );
+    const development = parsePluginManifest(value);
+    expect(development.version).toBe("0.0.0-dev");
+    const released = parsePluginManifest({ ...development, version: "0.1.0" });
+    expect(isPluginCompatibleWithHost(released, "v0.4.0")).toBe(true);
+    expect(isPluginCompatibleWithHost(released, "v0.4.99")).toBe(true);
+    expect(isPluginCompatibleWithHost(released, "v0.3.99")).toBe(false);
+    expect(isPluginCompatibleWithHost(released, "v0.5.0")).toBe(false);
+  },
+);

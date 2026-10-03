@@ -3,9 +3,11 @@ import {
   AclPermissionTypes,
   ResourcePatternTypes,
   ResourceTypes,
+  Producer,
 } from "@platformatic/kafka";
 import { expect, it } from "vitest";
 
+import { traceCorrelation } from "../../src/features/kafka/application/correlation-trace-service";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import { PlatformaticAdminPort } from "../../src/features/kafka/engine/platformatic-admin";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
@@ -22,6 +24,19 @@ it("reconciles exact ACL bindings and reports real produce, group and ACL permis
   let connection: Awaited<ReturnType<StreamSkopeKafkaEngine["openConnection"]>> | undefined;
   try {
     await fixture.admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
+    const seed = new Producer({
+      bootstrapBrokers: [...fixture.connection.brokers],
+      clientId: "trace-permission-seed",
+      retries: 0,
+      autocreateTopics: false,
+    });
+    try {
+      await seed.send({
+        messages: [{ topic, partition: 0, key: Buffer.from("cid"), value: Buffer.from("fixture") }],
+      });
+    } finally {
+      await seed.close();
+    }
     const privileged = new PlatformaticAdminPort(fixture.admin);
     const exact = {
       host: "*",
@@ -145,7 +160,23 @@ it("reconciles exact ACL bindings and reports real produce, group and ACL permis
     const offsets = await fixture.admin.listOffsets({
       topics: [{ name: topic, partitions: [{ partitionIndex: 0, timestamp: -1n }] }],
     });
-    expect(offsets[0]?.partitions[0]?.offset).toBe(0n);
+    expect(offsets[0]?.partitions[0]?.offset).toBe(1n);
+    const trace = await traceCorrelation(
+      connection,
+      "Denied fixture",
+      {
+        traceId: "denied-trace",
+        topics: [topic],
+        startTimeMs: Date.now() - 120_000,
+        endTimeMs: Date.now() + 1000,
+        value: "cid",
+        selector: { source: "key", path: "", format: "json" },
+      },
+      AbortSignal.timeout(30_000),
+    );
+    expect(trace.topics).toMatchObject([
+      { topic, state: "denied", reason: "permission-denied", matches: 0 },
+    ]);
   } finally {
     await connection?.close();
     await fixture.dispose();

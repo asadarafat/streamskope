@@ -1,3 +1,4 @@
+import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
 import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
 import { parseSchemaInspectionInput, parseSchemaInspection } from "./schema-inspection";
 import {
@@ -235,6 +236,7 @@ export function parseHostCommand(value: unknown): HostCommand {
   const id = text(envelope.id, "command.id", 128);
   const command = declaredValue(envelope.command, HOST_COMMANDS, "command.command");
   const clusterServiceCommand =
+    parseCorrelationCommand(command, id, envelope.payload, version) ??
     parseSampleCommand(command, id, envelope.payload, version) ??
     parsePluginHostCommand(command, id, envelope.payload, version) ??
     parseTrustEditorCommand(command, id, envelope.payload, version) ??
@@ -478,7 +480,9 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
   }
 
   const result = record(envelope.result, "response.result");
-  const sampleResponse = parseSampleResponse(command, id, version, result);
+  const sampleResponse =
+    parseCorrelationResponse(command, id, result, version) ??
+    parseSampleResponse(command, id, version, result);
   if (sampleResponse) return sampleResponse;
   if (command === "schemas.inspect") {
     exactKeys(result, ["correlationId", "inspection"], "response.result");

@@ -88,7 +88,7 @@ it.each(["eda", "nsp"] as const)(
     expect(notes).toContain(`# ${component.toUpperCase()} Capture 0.2.0`);
     expect(notes).toContain("Back up saved profiles.");
     expect(notes).toContain("Live tests are unverified.");
-    expect(notes).toContain("Requires StreamSkope >=0.3.0 and <0.4.0.");
+    expect(notes).toContain("Requires StreamSkope >=0.4.0 and <0.5.0.");
     expect(notes).toContain(
       `Supports ${component.toUpperCase()} ${component === "eda" ? "26.8.2 through 26.8.2" : "26.4.0 through 26.4.0"}`,
     );

@@ -71,9 +71,11 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 37 as const;
+export const HOST_PROTOCOL_VERSION = 38 as const;
 
 export const HOST_COMMANDS = [
+  "records.trace",
+  "records.trace.cancel",
   "records.decode",
   "schemas.inspect",
   "schemas.samples",
@@ -392,6 +394,14 @@ interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | (HostCommandBase & {
+      readonly command: "records.trace";
+      readonly payload: import("./correlation-trace").CorrelationTraceInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "records.trace.cancel";
+      readonly payload: { readonly traceId: string };
+    })
   | (HostCommandBase & {
       readonly command: "schemas.samples";
       readonly payload: import("./schema-samples").SchemaSampleInput;
