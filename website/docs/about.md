@@ -7,7 +7,7 @@ window. The source is licensed under Apache-2.0.
 ## Current scope
 
 Kafka is the core broker integration. Schema Registry is a separate service;
-Redpanda transform inspection requires the Redpanda Admin API. Support for other
+Kafka Connect uses a configured Connect REST endpoint, and Redpanda transform inspection requires the Redpanda Admin API. Support for other
 event systems is not implied by the product name.
 
 See [installation](start/installation.md) for desktop packages, supported build

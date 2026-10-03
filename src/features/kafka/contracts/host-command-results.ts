@@ -49,6 +49,10 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
     readonly outcome: import("./environment-snapshot").EnvironmentOutcome;
   };
 
+  readonly "schemas.client": {
+    readonly correlationId: string;
+    readonly client: import("./schema-client").SchemaClient;
+  };
   readonly "acls.access.explain": {
     readonly correlationId: string;
     readonly explanation: import("./acl-review").TopicAccessExplanation;
@@ -157,6 +161,7 @@ const structuredResults = {
   "environments.review": true,
   "environments.apply": true,
 
+  "schemas.client": true,
   "acls.access.explain": true,
   "acls.change.review": true,
   "acls.change.apply": true,

@@ -1,5 +1,6 @@
 import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
 import { parseEnvironmentCommand, parseEnvironmentResponse } from "./environment-protocol";
+import { parseSchemaClient } from "./schema-client";
 import { parseRecoveryCommand, parseRecoveryResponse } from "./recovery-protocol";
 import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
 import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
@@ -253,6 +254,7 @@ export function parseHostCommand(value: unknown): HostCommand {
   }
 
   switch (command) {
+    case "schemas.client":
     case "schemas.inspect":
       return { command, id, version, payload: parseSchemaInspectionInput(envelope.payload) };
     case "records.decode":
@@ -493,6 +495,19 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
     parseCorrelationResponse(command, id, result, version) ??
     parseSampleResponse(command, id, version, result);
   if (sampleResponse) return sampleResponse;
+  if (command === "schemas.client") {
+    exactKeys(result, ["correlationId", "client"], "result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "correlationId", 128),
+        client: parseSchemaClient(result.client),
+      },
+    };
+  }
   if (command === "schemas.inspect") {
     exactKeys(result, ["correlationId", "inspection"], "response.result");
     return {

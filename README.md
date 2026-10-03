@@ -40,6 +40,8 @@ version when starting release CI; PR checks only qualify changes for `main`.
 - Use host read-only controls and deterministic record masking.
 - Investigate consumer lag, stream activity and producer/consumer probe latency.
 - Manage topic configuration, Schema Registry and ACLs.
+- Manage Kafka Connect, validate connector configuration and inspect supported DLQ context.
+- Compare topic settings across clusters and promote selected, reviewed differences.
 - Test message rules and inspect deployed Redpanda transforms.
 - Save TLS and OAuth connection profiles, with optional SSH or HTTPS secret retrieval.
 
@@ -79,7 +81,7 @@ Installer availability is verified before the site is published.
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the five project commands, checks and
-release process. The [development sandbox](website/docs/start/development.md)
+release process. The [source workbench](website/docs/start/development.md)
 provides disposable local Kafka and requires Node, Docker, Containerlab and Java.
 
 ## Fund development

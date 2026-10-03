@@ -119,7 +119,7 @@ before approving an endpoint. Broker-profile trust does not configure the EDA AP
 Disconnect Kafka and finish any active plugin capture or cleanup, then enable
 **Preferences → Protection → Read-only mode**. The status bar shows **Read-only**.
 The host rejects remote mutations before dispatch, including direct host commands:
-Kafka configuration, offset resets, record replay and ACL writes, Schema Registry registration and deletion,
+Kafka configuration and environment promotion, Connect lifecycle actions, offset resets, record replay and ACL writes, Schema Registry registration and deletion,
 transform deletion, latency probes, remote credential acquisition, and plugin
 actions or installation/removal. New commands must declare their access category.
 
@@ -132,8 +132,7 @@ leaving read-only mode; finish them before enabling it.
 
 This is an operator safeguard, not role-based authorization. A local user can
 change it, and trusted installed plugin code is not sandboxed. Broker and Registry
-permissions remain the final enforcement boundary. There is no general-purpose
-CLI in this release; any future host command must use the same access policy.
+permissions remain the final enforcement boundary. The [source CLI](read-only-cli.md) exposes only inspect/query/export. It uses explicit private connection and masking configuration, always enables read-only behavior, and rejects broker-side search while masking is active. It does not inherit desktop preferences or activate plugins. New host commands must use the same access policy.
 
 Workbench preference reset preserves protection settings. If preferences cannot
 be read, remote operations fail closed. Restore the file or explicitly reset while

@@ -9,7 +9,26 @@ import process from "node:process";
 import { applyForgePatch } from "./check/forge-patch.ts";
 
 // Native health runs in an isolated child before loading tsx or the application.
-if (process.argv[2] === "--health") {
+if (["cli", "sandbox"].includes(process.argv[2])) {
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      process.argv[2] === "cli" ? "tools/cli.ts" : "tools/sandbox.ts",
+      ...process.argv.slice(3),
+    ],
+    { stdio: "inherit" },
+  );
+  for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => child.kill(signal));
+  child.once("error", () => {
+    process.stderr.write("Developer command could not start. Check Node 24 and npm ci.\n");
+    process.exitCode = 1;
+  });
+  child.once("exit", (code) => {
+    process.exitCode = code ?? 1;
+  });
+} else if (process.argv[2] === "--health") {
   const require = createRequire(import.meta.url);
   require("esbuild").transformSync("const value: number = 1", { loader: "ts" });
   await import("vite");

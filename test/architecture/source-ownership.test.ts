@@ -82,6 +82,8 @@ it("keeps source modules reachable from production and development entrypoints",
 
   const renderer = "src/platform/electron/renderer/main.tsx";
   const development = "tools/dev/start.ts";
+  const cli = "tools/cli.ts";
+  expect(readFileSync(resolve(root, "tools/dev.mjs"), "utf8")).toContain(cli);
   const pluginEntries = OFFICIAL_PLUGINS.flatMap((plugin) => [
     `plugins/${plugin.directory}/backend/index.ts`,
     `plugins/${plugin.directory}/ui/renderer.tsx`,
@@ -96,7 +98,7 @@ it("keeps source modules reachable from production and development entrypoints",
   expect(
     unreachableSourceFiles(
       root,
-      [...entries, renderer, development, ...pluginEntries],
+      [...entries, renderer, development, cli, ...pluginEntries],
       ["src", "plugins"],
     ),
   ).toEqual([]);

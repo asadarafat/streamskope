@@ -1,10 +1,13 @@
-# Development sandbox with local Kafka
+# Source workbench with local Kafka
 
 Start the local workbench, connect to the included AIO Kafka broker, and inspect
 one record. You do not need an existing Kafka cluster for this walkthrough.
 
 This walkthrough is for a source checkout. For the released application, use the
 [desktop quickstart](quickstart.md).
+
+For a smaller consumer/transform exercise with a Kafka Connect worker, use the
+[consumer sandbox](../guide/developer-sandbox.md).
 
 Already running StreamSkope with your own cluster? Go to
 [Connect your Kafka](../guide/connections.md).
