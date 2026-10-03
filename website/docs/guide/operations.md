@@ -39,6 +39,10 @@ remain errors; StreamSkope does not invent member or offset data.
 If no groups appear, check that a consumer has created a group in your cluster
 and that your account has permission to describe it.
 
+To change where a stopped group resumes, follow
+[Preview and reset consumer offsets](offset-recovery.md). Preview is read-only;
+application requires exact confirmation and a fresh inactive-group baseline.
+
 ## Stream monitor
 
 If messages stop updating or the display falls behind:

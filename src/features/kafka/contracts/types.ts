@@ -71,7 +71,7 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 38 as const;
+export const HOST_PROTOCOL_VERSION = 39 as const;
 
 export const HOST_COMMANDS = [
   "records.trace",
@@ -114,6 +114,8 @@ export const HOST_COMMANDS = [
   "topics.list",
   "writes.review",
   "writes.apply",
+  "consumerGroups.reset.review",
+  "consumerGroups.reset.apply",
   "consumerGroups.list",
   "consumerGroups.load",
   "schemas.list",
@@ -394,6 +396,14 @@ interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | (HostCommandBase & {
+      readonly command: "consumerGroups.reset.review";
+      readonly payload: import("./offset-reset").OffsetResetInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "consumerGroups.reset.apply";
+      readonly payload: { readonly planId: string; readonly confirmation: string };
+    })
   | (HostCommandBase & {
       readonly command: "records.trace";
       readonly payload: import("./correlation-trace").CorrelationTraceInput;

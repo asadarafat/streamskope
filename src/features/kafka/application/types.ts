@@ -48,6 +48,18 @@ export interface KafkaConsumptionObserver {
 }
 
 export interface KafkaActiveConnection {
+  offsetResetSnapshot?(
+    input: import("../contracts/offset-reset").OffsetResetInput,
+  ): Promise<import("../contracts/offset-reset").OffsetResetSnapshot>;
+  offsetResetExamples?(
+    input: import("../contracts/offset-reset").OffsetResetInput,
+  ): Promise<
+    Pick<import("../contracts/offset-reset").OffsetResetReview, "examples" | "exampleStatus">
+  >;
+  resetGroupOffset?(
+    groupId: string,
+    target: import("../contracts/offset-reset").OffsetResetTarget,
+  ): Promise<import("../contracts/offset-reset").OffsetResetResult>;
   reviewWrite?(input: import("../contracts").KafkaWriteInput): Promise<void>;
   applyWrite?(
     input: import("../contracts").KafkaWriteInput,

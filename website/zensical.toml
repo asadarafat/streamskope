@@ -29,6 +29,7 @@ nav = [
     { "NSP Capture" = "plugins/nsp.md" }
   ] },
   { "Operate safely" = [
+    { "Reset consumer offsets" = "guide/offset-recovery.md" },
     { "Change topic configuration" = "guide/topic-configuration.md" },
     { "Run a latency probe" = "guide/latency.md" },
     { "Configure certificate trust" = "guide/tls-trust.md" },

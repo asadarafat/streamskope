@@ -5,6 +5,7 @@ import Typography from "@mui/material/Typography";
 import type { GridColDef } from "@mui/x-data-grid";
 
 import type {
+  StreamSkopeHost,
   KafkaConsumerGroupDetailSnapshot,
   KafkaConsumerGroupInventorySnapshot,
   KafkaConsumerGroupSummary,
@@ -19,12 +20,15 @@ import {
   StudioInventoryGrid,
 } from "../../../platform/ui/StudioInventoryGrid";
 
+import { ResetOffsetsAction } from "./ResetOffsetsAction";
 import { ConsumerGroupWorkspace } from "./ConsumerGroupWorkspace";
 import { ResourcePageHeader, resourcePageGutter } from "./ResourcePageHeader";
 import { formatUtcTimestamp } from "./timestamp-presentation";
 import { WorkbenchIcon } from "./WorkbenchIcons";
 
 interface ConsumerGroupsPageProperties {
+  readonly host?: StreamSkopeHost;
+  readonly canWrite?: boolean;
   readonly connected: boolean;
   readonly detail: KafkaConsumerGroupDetailSnapshot;
   readonly filter: string;
@@ -37,6 +41,8 @@ interface ConsumerGroupsPageProperties {
 }
 
 export function ConsumerGroupsPage({
+  host,
+  canWrite = false,
   connected,
   detail,
   filter,
@@ -121,15 +127,25 @@ export function ConsumerGroupsPage({
       >
         <ResourcePageHeader
           action={
-            <Button
-              aria-label={`Refresh consumer group ${selectedGroupId}`}
-              disabled={!connected || detail.state === "loading"}
-              onClick={() => onSelect(selectedGroupId)}
-              startIcon={<WorkbenchIcon name="refresh" />}
-              variant="outlined"
-            >
-              Refresh
-            </Button>
+            <Stack direction="row" spacing={1}>
+              {host && (
+                <ResetOffsetsAction
+                  host={host}
+                  group={detail.group}
+                  enabled={connected}
+                  canWrite={canWrite}
+                />
+              )}
+              <Button
+                aria-label={`Refresh consumer group ${selectedGroupId}`}
+                disabled={!connected || detail.state === "loading"}
+                onClick={() => onSelect(selectedGroupId)}
+                startIcon={<WorkbenchIcon name="refresh" />}
+                variant="outlined"
+              >
+                Refresh
+              </Button>
+            </Stack>
           }
           description="Members, assignments, committed offsets, and confirmed lag."
           title={selectedGroupId}

@@ -36,6 +36,7 @@ function request(name: HostCommand["command"]): HostCommand {
   } as HostCommand;
 }
 const writes = [
+  "consumerGroups.reset.apply",
   "records.batch.apply",
   "writes.apply",
   "schemas.register",
@@ -57,7 +58,7 @@ const writes = [
 ] as const;
 
 describe("host record protection", () => {
-  it.each(["records.decode", "records.trace"] as const)(
+  it.each(["consumerGroups.reset.review", "records.decode", "records.trace"] as const)(
     "rejects direct %s while masking is enabled before reaching record data",
     async (operation) => {
       const service = new KafkaOperationalPreferenceService(
@@ -83,16 +84,18 @@ describe("host record protection", () => {
             id: "no-bypass",
             version: HOST_PROTOCOL_VERSION,
             payload:
-              operation === "records.decode"
-                ? { format: "json", bytes: "e30=" }
-                : {
-                    traceId: "trace",
-                    topics: ["events"],
-                    startTimeMs: 1000,
-                    endTimeMs: 2000,
-                    value: "secret",
-                    selector: { source: "key", path: "", format: "json" },
-                  },
+              operation === "consumerGroups.reset.review"
+                ? { groupId: "g", targets: [{ topic: "events", partition: 0, offset: "0" }] }
+                : operation === "records.decode"
+                  ? { format: "json", bytes: "e30=" }
+                  : {
+                      traceId: "trace",
+                      topics: ["events"],
+                      startTimeMs: 1000,
+                      endTimeMs: 2000,
+                      value: "secret",
+                      selector: { source: "key", path: "", format: "json" },
+                    },
           }),
         ),
       ).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });

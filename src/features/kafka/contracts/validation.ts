@@ -1,3 +1,4 @@
+import { parseRecoveryCommand, parseRecoveryResponse } from "./recovery-protocol";
 import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
 import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
 import { parseSchemaInspectionInput, parseSchemaInspection } from "./schema-inspection";
@@ -236,6 +237,7 @@ export function parseHostCommand(value: unknown): HostCommand {
   const id = text(envelope.id, "command.id", 128);
   const command = declaredValue(envelope.command, HOST_COMMANDS, "command.command");
   const clusterServiceCommand =
+    parseRecoveryCommand(command, id, envelope.payload, version) ??
     parseCorrelationCommand(command, id, envelope.payload, version) ??
     parseSampleCommand(command, id, envelope.payload, version) ??
     parsePluginHostCommand(command, id, envelope.payload, version) ??
@@ -481,6 +483,7 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
 
   const result = record(envelope.result, "response.result");
   const sampleResponse =
+    parseRecoveryResponse(command, id, result, version) ??
     parseCorrelationResponse(command, id, result, version) ??
     parseSampleResponse(command, id, version, result);
   if (sampleResponse) return sampleResponse;
