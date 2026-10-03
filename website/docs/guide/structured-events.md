@@ -100,6 +100,10 @@ schemas may exceed the depth limit. Generation never substitutes an unchecked
 payload when constraints cannot be satisfied. Logical Avro types can still be
 inspected in **Decoded**, but cannot generate samples.
 
+JSON sample schema numbers must be finite, and integer constraints and defaults
+must fit the JavaScript safe integer range. Larger integers fail explicitly;
+sample generation never rounds them into a different constraint or default.
+
 Generation shares the isolated decoder's two-worker limit, three-second parsing
 budget and bounded Registry lookup. A request accepts at most 50 records, 16 KiB
 each and 512 KiB total; generated structures stop at eight levels and 128 fields

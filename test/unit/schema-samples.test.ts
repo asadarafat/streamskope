@@ -163,6 +163,40 @@ it("enforces count, bytes and accounting contracts and runs the isolated generat
   expect(result.samples).toHaveLength(5);
 });
 
+it("accepts both draft-07 identifiers and refuses lossy integer constraints in roots and references", () => {
+  for (const scheme of ["http", "https"]) {
+    const bundle: CodecSchemaBundle = {
+      root: {
+        id: 12,
+        schemaType: "JSON",
+        references: [],
+        schema: `{"$schema":"${scheme}://json-schema.org/draft-07/schema#","type":"integer","const":9007199254740991}`,
+      },
+      dependencies: [],
+    };
+    for (const sample of generate(bundle).samples) expect(sample.json).toBe("9007199254740991");
+    for (const keyword of ["const", "default", "minimum", "maximum"]) {
+      const unsafe = `{"type":"integer","${keyword}":9007199254740993}`;
+      for (const viaReference of [false, true]) {
+        const result = generateSchemaSamples({
+          kind: "generate",
+          input,
+          bundle: {
+            root: { ...bundle.root, schema: viaReference ? '{"$ref":"detail"}' : unsafe },
+            dependencies: viaReference
+              ? [{ name: "detail", schema: { ...bundle.root, schema: unsafe } }]
+              : [],
+          },
+        });
+        expect(result).toMatchObject({
+          ok: false,
+          detail: "JSON sample schemas require finite numbers and safe integer values.",
+        });
+      }
+    }
+  }
+});
+
 it("generates exact Avro long values and refuses unsupported logical semantics", () => {
   const bundle: CodecSchemaBundle = {
     root: { id: 11, schemaType: "AVRO", references: [], schema: '"long"' },

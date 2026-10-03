@@ -1,4 +1,3 @@
-import { CorrelationTraceFacade } from "./correlation-trace-facade";
 import { KafkaReviewedWriteService } from "../application/reviewed-write-service";
 import {
   HOST_PROTOCOL_VERSION,
@@ -28,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { CorrelationTraceFacade } from "./correlation-trace-facade";
 import { SchemaSamplesFacade } from "./schema-samples-facade";
 import { SchemaInspectionFacade } from "./schema-inspection-facade";
 import { executeWriteCommand } from "./write-facade";
