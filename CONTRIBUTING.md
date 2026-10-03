@@ -99,15 +99,25 @@ new release. Reconnection and a filtered known-record export must pass without
 re-entering credentials. Only the sanitized report is uploaded; app data,
 credentials, browser traces and broker logs are removed.
 
-Run the same check locally on a supported native platform with
-`node --import tsx tools/check/native-recovery.ts --from 0.6.0 --to 0.7.0`.
-For an unreleased fix, use `--from 0.6.0 --candidate dist/installers/StreamSkope-0.0.0-dev-darwin-arm64.dmg --candidate-version 0.0.0-dev`
-instead, substituting the native installer filename on Linux or Windows. This
-builds the candidate before testing it and does not publish or assign a release.
-Published-to-published mode also requires the baseline to reconnect after a
-restart. Candidate mode records that baseline restart separately: an old release
-with a known restart defect can still supply the original profile and backup to
-the fixed candidate; the old defect must remain explicit in the evidence.
+For an unreleased fix, run the candidate rehearsal from a clean native checkout:
+
+```sh
+node --import tsx tools/check/native-recovery.ts --from 0.6.0 --candidate dist/installers/StreamSkope-0.0.0-dev-darwin-arm64.dmg --candidate-version 0.0.0-dev
+```
+
+Substitute the native installer filename on Linux or Windows. The command builds
+the candidate before testing it and does not publish or assign a release.
+Candidate mode explicitly omits baseline restart: it backs up the old release
+after quitting it, then requires the candidate to reconnect after replacement,
+a further restart, and restoration of that backup. A known old-release restart
+defect remains separate evidence; candidate success does not qualify the old build.
+
+Published-to-published mode is available with `--from VERSION --to VERSION` and
+additionally requires the baseline to reconnect after restart. The recorded macOS
+`--from 0.6.0 --to 0.7.0` run failed at the 0.6.0 baseline restart, before installing
+0.7.0, because the old preference path collided with Chromium's file. Keep that
+case as a known-failing regression, not a successful published-upgrade example.
+
 It needs Java 17+ and an unlocked credential service. Without explicit fixture
 connection variables, it starts a checksum-pinned, loopback-only JVM Kafka
 broker with TLS and RS256 OAuth authentication. Linux also requires Xvfb, D-Bus

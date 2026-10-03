@@ -25,7 +25,14 @@ installers. Results from an earlier revision do not qualify changed source.
 | EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal in the exact source-specific report                |
 | NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal in the exact source-specific report                  |
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
-| Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
+| Native plugin dialogs and credential-backed restore       | Separate source-specific native evidence; published v0.7.0 has no recorded installed credential-service restore     |
+
+Current-source installer rehearsals are separate from the published-release records
+below. The [Native recovery workflow](https://github.com/asadarafat/streamskope/actions/workflows/native-recovery.yml)
+can build `0.0.0-dev` installers and record source revisions, installer hashes and
+individual cleanup results. Hosted native qualification is pending; this page
+will link the exact run and its sanitized reports when it completes. These results
+do not change the historical qualification of published installers.
 
 ## Published release: v0.7.0
 
@@ -283,18 +290,56 @@ EDA/NSP qualification. Run the corresponding rehearsals separately.
 
 ## Repeat the same-account recovery rehearsal
 
-Use a disposable workstation account/session with an unlocked real credential
-service and the [AIO development fixture](../start/development.md). Do not substitute
-the deterministic encryption used by other profile tests. The rehearsal creates
-its own temporary app-data directories and removes them after the test; it never
-restores over your normal desktop profile. It also creates and deletes one uniquely
-named fixture topic for the historical-query/export check. It saves an absolute
-query interval and filter, backs up the complete app data, deletes the temporary
-profile and query, restores both, reconnects without re-entering credentials and
-checks the known record in an export. Opening the restored query must not connect
-or read until explicitly requested.
+Use the manual [Native recovery workflow](https://github.com/asadarafat/streamskope/actions/workflows/native-recovery.yml)
+for actual installer replacement on Linux x64, macOS ARM64 and Windows x64. Select
+**current-source** and a published baseline such as `0.6.0`. It builds the clean
+selected source as `0.0.0-dev`, verifies the published baseline against its
+`SHA256SUMS`, and records both installer hashes plus the candidate source revision.
+It does not assign a release version or publish installers.
 
-After setting up the development prerequisites:
+The rehearsal uses isolated installation and app-data directories. It saves a
+protected profile and absolute historical query in the baseline, replaces the
+application, reconnects, restarts the candidate, then deletes and restores the
+profile and query from the complete baseline backup. A known filtered record must
+be exported without re-entering credentials. Opening the restored query must not
+connect or read until explicitly requested. The real OS credential service must
+be available; deterministic test encryption and plaintext backends are rejected.
+
+Candidate mode explicitly omits the baseline restart and starts from its
+pre-restart backup. It still requires candidate restart and restored-profile
+reconnection. The published `0.6.0` baseline failed its restart check on macOS
+because its preference directory collided with Chromium's file; that failure is
+retained separately and is not converted into a pass by a fixed candidate.
+**published-release** mode requires baseline restart as well as replacement with
+the selected published target. The `0.6.0` → `0.7.0` run stopped at that baseline
+failure before reaching the target installer.
+
+To run the same candidate check locally on macOS ARM64, install the
+[development prerequisites](../start/development.md), Java 17+ and unlock the OS
+credential service, then run from a clean checkout:
+
+```sh
+node --import tsx tools/check/native-recovery.ts --from 0.6.0 --candidate dist/installers/StreamSkope-0.0.0-dev-darwin-arm64.dmg --candidate-version 0.0.0-dev
+```
+
+Use the matching native filename on Linux, where Xvfb, D-Bus and GNOME Keyring
+are also required. Windows installer rehearsals run only in disposable Actions
+accounts because NSIS modifies user registration and shortcuts. Without explicit
+fixture connection variables, the runner starts a checksum-pinned, loopback-only
+Kafka broker with TLS and RS256 OAuth. macOS replaces an isolated `.app`; Linux
+replaces the AppImage and starts its extracted native payload. Linux FUSE and
+desktop launcher integration are outside this rehearsal.
+
+The sanitized report under `dist/native-recovery/` records outcome and cleanup;
+only this report is uploaded by the workflow. Record the exact source, OS/CPU,
+Electron version, credential backend, baseline/candidate versions, installer
+hashes and reconnect results. Recipes, rules, plugin rollback, other OS accounts
+and lost credential stores still require separate evidence. Before relying on a
+downgrade, rehearse its exact source/target builds.
+
+### Source-only recovery checks
+
+For a focused development rehearsal with the [AIO fixture](../start/development.md):
 
 ```sh
 npm run build
@@ -304,25 +349,12 @@ STREAMSKOPE_NATIVE_RECOVERY=1 node tools/package/e2e.mjs electron test/e2e/elect
 PowerShell users can set `$env:STREAMSKOPE_NATIVE_RECOVERY = "1"` before the same
 `node` command. The default fixture is `streamskope-kafka`; set
 `STREAMSKOPE_TEST_FIXTURE_NAME` to another owned disposable AIO fixture when needed.
-The test refuses unavailable or plaintext credential protection. Ordinary CI leaves
-this rehearsal skipped unless explicitly configured; a skip is not a pass.
-
-To include an upgrade, set `STREAMSKOPE_UPGRADE_FROM_EXECUTABLE` to the previous
-desktop executable before running the same command. On macOS this may be
-`/Applications/StreamSkope.app/Contents/MacOS/StreamSkope`. The test starts that
-binary with isolated temporary app data, creates a protected profile, quits it,
-backs up its data, then opens the same data with the current source build. Both
-applications must have the same credential identity. It does not replace the
-installed binary or use your normal profile directory. Without this variable,
-the result is a same-build recovery rehearsal and must not be reported as an upgrade.
-
-For each qualified platform, record OS/architecture, Electron version, credential
-backend, application commit, and the successful reconnect after restoring. The
-automated scenario covers protected profile recovery, saved query settings,
-explicit historical bounds and a known-record export. Record the baseline/candidate
-versions and whether a previous executable was actually used. Installer replacement,
-other operating systems, and recipes/rules/plugin rollback still require their own
-evidence. Before relying on a downgrade, rehearse its exact source/target builds.
+This launches the source build and qualifies same-build recovery only.
+`STREAMSKOPE_UPGRADE_FROM_EXECUTABLE` can provide an older executable with the same
+credential identity, but that mode does not replace an installer and still requires
+the older executable to pass baseline restart. It does not use your normal profile
+directory. Ordinary PR CI leaves this rehearsal skipped unless explicitly configured;
+a skip is not a pass.
 
 ## Repeat the restricted-account rehearsal
 
