@@ -172,6 +172,31 @@ it("decodes real Kafka original bytes using authenticated Registry IDs and Proto
       });
     expect(decoded[2]).toMatchObject({ state: "error", code: "schema-unavailable" });
     expect(decoded[3]).toEqual({ state: "null", format: "avro" });
+    const inspection = parseHostCommandResponse(
+      await backend.execute({
+        command: "schemas.inspect",
+        id: "inspect-proto",
+        version: HOST_PROTOCOL_VERSION,
+        payload: { subject: `${topic}-proto`, version: 1 },
+      }),
+    );
+    expect(inspection).toMatchObject({
+      ok: true,
+      command: "schemas.inspect",
+      result: {
+        inspection: {
+          root: { subject: `${topic}-proto`, version: 1, id: protoId },
+          limited: false,
+          edges: [
+            {
+              to: { subject: `${topic}-detail`, version: 1 },
+              state: "resolved",
+              name: "detail.proto",
+            },
+          ],
+        },
+      },
+    });
   } finally {
     await backend.shutdown();
     await producer.close();

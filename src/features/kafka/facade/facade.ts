@@ -27,6 +27,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { SchemaInspectionFacade } from "./schema-inspection-facade";
 import { executeWriteCommand } from "./write-facade";
 import { RecordCodecFacade } from "./record-codec-facade";
 import { KafkaCommandProtection } from "./command-protection";
@@ -95,6 +96,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly latencyProbe;
   private readonly now;
   private readonly writes: KafkaReviewedWriteService;
+  private readonly schemaInspection: SchemaInspectionFacade;
   private readonly recordCodecs: RecordCodecFacade;
   private readonly queries: KafkaQueryLibrary;
   private readonly preferences: KafkaOperationalPreferenceService;
@@ -114,6 +116,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     options: KafkaBackendFacadeOptions = {},
   ) {
     this.writes = new KafkaReviewedWriteService(() => session.writeContext());
+    this.schemaInspection = new SchemaInspectionFacade(session, options.schemaLookup);
     this.recordCodecs = new RecordCodecFacade(session, options.recordCodec, options.schemaLookup);
     this.queries = options.queries ?? new KafkaQueryLibrary();
     this.clusterDiagnostics = createClusterDetailsService(session, options);
@@ -271,6 +274,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "schemas.inspect":
+        return this.schemaInspection.execute(command, correlationId);
       case "records.decode":
         return this.recordCodecs.execute(command, correlationId);
       case "writes.review":
@@ -766,6 +771,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
 
   private invalidateClusterState(): void {
     this.recordCodecs.invalidate();
+    this.schemaInspection.invalidate();
     this.clusterDiagnostics.clear();
     this.invalidateLatency();
     this.invalidateConsumerGroups();

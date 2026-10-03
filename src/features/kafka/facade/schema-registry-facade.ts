@@ -11,7 +11,17 @@ import type { KafkaApplicationSession, SchemaRegistryPort } from "../application
 
 import { failureResponse, successResponse, type ActivityInput } from "./facade-support";
 
-type SchemaCommand = Extract<HostCommand, { readonly command: `schemas.${string}` }>;
+type SchemaCommand = Extract<
+  HostCommand,
+  {
+    readonly command:
+      | "schemas.list"
+      | "schemas.load"
+      | "schemas.compatibility.check"
+      | "schemas.register"
+      | "schemas.delete";
+  }
+>;
 
 interface SchemaRegistryFacadeOptions {
   readonly nextSequence: () => number;

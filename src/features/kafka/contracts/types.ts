@@ -71,10 +71,11 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 35 as const;
+export const HOST_PROTOCOL_VERSION = 36 as const;
 
 export const HOST_COMMANDS = [
   "records.decode",
+  "schemas.inspect",
   "connection.test",
   "connection.connect",
   "connection.disconnect",
@@ -387,6 +388,10 @@ interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | (HostCommandBase & {
+      readonly command: "schemas.inspect";
+      readonly payload: import("./schema-inspection").SchemaInspectionInput;
+    })
   | (HostCommandBase & {
       readonly command: "records.decode";
       readonly payload: import("./record-codec").RecordDecodeInput;

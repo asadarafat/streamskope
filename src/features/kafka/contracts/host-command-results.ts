@@ -16,6 +16,10 @@ import type { KafkaOperationalPreferenceResult } from "./operational-preference-
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
 interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRecipeCommandResults {
+  readonly "schemas.inspect": {
+    readonly correlationId: string;
+    readonly inspection: import("./schema-inspection").SchemaInspection;
+  };
   readonly "records.decode": {
     readonly correlationId: string;
     readonly decoded: import("./record-codec").RecordDecodeResult;
@@ -68,6 +72,7 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
   "records.decode": true,
+  "schemas.inspect": true,
   "writes.review": true,
   "writes.apply": true,
   "queries.list": true,

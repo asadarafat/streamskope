@@ -32,8 +32,11 @@ import {
 import { formatUtcTimestamp } from "./timestamp-presentation";
 import { OriginalRecordEvidence } from "./OriginalRecordEvidence";
 import { RecordDecodePanel } from "./RecordDecodePanel";
+import { RecordComparisonPanel } from "./RecordComparisonPanel";
 
 export interface MessageInspectorProperties {
+  readonly baseline?: KafkaExploredMessage | null;
+  readonly onPin?: (message: KafkaExploredMessage | null) => void;
   readonly host?: StreamSkopeHost;
   readonly decodingAvailable?: boolean;
   readonly message: KafkaExploredMessage;
@@ -260,6 +263,8 @@ function MessageScratchEditor({
 }
 
 export function MessageInspector({
+  baseline = null,
+  onPin,
   host,
   decodingAvailable = false,
   message,
@@ -276,7 +281,7 @@ export function MessageInspector({
     formatted === null ? "raw" : "formatted",
   );
   const [section, setSection] = useState<
-    "key" | "metadata" | "rules" | "value" | "original" | "decoded"
+    "key" | "metadata" | "rules" | "value" | "original" | "decoded" | "compare"
   >("metadata");
   const [copying, setCopying] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -386,7 +391,7 @@ export function MessageInspector({
         aria-label="Message evidence"
         onChange={(
           _event,
-          value: "key" | "metadata" | "rules" | "value" | "original" | "decoded",
+          value: "key" | "metadata" | "rules" | "value" | "original" | "decoded" | "compare",
         ) => {
           setSection(value);
         }}
@@ -402,6 +407,7 @@ export function MessageInspector({
         <Tab label="Key" value="key" />
         <Tab label="Value" value="value" />
         <Tab label="Original" value="original" />
+        {onPin ? <Tab label="Compare" value="compare" /> : null}
         {host === undefined ? null : <Tab label="Decoded" value="decoded" />}
         <Tab label="Rules" value="rules" />
       </Tabs>
@@ -493,6 +499,16 @@ export function MessageInspector({
               </Box>
             </InspectorEvidenceSection>
           </Box>
+        ) : null}
+
+        {section === "compare" && onPin ? (
+          <RecordComparisonPanel
+            current={message}
+            baseline={baseline}
+            onPin={onPin}
+            host={host}
+            enabled={decodingAvailable}
+          />
         ) : null}
 
         {section === "value" ? (

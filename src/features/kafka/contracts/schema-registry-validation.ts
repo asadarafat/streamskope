@@ -191,7 +191,7 @@ export function parseSchemaInventorySnapshot(
   };
 }
 
-function parseSchemaVersion(value: unknown, path: string): SchemaVersionDetail {
+export function parseSchemaVersion(value: unknown, path: string): SchemaVersionDetail {
   const schema = record(value, path);
   exactKeys(schema, ["id", "references", "schema", "schemaType", "subject", "version"], path);
   return {
