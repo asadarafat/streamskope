@@ -288,6 +288,7 @@ export async function startNativeKafkaFixture(): Promise<{
     const java = [
       "-Xms128m",
       "-Xmx384m",
+      `-Dkafka.logs.dir=${join(directory, "logs")}`,
       `-Dlog4j2.configurationFile=${join(distribution, "config/log4j2.yaml")}`,
       `-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=${oauthRoot}/.well-known/jwks.json`,
       "-cp",
@@ -306,10 +307,11 @@ export async function startNativeKafkaFixture(): Promise<{
         "--config",
         settings,
       ],
-      { timeout: 30_000 },
+      { cwd: directory, timeout: 30_000 },
     );
     phase = "start broker";
     broker = spawn("java", [...java, "kafka.Kafka", settings], {
+      cwd: directory,
       stdio: ["ignore", "pipe", "pipe"],
     });
     broker.stdout?.pipe(log, { end: false });
