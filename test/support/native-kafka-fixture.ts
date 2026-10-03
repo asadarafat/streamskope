@@ -87,7 +87,8 @@ async function availablePort(): Promise<number> {
 }
 
 async function stop(child: ChildProcess | undefined): Promise<void> {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null)
+    return;
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   child.kill("SIGTERM");
   await Promise.race([exited, delay(10_000, undefined, { ref: false })]);
