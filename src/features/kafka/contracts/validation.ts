@@ -4,6 +4,7 @@ import {
   parseKafkaWriteOutcome,
 } from "./reviewed-writes";
 import { parseKafkaOriginalRecord } from "./record-bytes";
+import { parseRecordDecodeInput, parseRecordDecodeResult } from "./record-codec";
 import { parseKafkaSavedQuery, parseKafkaQueryLibrarySnapshot } from "./query-library";
 import { parseKafkaReadCoverage } from "./query-search";
 import { parseKafkaFetchRequest } from "./fetch-validation";
@@ -241,6 +242,8 @@ export function parseHostCommand(value: unknown): HostCommand {
   }
 
   switch (command) {
+    case "records.decode":
+      return { command, id, version, payload: parseRecordDecodeInput(envelope.payload) };
     case "writes.review":
       return { command, id, version, payload: parseKafkaWriteInput(envelope.payload) };
     case "writes.apply": {
@@ -470,6 +473,19 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
   }
 
   const result = record(envelope.result, "response.result");
+  if (command === "records.decode") {
+    exactKeys(result, ["correlationId", "decoded"], "response.result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "response.result.correlationId", 128),
+        decoded: parseRecordDecodeResult(result.decoded),
+      },
+    };
+  }
   if (command === "writes.review") {
     exactKeys(result, ["correlationId", "review"], "response.result");
     return {

@@ -3,9 +3,10 @@
 Connect a Schema Registry and read a subject's schema version. You need the
 Registry endpoint and permission to read its subjects, as well as a Kafka profile.
 
-Browsing an Avro, JSON Schema or Protobuf definition does not decode that wire
-format in the message inspector. The inspector reads UTF-8/JSON; see the
-[compatibility matrix](../start/compatibility.md).
+Browsing a definition is separate from decoding a record. Use
+[Message details → Decoded](structured-events.md) for explicit JSON, Confluent
+Avro or Protobuf inspection with original bytes preserved. See the
+[compatibility matrix](../start/compatibility.md) for supported framing.
 
 ## Connect the service
 

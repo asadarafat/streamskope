@@ -535,3 +535,10 @@ export {
 export type { KafkaRecordProtection } from "./operational-preference-types";
 export { KAFKA_RECORD_PROTECTION_DEFAULTS } from "./operational-preference-types";
 export { parseKafkaRecordProtection } from "./operational-preference-validation";
+export {
+  RECORD_FORMATS,
+  RECORD_CODEC_LIMITS,
+  parseRecordDecodeInput,
+  parseRecordDecodeResult,
+} from "./record-codec";
+export type { RecordFormat, RecordDecodeInput, RecordDecodeResult } from "./record-codec";

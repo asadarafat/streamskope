@@ -87,7 +87,9 @@ Choose **Original** for the retained key, value and ordered headers as Base64.
 **Copy original record** preserves binary bytes, repeated headers and the difference
 between null and empty values. The tab explains when originals are unavailable.
 The **Raw** value view is UTF-8 text; invalid byte sequences can be replaced during
-decoding. See [record limits and export format](data-handling.md#understand-an-export). 5. Use **Copy** when you need the value elsewhere.
+decoding. See [record limits and export format](data-handling.md#understand-an-export).
+Use **Copy** when you need the value elsewhere. Choose **Decoded** for explicit
+[JSON, Confluent Avro or Protobuf inspection](structured-events.md).
 
 **You should have:** the payload and the topic, partition and offset needed to
 find its position again. An offset belongs to one partition; it does not order

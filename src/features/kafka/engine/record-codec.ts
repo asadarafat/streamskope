@@ -1,0 +1,73 @@
+import { Worker } from "node:worker_threads";
+
+import {
+  RECORD_CODEC_LIMITS,
+  parseRecordDecodeResult,
+  type RecordDecodeInput,
+  type RecordDecodeResult,
+} from "../contracts/record-codec";
+import type { CodecSchemaBundle, RecordCodecPort } from "../application/record-codec-types";
+
+export class BoundedRecordCodec implements RecordCodecPort {
+  private active = 0;
+  constructor(private readonly worker: { script: string; execArgv: readonly string[] }) {}
+
+  decode(
+    input: RecordDecodeInput,
+    bundle: CodecSchemaBundle | null,
+    signal: AbortSignal,
+  ): Promise<RecordDecodeResult> {
+    signal.throwIfAborted();
+    if (this.active >= 2) return Promise.reject(new Error("Decoder capacity reached"));
+    this.active++;
+    return new Promise((resolve, reject) => {
+      let worker: Worker;
+      try {
+        worker = new Worker(this.worker.script, {
+          execArgv: [...this.worker.execArgv],
+          workerData: { input, bundle },
+          resourceLimits: {
+            maxOldGenerationSizeMb: 64,
+            maxYoungGenerationSizeMb: 16,
+            stackSizeMb: 4,
+          },
+        });
+      } catch (error) {
+        this.active--;
+        reject(error instanceof Error ? error : new Error("Decoder failed"));
+        return;
+      }
+      let settled = false;
+      const finish = (complete: () => void): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        worker.removeAllListeners();
+        void worker.terminate();
+        this.active--;
+        complete();
+      };
+      const abort = (): void => finish(() => reject(new Error("Decoder cancelled")));
+      const timer = setTimeout(
+        () => finish(() => reject(new Error("Decoder deadline exceeded"))),
+        RECORD_CODEC_LIMITS.workerMs,
+      );
+      worker.once("message", (value: unknown) =>
+        finish(() => {
+          try {
+            resolve(parseRecordDecodeResult(value));
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error("Decoder failed"));
+          }
+        }),
+      );
+      worker.once("error", () =>
+        finish(() => reject(new Error("Decoder resource limit or failure"))),
+      );
+      worker.once("exit", () => finish(() => reject(new Error("Decoder exited without a result"))));
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
+  }
+}

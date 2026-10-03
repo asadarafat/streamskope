@@ -9,6 +9,8 @@ import type {
 } from "../application";
 
 export interface KafkaBackendFacadeOptions {
+  readonly recordCodec?: import("../application/record-codec-types").RecordCodecPort;
+  readonly schemaLookup?: import("../application/record-codec-types").SchemaLookupPort;
   readonly queries?: KafkaQueryLibrary;
   readonly clusterDiagnostics?: KafkaClusterDiagnosticsServicePort;
   readonly createCorrelationId?: () => string;

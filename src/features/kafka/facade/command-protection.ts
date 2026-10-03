@@ -8,6 +8,7 @@ type Access = "local" | "remote-read" | "remote-write" | "profile";
 
 // Exhaustive by design: adding a host command requires an explicit access decision.
 export const KAFKA_COMMAND_ACCESS = {
+  "records.decode": "remote-read",
   "connection.test": "remote-read",
   "connection.connect": "remote-read",
   "connection.disconnect": "local",
@@ -173,13 +174,13 @@ export class KafkaCommandProtection {
         "Review Preferences → Protection. Broker permissions remain authoritative; disable read-only deliberately to perform remote changes or plugin actions.",
       );
     if (
-      command.command === "messages.start" &&
-      command.payload.search !== undefined &&
+      (command.command === "records.decode" ||
+        (command.command === "messages.start" && command.payload.search !== undefined)) &&
       hasRecordMasking(snapshot.preferences.protection)
     )
       return reject(
-        "Broker-side search is unavailable while masking is active.",
-        "Read a bounded range without a broker search and filter the masked retained records locally.",
+        "Broker-side search and original-byte decoding are unavailable while masking is active.",
+        "Read a bounded range and inspect the masked retained records locally. Original-byte decoding cannot bypass disclosure settings.",
       );
     this.remoteOperations += 1;
     try {

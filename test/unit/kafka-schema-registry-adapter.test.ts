@@ -29,6 +29,35 @@ const context: KafkaClusterServiceContext = {
 };
 
 describe("Schema Registry HTTP adapter", () => {
+  it("resolves writer IDs and exact referenced versions through authenticated owned paths", async () => {
+    const http = new ScriptedHttp([
+      { status: 200, body: { schema: '"string"' } },
+      {
+        status: 200,
+        body: { id: 8, subject: "a/b", version: 2, schema: '"long"', references: [] },
+      },
+    ]);
+    const adapter = new SchemaRegistryHttpAdapter(http);
+    expect(await adapter.byId(context, 7, new AbortController().signal)).toEqual({
+      id: 7,
+      schema: '"string"',
+      schemaType: "AVRO",
+      references: [],
+    });
+    expect(await adapter.byVersion(context, "a/b", 2, new AbortController().signal)).toMatchObject({
+      id: 8,
+      schema: '"long"',
+    });
+    expect(http.requests.map((r) => r.url)).toEqual([
+      "https://schema.example.test:8081/registry/schemas/ids/7",
+      "https://schema.example.test:8081/registry/subjects/a%2Fb/versions/2",
+    ]);
+    expect(
+      http.requests.every(
+        (r) => r.authorization === "Bearer redacted-token" && r.caPem === "fixture-ca",
+      ),
+    ).toBe(true);
+  });
   it("lists sorted bounded subjects using an encoded owned path and authorization", async () => {
     const http = new ScriptedHttp([{ body: ["z-value", "a-key"], status: 200 }]);
     const adapter = new SchemaRegistryHttpAdapter(http);

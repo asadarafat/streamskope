@@ -17,8 +17,10 @@
   },
   "dependencies": {
     "@platformatic/kafka": "2.11.0",
+    "avsc": "5.7.9",
     "jks-js": "1.1.7",
     "node-forge": "1.4.0",
+    "protobufjs": "8.8.0",
     "ssh2": "1.17.0"
   },
   "devDependencies": {
