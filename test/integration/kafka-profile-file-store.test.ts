@@ -42,6 +42,7 @@ const profile: KafkaProfileRecord = {
     tokenEndpoint: "http://127.0.0.1:15000/token",
   },
   services: {
+    connect: { authentication: "oauth", baseUrl: "https://connect.example.test:8083" },
     redpandaAdmin: {
       authentication: "oauth",
       baseUrl: "https://redpanda.example.test:9644",

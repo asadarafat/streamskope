@@ -199,3 +199,19 @@ it("recognizes supported DLQ context without bypassing protected or truncated he
     }),
   ).toBeNull();
 });
+
+it("rejects a Connect OAuth endpoint without protected token configuration at the host boundary", () => {
+  expect(() =>
+    parseHostCommand({
+      id: "connect",
+      version: HOST_PROTOCOL_VERSION,
+      command: "connection.connect",
+      payload: {
+        name: "Test",
+        brokers: ["localhost:9092"],
+        tls: { enabled: false },
+        services: { connect: { baseUrl: "https://connect.example", authentication: "oauth" } },
+      },
+    }),
+  ).toThrow();
+});

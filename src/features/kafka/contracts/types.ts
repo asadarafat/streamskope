@@ -388,6 +388,8 @@ export type SecureConnectionField =
   | "oauth.clientSecret"
   | "oauth.scope"
   | "oauth.tokenEndpoint"
+  | "services.connect.authentication"
+  | "services.connect.baseUrl"
   | "services.redpandaAdmin.authentication"
   | "services.redpandaAdmin.baseUrl"
   | "services.schemaRegistry.authentication"
