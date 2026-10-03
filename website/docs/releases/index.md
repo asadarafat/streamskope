@@ -2,7 +2,8 @@
 
 | Desktop release                     | App/installer version  | Status and contents                                                                                            |
 | ----------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [Unreleased changes](unreleased.md) | Assigned by release CI | Development changes after v0.6.0                                                                               |
+| [Unreleased changes](unreleased.md) | Assigned by release CI | Development changes after v0.7.0                                                                               |
+| [v0.7.0](v0.7.0.md)                 | 0.7.0                  | Published unsigned release: observed health, bounded diagnosis, relationships and potential schema impact      |
 | [v0.6.0](v0.6.0.md)                 | 0.6.0                  | Published unsigned release: Connect/DLQ operations, environment comparison, CLI, sandbox and generated clients |
 | [v0.5.0](v0.5.0.md)                 | 0.5.0                  | Published unsigned release: offset recovery, record replay and exact ACL access review                         |
 | [v0.4.0](v0.4.0.md)                 | 0.4.0                  | Published unsigned release: structured decoding, comparisons, schema samples and correlation tracing           |

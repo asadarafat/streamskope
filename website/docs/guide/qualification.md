@@ -27,7 +27,46 @@ installers. Results from an earlier revision do not qualify changed source.
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
 
-## Published release: v0.6.0
+## Published release: v0.7.0
+
+[v0.7.0](../releases/v0.7.0.md) was published on **2026-10-03** from source
+[`05c972c`](https://github.com/asadarafat/streamskope/commit/05c972c615de1417b0243bc309ccb93e267c1809).
+The [release workflow](https://github.com/asadarafat/streamskope/actions/runs/37149711415) passed. The
+[source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.7.0/qualification-v0.7.0.json) records the identical qualified
+source tree, executed checks, environment conditions, remaining gaps and evidence hashes.
+
+| Check                                     | Recorded result and evidence                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shared qualification                      | [CI passed](https://github.com/asadarafat/streamskope/actions/runs/37149711415/job/111280882960): 2,363 tests across 288 files; 48 docs tooling tests, 49 HTML pages and 44 browser routes including media                                                                                                         |
+| Native installers and packaged-app checks | [Linux x64](https://github.com/asadarafat/streamskope/actions/runs/37149711415/job/111282386959), [macOS ARM64](https://github.com/asadarafat/streamskope/actions/runs/37149711415/job/111282386944) and [Windows x64](https://github.com/asadarafat/streamskope/actions/runs/37149711415/job/111282386927) passed |
+| Real observation and relationship checks  | Four scenarios across three files passed: actual offsets/lag/ISR and protected sampling, restart history and denied-group unknowns; Connect/group/Registry references and potential impact; offset-reset denial, stale-state and read-back regressions                                                             |
+| Browser diagnosis and graph               | Nine real rising-lag observations, held-out forecast, skew/key analysis, stopped collection and graph selection passed; no detected Axe violations or browser diagnostics                                                                                                                                          |
+| Local docs and production build           | All 44 documentation routes, search, themes, mobile, accessibility and media passed; production build passed                                                                                                                                                                                                       |
+| 60-second performance soak                | 59,992 generated/delivered, zero host display drops, 29.17% of one CPU core, 674 MiB peak RSS and 28.75 ms event-loop p99; original limits passed under the isolation conditions below                                                                                                                             |
+| Live EDA 26.8.2                           | Twelve checks passed: API/application versions, discovery, capture readiness, lease, actual Kafka receipt, observed health/relationship metadata, source preservation, stop, owned cleanup and repeated stop                                                                                                       |
+| Live NSP 26.4.0                           | Twelve checks passed: version, combined workflow, tested/saved/reused profile, execution cleanup, saved connection and 176 topics, observed health/relationship metadata, hot removal preserving the profile and secret-free renderer events                                                                       |
+| Unsigned EDA OCI application              | [Packaging passed](https://github.com/asadarafat/streamskope/actions/runs/37149711415/job/111282386967); signing and publication remain separate                                                                                                                                                                   |
+| Download integrity                        | [SHA256SUMS](https://github.com/asadarafat/streamskope/releases/download/v0.7.0/SHA256SUMS) matches all three installer digests and includes the qualification report                                                                                                                                              |
+
+Local qualification passed in stages on the identical final source. Shared checks,
+docs, the original soak and build used CPU affinity `6,7` with the colocated EDA lab
+temporarily paused. The lab was restored before live checks. Its Kafka application
+API initially returned 404 after resume; EDA registered its manifest again and the
+complete live EDA/NSP rerun passed without application or cluster changes. The
+report preserves that failed attempt and the earlier corrected test expectations
+for the plugin host ceiling. No performance budgets were relaxed. Concurrent heavy
+local-lab operation remains outside the performance qualification.
+
+The soak measures application ingestion, not real IPC, Kafka fetch or UI interaction
+latency. Observations measure offset positions and client request cost; forecasts,
+anomalies and hypotheses are bounded heuristics. Relationships are partial evidence
+and never approve schema changes. The vendor metadata reads do not qualify every
+group, schema mapping or diagnosis. Installed native plugin migration and
+credential-service recovery were not rehearsed; NSP Kafka SASL OAuth and other
+vendor policies remain outside the live result. History is private, unencrypted
+local JSON. Installers are unsigned and plugin publication remains independent.
+
+## Historical qualification: v0.6.0
 
 [v0.6.0](../releases/v0.6.0.md) was published on **2026-10-03** from source
 [`a5ee948`](https://github.com/asadarafat/streamskope/commit/a5ee94876d5cc1c71a847582ea5eaabf3ae8226e).
