@@ -12,6 +12,7 @@ import {
   type OffsetResetExample,
 } from "../contracts/offset-reset";
 
+import { requireConsumerGroupProtocol } from "./platformatic-group-protocol";
 import { platformaticClientOptions } from "./platformatic-options";
 import type { KafkaClientInput } from "./types";
 
@@ -47,6 +48,7 @@ export class PlatformaticOffsetReset {
   async snapshot(input: OffsetResetInput): Promise<OffsetResetSnapshot> {
     const parsed = parseOffsetResetInput(input);
     return this.admin(async (admin) => {
+      await requireConsumerGroupProtocol(admin, parsed.groupId);
       const topics = [...new Set(parsed.targets.map((t) => t.topic))];
       const lookup = (timestamp: bigint): Parameters<Admin["listOffsets"]>[0] => ({
         topics: topics.map((name) => ({

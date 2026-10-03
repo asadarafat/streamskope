@@ -1,7 +1,11 @@
 import type { ConnectInput, ConnectInventory, ConnectValidation } from "../contracts/connect";
 import { connectConfig, connectName } from "../contracts/connect";
 import type { KafkaClusterServiceContext } from "../application";
-import type { ConnectPort, ConnectState } from "../application/connect-service";
+import type {
+  ConnectPort,
+  ConnectState,
+  ConnectRelationships,
+} from "../application/connect-service";
 
 import type { BoundedJsonHttpPort } from "./bounded-json-http";
 
@@ -118,6 +122,43 @@ export class ConnectHttpAdapter implements ConnectPort {
         dlq: dlq && /^[a-zA-Z0-9._-]{1,249}$/u.test(dlq) ? dlq : null,
         observedAt: new Date().toISOString(),
       },
+    };
+  }
+  async clusterId(c: KafkaClusterServiceContext, signal: AbortSignal): Promise<string | null> {
+    const info = object(this.ok(await this.request(c, signal, "GET", "/")));
+    return typeof info.kafka_cluster_id === "string" && info.kafka_cluster_id.length <= 512
+      ? info.kafka_cluster_id
+      : null;
+  }
+  async relationships(
+    c: KafkaClusterServiceContext,
+    name: string,
+    signal: AbortSignal,
+  ): Promise<ConnectRelationships> {
+    const path = `/connectors/${encodeURIComponent(connectName(name))}`;
+    const info = object(this.ok(await this.request(c, signal, "GET", path)));
+    const config = connectConfig(info.config);
+    const topic = (v: unknown): string => {
+      const t = string(v, 249);
+      if (!/^[A-Za-z0-9._-]+$/.test(t) || t === "." || t === "..")
+        throw new Error("Invalid Connect topic.");
+      return t;
+    };
+    const configuredTopics = config.topics
+      ? [...new Set(config.topics.split(",").map((s) => topic(s.trim())))]
+      : [];
+    let reportedTopics: readonly string[] | null = null;
+    try {
+      const tracked = object(this.ok(await this.request(c, signal, "GET", `${path}/topics`)));
+      reportedTopics = [...new Set(array(object(tracked[name]).topics).map(topic))];
+    } catch {
+      signal.throwIfAborted();
+    }
+    return {
+      type: info.type === "source" || info.type === "sink" ? info.type : "unknown",
+      reportedTopics,
+      configuredTopics,
+      regexSubscription: Boolean(config["topics.regex"]),
     };
   }
   async validate(

@@ -189,6 +189,12 @@ describe("Platformatic Kafka consumer-group adapter", () => {
     ];
     const port = new PlatformaticAdminPort(admin);
 
+    admin.groups.set("orders-worker", {
+      id: "orders-worker",
+      protocolType: "consumer",
+      groupType: "classic",
+      state: "STABLE",
+    });
     await expect(port.describeConsumerGroup("orders-worker")).resolves.toEqual({
       id: "orders-worker",
       members: [
@@ -227,6 +233,7 @@ describe("Platformatic Kafka consumer-group adapter", () => {
       state: "stable",
     });
     expect(admin.calls).toEqual([
+      ["listGroups", undefined],
       ["describeGroups", { groups: ["orders-worker"], includeAuthorizedOperations: false }],
       ["listConsumerGroupOffsets", { groups: ["orders-worker"], requireStable: false }],
       [
@@ -282,6 +289,12 @@ describe("Platformatic Kafka consumer-group adapter", () => {
     ];
     const port = new PlatformaticAdminPort(admin);
 
+    admin.groups.set("orders-worker", {
+      id: "orders-worker",
+      protocolType: "",
+      groupType: "classic",
+      state: "EMPTY",
+    });
     const result = await port.describeConsumerGroup("orders-worker");
 
     expect(result.offsets).toEqual([
@@ -302,9 +315,20 @@ describe("Platformatic Kafka consumer-group adapter", () => {
     await expect(port.describeConsumerGroup("missing-worker")).rejects.toThrow(
       "Kafka did not return consumer group missing-worker",
     );
-    expect(admin.calls).toEqual([
-      ["describeGroups", { groups: ["missing-worker"], includeAuthorizedOperations: false }],
-      ["listConsumerGroupOffsets", { groups: ["missing-worker"], requireStable: false }],
-    ]);
+    expect(admin.calls).toEqual([["listGroups", undefined]]);
   });
+});
+
+it("refuses non-consumer coordination groups before the client's consumer-specific decoder", async () => {
+  const admin = new RecordingConsumerGroupAdmin();
+  admin.groups.set("connect-workers", {
+    id: "connect-workers",
+    groupType: "classic",
+    protocolType: "connect",
+    state: "STABLE",
+  });
+  await expect(
+    new PlatformaticAdminPort(admin).describeConsumerGroup("connect-workers"),
+  ).rejects.toThrow("unsupported coordination protocol");
+  expect(admin.calls).toEqual([["listGroups", undefined]]);
 });

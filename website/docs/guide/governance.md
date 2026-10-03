@@ -45,3 +45,7 @@ before confirming it.
 
 Transform inspection does not deploy transformations to Apache Kafka. To check
 message content locally, follow [Test a message rule](messages.md#rules-and-configuration).
+
+Before changing a schema, use [Relationships](relationships.md) to inspect bounded,
+source-labelled dependencies and potential impact. This does not replace the
+Registry compatibility check or downstream-owner review.

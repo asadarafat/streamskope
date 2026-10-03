@@ -39,6 +39,7 @@ import type {
 import { KAFKA_CONSUMER_GROUP_LIMITS, kafkaAclIdentity } from "../contracts";
 import type { KafkaClusterMetadata, KafkaConsumerGroupInventory } from "../application";
 
+import { requireConsumerGroupProtocol } from "./platformatic-group-protocol";
 import { platformaticClientOptions } from "./platformatic-options";
 import type { KafkaAdminFactory, KafkaAdminInput, KafkaAdminPort } from "./types";
 
@@ -501,6 +502,7 @@ export class PlatformaticAdminPort implements KafkaAdminPort {
   }
 
   async describeConsumerGroup(groupId: string): Promise<KafkaConsumerGroupDetails> {
+    await requireConsumerGroupProtocol(this.admin, groupId);
     const [descriptions, committedGroups] = await Promise.all([
       this.admin.describeGroups({ groups: [groupId], includeAuthorizedOperations: false }),
       this.admin.listConsumerGroupOffsets({ groups: [groupId], requireStable: false }),

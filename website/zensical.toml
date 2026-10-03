@@ -20,6 +20,7 @@ nav = [
     { "Decode a structured record" = "guide/structured-events.md" },
     { "Check consumer lag" = "guide/operations.md" },
     { "Observe Kafka health" = "guide/observed-health.md" },
+    { "Trace relationships and schema impact" = "guide/relationships.md" },
     { "Inspect a schema" = "guide/schema-registry.md" },
     { "Troubleshoot a problem" = "guide/troubleshooting.md" }
   ] },

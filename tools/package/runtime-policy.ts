@@ -22,6 +22,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/ui/LatencyWorkspace.tsx",
     // Opted-in observation collection and one-shot sample freshness expiry.
     "src/features/kafka/ui/ObservedHealthPage.tsx",
+    // One-shot snapshot freshness expiry, cleared on navigation or replacement.
+    "src/features/kafka/ui/RelationshipsPage.tsx",
     "src/features/kafka/ui/OperationalPreferencesDialog.tsx",
     "src/features/kafka/ui/TrustRecipeManager.tsx",
     "src/features/kafka/ui/stream-monitor-observer.ts",

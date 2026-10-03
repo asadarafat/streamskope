@@ -71,9 +71,11 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 46 as const;
+export const HOST_PROTOCOL_VERSION = 47 as const;
 
 export const HOST_COMMANDS = [
+  "relationships.capture",
+  "relationships.cancel",
   "observations.capture",
   "observations.history",
   "observations.cancel",
@@ -419,6 +421,7 @@ export interface HostCommandBase {
 type HostCommandDefinition =
   | import("./connect").ConnectHostCommand
   | import("./environment-protocol").EnvironmentHostCommand
+  | import("./relationship-protocol").RelationshipCommand
   | import("./observation-protocol").ObservationCommand
   | (HostCommandBase & {
       readonly command: "schemas.client";

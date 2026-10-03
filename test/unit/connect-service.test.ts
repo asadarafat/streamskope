@@ -16,7 +16,7 @@ import { connectDlqContext } from "../../src/features/kafka/contracts/connect-dl
 const input: ConnectInput = { name: "orders", action: "update", config: { "tasks.max": "2" } };
 interface Fixture {
   readonly service: ConnectService;
-  readonly port: { [K in keyof ConnectPort]: Mock<ConnectPort[K]> };
+  readonly port: { [K in keyof ConnectPort]: Mock<NonNullable<ConnectPort[K]>> };
   setState(v: ConnectState | null): void;
   getState(): ConnectState;
   disconnect(): void;
