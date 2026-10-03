@@ -10,7 +10,7 @@ import { LegacyKafkaConnectionTemplateFile } from "../../node/legacy-connection-
 import { AtomicKafkaTrustRecipeFileStore } from "../../node/kafka-trust-recipe-file-store";
 import { createKafkaBackend } from "../../node/kafka-backend";
 import { AtomicKafkaProfileFileStore } from "../../node/kafka-profile-file-store";
-import { AtomicKafkaOperationalPreferenceFileStore } from "../../node/kafka-operational-preference-file-store";
+import { DesktopOperationalPreferenceStore } from "../../node/desktop-operational-preference-store";
 import { AtomicKafkaRuleFileStore } from "../../node/kafka-rule-file-store";
 import { AtomicKafkaTopicConfigurationHistoryFileStore } from "../../node/kafka-topic-configuration-history-file-store";
 
@@ -50,9 +50,7 @@ export async function createElectronKafkaBackend(
   const topicConfigurationHistoryStore = new AtomicKafkaTopicConfigurationHistoryFileStore(
     join(options.userDataPath, "history", "kafka-topic-configuration-history.json"),
   );
-  const preferenceStore = new AtomicKafkaOperationalPreferenceFileStore(
-    join(options.userDataPath, "preferences", "kafka-operational-preferences.json"),
-  );
+  const preferenceStore = new DesktopOperationalPreferenceStore(options.userDataPath);
   const plugins =
     options.plugins ??
     new PluginRuntime({

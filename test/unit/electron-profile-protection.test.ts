@@ -78,6 +78,25 @@ describe("Electron Kafka profile protection", () => {
     expect(result.capability.recovery).toContain("credential");
   });
 
+  it("waits for a legitimate encrypted credential service that initializes after one second", async () => {
+    vi.useFakeTimers();
+    const safeStorage = new FakeSafeStorage();
+    safeStorage.isAsyncEncryptionAvailable = (): Promise<boolean> =>
+      new Promise((resolve) => {
+        setTimeout(() => resolve(true), 1_500);
+      });
+    const pending = initializeElectronProfileProtection(safeStorage, "linux");
+    const settled = vi.fn();
+    void pending.then(settled);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(settled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await pending).capability).toMatchObject({
+      state: "ready",
+      protection: "os-protected",
+    });
+  });
+
   it("fails closed when OS protection availability stalls past the startup boundary", async () => {
     vi.useFakeTimers();
     const safeStorage = new FakeSafeStorage();
@@ -91,7 +110,7 @@ describe("Electron Kafka profile protection", () => {
     const settled = vi.fn();
     void pending.then(settled);
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(settled).toHaveBeenCalledTimes(1);
     const result = await pending;

@@ -72,7 +72,7 @@ test("restores, applies and exactly resets durable operational preferences in El
     join(resolve(repositoryRoot, "dist"), "electron-operational-preferences-e2e-"),
   );
   const userDataPath = join(outputDirectory, "user-data");
-  const preferencePath = join(userDataPath, "preferences", "kafka-operational-preferences.json");
+  const preferencePath = join(userDataPath, "workbench", "kafka-operational-preferences.json");
   const rulePath = join(userDataPath, "rules", "kafka-rules.json");
   const hostLogDirectory = join(outputDirectory, "host-logs");
   const externalUrlLogPath = join(hostLogDirectory, "external-urls.log");

@@ -18,12 +18,19 @@ Paths below are relative to the [application-data directory](recovery.md#find-yo
 | Topic configuration history                 | `history/kafka-topic-configuration-history.json` | Ordinary JSON with recorded configuration-change evidence; not a broker audit log                                                                                                                                                         |
 | Kafka observations                          | `history/kafka-observations.json`                | Unencrypted JSON with cluster/topic/group identities, offset and health samples, optional record-size/key-frequency aggregates and example partition/offset locators; no raw keys, headers or payloads. Private file permissions on POSIX |
 | Relationship graphs                         | Workbench page memory                            | Bounded identities and timestamped evidence; no saved graph, raw records, schema definitions or connector credentials                                                                                                                     |
-| Operational preferences                     | `preferences/kafka-operational-preferences.json` | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
+| Operational preferences                     | `workbench/kafka-operational-preferences.json`   | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
 | Installed plugins                           | `plugins/`                                       | Verified code, manifests and selection state; removed through Preferences → Plugins                                                                                                                                                       |
 | NSP recovery identifiers                    | `plugins/.recovery/streamskope.nsp.json`         | Non-secret API/account and request/execution identifiers; survive restart and plugin version changes until confirmed cleanup clears them                                                                                                  |
 | Browser-engine state                        | Other Electron files under application data      | Runtime caches/state; include in a same-machine full backup, but do not treat them as a message archive                                                                                                                                   |
 | Read messages and activity history          | Bounded workbench memory                         | No durable message archive; closing/replacing a view or process can discard it                                                                                                                                                            |
 | Downloaded JSON and copied text             | User-selected file or OS clipboard               | Plaintext; remains outside the profile store and is not removed by uninstalling a plugin                                                                                                                                                  |
+
+Valid legacy `preferences/` directories migrate into `workbench/` without changing
+read-only or masking settings. Original directories are retained under
+`workbench/migrations/preferences-*/preferences/`; include these in backups.
+Chromium owns the separate `Preferences` file, which StreamSkope does not reset or
+replace. Corrupt workbench preferences block connection until restored or deliberately
+reset; the browser file is never treated as workbench configuration.
 
 Browser development profiles are session-only. Its installed plugins live in
 `.cache/development-plugins`; a development checkout is not a desktop backup.

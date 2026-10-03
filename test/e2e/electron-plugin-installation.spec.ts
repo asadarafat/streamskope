@@ -1,20 +1,14 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { join, resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
-import {
-  _electron as electron,
-  expect,
-  test,
-  type ElectronApplication,
-  type Page,
-} from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../../src/features/kafka/contracts";
-import { buildElectronSmoke, buildRenderer } from "../support/electron-application";
+import {
+  electronPluginStorageAvailable,
+  startElectronPluginFixture,
+} from "../support/electron-plugin";
 import { pluginPackageFixtures } from "../support/plugin-package-fixture";
 
 const run = promisify(execFile);
@@ -79,10 +73,7 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
 }, info) => {
   test.setTimeout(180_000);
   test.skip(
-    process.platform === "linux" &&
-      !["/usr/bin/dbus-daemon", "/usr/bin/dbus-send", "/usr/bin/gnome-keyring-daemon"].every(
-        existsSync,
-      ),
+    !electronPluginStorageAvailable,
     "Real protected-storage acceptance requires D-Bus and GNOME Keyring on Linux.",
   );
   if (process.env.STREAMSKOPE_PLUGIN_PACKAGE_READY !== "1")
@@ -91,127 +82,10 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
     });
   const { current: original, update } = await pluginPackageFixtures();
   const updateVersion = update.manifest.version;
-  await mkdir(resolve("dist"), { recursive: true });
-  const directory = await mkdtemp(join(resolve("dist"), "electron-plugin-e2e-"));
-  const catalogPath = join(directory, "catalog.skope-plugin");
-  const environment = Object.fromEntries(
-    Object.entries(process.env).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined,
-    ),
-  );
-  delete environment.ELECTRON_RUN_AS_NODE;
-  environment.STREAMSKOPE_PLUGIN_TEST_RENDERER = join(directory, "renderer");
-  environment.STREAMSKOPE_PLUGIN_TEST_USER_DATA = join(directory, "user-data");
-  environment.STREAMSKOPE_PLUGIN_TEST_PACKAGE = catalogPath;
-  let busPid: number | undefined;
-  let keyring: ChildProcess | undefined;
-  let application: ElectronApplication | undefined;
-  const errors: string[] = [];
-  const assetFailures: string[] = [];
-  const hostOutput: string[] = [];
+  const fixture = await startElectronPluginFixture(original.bytes, info);
+  const { application, page, catalogPath, processId, origin, security, errors, assetFailures } =
+    fixture;
   try {
-    await buildElectronSmoke(directory, "plugin");
-    await buildRenderer(directory);
-    await writeFile(catalogPath, original.bytes);
-    if (process.platform === "linux") {
-      environment.XDG_DATA_HOME = join(directory, "data");
-      environment.XDG_CONFIG_HOME = join(directory, "config");
-      environment.GNOME_KEYRING_CONTROL = join(directory, "keyring");
-      for (const path of [
-        environment.XDG_DATA_HOME,
-        environment.XDG_CONFIG_HOME,
-        environment.GNOME_KEYRING_CONTROL,
-      ])
-        await mkdir(path, { recursive: true });
-      const bus = await run("dbus-daemon", [
-        "--session",
-        "--fork",
-        "--print-address=1",
-        "--print-pid=1",
-      ]);
-      const [address, pid] = bus.stdout.trim().split("\n");
-      if (address === undefined || pid === undefined || !/^\d+$/u.test(pid))
-        throw new Error("D-Bus did not report an isolated session.");
-      environment.DBUS_SESSION_BUS_ADDRESS = address;
-      busPid = Number(pid);
-      keyring = spawn(
-        "gnome-keyring-daemon",
-        [
-          "--foreground",
-          "--unlock",
-          "--components=secrets",
-          `--control-directory=${environment.GNOME_KEYRING_CONTROL}`,
-        ],
-        { env: environment, stdio: ["pipe", "ignore", "ignore"] },
-      );
-      keyring.stdin?.end("\n");
-      await expect
-        .poll(async () => {
-          const { stdout } = await run(
-            "dbus-send",
-            [
-              "--session",
-              "--print-reply",
-              "--dest=org.freedesktop.DBus",
-              "/org/freedesktop/DBus",
-              "org.freedesktop.DBus.NameHasOwner",
-              "string:org.freedesktop.secrets",
-            ],
-            { env: environment },
-          );
-          return stdout.includes("boolean true");
-        })
-        .toBe(true);
-    }
-    const require = createRequire(resolve("package.json"));
-    application = await electron.launch({
-      executablePath: require("electron") as string,
-      args: [
-        ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
-        ...(process.platform === "linux" ? ["--password-store=gnome-libsecret"] : []),
-        join(directory, "plugin-main.cjs"),
-      ],
-      env: environment,
-    });
-    application
-      .process()
-      .stderr?.on("data", (chunk: Buffer) => hostOutput.push(chunk.toString("utf8")));
-    const processId = application.process().pid;
-    const page = await application.firstWindow();
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (message.type() === "error") errors.push(message.text());
-    });
-    page.on("requestfailed", (request) => {
-      if (request.url().includes("/plugins/")) assetFailures.push(request.url());
-    });
-    await page.setViewportSize({ width: 1200, height: 800 });
-    await expect(page.getByLabel("Profile storage status")).toContainText("OS-protected profiles", {
-      timeout: 15_000,
-    });
-    expect(page.url()).toBe("streamskope://app/");
-    const origin = await page.evaluate(() => performance.timeOrigin);
-    const security = await application.evaluate(({ BrowserWindow, safeStorage }) => {
-      const webContents = BrowserWindow.getAllWindows()[0]!.webContents as unknown as {
-        getLastWebPreferences(): {
-          contextIsolation: boolean;
-          nodeIntegration: boolean;
-          sandbox: boolean;
-        };
-      };
-      const preferences = webContents.getLastWebPreferences();
-      return {
-        contextIsolation: preferences.contextIsolation,
-        nodeIntegration: preferences.nodeIntegration,
-        sandbox: preferences.sandbox,
-        storage: safeStorage.getSelectedStorageBackend(),
-      };
-    });
-    expect(security.contextIsolation).toBe(true);
-    expect(security.nodeIntegration).toBe(false);
-    expect(security.sandbox).toBe(true);
-    if (process.platform === "linux") expect(security.storage).toBe("gnome_libsecret");
-
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Capture from EDA", exact: true })).toHaveCount(
       0,
@@ -279,16 +153,7 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
       ),
       contentType: "application/json",
     });
-    await application.close();
-    application = undefined;
   } finally {
-    await application?.close();
-    await info.attach("electron-host-output", {
-      body: hostOutput.join(""),
-      contentType: "text/plain",
-    });
-    keyring?.kill("SIGTERM");
-    if (busPid !== undefined) process.kill(busPid, "SIGTERM");
-    await rm(directory, { recursive: true, force: true });
+    await fixture.close();
   }
 });

@@ -15,7 +15,6 @@ import type { FixtureConfig, FixtureConnection } from "./kafka-fixture";
 
 const repositoryRoot = process.cwd();
 const require = createRequire(join(repositoryRoot, "package.json"));
-const electronExecutable = require("electron") as string;
 
 export async function buildElectronSmoke(
   outputDirectory: string,
@@ -162,7 +161,7 @@ export async function launchProfileApplication(
       storage,
       externalUrlLogPath,
     ),
-    executablePath: electronExecutable,
+    executablePath: require("electron") as string,
   });
 }
 

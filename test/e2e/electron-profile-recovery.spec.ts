@@ -1,10 +1,17 @@
-import { cp, mkdtemp, readFile, realpath, rename, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
+import {
+  _electron as electron,
+  expect,
+  test,
+  type ElectronApplication,
+  type Page,
+} from "@playwright/test";
 
+import { installNativeRelease, readRecoveryPlan } from "../../tools/check/native-installers";
 import {
   chooseNextElectronSavePath,
   connectElectronToFixture,
@@ -15,10 +22,51 @@ import {
   provisionSeededFixtureTopic,
   type SeededFixtureTopic,
 } from "../support/kafka-fixture";
-import { openProfileAction, openTopicDetail } from "../support/workbench-browser";
+import { startProtectedStorageSession } from "../support/protected-storage-session";
+import {
+  openProfileAction,
+  openTopicDetail,
+  openWorkbenchResource,
+} from "../support/workbench-browser";
 
 // Real credentials are entered in the UI; never retain DOM traces.
-test.use({ trace: "off" });
+test.use({ trace: "off", screenshot: "off", video: "off" });
+
+async function reconnectSavedProfile(
+  page: Page,
+  phase: string,
+  sensitiveValues: readonly string[],
+): Promise<{ readonly phase: string; readonly elapsedMs: number }> {
+  const started = performance.now();
+  await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
+  try {
+    // OAuth, native credential access and broker discovery run sequentially.
+    // This is an operation completion bound, not a latency qualification budget.
+    await expect(page.getByLabel("Connection status")).toContainText("Connected", {
+      timeout: 20_000,
+    });
+    return { phase, elapsedMs: Math.round(performance.now() - started) };
+  } catch (error) {
+    const alerts = await page.getByRole("alert").allTextContents();
+    const redact = (value: string): string =>
+      sensitiveValues
+        .reduce(
+          (text, secret) => (secret.length === 0 ? text : text.replaceAll(secret, "[redacted]")),
+          value,
+        )
+        .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu, "[redacted token]")
+        .slice(0, 512);
+    await test.info().attach("native-connection-failure", {
+      body: JSON.stringify({
+        phase,
+        elapsedMs: Math.round(performance.now() - started),
+        alerts: alerts.slice(0, 4).map(redact),
+      }),
+      contentType: "application/json",
+    });
+    throw error;
+  }
+}
 
 // Explicit operator rehearsal: requires a real, unlocked OS credential service
 // and the disposable AIO fixture. Never substitute deterministic safeStorage.
@@ -27,7 +75,7 @@ test("restores a full backup with native credential protection and reconnects", 
     process.env.STREAMSKOPE_NATIVE_RECOVERY !== "1",
     "Opt in with an unlocked OS credential service and disposable Kafka fixture.",
   );
-  test.setTimeout(180_000);
+  test.setTimeout(360_000);
   expect(process.env.STREAMSKOPE_RENDERER_URL).toBeUndefined();
   const config = await loadFixtureConfig();
   const fixture = await loadFixtureConnection();
@@ -36,20 +84,47 @@ test("restores a full backup with native credential protection and reconnects", 
   const backup = join(root, "backup");
   const require = createRequire(resolve("package.json"));
   const previousExecutable = process.env.STREAMSKOPE_UPGRADE_FROM_EXECUTABLE;
+  const planPath = process.env.STREAMSKOPE_NATIVE_RECOVERY_PLAN;
+  const plan = planPath === undefined ? undefined : await readRecoveryPlan(planPath);
+  const candidateSourceRevision =
+    plan !== undefined &&
+    "candidateSourceRevision" in plan &&
+    typeof plan.candidateSourceRevision === "string"
+      ? plan.candidateSourceRevision
+      : undefined;
+  let installed: Awaited<ReturnType<typeof installNativeRelease>> | undefined;
+  let initialInstall: typeof installed;
+  let protectedStorage: Awaited<ReturnType<typeof startProtectedStorageSession>> | undefined;
   let application: ElectronApplication | undefined;
   let seeded: SeededFixtureTopic | undefined;
+  const reconnects: { readonly phase: string; readonly elapsedMs: number }[] = [];
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+  delete environment.ELECTRON_RUN_AS_NODE;
+  delete environment.STREAMSKOPE_RENDERER_URL;
+  environment.NODE_ENV = "production";
   const launch = (previous = false): Promise<ElectronApplication> =>
     electron.launch({
+      env: environment,
       executablePath:
-        previous && previousExecutable ? previousExecutable : (require("electron") as string),
+        installed?.executablePath ??
+        (previous && previousExecutable ? previousExecutable : (require("electron") as string)),
       args: [
         ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
+        ...(protectedStorage?.electronArguments ?? []),
         `--user-data-dir=${active}`,
         // Load package.json as Electron would in a package, preserving the app's credential identity.
-        ...(previous && previousExecutable ? [] : [resolve(".")]),
+        ...(installed !== undefined || (previous && previousExecutable) ? [] : [resolve(".")]),
       ],
     });
   try {
+    protectedStorage = await startProtectedStorageSession(join(root, "protected-storage"));
+    Object.assign(environment, protectedStorage.environment);
+    installed = plan === undefined ? undefined : await installNativeRelease(plan, plan.from);
+    initialInstall = installed;
     seeded = await provisionSeededFixtureTopic();
     application = await launch(previousExecutable !== undefined);
     expect(await application.evaluate(({ app }) => app.getPath("userData"))).toBe(active);
@@ -67,21 +142,7 @@ test("restores a full backup with native credential protection and reconnects", 
     expect(["basic_text", "unknown"]).not.toContain(protection.backend);
     let page = await application.firstWindow();
     await connectElectronToFixture(page, config, fixture);
-    if (previousExecutable !== undefined) {
-      await application.close();
-      application = undefined;
-      await cp(active, join(root, "pre-upgrade"), { recursive: true, preserveTimestamps: true });
-      application = await launch();
-      expect(await application.evaluate(({ app }) => app.getName())).toBe(baseline.name);
-      expect(await application.evaluate(({ app }) => app.getPath("userData"))).toBe(active);
-      page = await application.firstWindow();
-      await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
-      await expect(page.getByLabel("Connection status")).toContainText("Connected");
-    }
-    const candidateRuntime = await application.evaluate(({ app }) => ({
-      version: app.getVersion(),
-      electron: process.versions.electron,
-    }));
+    if (plan !== undefined) expect(baseline.version).toBe(plan.from.version);
     await openTopicDetail(page, seeded.config.topic);
     await page
       .getByRole("button", { name: `Stop tail ${seeded.config.topic}`, exact: true })
@@ -109,8 +170,59 @@ test("restores a full backup with native credential protection and reconnects", 
     await application.close();
     application = undefined;
 
-    // Follow the guide: quit, copy the entire directory, keep the credential context.
-    await cp(active, backup, { recursive: true, preserveTimestamps: true });
+    // Copy the previous release's full backup before the installer replacement.
+    await cp(active, join(root, "pre-upgrade"), { recursive: true, preserveTimestamps: true });
+    expect((await stat(join(active, "Preferences"))).isFile()).toBe(true);
+    if (candidateSourceRevision === undefined) {
+      application = await launch(previousExecutable !== undefined);
+      page = await application.firstWindow();
+      reconnects.push(
+        await reconnectSavedProfile(page, "baseline restart", [
+          config.oauthClientSecret,
+          config.seedPayload,
+        ]),
+      );
+      await application.close();
+      application = undefined;
+    }
+    if (plan !== undefined) installed = await installNativeRelease(plan, plan.to);
+    application = await launch();
+    expect(await application.evaluate(({ app }) => app.getName())).toBe(baseline.name);
+    expect(await application.evaluate(({ app }) => app.getPath("userData"))).toBe(active);
+    const candidateRuntime = await application.evaluate(({ app, safeStorage }) => ({
+      version: app.getVersion(),
+      electron: process.versions.electron,
+      protection:
+        process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : process.platform,
+    }));
+    if (plan !== undefined) expect(candidateRuntime.version).toBe(plan.to.version);
+    expect(candidateRuntime.protection).toBe(protection.backend);
+    if (initialInstall !== undefined) {
+      expect(installed?.executablePath).toBe(initialInstall.executablePath);
+      expect(installed?.archiveSha256).not.toBe(initialInstall.archiveSha256);
+    }
+    page = await application.firstWindow();
+    await page.getByRole("button", { name: "Saved queries" }).click();
+    queries = page.getByRole("dialog", { name: "Saved queries" });
+    await queries.getByRole("combobox", { name: "Saved query" }).click();
+    await page.getByRole("option", { name: "Native incident" }).click();
+    await queries.getByRole("button", { name: "Open query" }).click();
+    await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
+    reconnects.push(
+      await reconnectSavedProfile(page, "after installer replacement", [
+        config.oauthClientSecret,
+        config.seedPayload,
+      ]),
+    );
+    await expect(page.getByRole("textbox", { name: "Start time (inclusive)" })).toHaveValue(
+      startTime,
+    );
+    await expect(page.getByRole("textbox", { name: "End time (exclusive)" })).toHaveValue(endTime);
+    await application.close();
+    application = undefined;
+
+    // Follow the guide: keep the complete older-release backup and credential context.
+    await cp(join(root, "pre-upgrade"), backup, { recursive: true, preserveTimestamps: true });
     const saved = await readFile(join(backup, "profiles/kafka-profiles.json"), "utf8");
     expect(saved).not.toContain(config.oauthClientSecret);
     expect(saved).not.toContain("BEGIN CERTIFICATE");
@@ -136,6 +248,15 @@ test("restores a full backup with native credential protection and reconnects", 
 
     application = await launch();
     page = await application.firstWindow();
+    reconnects.push(
+      await reconnectSavedProfile(page, "candidate restart", [
+        config.oauthClientSecret,
+        config.seedPayload,
+      ]),
+    );
+    await openWorkbenchResource(page, "Connection Profiles");
+    await page.getByRole("button", { name: "Disconnect profile Electron local aio" }).click();
+    await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     await openProfileAction(page, "Electron local aio", "Delete");
     await page
       .getByRole("dialog", { name: "Delete Kafka profile Electron local aio" })
@@ -164,8 +285,12 @@ test("restores a full backup with native credential protection and reconnects", 
     await page.getByRole("option", { name: "Native incident" }).click();
     await queries.getByRole("button", { name: "Open query" }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
-    await page.getByRole("button", { name: "Connect profile Electron local aio" }).click();
-    await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    reconnects.push(
+      await reconnectSavedProfile(page, "after backup restoration", [
+        config.oauthClientSecret,
+        config.seedPayload,
+      ]),
+    );
     const readMode = page.getByRole("combobox", { name: "Read mode" });
     await expect(readMode).toBeEnabled();
     await expect(readMode).toContainText("Time window");
@@ -193,27 +318,74 @@ test("restores a full backup with native credential protection and reconnects", 
       filters: { key: "streamskope-seed" },
       messages: [{ key: "streamskope-seed", payload: config.seedPayload }],
     });
+    await application.close();
+    application = undefined;
+    expect((await stat(join(active, "Preferences"))).isFile()).toBe(true);
+    const evidence = {
+      platform: process.platform,
+      architecture: process.arch,
+      osRelease: release(),
+      credentialService:
+        process.platform === "darwin"
+          ? "macOS Keychain"
+          : process.platform === "win32"
+            ? "Windows DPAPI"
+            : protection.backend,
+      protection: protection.backend,
+      baseline,
+      candidateVersion: candidateRuntime.version,
+      electronVersion: candidateRuntime.electron,
+      previousExecutableUsed: plan !== undefined || previousExecutable !== undefined,
+      installerReplacement:
+        plan === undefined
+          ? "not-run"
+          : {
+              method: installed!.method,
+              baselineArchiveSha256: initialInstall!.archiveSha256,
+              candidateArchiveSha256: installed!.archiveSha256,
+              installationDirectoryReused: true,
+            },
+      baselineRestartReconnected:
+        candidateSourceRevision === undefined
+          ? true
+          : "not run; qualification starts from the pre-restart baseline backup",
+      ...(candidateSourceRevision === undefined ? {} : { candidateSourceRevision }),
+      chromiumPreferencesRetainedAsFile: true,
+      upgradedProfileReconnected:
+        plan === undefined && previousExecutable === undefined ? "not-run" : true,
+      upgradedSavedQueryRetained: true,
+      candidateRestarted: true,
+      savedQueryRestored: true,
+      backupCreatedWithBaselineRelease: true,
+      explicitAbsoluteBoundsRestored: true,
+      restoredProfileReconnected: true,
+      credentialsReentered: false,
+      reconnects,
+      historicalFilteredExportVerified: true,
+      scope:
+        "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
+    };
+    await writeFile(
+      resolve("test-results/electron/native-recovery.json"),
+      `${JSON.stringify(evidence, null, 2)}\n`,
+    );
     await test.info().attach("native-recovery", {
-      body: JSON.stringify({
-        platform: process.platform,
-        architecture: process.arch,
-        protection: protection.backend,
-        baseline,
-        candidateVersion: candidateRuntime.version,
-        electronVersion: candidateRuntime.electron,
-        previousExecutableUsed: previousExecutable !== undefined,
-        upgradedProfileReconnected: previousExecutable === undefined ? "not-run" : true,
-        savedQueryRestored: true,
-        explicitAbsoluteBoundsRestored: true,
-        restoredProfileReconnected: true,
-        credentialsReentered: false,
-        historicalFilteredExportVerified: true,
-      }),
+      body: JSON.stringify(evidence),
       contentType: "application/json",
     });
   } finally {
-    await application?.close();
-    await seeded?.dispose();
-    await rm(root, { recursive: true, force: true });
+    try {
+      await application?.close();
+    } finally {
+      try {
+        await seeded?.dispose();
+      } finally {
+        try {
+          await protectedStorage?.dispose();
+        } finally {
+          await rm(root, { recursive: true, force: true, maxRetries: 3 });
+        }
+      }
+    }
   }
 });

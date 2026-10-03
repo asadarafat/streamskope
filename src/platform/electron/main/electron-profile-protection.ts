@@ -4,7 +4,9 @@ import type { KafkaProfileProtector } from "../../node/kafka-profile-file-store"
 export type ElectronStorageBackend =
   "basic_text" | "gnome_libsecret" | "kwallet" | "kwallet5" | "kwallet6" | "unknown";
 
-const PROFILE_PROTECTION_AVAILABILITY_TIMEOUT_MS = 1_000;
+// Cold encrypted keyrings may need more than one second to initialize. Stay bounded
+// while allowing the operating-system service to finish its real protection setup.
+const PROFILE_PROTECTION_AVAILABILITY_TIMEOUT_MS = 10_000;
 
 export interface ElectronSafeStoragePort {
   decryptStringAsync(encrypted: Buffer): Promise<{

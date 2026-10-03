@@ -88,6 +88,47 @@ For Electron/web system tests, use `node tools/package/e2e.mjs electron`
 (or `web`) with their runtime prerequisites available. Benchmarks and fixture
 utilities can be invoked directly through `node --import tsx PATH`.
 
+The manual **Native recovery** workflow takes a published baseline and either a
+published target or the current source, and rehearses installer replacement on
+Linux x64, Windows x64 and macOS ARM64. It verifies published installers against
+`SHA256SUMS`; source targets are rebuilt from the clean checkout, retain
+`0.0.0-dev`, and record the exact source revision and installer hash. It creates
+an isolated application-data directory, saves a protected profile and query in
+the old release, replaces the app, and restores the complete old backup in the
+new release. Reconnection and a filtered known-record export must pass without
+re-entering credentials. Only the sanitized report is uploaded; app data,
+credentials, browser traces and broker logs are removed.
+
+For an unreleased fix, run the candidate rehearsal from a clean native checkout:
+
+```sh
+node --import tsx tools/check/native-recovery.ts --from 0.6.0 --candidate dist/installers/StreamSkope-0.0.0-dev-darwin-arm64.dmg --candidate-version 0.0.0-dev
+```
+
+Substitute the native installer filename on Linux or Windows. The command builds
+the candidate before testing it and does not publish or assign a release.
+Candidate mode explicitly omits baseline restart: it backs up the old release
+after quitting it, then requires the candidate to reconnect after replacement,
+a further restart, and restoration of that backup. A known old-release restart
+defect remains separate evidence; candidate success does not qualify the old build.
+
+Published-to-published mode is available with `--from VERSION --to VERSION` and
+additionally requires the baseline to reconnect after restart. The recorded macOS
+`--from 0.6.0 --to 0.7.0` run failed at the 0.6.0 baseline restart, before installing
+0.7.0, because the old preference path collided with Chromium's file. Keep that
+case as a known-failing regression, not a successful published-upgrade example.
+
+It needs Java 17+ and an unlocked credential service. Without explicit fixture
+connection variables, it starts a checksum-pinned, loopback-only JVM Kafka
+broker with TLS and RS256 OAuth authentication. Linux also requires Xvfb, D-Bus
+and GNOME Keyring; it creates a temporary Secret Service session. Windows runs
+only on disposable Actions accounts because NSIS also changes user registration
+and shortcuts. macOS copies the DMG application into an isolated directory;
+Linux replaces the AppImage and launches its extracted native application.
+This qualifies the native payload and credential recovery, not Linux FUSE or
+desktop launcher integration. The workflow is separate from ordinary PR CI and
+does not publish a release or authorize cross-account credential portability.
+
 Within `src/features/kafka`, keep behavior with its owner. The UI's
 `StreamSkopeWorkbench` composes views; `useWorkbenchActivity`, `useWorkbenchProfiles`
 and `useWorkbenchTopics` own their interaction state and effects. The facade's
