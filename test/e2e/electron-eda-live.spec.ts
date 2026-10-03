@@ -299,13 +299,15 @@ test("qualifies live EDA capture through an installed plugin in one protected El
   };
   const connect = async (): Promise<void> => {
     const profile = (await profiles(page)).find((p) => p.id === captureProfileId)!;
-    if (!profile.active)
+    if (!profile.active) {
+      await openWorkbenchResource(page, "Connection Profiles");
       await page
         .getByRole("button", {
           name: `Connect insecure plaintext profile ${profile.name}`,
           exact: true,
         })
         .click();
+    }
     await expect
       .poll(async () => (await profiles(page)).find((p) => p.id === captureProfileId)?.active, {
         timeout: 30_000,
@@ -313,6 +315,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
       .toBe(true);
   };
   const resume = async (): Promise<ProfileEdaCaptureSource> => {
+    await openWorkbenchResource(page, "Connection Profiles");
     await page.getByRole("button", { name: "Resume capture", exact: true }).click();
     await credentials(page, edaApi);
     await page
@@ -504,6 +507,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
       "reinstall-resume-same-profile",
       "reinstalled-package-record-receipt",
     );
+    await openWorkbenchResource(page, "Connection Profiles");
     await page
       .getByRole("button", {
         name: `Disconnect insecure plaintext profile ${captureProfile.name}`,
