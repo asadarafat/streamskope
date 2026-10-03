@@ -4,6 +4,8 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 import { verifyForgePatch } from "./forge-patch";
+import { verifyBuildDependencyPatches, type VerifiedBuildPatch } from "./build-dependency-patches";
+import { BUILD_DEPENDENCY_PATCHES } from "./build-dependency-patch-data";
 
 const BACKPORTED_ADVISORY = "https://github.com/advisories/GHSA-86w9-cpqp-85rv";
 const SEVERITIES = ["info", "low", "moderate", "high", "critical"] as const;
@@ -112,30 +114,33 @@ function finding(name: string, value: unknown): Finding {
 }
 
 function validateGraph(findings: ReadonlyMap<string, Finding>): void {
-  const complete = new Set<string>();
-  const visiting = new Set<string>();
-  function visit(name: string): void {
-    if (complete.has(name)) return;
-    const item = findings.get(name);
-    if (item === undefined || visiting.has(name)) {
-      throw new Error("npm audit returned a missing or cyclic dependency reference.");
-    }
-    visiting.add(name);
-    for (const entry of item.via) {
-      if (typeof entry === "string") visit(entry);
-      const causeSeverity =
-        typeof entry === "string" ? findings.get(entry)?.severity : entry.severity;
-      if (
-        causeSeverity === undefined ||
-        SEVERITIES.indexOf(causeSeverity) > SEVERITIES.indexOf(item.severity)
-      ) {
+  for (const item of findings.values()) {
+    for (const cause of item.via) {
+      const severity = typeof cause === "string" ? findings.get(cause)?.severity : cause.severity;
+      if (severity === undefined)
+        throw new Error("npm audit returned a missing or cyclic dependency reference.");
+      if (SEVERITIES.indexOf(severity) > SEVERITIES.indexOf(item.severity))
         throw new Error("npm audit understates the severity of an underlying advisory.");
+    }
+    // npm legitimately reports peer cycles (for example app-builder-lib/dmg-builder).
+    // Each component must still terminate in at least one concrete advisory.
+    const pending = [item.name];
+    const visited = new Set<string>();
+    let grounded = false;
+    while (pending.length > 0) {
+      const name = pending.pop()!;
+      if (visited.has(name)) continue;
+      visited.add(name);
+      for (const cause of findings.get(name)!.via) {
+        if (typeof cause === "string") pending.push(cause);
+        else grounded = true;
       }
     }
-    visiting.delete(name);
-    complete.add(name);
+    if (!grounded)
+      throw new Error(
+        "npm audit returned a missing or cyclic dependency reference without an advisory.",
+      );
   }
-  for (const name of findings.keys()) visit(name);
 }
 
 function isBackportedAdvisory(item: Advisory): boolean {
@@ -148,10 +153,11 @@ function isBackportedAdvisory(item: Advisory): boolean {
   );
 }
 
-/** Interpret npm's complete report; verified paths must come from verifyForgePatch. */
+/** Interpret the complete report using paths returned by exact-source patch verification. */
 export function evaluateDependencyAudit(
   execution: AuditExecution,
   verifiedForgePaths: readonly string[],
+  verifiedBuildPatches: readonly VerifiedBuildPatch[] = [],
 ): DependencyAuditResult {
   if (
     execution.error !== undefined ||
@@ -199,6 +205,50 @@ export function evaluateDependencyAudit(
     forge.nodes.every((node) => verified.has(node)) &&
     forge.via.every((item) => typeof item !== "string" && isBackportedAdvisory(item));
   const backportedPackages: string[] = [];
+  const buildMitigated = new Set<string>();
+  for (const verifiedPatch of verifiedBuildPatches) {
+    const specification = BUILD_DEPENDENCY_PATCHES.find(
+      (patch) =>
+        patch.name === verifiedPatch.name && patch.advisoryUrl === verifiedPatch.advisoryUrl,
+    );
+    const item = findings.get(verifiedPatch.name);
+    if (specification === undefined || item === undefined || item.severity !== "high") continue;
+    if (
+      item.nodes.every((path) => verifiedPatch.paths.includes(path)) &&
+      item.via.every(
+        (advisory) =>
+          typeof advisory !== "string" &&
+          advisory.url === specification.advisoryUrl &&
+          advisory.name === specification.name &&
+          advisory.dependency === specification.name &&
+          advisory.severity === "high" &&
+          advisory.range === `<=${specification.version}`,
+      )
+    )
+      buildMitigated.add(item.name);
+  }
+  // Follow every cause through peer cycles. A concrete unverified advisory or an
+  // elevated severity anywhere keeps the whole dependent component blocking.
+  const roots = new Set(buildMitigated);
+  const onlyVerifiedCauses = (name: string): boolean => {
+    const pending = [name];
+    const visited = new Set<string>();
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const item = findings.get(current)!;
+      if (item.severity !== "high") return false;
+      if (roots.has(current)) continue;
+      for (const cause of item.via) {
+        if (typeof cause !== "string") return false;
+        pending.push(cause);
+      }
+    }
+    return true;
+  };
+  for (const item of findings.values())
+    if (onlyVerifiedCauses(item.name)) buildMitigated.add(item.name);
   const remainingHighOrCriticalPackages: string[] = [];
   const otherReportedPackages: string[] = [];
   for (const item of findings.values()) {
@@ -209,7 +259,7 @@ export function evaluateDependencyAudit(
         (item.name === "jks-js" &&
           item.nodes.every((node) => node === "node_modules/jks-js") &&
           item.via.every((entry) => entry === "node-forge")));
-    if (backported) backportedPackages.push(item.name);
+    if (backported || buildMitigated.has(item.name)) backportedPackages.push(item.name);
     else if (item.severity === "high" || item.severity === "critical") {
       remainingHighOrCriticalPackages.push(item.name);
     } else otherReportedPackages.push(item.name);
@@ -254,16 +304,17 @@ export function runNpmAudit(
 
 export async function auditDependencies(root: string): Promise<void> {
   const verifiedForgePaths = await verifyForgePatch(root);
+  const verifiedBuildPatches = await verifyBuildDependencyPatches(root);
   const npmCli = process.env.npm_execpath;
   if (!npmCli) throw new Error("Run dependency qualification through npm run check.");
   const execution = runNpmAudit(root, npmCli);
-  const result = evaluateDependencyAudit(execution, verifiedForgePaths);
+  const result = evaluateDependencyAudit(execution, verifiedForgePaths, verifiedBuildPatches);
   process.stdout.write(
     `npm audit: ${result.upstreamAffectedPackages} upstream affected packages.\n`,
   );
   if (result.backportedPackages.length > 0) {
     process.stdout.write(
-      `Verified security backport GHSA-86w9-cpqp-85rv in node-forge 1.4.0 accounts for: ${result.backportedPackages.join(", ")}.\n`,
+      `Verified exact-source security mitigations account for: ${result.backportedPackages.join(", ")}.\n`,
     );
   }
   if (result.otherReportedPackages.length > 0) {

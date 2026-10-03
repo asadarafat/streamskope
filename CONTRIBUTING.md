@@ -205,6 +205,31 @@ When a fixed upstream release is available, review and upgrade both direct and
 transitive Forge dependencies, remove the temporary patch hooks and advisory
 handling, restore the direct audit command, and retain the signature regression.
 
+## Temporary build dependency mitigations
+
+Two development dependencies currently have no published patched version:
+[braces 3.0.3](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) and
+[http-cache-semantics 4.2.0](https://github.com/advisories/GHSA-ch52-4w7c-c8xp).
+The former receives a depth guard in its parser and recursive AST walkers. The
+latter requires revalidation when cache safety reduced freshness to zero, even
+when a client permits stale responses. Positive-lifetime public cache entries
+retain normal stale-response behavior.
+
+These are local mitigations, not upstream fixes. `check`, `build` and native
+`package` apply the pinned changes before using these build tools. The helper
+verifies locked package identity, development-only classification, full original
+and patched file hashes and actual dependency resolution. Repeated application
+is idempotent; changed or unlisted copies fail verification. Both packages remain
+excluded from production dependencies. This does not alter the Forge backport
+used by the desktop itself.
+
+The complete npm audit remains mandatory. Only these exact advisory/version/path
+combinations and indirect findings whose causes are all verified can be accounted
+for; new advisories and unverified copies still fail. Regression tests reproduce
+the stock stack overflow and unsafe cookie-cache reuse, then confirm the patched
+behavior. Once fixed upstream versions are qualified, remove the corresponding
+data, helper hooks and audit handling. Keep the regression tests.
+
 ## GitHub builds
 
 The **CI** workflow runs the required **CI** source/docs check on every PR using
