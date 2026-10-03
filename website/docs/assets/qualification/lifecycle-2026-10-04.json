@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 1,
+  "summaryDate": "2026-10-04",
+  "kind": "Unreleased source qualification; no release version assigned",
+  "provenance": "This public summary retains selected facts and SHA-256 bindings to archived sanitized reports. It omits private endpoints, credentials, record contents, session/topic identifiers, raw logs and browser attachments.",
+  "runs": [
+    {
+      "id": "eda-native-installed-lifecycle",
+      "outcome": "passed",
+      "checkedAt": "2026-10-03T22:34:43.460Z",
+      "sourceCommit": "f26f406e604ba5289452cad5845111527a7a1c1c",
+      "retainedReportSha256": "edbcebffca79b73d9bc946ba9ed0191205bbdecebb520fa70ecee5e68ae1d681",
+      "testFileSha256": "bbac79387d7c077cad83397528e0a1f58aeca6a0251dbe41156d29f0f2773126",
+      "platform": "linux",
+      "architecture": "arm64",
+      "targetVersion": "v26.8.2",
+      "pluginApiVersion": 4,
+      "packageSha256": "33d9c6829832b555ea9ab02423db5fd7820456598c62f8e975bd1a00c82ec856",
+      "updatePackageSha256": "37225c6b9376e27657eaf762de1bf24af4c8f9149c5545fa6b6d4eb280588f35",
+      "checkCount": 26,
+      "checkedCapabilities": [
+        "UI package install with real GNOME protected profile storage",
+        "Occupied local port recovery without closing the other listener or saving a broken profile",
+        "Known exported fixture record rendered; disconnect/reconnect",
+        "Active hot update, explicit resume with same profile and new session",
+        "Hot removal, repeat removal, reinstall/resume and final stop",
+        "Owned sessions absent; original Producer unchanged; same desktop process and window"
+      ],
+      "cleanup": "all test-owned UUIDs absent; original producer unchanged",
+      "scope": "Existing EDA 26.8.2 cluster app; isolated local catalog; update uses the same built backend and renderer with a newer manifest.",
+      "sandboxScope": {
+        "rendererSettings": {
+          "contextIsolation": true,
+          "nodeIntegration": false,
+          "sandbox": true,
+          "storage": "gnome_libsecret"
+        },
+        "processSandboxDisabled": true,
+        "osSandboxEnforcementQualified": false
+      },
+      "transport": {
+        "apiCertificateVerification": true,
+        "apiTrust": "Host configured with the lab CA",
+        "kafka": "Plaintext loopback tunnel carried over authenticated TLS WebSocket"
+      }
+    },
+    {
+      "id": "nsp-node-installed-lifecycle",
+      "outcome": "passed",
+      "source": {
+        "observedHead": "e40e3b7a6cb5a30b92b679ce76b66b65663be498",
+        "workingTree": "clean",
+        "harnessCheckpoint": "9b72b14da82926ae324add67c7e2667c961c5656",
+        "coreTree": "c06144fd4682cede5ba3239f43e02712a2a9ff4a",
+        "nspTree": "4672209fc7c9b0840d364879ff852ba1bc1b6795",
+        "lockfileSha256": "0a3bb5eb00ed75ede0da83a07d1a4b8a94dc01af04cf2851ae2bd8aaaeb280d7"
+      },
+      "retainedReportSha256": "1f8d01cb6e3deca647d4f26621e202083912615b8c3499e4bf431ec9a65aae13",
+      "targetVersion": "NSP-CN-26.4.0-rel.200",
+      "packages": [
+        {
+          "version": "0.0.0-dev.1791064933786",
+          "apiVersion": 4,
+          "sha256": "29de98c48105a68c849956cbef0516d9979182aab2c82913a1d1927940d97585"
+        },
+        {
+          "version": "0.0.0-dev.1791064933787",
+          "apiVersion": 4,
+          "sha256": "21be33b31d4722fd6998673d6350467a4c4615b6e5a99e2a3262fad5c24642c1"
+        }
+      ],
+      "checkCount": 23,
+      "scope": {
+        "loader": "production package loader; isolated catalog",
+        "profileStore": "isolated host memory; native protected storage tested separately",
+        "update": "same built code with a newer qualification-only manifest",
+        "recovery": "SIGKILL immediately after the real execution identifier is durably journaled",
+        "writes": "one generated record in one uniquely owned temporary topic",
+        "businessTopics": "metadata only; no business payload reads or writes"
+      },
+      "apiCertificateVerification": false,
+      "kafkaAuthentication": "TLS; broker certificate verification enabled",
+      "cleanup": "Each uniquely owned topic was deleted and its absence confirmed; owned executions were cleaned and recovery journals cleared. The immutable shared helper remains intentionally installed. Original example workflows, user profiles and business records were unchanged.",
+      "checkedAt": "2026-10-03T22:03:11.346Z",
+      "checkedCapabilities": [
+        "Production installed package loader; repeated installation and profile reuse",
+        "Combined trust workflow, Kafka connection and generated record receipt in uniquely owned topic",
+        "Hot update/removal/reinstall preserving profile",
+        "SIGKILL after execution identifier journaling, retry recovery and idempotent cleanup",
+        "Foreign ownership marker refused; pending cleanup blocks removal",
+        "No secrets in renderer events; test-owned topic absence confirmed"
+      ]
+    },
+    {
+      "id": "nsp-native-installed-lifecycle",
+      "outcome": "passed",
+      "source": {
+        "observedHead": "99f7f2d0ec319d6ec7ba6683e3e2ffdda0792982",
+        "workingTree": "clean throughout run",
+        "coreTree": "ae3c7012cca7406e37131d9ea1ebbf9e1285eccf",
+        "nspTree": "4672209fc7c9b0840d364879ff852ba1bc1b6795"
+      },
+      "retainedReportSha256": "b72059db223dc236f0eef48663bb2e18e401c3da51ff9159adc5db0ad34e3b0d",
+      "targetVersion": "NSP-CN-26.4.0-rel.200",
+      "packages": [
+        {
+          "version": "0.0.0-dev.1791064933786",
+          "apiVersion": 4,
+          "sha256": "29de98c48105a68c849956cbef0516d9979182aab2c82913a1d1927940d97585"
+        },
+        {
+          "version": "0.0.0-dev.1791064933787",
+          "apiVersion": 4,
+          "sha256": "21be33b31d4722fd6998673d6350467a4c4615b6e5a99e2a3262fad5c24642c1"
+        }
+      ],
+      "checkCount": 12,
+      "scope": "Production Electron shell, OS protected storage and real installed backend/renderer; isolated local catalog. Generated owned-topic record only; no business payloads read. Update package retains the same source code with a newer qualification-only manifest.",
+      "apiCertificateVerification": false,
+      "kafkaAuthentication": "TLS; broker certificate verification enabled",
+      "cleanup": "Each uniquely owned topic was deleted and its absence confirmed; owned executions were cleaned and recovery journals cleared. The immutable shared helper remains intentionally installed. Original example workflows, user profiles and business records were unchanged.",
+      "evidenceRecordedAt": "2026-10-03T22:25:07.600505+00:00",
+      "platform": "linux",
+      "architecture": "arm64",
+      "checkedCapabilities": [
+        "UI package install and real NSP workflow dialog",
+        "Genuine GNOME protected profiles; refresh reuses profile",
+        "Generated owned-topic record rendered",
+        "Hot update/removal/reinstall and reconnect; same process/window",
+        "Execution journal empty and test-owned topic absent"
+      ],
+      "sandboxScope": {
+        "rendererSettings": {
+          "contextIsolation": true,
+          "nodeIntegration": false,
+          "sandbox": true,
+          "storage": "gnome_libsecret"
+        },
+        "noSandboxLaunchArgument": "not recorded in this completed run",
+        "osSandboxEnforcementQualified": false
+      }
+    },
+    {
+      "id": "native-installer-linux-x64",
+      "outcome": "passed",
+      "checkedAt": "2026-10-03T22:49:41.884Z",
+      "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
+      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
+      "retainedReportSha256": "12080274b96da3f588806bd20dd57fa073d3e08b7d32779b1e444fedf865df51",
+      "platform": "linux",
+      "architecture": "x64",
+      "targetKind": "unreleased source installer",
+      "installers": [
+        {
+          "version": "0.6.0",
+          "name": "StreamSkope-0.6.0-linux-x64.AppImage",
+          "sha256": "fe06e621c6c325ea1bc8231897f1cb9b33c6b5db5c67a37a86afdaf7a477848f"
+        },
+        {
+          "version": "0.0.0-dev",
+          "name": "StreamSkope-0.0.0-dev-linux-x64.AppImage",
+          "sha256": "0bc80e9ab900bf76280deffd1df83370c019e8c2569a9646892370cb0e99f6dd"
+        }
+      ],
+      "cleanup": {
+        "owned installation": {
+          "outcome": "passed"
+        },
+        "disposable Kafka fixture": {
+          "outcome": "passed"
+        },
+        "temporary files": {
+          "outcome": "passed"
+        }
+      },
+      "credentialService": "gnome_libsecret",
+      "baselineRestartReconnected": "not run; qualification starts from the pre-restart baseline backup",
+      "checkedCapabilities": [
+        "Same installation directory replaced using actual native installers",
+        "Protected profile and absolute historical query retained",
+        "Candidate restart and reconnection",
+        "Complete baseline backup restored under same OS account and credential service",
+        "Known filtered record exported without re-entering credentials; restored query does not auto-connect/read"
+      ],
+      "scope": "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
+      "installerMethod": "Replace the same AppImage and launch its extracted native application (no FUSE dependency)"
+    },
+    {
+      "id": "native-installer-darwin-arm64",
+      "outcome": "passed",
+      "checkedAt": "2026-10-03T22:50:32.242Z",
+      "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
+      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
+      "retainedReportSha256": "51bbdb7842b2bb47384a78553dca777edd90211ef28f71e2aac82c1b807f359a",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "targetKind": "unreleased source installer",
+      "installers": [
+        {
+          "version": "0.6.0",
+          "name": "StreamSkope-0.6.0-darwin-arm64.dmg",
+          "sha256": "edbca7dc1614352082329f15a27aa253b886be0176892023f743a444662a348c"
+        },
+        {
+          "version": "0.0.0-dev",
+          "name": "StreamSkope-0.0.0-dev-darwin-arm64.dmg",
+          "sha256": "a07a8f3ef4c016895dd5fdd00f2010587337365f871c23724a108da63fbbd552"
+        }
+      ],
+      "cleanup": {
+        "owned installation": {
+          "outcome": "passed"
+        },
+        "disposable Kafka fixture": {
+          "outcome": "passed"
+        },
+        "temporary files": {
+          "outcome": "passed"
+        }
+      },
+      "credentialService": "macOS Keychain",
+      "baselineRestartReconnected": "not run; qualification starts from the pre-restart baseline backup",
+      "checkedCapabilities": [
+        "Same installation directory replaced using actual native installers",
+        "Protected profile and absolute historical query retained",
+        "Candidate restart and reconnection",
+        "Complete baseline backup restored under same OS account and credential service",
+        "Known filtered record exported without re-entering credentials; restored query does not auto-connect/read"
+      ],
+      "scope": "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
+      "installerMethod": "Replace isolated .app with the application from the verified DMG"
+    },
+    {
+      "id": "native-installer-win32-x64",
+      "outcome": "failed",
+      "checkedAt": "2026-10-03T22:52:36.270Z",
+      "sourceCommit": "74db7768417bfcf5adacb7069151727326d699a5",
+      "workflowRun": "https://github.com/asadarafat/streamskope/actions/runs/37159589210",
+      "retainedReportSha256": "9b62e1765d9f3668e87faa8398e97c03a08733229deeb2ef09eeca3d46daedbb",
+      "platform": "win32",
+      "architecture": "x64",
+      "targetKind": "unreleased source installer",
+      "installers": [
+        {
+          "version": "0.6.0",
+          "name": "StreamSkope-0.6.0-win32-x64-Setup.exe",
+          "sha256": "651bc7a854dd52617a8de2ba90eb4214078cb36ce5f40526d25bad4378336fee"
+        },
+        {
+          "version": "0.0.0-dev",
+          "name": "StreamSkope-0.0.0-dev-win32-x64-Setup.exe",
+          "sha256": "f5af7290d471988075598ca320c9073328bc2de28bd601f39d47ee584054509d"
+        }
+      ],
+      "cleanup": {
+        "owned installation": {
+          "outcome": "passed"
+        },
+        "temporary files": {
+          "outcome": "passed"
+        }
+      },
+      "failure": {
+        "phase": "disposable Kafka fixture",
+        "code": "VERIFICATION_FAILED"
+      },
+      "scope": "NSIS installer built; fixture failure occurred before recovery assertions. Windows recovery remains unqualified pending a successful rerun."
+    }
+  ],
+  "limitations": [
+    "Results apply to the recorded source and artifact identities; they do not change qualification of published v0.7.0 installers.",
+    "Local plugin catalogs and unchanged-code manifest updates do not qualify public plugin distribution, a published upgrade or API 2/3 migration.",
+    "Fresh shared EDA cluster-app installation, NSP Kafka OAuth, other vendor versions/policies and OS process sandbox enforcement were not qualified.",
+    "Native installer recovery uses published 0.6.0 as baseline and unreleased 0.0.0-dev as candidate. Candidate mode starts with the pre-restart baseline backup and does not claim baseline restart passed.",
+    "Linux installer recovery uses the extracted AppImage payload; FUSE and desktop launcher integration were not qualified.",
+    "Same-account backup restoration does not establish cross-account credential transfer, lost credential-store recovery, downgrade or plugin rollback."
+  ]
+}

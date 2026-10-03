@@ -31,7 +31,7 @@ the app before retrying. A copied profile file alone does not recreate OS keys.
 
 ## Back up before upgrading
 
-1. Record the installed release tag, OS/CPU, plugin version and target EDA version.
+1. Record the installed release tag, OS/CPU, plugin versions and target EDA/NSP versions.
    Retain the matching installer and its verified checksum for recovery.
 2. Stop or deliberately keep any EDA capture using the exit prompt. Keeping a
    capture only preserves it until its [lease expires](../plugins/eda.md#stop-update-and-resume).
@@ -73,7 +73,9 @@ It does not erase copies in backups or change Kafka data. Older desktop versions
 without Observed health do not display this history; a new history file does not
 by itself migrate the profile format.
 
-Operational preferences now use `workbench/kafka-operational-preferences.json`,
+### Unreleased operational-preference recovery
+
+Current source after v0.7.0 uses `workbench/kafka-operational-preferences.json`,
 separate from Chromium's `Preferences` file. Valid older `preferences/` directories
 are migrated with every protection choice preserved; the original directory is
 archived under `workbench/migrations/preferences-*/preferences/`. Malformed or
@@ -81,6 +83,24 @@ unreadable workbench data stays blocked instead of silently loading permissive
 defaults. Do not remove or replace Chromium's file to recover workbench settings.
 For a downgrade, restore the complete pre-upgrade backup; older apps do not read
 the new location, and later changes are not copied back into archived settings.
+This change is not included in the published v0.7.0 installer. See the
+[source-specific qualification](qualification.md#current-source-qualification).
+
+If operational preferences cannot be read, preserve a complete backup and restore
+known-good settings before reconnecting. If you deliberately choose to reset them:
+
+1. Disconnect Kafka, finish or cancel active requests, and complete pending plugin
+   capture or cleanup work.
+2. Open **Preferences → Workbench → Reset workbench preferences** and confirm.
+3. Open **Preferences → Protection** before reconnecting. A reset preserves
+   readable protection settings. Recovery from unreadable storage enables
+   read-only mode and masks keys and values; review header masking rules and your
+   intended protection choices explicitly.
+
+This reset does not remove profiles, rules, templates, topic history or Kafka data.
+Do not delete Chromium's `Preferences` file to perform it. If storage remains
+unavailable, restore filesystem access or a complete known-good backup rather than
+repeatedly resetting it.
 
 ## Choose the correct rollback snapshot
 

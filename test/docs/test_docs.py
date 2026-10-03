@@ -336,6 +336,18 @@ class DocumentationArtifactTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unexpected publication file"):
             docs.inspect_site(self.root)
 
+    def test_accepts_only_named_public_qualification_summary(self):
+        directory = self.root / "assets/qualification"
+        directory.mkdir(parents=True)
+        (directory / "lifecycle-2026-10-04.json").write_text('{"schemaVersion":1}')
+        (self.root / "index.html").write_text(
+            '<a href="assets/qualification/lifecycle-2026-10-04.json">Qualification</a>'
+        )
+        docs.inspect_site(self.root)
+        (directory / "raw-live-report.json").write_text('{"private":"not for publication"}')
+        with self.assertRaisesRegex(ValueError, "Unexpected publication file"):
+            docs.inspect_site(self.root)
+
     def test_rejects_missing_page_and_anchor(self):
         for link in ["missing/", "guide/#missing"]:
             with self.subTest(link=link):
