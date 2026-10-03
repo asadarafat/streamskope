@@ -15,7 +15,19 @@ export interface ConnectState {
   readonly detail: ConnectDetail;
   readonly config: Readonly<Record<string, string>>;
 }
+export interface ConnectRelationships {
+  readonly type: "source" | "sink" | "unknown";
+  readonly reportedTopics: readonly string[] | null;
+  readonly configuredTopics: readonly string[];
+  readonly regexSubscription: boolean;
+}
 export interface ConnectPort {
+  clusterId?(context: KafkaClusterServiceContext, signal: AbortSignal): Promise<string | null>;
+  relationships?(
+    context: KafkaClusterServiceContext,
+    name: string,
+    signal: AbortSignal,
+  ): Promise<ConnectRelationships>;
   list(context: KafkaClusterServiceContext, signal: AbortSignal): Promise<ConnectInventory>;
   load(
     context: KafkaClusterServiceContext,

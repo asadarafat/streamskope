@@ -1,3 +1,4 @@
+import { parseRelationshipCommand, parseRelationshipResponse } from "./relationship-protocol";
 import { parseObservationCommand, parseObservationResponse } from "./observation-protocol";
 import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
 import { parseEnvironmentCommand, parseEnvironmentResponse } from "./environment-protocol";
@@ -241,6 +242,7 @@ export function parseHostCommand(value: unknown): HostCommand {
   const id = text(envelope.id, "command.id", 128);
   const command = declaredValue(envelope.command, HOST_COMMANDS, "command.command");
   const clusterServiceCommand =
+    parseRelationshipCommand(command, id, envelope.payload, version) ??
     parseObservationCommand(command, id, envelope.payload, version) ??
     parseConnectCommand(command, id, envelope.payload, version) ??
     parseEnvironmentCommand(command, id, envelope.payload, version) ??
@@ -491,6 +493,7 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
 
   const result = record(envelope.result, "response.result");
   const sampleResponse =
+    parseRelationshipResponse(command, id, result, version) ??
     parseObservationResponse(command, id, result, version) ??
     parseConnectResponse(command, id, result, version) ??
     parseEnvironmentResponse(command, id, result, version) ??

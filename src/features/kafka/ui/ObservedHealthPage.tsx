@@ -345,6 +345,9 @@ export function ObservedHealthPage({
             {latest.requestMs.toFixed(1)} ms across {latest.providerCalls} provider calls (each may
             issue several Kafka requests).
           </Typography>
+          <Typography component="h2" variant="h6">
+            Observation history
+          </Typography>
           <ObservationHistoryPlots series={series} />
           <ObservationAnalysisPanel series={series} fresh={fresh} />
           <Table size="small" aria-label="Observed partition positions">

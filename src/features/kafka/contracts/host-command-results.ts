@@ -16,6 +16,10 @@ import type { KafkaOperationalPreferenceResult } from "./operational-preference-
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
 interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRecipeCommandResults {
+  readonly "relationships.capture": {
+    readonly correlationId: string;
+    readonly graph: import("./relationships").RelationshipGraph;
+  };
   readonly "observations.capture": {
     readonly correlationId: string;
     readonly capture: import("./observations").ObservationCapture;
@@ -161,6 +165,7 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "relationships.capture": true,
   "observations.capture": true,
   "observations.history": true,
   "observations.clear": true,

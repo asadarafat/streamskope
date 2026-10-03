@@ -28,6 +28,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { RelationshipFacade } from "./relationship-facade";
 import { ObservationFacade } from "./observation-facade";
 import { ConnectFacade } from "./connect-facade";
 import { EnvironmentFacade } from "./environment-facade";
@@ -101,6 +102,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly clusterDiagnostics;
   private readonly clusterServices;
   private readonly connectService: ConnectFacade;
+  private readonly relationships: RelationshipFacade;
   private readonly observations: ObservationFacade;
   private readonly environments: EnvironmentFacade;
   private readonly plugins;
@@ -198,6 +200,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     });
     const publish = this.publish.bind(this);
     const nextSequence = this.nextSequence.bind(this);
+    this.relationships = new RelationshipFacade(session, options.connect, options.schemaRegistry);
     this.observations = new ObservationFacade(
       session,
       options.observationStore,
@@ -328,6 +331,9 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "relationships.capture":
+      case "relationships.cancel":
+        return this.relationships.execute(command, correlationId);
       case "observations.capture":
       case "observations.history":
       case "observations.cancel":
@@ -621,6 +627,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         this.plugins.close(),
         this.queries.idle(),
         this.observations.idle(),
+        this.relationships.idle(),
       ]);
     } catch (error) {
       shutdownFailure = error;
@@ -866,6 +873,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
 
   private invalidateClusterState(): void {
     this.observations.cancel();
+    this.relationships.cancel();
     void this.recordReplay.invalidate().catch(() => undefined);
     this.correlationTrace.invalidate();
     this.recordCodecs.invalidate();

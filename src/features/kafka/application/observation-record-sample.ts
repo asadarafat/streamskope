@@ -1,5 +1,6 @@
 import { OBSERVATION_LIMITS as limits } from "../contracts/observations";
 import { parseObservationRecords, type ObservationRecords } from "../contracts/observation-records";
+import type { KafkaMessage } from "../contracts";
 
 import type { KafkaActiveConnection, KafkaMessageStream } from "./types";
 
@@ -9,6 +10,7 @@ export async function sampleObservationRecords(
   topic: string,
   endTimeMs: number,
   signal: AbortSignal,
+  visit?: (message: KafkaMessage) => void,
 ): Promise<ObservationRecords> {
   const startTimeMs = endTimeMs - 60_000;
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(5_000)]);
@@ -57,6 +59,7 @@ export async function sampleObservationRecords(
       )
         continue;
       seen.add(identity);
+      visit?.(message);
       bytes += message.originalByteSize;
       sizes.push(message.originalByteSize);
       partitions.set(message.partition, (partitions.get(message.partition) ?? 0) + 1);

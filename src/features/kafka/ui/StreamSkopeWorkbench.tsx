@@ -14,6 +14,7 @@ import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 
+import { RelationshipsPage } from "./RelationshipsPage";
 import { ObservedHealthPage } from "./ObservedHealthPage";
 import { ConnectPage } from "./ConnectPage";
 import { EnvironmentPage } from "./EnvironmentPage";
@@ -581,6 +582,11 @@ export function StreamSkopeWorkbench({
         {...(consumerGroupRequestError === undefined
           ? {}
           : { requestError: consumerGroupRequestError })}
+      />
+    ) : navigation === "relationships" ? (
+      <RelationshipsPage
+        key={`${state.connectionName ?? "disconnected"}:${state.connectionState}`}
+        host={host}
       />
     ) : navigation === "observations" ? (
       <ObservedHealthPage
