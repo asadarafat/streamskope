@@ -25,6 +25,7 @@ import {
 import { streamSkopeMuiMonospaceTypography } from "../../../platform/ui/createStreamSkopeTheme";
 import { studioSpace } from "../../../platform/ui/muiSpacing";
 
+import { ConnectDlqEvidence } from "./ConnectDlqEvidence";
 import {
   browserTextDocumentTransfer,
   type TextDocumentTransferPort,
@@ -436,6 +437,7 @@ export function MessageInspector({
         ) : null}
         {section === "metadata" ? (
           <Box aria-label="Metadata evidence" component="section">
+            <ConnectDlqEvidence message={message} />
             <InspectorEvidenceSection title="Record">
               <Box component="dl" sx={{ m: 0 }}>
                 <StudioDetailRow

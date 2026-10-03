@@ -366,7 +366,7 @@ export function parseClusterServiceEndpoints(
   path: string,
 ): ClusterServiceEndpointsInput {
   const services = record(value, path);
-  exactKeys(services, ["redpandaAdmin", "schemaRegistry"], path);
+  exactKeys(services, ["connect", "redpandaAdmin", "schemaRegistry"], path);
   const parseEndpoint = (
     endpointValue: unknown,
     endpointPath: string,
@@ -387,6 +387,9 @@ export function parseClusterServiceEndpoints(
     };
   };
   return {
+    ...(Object.hasOwn(services, "connect")
+      ? { connect: parseEndpoint(services.connect, `${path}.connect`) }
+      : {}),
     ...(Object.hasOwn(services, "redpandaAdmin")
       ? { redpandaAdmin: parseEndpoint(services.redpandaAdmin, `${path}.redpandaAdmin`) }
       : {}),

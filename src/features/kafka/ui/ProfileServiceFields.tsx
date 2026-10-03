@@ -12,6 +12,8 @@ import type { ProfileForm, ProfileFormIssues } from "./profile-dialog-model";
 
 type ServiceForm = Pick<
   ProfileForm,
+  | "connectUrl"
+  | "connectAuthentication"
   | "schemaRegistryUrl"
   | "schemaRegistryAuthentication"
   | "redpandaAdminUrl"
@@ -21,7 +23,7 @@ type ServiceForm = Pick<
 interface ProfileServiceFieldsProperties {
   readonly disabled: boolean;
   readonly form: ServiceForm;
-  readonly issues: Pick<ProfileFormIssues, "schemaRegistryUrl" | "redpandaAdminUrl">;
+  readonly issues: Pick<ProfileFormIssues, "connectUrl" | "schemaRegistryUrl" | "redpandaAdminUrl">;
   readonly onChange: <K extends keyof ServiceForm>(field: K, value: ProfileForm[K]) => void;
 }
 
@@ -38,10 +40,34 @@ export function ProfileServiceFields({
           Cluster services
         </Typography>
         <Typography color="text.secondary" variant="body2">
-          Optional endpoints enable Schema Registry and Redpanda transform workflows. OAuth reuses
-          this profile&apos;s protected token configuration.
+          Optional endpoints enable Kafka Connect, Schema Registry and Redpanda transform workflows.
+          OAuth reuses this profile&apos;s protected token configuration.
         </Typography>
       </Box>
+      <Stack direction={{ sm: "row", xs: "column" }} spacing={2}>
+        <TextField
+          label="Kafka Connect URL"
+          fullWidth
+          disabled={disabled}
+          value={form.connectUrl}
+          error={issues.connectUrl !== undefined}
+          helperText={issues.connectUrl ?? "Apache Kafka Connect REST endpoint."}
+          onChange={(e) => onChange("connectUrl", e.target.value)}
+          placeholder="https://connect.example:8083"
+        />
+        <FormControl fullWidth disabled={disabled}>
+          <InputLabel id="connect-auth-label">Connect authentication</InputLabel>
+          <Select
+            label="Connect authentication"
+            labelId="connect-auth-label"
+            value={form.connectAuthentication}
+            onChange={(e) => onChange("connectAuthentication", e.target.value)}
+          >
+            <MenuItem value="none">No HTTP authorization</MenuItem>
+            <MenuItem value="oauth">Profile OAuth bearer token</MenuItem>
+          </Select>
+        </FormControl>
+      </Stack>
       <Stack direction={{ sm: "row", xs: "column" }} spacing={2}>
         <TextField
           disabled={disabled}

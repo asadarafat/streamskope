@@ -71,9 +71,14 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 41 as const;
+export const HOST_PROTOCOL_VERSION = 42 as const;
 
 export const HOST_COMMANDS = [
+  "connect.list",
+  "connect.load",
+  "connect.validate",
+  "connect.review",
+  "connect.apply",
   "records.replay.review",
   "records.replay.apply",
   "records.replay.cancel",
@@ -402,6 +407,7 @@ export interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | import("./connect").ConnectHostCommand
   | import("./recovery-command-types").RecoveryHostCommand
   | (HostCommandBase & {
       readonly command: "records.trace";

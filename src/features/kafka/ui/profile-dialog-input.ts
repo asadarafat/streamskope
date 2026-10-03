@@ -18,10 +18,15 @@ import {
 } from "./profile-dialog-model";
 
 function buildServices(form: ProfileForm): ClusterServiceEndpointsInput | undefined {
+  const connect = form.connectUrl.trim();
   const schemaRegistry = form.schemaRegistryUrl.trim();
   const redpandaAdmin = form.redpandaAdminUrl.trim();
-  if (schemaRegistry.length === 0 && redpandaAdmin.length === 0) return undefined;
+  if (connect.length === 0 && schemaRegistry.length === 0 && redpandaAdmin.length === 0)
+    return undefined;
   return {
+    ...(connect.length === 0
+      ? {}
+      : { connect: { authentication: form.connectAuthentication, baseUrl: connect } }),
     ...(schemaRegistry.length === 0
       ? {}
       : {

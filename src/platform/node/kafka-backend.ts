@@ -1,3 +1,4 @@
+import { ConnectHttpAdapter } from "../../features/kafka/engine/connect-http";
 import {
   InMemoryKafkaTrustRecipeStore,
   InMemoryKafkaOperationalPreferenceStore,
@@ -137,6 +138,7 @@ export function createKafkaBackend(
       recordCodec: structuredWorker,
       sampleGenerator: structuredWorker,
       transforms: new RedpandaTransformHttpAdapter(serviceHttp),
+      connect: new ConnectHttpAdapter(serviceHttp),
       trustAcquisitions,
     },
   );

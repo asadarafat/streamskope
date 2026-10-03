@@ -106,7 +106,7 @@ export class KafkaApplicationSession {
   }
 
   clusterServiceContext(
-    service: "redpandaAdmin" | "schemaRegistry",
+    service: "connect" | "redpandaAdmin" | "schemaRegistry",
   ): KafkaClusterServiceContext | null {
     return this.currentSnapshot.state === "connected"
       ? (this.activeConnection?.clusterServiceContext?.(service) ?? null)

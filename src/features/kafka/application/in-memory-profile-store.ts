@@ -12,6 +12,9 @@ function cloneRecord(record: KafkaProfileRecord): KafkaProfileRecord {
         ? {}
         : {
             services: {
+              ...(record.services.connect === undefined
+                ? {}
+                : { connect: { ...record.services.connect } }),
               ...(record.services.redpandaAdmin === undefined
                 ? {}
                 : { redpandaAdmin: { ...record.services.redpandaAdmin } }),
@@ -35,6 +38,9 @@ function cloneRecord(record: KafkaProfileRecord): KafkaProfileRecord {
       ? {}
       : {
           services: {
+            ...(record.services.connect === undefined
+              ? {}
+              : { connect: { ...record.services.connect } }),
             ...(record.services.redpandaAdmin === undefined
               ? {}
               : { redpandaAdmin: { ...record.services.redpandaAdmin } }),
