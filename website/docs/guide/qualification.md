@@ -27,7 +27,45 @@ installers. Results from an earlier revision do not qualify changed source.
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Installed desktop and real credential-service rehearsal; no current native workflow result is recorded              |
 
-## Published release: v0.5.0
+## Published release: v0.6.0
+
+[v0.6.0](../releases/v0.6.0.md) was published on **2026-10-03** from source
+[`a5ee948`](https://github.com/asadarafat/streamskope/commit/a5ee94876d5cc1c71a847582ea5eaabf3ae8226e).
+The [release workflow](https://github.com/asadarafat/streamskope/actions/runs/37137468007) passed. The
+[source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.6.0/qualification-v0.6.0.json) records the identical qualified
+source tree, actual checks, environment conditions, limits and evidence hashes.
+
+| Check                                     | Recorded result and evidence                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared qualification                      | [CI passed](https://github.com/asadarafat/streamskope/actions/runs/37137468007/job/111244903601): 2,335 tests across 280 files; 46 documentation pages and 41 browser routes                                                                                                                                            |
+| Native installers and packaged-app checks | [Linux x64](https://github.com/asadarafat/streamskope/actions/runs/37137468007/job/111246605763), [macOS ARM64](https://github.com/asadarafat/streamskope/actions/runs/37137468007/job/111246605724) and [Windows x64](https://github.com/asadarafat/streamskope/actions/runs/37137468007/job/111246605756) passed      |
+| Real integrations and developer tools     | Four scenarios passed: authenticated TLS Connect lifecycle, validation, failed-task recovery and DLQ byte replay; two-cluster promotion and drift rejection; Registry-generated client round-trip and protected CLI reads/exports; owned sandbox repeat startup, transforms, down/up reset and foreign-resource refusal |
+| Browser review and apply                  | Real Connect creation and imported-snapshot promotion passed; validation/review made no broker changes, exact confirmation was required and read-back matched the selected change; no detected Axe violations or browser diagnostics                                                                                    |
+| Local docs and production bundle          | All 41 documentation routes, search, themes, mobile, accessibility and media passed; production build and isolated bundled-client generation/syntax/provenance/license passed                                                                                                                                           |
+| 60-second performance soak                | 59,998 generated/delivered, zero host display drops, 31.14% of one CPU core, 672 MiB peak RSS and 25.76 ms event-loop p99; original limits passed under the isolation conditions below                                                                                                                                  |
+| Live EDA 26.8.2                           | API version, installed cluster application, capture readiness, lease, actual Kafka receipt, source preservation, stop, owned cleanup and repeated stop passed after lab restoration                                                                                                                                     |
+| Live NSP 26.4.0                           | Combined workflow, tested/saved profile, idempotent reuse, saved connection and 176 topics, execution cleanup and hot removal preserving the profile passed; renderer events excluded secrets                                                                                                                           |
+| Unsigned EDA OCI application              | [Packaging passed](https://github.com/asadarafat/streamskope/actions/runs/37137468007/job/111246605687); signing and publication remain separate                                                                                                                                                                        |
+| Download integrity                        | [SHA256SUMS](https://github.com/asadarafat/streamskope/releases/download/v0.6.0/SHA256SUMS) matches all three installer digests and includes the qualification report                                                                                                                                                   |
+
+Local qualification completed in stages. The first full run passed shared tests but
+stopped at the soak on the busy, paging host; the unchanged 0.5.0 baseline also
+failed under contention. The same soak passed with the local EDA test-lab container
+temporarily paused and CPU affinity `6,7`. Docs/build/disposable fixtures were also
+isolated after a media timeout. The lab was restored and readiness verified before
+live EDA/NSP tests. No source or test limits were changed to obtain these results.
+Concurrent heavy local-lab operation remains outside this performance qualification.
+
+The soak measures application ingestion, not real IPC, Kafka fetch or UI interaction
+latency. Connect/DLQ support depends on the connector; environment promotion covers
+supported existing topic settings. CLI/sandbox tools run from matching source, and
+client generation supports bounded JSON Schema draft-07/CommonJS only. Installed
+native plugin migrations and credential-service recovery were not rehearsed. NSP
+Kafka SASL OAuth and other vendor policies remain outside the live result.
+Installers are unsigned; plugin releases remain independent. Back up the complete
+profile store before saving Connect fields if a downgrade may be required.
+
+## Historical qualification: v0.5.0
 
 [v0.5.0](../releases/v0.5.0.md) was published on **2026-10-03** from source
 [`0253681`](https://github.com/asadarafat/streamskope/commit/0253681d2761c66cfe2d20ec1e1438ad948b0ce2).
