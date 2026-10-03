@@ -45,7 +45,10 @@ nav = [
   { "Advanced" = [
     { "Reuse connection secrets" = "guide/secret-retrieval.md" },
     { "Inspect access and transforms" = "guide/governance.md" },
-    { "Development sandbox" = "start/development.md" }
+    { "Run a consumer sandbox" = "guide/developer-sandbox.md" },
+    { "Inspect and export with the CLI" = "guide/read-only-cli.md" },
+    { "Generate a schema client" = "guide/schema-clients.md" },
+    { "Source workbench" = "start/development.md" }
   ] },
   { "Releases" = "releases/index.md" },
   { "About" = "about.md" }

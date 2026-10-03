@@ -342,6 +342,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "records.trace":
       case "records.trace.cancel":
         return this.correlationTrace.execute(command, correlationId);
+      case "schemas.client":
       case "schemas.samples":
       case "records.batch.review":
       case "records.batch.apply":

@@ -16,6 +16,7 @@ export const KAFKA_COMMAND_ACCESS = {
   "environments.capture": "remote-read",
   "environments.review": "remote-read",
   "environments.apply": "remote-write",
+  "schemas.client": "remote-read",
   "records.replay.review": "remote-read",
   "records.replay.apply": "remote-write",
   "records.replay.cancel": "local",

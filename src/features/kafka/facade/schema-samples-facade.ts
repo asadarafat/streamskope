@@ -5,12 +5,16 @@ import type {
   SchemaLookupPort,
   RecordCodecPort,
   SchemaSamplePort,
+  SchemaClientPort,
 } from "../application/record-codec-types";
 import type { KafkaApplicationSession } from "../application";
 
 import { failureResponse, successResponse, type ActivityInput } from "./facade-support";
 
-type Command = Extract<HostCommand, { command: "schemas.samples" | `records.batch.${string}` }>;
+type Command = Extract<
+  HostCommand,
+  { command: "schemas.client" | "schemas.samples" | `records.batch.${string}` }
+>;
 export class SchemaSamplesFacade {
   private readonly service: RecordCodecService | undefined;
   private readonly pending = new Set<AbortController>();
@@ -19,7 +23,7 @@ export class SchemaSamplesFacade {
     private readonly session: KafkaApplicationSession,
     codec?: RecordCodecPort,
     lookup?: SchemaLookupPort,
-    private readonly generator?: SchemaSamplePort,
+    private readonly generator?: SchemaSamplePort & Partial<SchemaClientPort>,
     private readonly recordActivity?: (input: ActivityInput) => void,
   ) {
     if (codec && lookup) this.service = new RecordCodecService(lookup, codec);
@@ -67,6 +71,7 @@ export class SchemaSamplesFacade {
             result: { correlationId, outcome },
           };
         }
+        case "schemas.client":
         case "schemas.samples": {
           const context = this.session.clusterServiceContext("schemaRegistry");
           if (
@@ -89,6 +94,18 @@ export class SchemaSamplesFacade {
               command.payload.version,
               signal,
             );
+            if (command.command === "schemas.client") {
+              if (!this.generator.generateClient) throw new Error("Client generator unavailable.");
+              const client = await this.generator.generateClient(command.payload, bundle, signal);
+              signal.throwIfAborted();
+              return {
+                command: command.command,
+                id: command.id,
+                version: HOST_PROTOCOL_VERSION,
+                ok: true,
+                result: { correlationId, client },
+              };
+            }
             const samples = await this.generator.generate(command.payload, bundle, signal);
             signal.throwIfAborted();
             return {

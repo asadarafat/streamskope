@@ -7,7 +7,7 @@ Install docs browsers once with `npx playwright install chromium firefox`.
 
 Only five commands are exposed in `package.json`. Each calls one matching entry
 in `tools/`; helpers live under `tools/dev/`, `tools/build/`, `tools/check/`, `tools/package/`
-and `tools/docs/`. Manual source exports and icon regeneration live in
+and `tools/docs/`. The `dev` entry also dispatches the source CLI (`tools/cli.ts`) and owned consumer sandbox (`tools/sandbox.ts`) without adding npm commands. Manual source exports and icon regeneration live in
 `tools/maintenance/`; evidence helpers live in `test/support/`.
 
 | Command                 | Purpose                                                                                          |
@@ -17,6 +17,8 @@ and `tools/docs/`. Manual source exports and icon regeneration live in
 | `npm run check`         | Run all local CI qualification                                                                   |
 | `npm run package`       | Desktop packaging; `-- plugin [eda\|nsp]` builds optional plugins, `-- eda` builds local EDA OCI |
 | `npm run docs -- serve` | Serve docs locally; use `build` to build them                                                    |
+
+The source distribution also supports `npm run dev -- cli --help` for bounded inspect/query/export and `npm run dev -- sandbox up|status|consume|transform|down` for an owned local consumer environment. See [CLI behavior and protection](website/docs/guide/read-only-cli.md) and [sandbox lifecycle](website/docs/guide/developer-sandbox.md). Real-system developer qualification lives in `test/kafka/developer-real.test.ts` and `test/kafka/sandbox-real.test.ts`; it is run explicitly, not inferred from shared CI.
 
 Local CI runs workflow validation, formatting, lint, TypeScript, architecture,
 unit/integration tests, EDA source and agent checks, dependency checks, a

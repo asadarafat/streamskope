@@ -44,3 +44,11 @@ export interface SchemaSamplePort {
     signal: AbortSignal,
   ): Promise<import("../contracts/schema-samples").SchemaSamples>;
 }
+
+export interface SchemaClientPort {
+  generateClient(
+    input: import("../contracts/schema-inspection").SchemaInspectionInput,
+    bundle: CodecSchemaBundle,
+    signal: AbortSignal,
+  ): Promise<import("../contracts/schema-client").SchemaClient>;
+}

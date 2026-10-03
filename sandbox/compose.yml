@@ -1,0 +1,60 @@
+services:
+  kafka:
+    image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+    labels:
+      org.streamskope.owner: sandbox-v1
+      org.streamskope.instance: ${STREAMSKOPE_SANDBOX_INSTANCE:?Use npm run dev -- sandbox}
+    mem_limit: 768m
+    cpus: 1
+    ports:
+      - "127.0.0.1:${STREAMSKOPE_SANDBOX_KAFKA_PORT:-19096}:9092"
+    environment:
+      CLUSTER_ID: VkZpOEVsQ2hUaGJtbDdwYQ
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: CLIENT://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: CLIENT://127.0.0.1:${STREAMSKOPE_SANDBOX_KAFKA_PORT:-19096},INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CLIENT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_BYTES: 16777216
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx256m
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh",
+          "--bootstrap-server",
+          "localhost:29092",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  connect:
+    image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+    labels:
+      org.streamskope.owner: sandbox-v1
+      org.streamskope.instance: ${STREAMSKOPE_SANDBOX_INSTANCE:?Use npm run dev -- sandbox}
+    mem_limit: 512m
+    cpus: 1
+    ports:
+      - "127.0.0.1:${STREAMSKOPE_SANDBOX_CONNECT_PORT:-18086}:8083"
+    entrypoint: ["/opt/kafka/bin/connect-distributed.sh", "/fixture/worker.properties"]
+    environment:
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx256m
+    volumes:
+      - ./worker.properties:/fixture/worker.properties:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+networks:
+  default:
+    labels:
+      org.streamskope.owner: sandbox-v1
+      org.streamskope.instance: ${STREAMSKOPE_SANDBOX_INSTANCE:?Use npm run dev -- sandbox}

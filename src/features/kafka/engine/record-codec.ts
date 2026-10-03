@@ -1,5 +1,7 @@
 import { Worker } from "node:worker_threads";
 
+import type { SchemaInspectionInput } from "../contracts/schema-inspection";
+import { parseSchemaClient, type SchemaClient } from "../contracts/schema-client";
 import {
   RECORD_CODEC_LIMITS,
   parseRecordDecodeResult,
@@ -18,6 +20,7 @@ import type {
   RecordCodecWorkerInput,
 } from "../application/record-codec-types";
 
+import type { SchemaClientWorkerInput } from "./schema-client-generator";
 import type { SchemaSampleWorkerInput, SchemaSampleWorkerResult } from "./schema-sample-parser";
 
 export class BoundedRecordCodec implements RecordCodecPort, SchemaSamplePort {
@@ -51,8 +54,15 @@ export class BoundedRecordCodec implements RecordCodecPort, SchemaSamplePort {
     });
   }
 
+  generateClient(
+    input: SchemaInspectionInput,
+    bundle: CodecSchemaBundle,
+    signal: AbortSignal,
+  ): Promise<SchemaClient> {
+    return this.run({ kind: "client", input, bundle }, signal, parseSchemaClient);
+  }
   private run<T>(
-    data: RecordCodecWorkerInput | SchemaSampleWorkerInput,
+    data: RecordCodecWorkerInput | SchemaSampleWorkerInput | SchemaClientWorkerInput,
     signal: AbortSignal,
     parse: (value: unknown) => T,
   ): Promise<T> {

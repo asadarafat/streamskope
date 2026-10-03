@@ -99,6 +99,14 @@ Exports still describe only the retained records, not a complete broker backup.
 If you need a complete archive, use an
 approved Kafka data-export process with its own offset coverage and retention checks.
 
+## Other export and developer artifacts
+
+[Environment snapshots](environment-comparison.md) use `streamskope.topic-config/v1` and include cluster/topic identities, observation times and seven validated settings. They omit credentials and unsupported settings, but topic names and configuration remain operational information.
+
+[CLI exports](read-only-cli.md) are NDJSON with `format: "streamskope.cli/v1"`, record lines and a final coverage summary. They are separate from the desktop JSON export above. Their explicit protection configuration controls masking; they do not inherit desktop settings. Output files are private on POSIX, but are not encrypted. A failed command removes its own partial export; already-emitted stdout cannot be recalled.
+
+[Generated clients](schema-clients.md) contain schema-derived validation code and subject/version/ID/hash provenance, without connection credentials. Clipboard copies and saved source files remain under your control. The [consumer sandbox](developer-sandbox.md) stores disposable records inside its owned containers, and private helper files under `.artifacts/sandbox`. Keep its instance marker until cleanup; `down` removes the owned data but does not erase your exported files.
+
 ## Share diagnostic evidence
 
 Include the release tag/build, OS/CPU, action, expected and actual result, and a

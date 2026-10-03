@@ -95,3 +95,7 @@ Select an exact schema version, then **Generate samples** to preview seeded,
 schema-valid records without writing to Kafka. Publishing uses a separate
 destination review and confirmation. See [supported schema forms, batch limits
 and cancellation outcomes](structured-events.md#generate-schema-valid-samples).
+
+## Generate a validating client
+
+For a supported JSON Schema version, use **Generate JavaScript client** to create a Node 24 record codec and producer helper with pinned Registry framing and provenance. See [Generate a schema client](schema-clients.md) for supported keywords, runtime installation and limits.
