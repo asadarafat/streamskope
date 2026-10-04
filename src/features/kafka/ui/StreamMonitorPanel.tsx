@@ -102,7 +102,7 @@ export function StreamMonitorPanel({
   const [windowSeconds, setWindowSeconds] = useState(60);
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNow(Date.now()), 1_000);
-    return () => globalThis.clearInterval(timer);
+    return (): void => globalThis.clearInterval(timer);
   }, []);
   const status = monitorStatus(snapshot, now);
   const window = monitorWindow(snapshot, now, windowSeconds);

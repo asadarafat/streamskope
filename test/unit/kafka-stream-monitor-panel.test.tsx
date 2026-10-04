@@ -99,7 +99,7 @@ function renderPanel(
 } {
   const observer = createRendererStreamMonitorObserver();
   vi.spyOn(observer, "getSnapshot").mockReturnValue(renderer);
-  vi.spyOn(observer, "subscribe").mockImplementation(() => () => undefined);
+  vi.spyOn(observer, "subscribe").mockImplementation(() => (): void => undefined);
   const actions = { onOpenActivity: vi.fn(), onOpenObservedHealth: vi.fn(), onStop: vi.fn() };
   const properties: StreamMonitorPanelProperties = {
     activeConnectionName: "Local Kafka",

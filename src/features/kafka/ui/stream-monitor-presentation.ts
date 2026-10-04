@@ -1,4 +1,5 @@
 import type { KafkaStreamMonitorSnapshot } from "../contracts";
+
 import type { RendererStreamMonitorSnapshot } from "./stream-monitor-observer";
 import type { StatusIndicatorTone } from "./StatusIndicator";
 
