@@ -76,7 +76,7 @@ describe("bounded metric plot", () => {
       />,
     );
     const samples = screen.getAllByRole("listitem");
-    const x = samples.map((p) => Number(p.getAttribute("cx")));
+    const x = samples.map((p) => Number.parseFloat(p.getAttribute("cx")!));
     expect((x[2]! - x[0]!) / (x[1]! - x[0]!)).toBeCloseTo(60);
     expect(screen.getByRole("region", { name: /Probe/u })).toHaveAccessibleName(
       /latest Unavailable.*last measured 15 ms at 2026-09-14T00:01:00Z/u,
@@ -182,8 +182,10 @@ describe("bounded metric plot", () => {
       />,
     );
     const plot = screen.getByRole("group", { name: "Shared buffer plot" });
-    expect(plot.querySelector("circle")).toHaveAttribute("cx", "300");
-    expect(plot.querySelector("circle")).toHaveAttribute("cy", "102");
+    expect(plot.querySelector("circle")).toHaveAttribute("cx", "50%");
+    expect(Number.parseFloat(plot.querySelector("circle")!.getAttribute("cy")!)).toBeCloseTo(
+      (102 / 112) * 100,
+    );
     expect(screen.getByLabelText("Range maximum 1 messages")).toBeVisible();
     expect(screen.getByText("12:00:00")).toBeVisible();
     expect(screen.getByText("12:01:00")).toBeVisible();

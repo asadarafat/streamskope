@@ -207,6 +207,18 @@ export function MetricPlot({
       }`;
     })
     .join(". ");
+  const plottedSeries = series.flatMap((candidate, index) =>
+    measuredValues([candidate]).length === 0
+      ? []
+      : [
+          {
+            candidate,
+            color: PLOT_COLORS[index % PLOT_COLORS.length],
+            index,
+            points: seriesPoints(candidate.values, positions, minimum, maximum),
+          },
+        ],
+  );
 
   return (
     <Box
@@ -266,7 +278,6 @@ export function MetricPlot({
         <Box
           aria-label={`${title} plot`}
           component="svg"
-          preserveAspectRatio="none"
           role="group"
           tabIndex={0}
           aria-describedby={`${plotId}-sample`}
@@ -293,6 +304,7 @@ export function MetricPlot({
           sx={{
             display: "block",
             height,
+            overflow: "visible",
             width: "100%",
             "&:focus-visible": {
               outline: "2px solid var(--mui-palette-primary-main)",
@@ -300,76 +312,76 @@ export function MetricPlot({
               strokeWidth: 4,
             },
           }}
-          viewBox="0 0 600 112"
         >
-          {[10, 33, 56, 79, 102].map((y) => (
-            <line
-              aria-hidden
-              key={y}
-              stroke="var(--streamskope-plot-grid)"
-              strokeWidth="1"
-              vectorEffect="non-scaling-stroke"
-              x1="10"
-              x2="590"
-              y1={y}
-              y2={y}
-            />
-          ))}
-          {series.map((candidate, index) => {
-            if (measuredValues([candidate]).length === 0) return null;
-            const points = seriesPoints(candidate.values, positions, minimum, maximum);
-            const path = metricPath(points, interpolation);
-            const color = PLOT_COLORS[index % PLOT_COLORS.length];
-            return (
-              <g key={candidate.label}>
-                <path
-                  aria-hidden
-                  d={path}
-                  fill="none"
-                  stroke={color}
-                  strokeDasharray={index === 0 ? undefined : index === 1 ? "6 4" : "2 4"}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  vectorEffect="non-scaling-stroke"
-                />
-                <g aria-label={`${candidate.label} exact samples`} role="list">
-                  {points.map((point, pointIndex) => {
-                    const value = candidate.values[pointIndex] ?? null;
-                    const sampleLabel =
-                      sampleLabels[pointIndex] ?? `Sample ${String(pointIndex + 1)}`;
-                    if (point === null || value === null || !Number.isFinite(value)) {
-                      return null;
+          {/* Scale paths to the plot, but keep marker geometry in CSS pixels. */}
+          <svg
+            aria-hidden
+            height="100%"
+            preserveAspectRatio="none"
+            viewBox="0 0 600 112"
+            width="100%"
+          >
+            {[10, 33, 56, 79, 102].map((y) => (
+              <line
+                key={y}
+                stroke="var(--streamskope-plot-grid)"
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+                x1="10"
+                x2="590"
+                y1={y}
+                y2={y}
+              />
+            ))}
+            {plottedSeries.map(({ candidate, color, index, points }) => (
+              <path
+                d={metricPath(points, interpolation)}
+                fill="none"
+                key={candidate.label}
+                stroke={color}
+                strokeDasharray={index === 0 ? undefined : index === 1 ? "6 4" : "2 4"}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+          </svg>
+          {plottedSeries.map(({ candidate, color, points }) => (
+            <g aria-label={`${candidate.label} exact samples`} key={candidate.label} role="list">
+              {points.map((point, pointIndex) => {
+                const value = candidate.values[pointIndex] ?? null;
+                const sampleLabel = sampleLabels[pointIndex] ?? `Sample ${String(pointIndex + 1)}`;
+                if (point === null || value === null || !Number.isFinite(value)) {
+                  return null;
+                }
+                const exactLabel = `${candidate.label} at ${sampleLabel}: ${formatMetric(value, unit)}`;
+                return (
+                  <circle
+                    aria-label={exactLabel}
+                    cx={`${String((point.x / 600) * 100)}%`}
+                    cy={`${String((point.y / 112) * 100)}%`}
+                    data-plot-point
+                    fill="var(--streamskope-surface-recessed)"
+                    key={sampleKeys[pointIndex]}
+                    r={
+                      inspecting &&
+                      activeSample?.key ===
+                        `${candidate.label}:${sampleKeys[pointIndex] ?? sampleLabel}`
+                        ? 4
+                        : 3
                     }
-                    const exactLabel = `${candidate.label} at ${sampleLabel}: ${formatMetric(value, unit)}`;
-                    return (
-                      <circle
-                        aria-label={exactLabel}
-                        cx={point.x}
-                        cy={point.y}
-                        data-plot-point
-                        fill="var(--streamskope-surface-recessed)"
-                        key={sampleKeys[pointIndex]}
-                        r={
-                          inspecting &&
-                          activeSample?.key ===
-                            `${candidate.label}:${sampleKeys[pointIndex] ?? sampleLabel}`
-                            ? 5
-                            : 3
-                        }
-                        role="listitem"
-                        stroke={color}
-                        strokeWidth="2"
-                        vectorEffect="non-scaling-stroke"
-                      >
-                        <title>{exactLabel}</title>
-                      </circle>
-                    );
-                  })}
-                </g>
-              </g>
-            );
-          })}
+                    role="listitem"
+                    stroke={color}
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <title>{exactLabel}</title>
+                  </circle>
+                );
+              })}
+            </g>
+          ))}
         </Box>
       </Box>
       <Typography

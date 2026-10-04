@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { resolve } from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import {
   HOST_PROTOCOL_VERSION,
@@ -101,6 +101,24 @@ function activeLaunch(): RunningWebDevelopment {
     throw new Error("Stream Monitor web launch is not ready.");
   }
   return launch;
+}
+
+async function expectCircularMarkers(plot: Locator, inspected = false): Promise<void> {
+  await expect(async () => {
+    const sizes = await plot.locator("[data-plot-point]").evaluateAll((points) =>
+      points.map((point) => {
+        const { width, height } = point.getBoundingClientRect();
+        return { width, height };
+      }),
+    );
+    expect(sizes).toHaveLength(8);
+    for (const [index, size] of sizes.entries()) {
+      // Bounds exclude the 2px outline: visible diameters are 8px / 10px.
+      const diameter = inspected && index === sizes.length - 1 ? 8 : 6;
+      expect(size.width).toBeCloseTo(diameter, 1);
+      expect(size.height).toBeCloseTo(diameter, 1);
+    }
+  }).toPass({ timeout: 5_000 });
 }
 
 test.describe("StreamSkope browser Stream Monitor", () => {
@@ -262,15 +280,19 @@ test.describe("StreamSkope browser Stream Monitor", () => {
       );
     }
     const queuePlot = page.getByRole("group", { name: "Buffer depth trend plot" });
+    await expectCircularMarkers(queuePlot);
+    await expectCircularMarkers(page.getByRole("group", { name: "Delivery rate trend plot" }));
     await expect(queuePlot).toHaveAttribute("tabindex", "0");
     expect(await queuePlot.locator('[tabindex="0"]').count()).toBe(0);
     await queuePlot.focus();
     await page.keyboard.press("End");
+    await expectCircularMarkers(queuePlot, true);
     await expect(
       page.getByRole("region", { name: /^Buffer depth trend\./u }).getByRole("status"),
     ).toContainText("Buffered at");
     await page.keyboard.press("Tab");
     await expect(queuePlot).not.toBeFocused();
+    await expectCircularMarkers(queuePlot);
     const diagnostics = page.getByText("Diagnostics", { exact: true });
     await expect(diagnostics.locator("..")).not.toHaveAttribute("open");
     await diagnostics.focus();
@@ -329,6 +351,8 @@ test.describe("StreamSkope browser Stream Monitor", () => {
 
     await page.setViewportSize({ height: 900, width: 1440 });
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+    await expectCircularMarkers(queuePlot);
+    await expectCircularMarkers(page.getByRole("group", { name: "Delivery rate trend plot" }));
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
       animations: "disabled",
