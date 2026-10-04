@@ -73,9 +73,9 @@ It does not erase copies in backups or change Kafka data. Older desktop versions
 without Observed health do not display this history; a new history file does not
 by itself migrate the profile format.
 
-### Unreleased operational-preference recovery
+### Operational-preference recovery
 
-Current source after v0.7.0 uses `workbench/kafka-operational-preferences.json`,
+Workbench settings use `workbench/kafka-operational-preferences.json`,
 separate from Chromium's `Preferences` file. Valid older `preferences/` directories
 are migrated with every protection choice preserved; the original directory is
 archived under `workbench/migrations/preferences-*/preferences/`. Malformed or
@@ -83,7 +83,7 @@ unreadable workbench data stays blocked instead of silently loading permissive
 defaults. Do not remove or replace Chromium's file to recover workbench settings.
 For a downgrade, restore the complete pre-upgrade backup; older apps do not read
 the new location, and later changes are not copied back into archived settings.
-This change is not included in the published v0.7.0 installer. See the
+Releases through v0.7.0 use the legacy location. See the
 [source-specific qualification](qualification.md#current-source-qualification).
 
 If operational preferences cannot be read, preserve a complete backup and restore
