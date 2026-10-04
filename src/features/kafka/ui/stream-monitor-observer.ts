@@ -187,6 +187,7 @@ export function createRendererStreamMonitorObserver(
   let frameWindowStartedAt = 0;
   let history: readonly RendererStreamMonitorSample[] = [];
   let lastCommittedSequence = -1;
+  let lastReceivedSequence = -1;
   let pendingFilterDurationMs: number | null = null;
   let pendingRenderDurationMs: number | null = null;
   let presentationActive = true;
@@ -420,12 +421,15 @@ export function createRendererStreamMonitorObserver(
       pendingRenderDurationMs = null;
     },
     eventReceived(event): void {
+      if (disposed || event.sequence <= Math.max(lastCommittedSequence, lastReceivedSequence))
+        return;
+      lastReceivedSequence = event.sequence;
       if (event.event === "streamMetrics.changed") {
         if (event.payload.state === "loading" || snapshot.operationId === null)
           setOperation(event.payload.operationId);
         else if (snapshot.operationId !== event.payload.operationId) return;
       }
-      if (disposed || !presentationActive || event.sequence <= lastCommittedSequence) {
+      if (!presentationActive) {
         return;
       }
       pendingEvents.set(event.sequence, {

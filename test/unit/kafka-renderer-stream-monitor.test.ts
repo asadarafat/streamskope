@@ -322,6 +322,35 @@ describe("renderer stream-monitor observer", () => {
     observer.dispose();
   });
 
+  it("does not let an older loading event reset the renderer owner", () => {
+    const observer = createRendererStreamMonitorObserver();
+    observer.setPresentationActive(false);
+    const payload = {
+      operationId: "new",
+      connectionName: "local",
+      request: { topic: "orders", mode: "tail" as const, maxMessages: 100 },
+      sampledAt: null,
+      delivery: null,
+      queue: null,
+      state: "loading" as const,
+      status: "idle" as const,
+    };
+    observer.eventReceived({
+      event: "streamMetrics.changed",
+      payload,
+      sequence: 10,
+      version: HOST_PROTOCOL_VERSION,
+    });
+    observer.eventReceived({
+      event: "streamMetrics.changed",
+      payload: { ...payload, operationId: "old" },
+      sequence: 9,
+      version: HOST_PROTOCOL_VERSION,
+    });
+    expect(observer.getSnapshot().operationId).toBe("new");
+    observer.dispose();
+  });
+
   it("ignores a late terminal monitor event owned by the previous operation", () => {
     const observer = createRendererStreamMonitorObserver();
     observer.setOperation("old");
