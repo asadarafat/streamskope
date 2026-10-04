@@ -328,6 +328,9 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
     ).toBe(true);
     await expect(page.getByLabel("Connection status")).toContainText(/Disconnected|Idle/iu);
     await expect(capture()).toBeDisabled();
+    const capturesBeforeReconnect = commands.filter(
+      (command) => command.command === "observations.capture",
+    ).length;
     expect(
       (
         await backend.execute({
@@ -337,8 +340,24 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
       ).ok,
     ).toBe(true);
     await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    await expect(page.getByRole("main", { name: "Topics page", exact: true })).toBeVisible();
+    health = await openHealth();
+    await choose(health.getByRole("combobox", { name: "Observed topic", exact: true }), topic);
+    await choose(
+      health.getByRole("combobox", { name: "Observed consumer group (optional)" }),
+      groupId,
+    );
+    await expect(health.getByRole("region", { name: "Observation summary" })).toContainText(
+      "Retained evidence",
+    );
     await expect(health.getByRole("button", { name: `Inspect topic ${topic}` })).toBeDisabled();
+    await expect(
+      health.getByRole("button", { name: `Inspect consumer group ${groupId}` }),
+    ).toBeDisabled();
     await expect(capture()).toBeEnabled({ timeout: 15_000 });
+    expect(commands.filter((command) => command.command === "observations.capture")).toHaveLength(
+      capturesBeforeReconnect,
+    );
     await capture().click();
     await expect(health.getByRole("button", { name: `Inspect topic ${topic}` })).toBeEnabled({
       timeout: 20_000,
