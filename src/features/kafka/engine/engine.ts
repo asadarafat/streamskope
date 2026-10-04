@@ -175,7 +175,7 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
   ) {}
 
   close(): Promise<void> {
-    this.closePromise ??= this.rawStream.close().finally(this.onClose);
+    this.closePromise ??= this.rawStream.close().then(this.onClose);
     return this.closePromise;
   }
 

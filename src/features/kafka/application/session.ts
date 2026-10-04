@@ -73,6 +73,7 @@ export class KafkaApplicationSession {
   private consumptionStop: Promise<void> | undefined;
   private consumptionStopConnection: KafkaActiveConnection | undefined;
   private consumptionStopSettled = false;
+  private consumptionStopCoveredByConnectionClose = true;
   private readonly closedConnections = new WeakSet<KafkaActiveConnection>();
   private readonly connectionClosures = new Map<
     KafkaActiveConnection,
@@ -479,6 +480,10 @@ export class KafkaApplicationSession {
     if (consumption !== undefined) this.clearEmptyTimer(consumption);
     const operation = this.completeConsumptionStop(consumption, pending, previousStop);
     this.consumptionStop = operation;
+    // A pending open may create an unregistered stream after connection teardown.
+    this.consumptionStopCoveredByConnectionClose =
+      (previousStop === undefined || this.consumptionStopCoveredByConnectionClose) &&
+      pending?.openingStarted !== true;
     this.consumptionStopConnection =
       consumption?.connection ?? pending?.connection ?? this.consumptionStopConnection;
     this.consumptionStopSettled = false;
@@ -487,14 +492,15 @@ export class KafkaApplicationSession {
       this.consumptionStopSettled = true;
       if (
         !failed ||
-        (this.consumptionStopConnection !== undefined &&
+        (this.consumptionStopCoveredByConnectionClose &&
+          this.consumptionStopConnection !== undefined &&
           this.closedConnections.has(this.consumptionStopConnection))
       ) {
         this.consumptionStop = undefined;
         this.consumptionStopConnection = undefined;
       }
     };
-    // Keep a failed cleanup until the owning connection has also closed.
+    // Only registered-stream cleanup can be confirmed by closing its connection.
     void operation.then(
       () => settled(false),
       () => settled(true),
@@ -632,7 +638,11 @@ export class KafkaApplicationSession {
   private async finishConnectionClose(connection: KafkaActiveConnection): Promise<void> {
     await connection.close();
     this.closedConnections.add(connection);
-    if (this.consumptionStopConnection === connection && this.consumptionStopSettled) {
+    if (
+      this.consumptionStopCoveredByConnectionClose &&
+      this.consumptionStopConnection === connection &&
+      this.consumptionStopSettled
+    ) {
       this.consumptionStop = undefined;
       this.consumptionStopConnection = undefined;
     }

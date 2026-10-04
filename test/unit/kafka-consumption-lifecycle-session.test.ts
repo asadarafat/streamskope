@@ -431,6 +431,54 @@ describe("Kafka application consumption lifecycle", () => {
     await expect(session.connect(secondConnection)).rejects.toBe(cleanup);
   });
 
+  it.each([
+    { lifecycle: "disconnect", result: "late-stream" },
+    { lifecycle: "reconnect", result: "late-stream" },
+    { lifecycle: "disconnect", result: "adapter-rejection" },
+    { lifecycle: "reconnect", result: "adapter-rejection" },
+  ] as const)(
+    "retains $result cleanup failure after $lifecycle closes the connection before the pending open settles",
+    async ({ lifecycle, result }) => {
+      const opening = deferred<ControlledMessageStream>();
+      const stream = new ControlledMessageStream();
+      const cleanup = new Error("unregistered late stream cleanup failed");
+      vi.spyOn(stream, "close").mockRejectedValue(cleanup);
+      const connection = new RecordingConnection();
+      connection.messageStreamOperations.push(() => opening.promise);
+      const port = new RecordingConnectionPort();
+      const openConnection = vi.spyOn(port, "openConnection");
+      port.openOperations.push(
+        () => Promise.resolve(connection),
+        () => Promise.resolve(new RecordingConnection()),
+      );
+      const session = new KafkaApplicationSession(port);
+      await session.connect(firstConnection);
+      const observer = {
+        onComplete: vi.fn(),
+        onEmpty: vi.fn(),
+        onFailure: vi.fn(),
+        onMessage: vi.fn(),
+      };
+      const starting = session.startConsumption(tailRequest(), observer);
+      const rejectedStart = expect(starting).rejects.toMatchObject({ cleanupFailure: cleanup });
+      await settleAsyncIteration();
+      const changing =
+        lifecycle === "disconnect" ? session.disconnect() : session.connect(secondConnection);
+      const rejectedLifecycle = expect(changing).rejects.toBeInstanceOf(Error);
+      await settleAsyncIteration();
+      expect(connection.closeCalls).toBe(1);
+      expect(openConnection).toHaveBeenCalledOnce();
+      if (result === "late-stream") opening.resolve(stream);
+      else opening.reject(Object.assign(new Error("cancelled"), { cleanupCause: cleanup }));
+      await Promise.all([rejectedStart, rejectedLifecycle]);
+      await expect(session.stopConsumption()).rejects.toBe(cleanup);
+      await expect(session.connect(secondConnection)).rejects.toBe(cleanup);
+      await expect(session.disconnect()).rejects.toThrow("did not close cleanly");
+      await expect(session.connect(secondConnection)).rejects.toBe(cleanup);
+      expect(openConnection).toHaveBeenCalledOnce();
+    },
+  );
+
   it("recovers after failed stream cleanup once disconnect closes the owning connection", async () => {
     const stream = new ControlledMessageStream();
     const cleanup = new Error("stream cleanup failed");
