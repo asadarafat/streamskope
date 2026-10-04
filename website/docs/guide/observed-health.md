@@ -1,67 +1,139 @@
-# Observe Kafka health over time
+# Investigate observed Kafka health
 
-Connect a profile, then open **Observed health**. Select one existing topic and optionally a consumer group. **Capture observation** reads once; **Start observing** repeats at least ten seconds after each completed attempt. **Stop observing**, navigation away, disconnect and app shutdown stop collection. The host allows one collection at a time and a 15-second deadline.
+Use **Observed health** to investigate one topic and, optionally, one consumer
+group on your connected profile. It uses Kafka metadata, offsets and bounded
+protected record reads. Its findings describe the selected resource from this
+client; they do not establish cluster-wide health or successful consumer processing.
 
-## What the readings mean
+## Start an investigation
 
-| Reading                     | Source and meaning                                       | Limits                                                                                                      |
-| --------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Broker/controller presence  | Kafka metadata advertises broker IDs and the controller  | Advertisement does not prove each broker is reachable; CPU/disk are unavailable                             |
-| Leader and in-sync replicas | Selected-topic metadata                                  | 1–128 partitions; no all-topic health claim                                                                 |
-| End and committed positions | Kafka latest offsets and selected consumer-group offsets | Observations are sequential, not an atomic broker snapshot                                                  |
-| Consumer lag                | End minus committed position for the selected topic      | Unknown for missing, omitted or ahead-of-end commits; offset positions are not exact readable record counts |
-| Group state and members     | Group description                                        | A stable group does not establish processing success                                                        |
-| Request time                | Client elapsed collection time                           | Includes transport/host scheduling; not broker processing latency                                           |
+1. Connect a profile, then open **Observed health**.
+2. Select an existing topic and optionally a consumer group. Refresh the resource
+   lists if a recently created resource is missing.
+3. Choose **Capture observation** for one reading, or **Start observing** to
+   collect repeatedly. The controls show collection progress and the cooldown
+   before another attempt is allowed.
+4. Read the current findings and measurements first. Open the affected topic,
+   consumer group or sampled record to continue the investigation.
 
-Each observation shows source, timestamp, coverage, state and elapsed request time. A sample is stale after 45 seconds. Failed reads do not create zero measurements; later successful samples start a new history segment. A restart or explicit stop also breaks continuity. Resource identities separate cluster/topic recreations.
+Local lag and request-time thresholds and optional record sampling are available
+in the collection settings. A threshold breach is an observation-specific finding;
+Activity records entry into a breach without repeating it on every sample.
 
-## Local thresholds
+## Decide what to investigate next
 
-Optionally set a lag threshold or request-time threshold before collecting. Only available values strictly above the configured threshold trigger. The page shows each sample's breach; Activity records entry into a breach without repeating it on every sample. No notification service runs when the page or desktop is closed. Missing data means unknown, not recovered or healthy.
+| Evidence                         | What it means                                                                | Useful next step                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Partition without a known leader | Selected-topic metadata reports no current leader                            | Inspect the affected partition and broker availability                                        |
+| Fewer ISR than assigned replicas | Selected-topic metadata reports a replication gap                            | Check the affected partition and broker replication metrics                                   |
+| Lag and no visible group members | Committed positions trail the topic's ends, with no visible members          | Open the group and check whether its application is intentionally stopped                     |
+| Append positions outpace commits | New offset positions advance faster than committed positions                 | Inspect consumer capacity and commit policy                                                   |
+| Commits appear stalled           | Several recent observations show lag without commit progress                 | Check consumer logs; stopped consumers, batching and poison records are possible explanations |
+| Uneven partition growth          | A sufficiently complete interval concentrates offset growth in one partition | Inspect partitioning and available sampled key evidence                                       |
+| Unknown or partial measurements  | The read could not establish that value                                      | Read its coverage reason and follow the specific recovery action                              |
 
-## Retention and removal
+Use the partition table's filtering and sorting to find leader, replication and
+lag problems. Group and topic actions open their existing workspaces. **Find
+sampled record** requests the exact partition and offset through the protected
+Topics reader; other records with similar offset text do not match. A compacted,
+deleted or out-of-window record may no longer be available. The read's coverage
+reports whether it completed or hit a bound.
 
-Desktop history is stored privately in `history/kafka-observations.json` inside application data. Browser development retains it only for the host session. History retains up to eight cluster/topic/group identities, 240 samples per identity, 24 hours and 4 MiB in total; oldest evidence is evicted first. Timestamps remain unchanged across restart, so old evidence is labelled stale.
+**No supported finding** does not mean **healthy**. A stable group does not prove
+processing success, and advertised broker/controller presence does not prove
+each broker is reachable. Broker CPU, disk and end-to-end message latency are
+not measured here.
 
-Only aggregates, offsets and Kafka resource identities are retained. Payloads, raw keys, member identities and credentials are excluded. **Clear all observation history** requires typing `CLEAR HISTORY`; it deletes every retained series, including history from other profiles. An unreadable or unsupported file is preserved until explicitly cleared. See [backup and recovery](recovery.md) before managing application data.
+## Freshness, coverage and recovery
 
-## Explain the evidence
+Each reading includes its source, observation time and measurement coverage.
+A sample becomes stale after **45 seconds**. Retained history can belong to a
+different connection: collecting successfully on the current connection is
+required before treating it as current evidence. Failed reads do not create zero
+measurements, and stale evidence produces no current diagnosis or forecast.
 
-Below the history, **Explain these observations** shows bounded analysis. Offset growth
-and commit progress are **positions per second**, not exact message throughput or proof
-that a consumer processed records. Compaction, control records and manual offset resets
-can change their meaning. Requests include sequential metadata/group reads; their elapsed
-time is client observation cost, not broker or end-to-end message latency.
+If the application host becomes unavailable, collection stops and its last
+measurements become retained evidence. Capture and resource links stay disabled
+while the host is unavailable. Follow the host recovery action, then capture
+again to verify the connection; repeated collection does not resume automatically.
 
-| Analysis       | Evidence required                                                                 | Interpretation and limits                                                                                                                                                                                                                                                            |
-| -------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Lag scenario   | Nine complete samples over at least one minute, same group state; up to 20 used   | A linear projection 60 seconds ahead. The last three samples are held out for a backtest. Reject when mean absolute error exceeds 20% of mean lag, with a five-position floor. The displayed range scales held-out error and residuals; it is not a statistical confidence interval. |
-| Anomalies      | Eight prior continuous samples; up to 12 form the baseline                        | Compare offset-position growth, request time and sampled mean record size. A change must exceed six median absolute deviations, 50% of the median and the metric floor (1 position/s, 10 ms or 32 bytes). Three successive deviations are labelled a changing baseline.              |
-| Partition skew | Complete end-offset changes across at least two partitions, at least 20 positions | Suspect skew when one partition has at least 80% of growth and at least 1.5 times its uniform share. This is selected-topic evidence.                                                                                                                                                |
-| Frequent keys  | At least 20 available non-null keys in a recent sample                            | A key accounting for at least half of these keys receives a hot-key hint. Capped reads may favour some partitions; the sample is not a cluster traffic census.                                                                                                                       |
-| Hypotheses     | Recent metadata, group states, offsets and sample timestamps                      | Stalled commits, append/commit imbalance, state changes and replication gaps suggest checks. Consumer logs and broker metrics are needed to establish a cause. A poison record is only one possible explanation for stalled commits.                                                 |
+Group-access failures leave available topic evidence intact. Selected-topic lag
+uses that topic's committed and end positions; omitted unrelated group members
+or assignments do not by themselves invalidate those positions. Missing,
+omitted or ahead-of-end commits still produce unknown lag.
 
-Gaps over 45 seconds, changed process/collection segments, partition identities and
-backwards offsets break continuity. Incomplete lag or a group-state change prevents
-projection across that boundary. Stale evidence produces no current forecast, anomaly
-classification or diagnosis. Heuristics can produce false positives and miss problems;
-**no hint** does not mean **healthy**.
+Collection errors distinguish invalid selections, access failures, timeouts,
+disconnection, cancellation, cooldown and unreadable history. Follow the shown
+recovery action rather than treating every failure as an invalid topic. An
+unreadable or unsupported history file remains preserved until explicitly cleared.
+
+## Collection and history limits
+
+- One collection runs at a time, with a **15-second deadline** and **1–128
+  selected-topic partitions**.
+- Repeated collection waits at least **ten seconds after each completed attempt**.
+  A one-shot attempt also observes the host cooldown.
+- **Stop observing**, navigation away, disconnect, host loss and app shutdown stop collection.
+  Sampling and local alerts run only while this page is open; there is no
+  background notification service.
+- Desktop history is stored privately in `history/kafka-observations.json` inside
+  application data. Browser development retains history only for the host session.
+- History loaded or updated by the host is bounded by eight resource identities, **240 samples per identity**,
+  24 hours of age and 4 MiB total. At a ten-second cadence, the sample cap holds
+  approximately **40 minutes plus collection time**, rather than a full day of
+  continuous readings. Older evidence is evicted first.
+
+The 24-hour cutoff filters loaded history; it does not schedule deletion. On
+desktop, expired entries remain on disk until a successful capture rewrites
+history or you explicitly clear it. There is no background erasure.
+
+Only aggregates, offsets and Kafka resource identities are retained. Payloads,
+raw keys, member identities and credentials are excluded. Clear history through
+its explicit confirmation action; clearing removes all retained series,
+including other profiles. See [backup and recovery](recovery.md) before managing
+application data.
 
 ## Optional record sampling
 
-Enable **Sample records for size and key distribution** before collection. Each
-observation uses a separate protected reader for the preceding minute (end excluded),
-limited to **200 records, 2 MiB and five seconds**, within the overall 15-second deadline.
-This adds broker reads and may overlap the preceding sample. It leaves the Topics reader
-unchanged and stops on cancellation or navigation.
+Enable **Sample records for size and key distribution** before collection. Reads
+use a separate protected reader and leave the active Topics request unchanged.
+Each sample remains limited to **200 records, 2 MiB and five seconds**, within the
+overall collection deadline.
 
-The view reports coverage, mean/p95 original record byte size, partition counts, and
-ranked key counts with example partition/offset locators. Complete window coverage with
-at least 20 records is required for a record-size anomaly baseline. Switching sampling
-on or off starts a separate request-time baseline because the work has changed.
+The sampling window adapts to recent observed offset growth, using a bounded
+window of 60 seconds, 10 seconds, one second or 100 milliseconds. Shorter windows
+can provide complete evidence on busy topics without increasing the record or
+byte budget. The view reports the actual window, count, coverage, mean/p95 record
+size and key locators. This is selected-window evidence, not a representative
+census of topic traffic.
+
+Incomplete or capped windows retain their measured statistics, but do not qualify
+full-window key or record-size inference. Size comparisons require complete,
+comparable windows with at least 20 records. Changing the sampling work starts a
+separate request-time baseline. Overlapping windows can reuse records.
 
 Raw keys, values, headers and previews are discarded after aggregation. Masked or
 unavailable original bytes cannot identify a key; null keys are counted separately.
-Key ranks apply to one sample only. To inspect a permitted example, open its partition
-and offset in **Topics**. Size and frequency aggregates are retained with history and
-may still reveal traffic patterns; use **Clear all observation history** to remove them.
+Unavailable keys suppress frequency hints but do not suppress size comparisons
+when original byte sizes and complete window coverage are available.
+Key ranks apply to one sample only. Size and frequency aggregates may still reveal
+traffic patterns; clear observation history to remove them.
+
+## Optional analysis and methodology
+
+Descriptive lag, append-position and commit-position trends lead the investigation.
+The analytical details explain their evidence and limitations:
+
+| Analysis       | Evidence required                                                                     | Interpretation and limits                                                                                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lag scenario   | Nine complete samples over at least one minute in the same group state; up to 20 used | A linear scenario 60 seconds ahead. The last three samples are held out; reject when mean absolute error exceeds 20% of mean lag, with a five-position floor. The displayed range is heuristic, not a statistical confidence interval |
+| Anomalies      | Eight prior comparable continuous samples; up to 12 form the baseline                 | A change must exceed six median absolute deviations, 50% of the median and the metric floor: 1 position/s, 10 ms or 32 bytes. Three successive deviations indicate a changing baseline                                                |
+| Partition skew | Complete end-offset changes across at least two partitions and 20 positions           | Suspect skew when one partition has at least 80% of growth and at least 1.5 times its uniform share                                                                                                                                   |
+| Frequent keys  | A complete recent sampled window with at least 20 available non-null keys             | A key accounting for at least half of those keys receives a window-specific hint; it does not establish topic-wide key frequency                                                                                                      |
+
+Offset changes are **positions per second**, not exact message throughput.
+Compaction, control records and manual resets affect their meaning. Request time
+is client elapsed collection time, including sequential reads and host scheduling;
+it is not broker processing latency. Gaps over 45 seconds, restart/stop boundaries,
+changed partition identities and backwards offsets break continuity. Heuristics
+can miss problems and produce false positives.

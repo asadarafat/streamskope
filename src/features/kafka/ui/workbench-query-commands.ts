@@ -49,6 +49,15 @@ export function investigationCommands({
     mode !== "tail" &&
     !filters.activeRuleMatchesOnly &&
     (expression.trim() === "" || validateKafkaRuleExpression(expression).valid);
+  const search: KafkaSearchFilter = {
+    key: filters.key,
+    value: filters.value,
+    offset: filters.offset,
+    ...(filters.offsetExact === undefined ? {} : { offsetExact: filters.offsetExact }),
+    timestamp: filters.timestamp,
+    partition: filters.partition,
+    ...(expression.length === 0 ? {} : { expression }),
+  };
   return [
     { id: "queries", label: "Saved queries", disabled: false, run: openQueries },
     {
@@ -64,7 +73,11 @@ export function investigationCommands({
       label: `${mode === "tail" ? "Start tail" : "Load messages"} ${selectedTopic ?? "(select a topic)"}`,
       disabled: !canRead,
       run: (): void => {
-        if (canRead && selectedTopic !== null) void startRead(selectedTopic);
+        if (canRead && selectedTopic !== null)
+          void startRead(
+            selectedTopic,
+            mode !== "tail" && filters.offsetExact !== undefined ? search : undefined,
+          );
       },
     },
     {
@@ -72,15 +85,7 @@ export function investigationCommands({
       label: `Search broker ${selectedTopic ?? "(select a topic)"}`,
       disabled: !canSearch,
       run: (): void => {
-        if (canSearch && selectedTopic !== null)
-          void startRead(selectedTopic, {
-            key: filters.key,
-            value: filters.value,
-            offset: filters.offset,
-            timestamp: filters.timestamp,
-            partition: filters.partition,
-            ...(expression.length === 0 ? {} : { expression }),
-          });
+        if (canSearch && selectedTopic !== null) void startRead(selectedTopic, search);
       },
     },
     {

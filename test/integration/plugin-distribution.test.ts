@@ -452,15 +452,25 @@ it("renders the packaged NSP onboarding with only the generic plugin bridge", as
 }, 30_000);
 
 it("installs and removes the verified package through Preferences across application restarts", async () => {
-  await execute(
-    process.execPath,
-    ["tools/package/e2e.mjs", "web", "test/e2e/web-plugin-installation.spec.ts"],
-    {
-      env: { ...process.env, STREAMSKOPE_PLUGIN_PACKAGE_READY: "1" },
-      timeout: 120_000,
-      maxBuffer: 2 * 1024 * 1024,
-    },
-  );
+  try {
+    await execute(
+      process.execPath,
+      ["tools/package/e2e.mjs", "web", "test/e2e/web-plugin-installation.spec.ts"],
+      {
+        env: { ...process.env, STREAMSKOPE_PLUGIN_PACKAGE_READY: "1" },
+        timeout: 120_000,
+        maxBuffer: 2 * 1024 * 1024,
+      },
+    );
+  } catch (error) {
+    const failure = error !== null && typeof error === "object" ? error : {};
+    const stdout = "stdout" in failure && typeof failure.stdout === "string" ? failure.stdout : "";
+    const stderr = "stderr" in failure && typeof failure.stderr === "string" ? failure.stderr : "";
+    throw new Error(
+      `Plugin lifecycle browser qualification failed. Child output (bounded tails):\n${stdout.slice(-12_000)}\n${stderr.slice(-12_000)}`,
+      { cause: error },
+    );
+  }
 }, 125_000);
 
 it("hot-updates a second local build in the same store without losing recovery state", async () => {

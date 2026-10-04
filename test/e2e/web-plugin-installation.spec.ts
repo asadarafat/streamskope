@@ -156,8 +156,11 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await expect(
       page.locator('[role="dialog"][aria-labelledby="change-plugin-title"]'),
     ).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Workbench Preferences" })).toHaveCount(0);
+    // Removal deletes the button that opened the confirmation. Give the underlying
+    // dialog keyboard focus before Escape rather than racing its focus restoration.
+    const preferences = page.getByRole("dialog", { name: "Workbench Preferences" });
+    await preferences.press("Escape");
+    await expect(preferences).toHaveCount(0);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Capture from EDA", exact: true })).toHaveCount(
       0,

@@ -497,6 +497,21 @@ export function MessageWorkspace({
             search={consumptionRequest?.search !== undefined}
           />
         ) : null}
+        {filters.offsetExact !== undefined && (
+          <Alert severity="info" aria-label="Exact record locator">
+            Finding partition {filters.partition ?? "any"}, exact offset {filters.offsetExact} in
+            the selected time window. Deleted or compacted records may be unavailable; read coverage
+            describes the attempted range.
+            <Button
+              onClick={() => {
+                onTextFilterChange("offset", "");
+                onPartitionFilterChange(null);
+              }}
+            >
+              Clear exact locator
+            </Button>
+          </Alert>
+        )}
         {selectedTopic !== null && filterPanelOpen ? (
           <Box
             aria-label="Message filters"
@@ -628,6 +643,9 @@ export function MessageWorkspace({
                       key: filters.key,
                       value: filters.value,
                       offset: filters.offset,
+                      ...(filters.offsetExact === undefined
+                        ? {}
+                        : { offsetExact: filters.offsetExact }),
                       partition: filters.partition,
                       timestamp: filters.timestamp,
                     })

@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -103,12 +103,14 @@ function Harness({
   download = (): Promise<void> => Promise.resolve(),
   consumptionError = null,
   onStop = (): void => undefined,
+  initialFilters = initialKafkaMessageFilters,
 }: {
   readonly download?: TextDocumentTransferPort["download"];
   readonly consumptionError?: HostError | null;
   readonly onStop?: () => void;
+  readonly initialFilters?: KafkaMessageFilters;
 }): React.JSX.Element {
-  const [filters, setFilters] = useState<KafkaMessageFilters>(initialKafkaMessageFilters);
+  const [filters, setFilters] = useState<KafkaMessageFilters>(initialFilters);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const messages = useMemo(() => selectFilteredKafkaMessages(retained, filters), [filters]);
   const selectedMessage = selectKafkaMessageById(messages, selectedMessageId);
@@ -176,6 +178,37 @@ afterEach(() => {
 });
 
 describe("Kafka message operation Material UI workflow", () => {
+  it("clears an exact locator while preserving independently edited message filters", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        initialFilters={{ ...initialKafkaMessageFilters, offsetExact: "101", partition: 2 }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Show message filters" }));
+    const edits = [
+      ["Key contains", "alpha"],
+      ["Value or retained preview contains", "approved"],
+      ["Timestamp contains", "10:41"],
+      ["JSON expression", '$.status == "APPROVED"'],
+    ] as const;
+    for (const [name, value] of edits)
+      fireEvent.change(screen.getByRole("textbox", { name }), { target: { value } });
+    await user.click(screen.getByRole("checkbox", { name: "Rule matches only" }));
+    expect(screen.getByRole("button", { name: "Clear exact locator" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Clear exact locator" }));
+    expect(screen.queryByRole("button", { name: "Clear exact locator" })).not.toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Partition" })).toHaveValue(null);
+    expect(screen.getByRole("textbox", { name: "Offset contains" })).toHaveValue("");
+    for (const [name, value] of edits)
+      expect(screen.getByRole("textbox", { name })).toHaveValue(value);
+    expect(screen.getByRole("checkbox", { name: "Rule matches only" })).toBeChecked();
+    expect(screen.getByText("5 active filters")).toBeVisible();
+    const grid = await screen.findByRole("grid", { name: "Kafka messages" });
+    expect(within(grid).getByText("Order-Alpha")).toBeVisible();
+    expect(within(grid).queryByText("Order-Beta")).not.toBeInTheDocument();
+  });
+
   it("retries only an unfinished cleanup without calling the failed request active", async () => {
     const onStop = vi.fn();
     const error: HostError = {

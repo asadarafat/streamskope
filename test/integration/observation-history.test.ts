@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 
 import { AtomicObservationFileStore } from "../../src/platform/node/kafka-observation-file-store";
 import type { ObservationHistory } from "../../src/features/kafka/contracts/observations";
+import { parseObservationHistory } from "../../src/features/kafka/contracts/observation-validation";
 
 it("retains only validated bounded history across restart with private permissions and preserves corrupt bytes", async () => {
   const dir = await mkdtemp(join(tmpdir(), "streamskope-observations-")),
@@ -55,7 +56,9 @@ it("retains only validated bounded history across restart with private permissio
       ],
     };
     await store.commit(history);
-    expect(await new AtomicObservationFileStore(path).load()).toEqual(history);
+    expect(await new AtomicObservationFileStore(path).load()).toEqual(
+      parseObservationHistory(history),
+    );
     if (process.platform !== "win32") expect((await stat(path)).mode & 0o777).toBe(0o600);
     await writeFile(path, '{"schemaVersion":999,"private":"do not overwrite"}');
     await expect(store.load()).rejects.toThrow("not been replaced");

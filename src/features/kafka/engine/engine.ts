@@ -360,14 +360,33 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     signal?: AbortSignal,
   ): Promise<import("../contracts/observations").TopicHealth> {
     return this.runAdminOperation(
-      () => {
+      (requestSignal) => {
         if (!this.admin.observeTopicHealth) throw new Error("Topic health is unavailable.");
-        return this.admin.observeTopicHealth(topic);
+        return this.admin.observeTopicHealth(topic, requestSignal);
       },
       signal,
       this.target,
       mapKafkaAdminFailure,
       "broker",
+    );
+  }
+
+  observeConsumerGroup(
+    groupId: string,
+    topic: string,
+    partitions: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<import("../contracts/observations").ObservationGroupHealth> {
+    return this.runAdminOperation(
+      (requestSignal) => {
+        if (!this.admin.observeConsumerGroup)
+          throw new Error("Selected-topic group observations are unavailable.");
+        return this.admin.observeConsumerGroup(groupId, topic, partitions, requestSignal);
+      },
+      signal,
+      `${this.target} / ${groupId}`,
+      mapKafkaConsumerGroupFailure,
+      "kafka",
     );
   }
 
@@ -445,6 +464,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       ...this.clientInput,
       groupId: `streamskope-${randomUUID()}`,
       request: parsedRequest,
+      signal,
     });
     try {
       const rawStream = await boundedOperation(operation, signal);
@@ -548,7 +568,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   }
 
   private async runAdminOperation<T>(
-    start: () => Promise<T>,
+    start: (signal: AbortSignal) => Promise<T>,
     cancellationSignal: AbortSignal | undefined,
     target: string,
     mapFailure: (error: unknown, target: string) => KafkaEngineFailure,
@@ -566,7 +586,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     const signal = AbortSignal.any(signals);
 
     try {
-      const operation = Promise.resolve().then(start);
+      const operation = Promise.resolve().then(() => start(signal));
       return await boundedOperation(operation, signal);
     } catch (error) {
       if (error instanceof OperationAborted) {

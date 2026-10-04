@@ -34,6 +34,7 @@ export interface KafkaMessageFilters {
   readonly activeRuleMatchesOnly: boolean;
   readonly key: string;
   readonly offset: string;
+  readonly offsetExact?: string;
   readonly partition: number | null;
   readonly timestamp: string;
   readonly value: string;
@@ -103,6 +104,7 @@ export function countActiveKafkaMessageFilters(filters: KafkaMessageFilters): nu
   return (
     Number(filters.activeRuleMatchesOnly) +
     Number(filters.partition !== null) +
+    Number(filters.offsetExact !== undefined) +
     KAFKA_MESSAGE_TEXT_FILTER_FIELDS.reduce(
       (count, field) => count + Number((filters[field]?.trim().length ?? 0) > 0),
       0,
@@ -156,7 +158,11 @@ export function withKafkaMessageTextFilter(
       ? KAFKA_RULE_LIMITS.expressionCharacters
       : KAFKA_MESSAGE_OPERATION_LIMITS.filterCharacters,
   );
-  return bounded === filters[field] ? filters : { ...filters, [field]: bounded };
+  if (bounded === filters[field] && !(field === "offset" && filters.offsetExact !== undefined))
+    return filters;
+  const next = { ...filters, [field]: bounded };
+  if (field === "offset") delete next.offsetExact;
+  return next;
 }
 
 function operationFailure(
@@ -215,7 +221,11 @@ function validateExportInput(input: KafkaMessageExportInput): void {
           : KAFKA_MESSAGE_OPERATION_LIMITS.filterCharacters),
     ) ||
     (input.filters.partition !== null &&
-      (!Number.isSafeInteger(input.filters.partition) || input.filters.partition < 0))
+      (!Number.isSafeInteger(input.filters.partition) || input.filters.partition < 0)) ||
+    (input.filters.offsetExact !== undefined &&
+      (!/^(0|[1-9]\d*)$/u.test(input.filters.offsetExact) ||
+        input.filters.offsetExact.length > 20 ||
+        BigInt(input.filters.offsetExact) > 9_223_372_036_854_775_807n))
   ) {
     operationFailure(
       "INVALID_EXPORT",
@@ -254,6 +264,7 @@ function exportRecord(message: KafkaExploredMessage): KafkaMessageExportRecord {
 function exportFilters(filters: KafkaMessageFilters): KafkaMessageFilters {
   return {
     ...(filters.expression === undefined ? {} : { expression: filters.expression }),
+    ...(filters.offsetExact === undefined ? {} : { offsetExact: filters.offsetExact }),
     timestamp: filters.timestamp,
     partition: filters.partition,
     offset: filters.offset,

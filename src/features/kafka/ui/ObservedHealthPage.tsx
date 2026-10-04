@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { Stack, Typography, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Stack, Typography } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 
 import {
   StudioButton as Button,
@@ -8,429 +9,379 @@ import {
   StudioMenuItem as MenuItem,
   StudioCheckbox as Checkbox,
   StudioLabeledControl as FormControlLabel,
+  StudioAccordion as Accordion,
+  StudioAccordionSummary as AccordionSummary,
+  StudioAccordionDetails as AccordionDetails,
 } from "../../../platform/ui/controls";
-import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
-import {
-  OBSERVATION_LIMITS as limits,
-  observationIdentity,
-  observationLag,
-  type ObservationSeries,
-  type ObservationSnapshot,
-} from "../contracts/observations";
+import { type KafkaConsumerGroupInventorySnapshot, type StreamSkopeHost } from "../contracts";
+import { analyzeObservations } from "../contracts/observation-analysis";
+import { observationIdentity, type ObservationInput } from "../contracts/observations";
 
 import { ObservationAnalysisPanel } from "./ObservationAnalysisPanel";
-import { MetricPlot } from "./MetricPlot";
+import { ObservationControls } from "./ObservationControls";
+import { ObservationFindings, type ObservationNavigation } from "./ObservationFindings";
+import { ObservationPartitionTable } from "./ObservationPartitionTable";
+import { ObservationSummary } from "./ObservationSummary";
+import { ObservationTrends } from "./ObservationTrends";
+import { useObservedHealth } from "./use-observed-health";
 
-function nullableThreshold(value: string): number | null {
+function threshold(value: string, label: string, maximum = Number.MAX_SAFE_INTEGER): number | null {
   if (!value.trim()) return null;
   const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) throw new Error("Enter a non-negative threshold.");
+  if (!Number.isFinite(number) || number < 0 || number > maximum)
+    throw new Error(`${label} must be between zero and ${maximum.toLocaleString()}.`);
   return number;
 }
+export interface ObservedHealthPageProperties extends ObservationNavigation {
+  readonly host: StreamSkopeHost;
+  readonly backendAvailable?: boolean;
+  readonly connected?: boolean;
+  readonly connectionName?: string | null;
+  readonly initialTopic?: string;
+  readonly initialGroupId?: string;
+  readonly topics?: readonly string[];
+  readonly groupInventory?: KafkaConsumerGroupInventorySnapshot;
+  readonly inventoryStatus?: string;
+  readonly onRefreshResources?: () => void;
+}
+
 export function ObservedHealthPage({
   host,
-}: {
-  readonly host: StreamSkopeHost;
-}): React.JSX.Element {
-  const [topic, setTopic] = useState(""),
-    [groupId, setGroupId] = useState("");
-  const [lagThreshold, setLagThreshold] = useState(""),
-    [latencyThreshold, setLatencyThreshold] = useState("");
+  backendAvailable = true,
+  connected = true,
+  connectionName = null,
+  initialTopic = "",
+  initialGroupId = "",
+  topics = [],
+  groupInventory,
+  inventoryStatus = "Enter a resource name if its inventory is unavailable.",
+  onRefreshResources,
+  ...navigation
+}: ObservedHealthPageProperties): React.JSX.Element {
+  const [topic, setTopic] = useState(initialTopic);
+  const [groupId, setGroupId] = useState(initialGroupId);
+  const [lagThreshold, setLagThreshold] = useState("");
+  const [latencyThreshold, setLatencyThreshold] = useState("");
   const [sampleRecords, setSampleRecords] = useState(false);
-  const [snapshot, setSnapshot] = useState<ObservationSnapshot>({
-    schemaVersion: 1,
-    series: [],
-    durability: "session",
-  });
-  const [selected, setSelected] = useState(""),
-    [running, setRunning] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const [confirmation, setConfirmation] = useState(""),
-    [now, setNow] = useState(Date.now());
-  const mounted = useRef(true),
-    generation = useRef(0),
-    inFlight = useRef(false);
-  const series = snapshot.series.find((s) => observationIdentity(s) === selected);
-  const latest = series?.samples.at(-1);
-  const observedAt = latest?.observedAt;
-  const fresh =
-    latest !== undefined && now >= latest.observedAt && now - latest.observedAt <= limits.staleMs;
-  const update = (next: ObservationSnapshot): void => {
-    setSnapshot(next);
-    setSelected((previous) =>
-      next.series.some((s) => observationIdentity(s) === previous)
-        ? previous
-        : next.series.at(-1)
-          ? observationIdentity(next.series.at(-1)!)
-          : "",
-    );
-  };
+  const [confirmation, setConfirmation] = useState("");
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const health = useObservedHealth(host, backendAvailable);
+  const { series, latest } = health;
+  const selectionInitialized = useRef(false);
   useEffect(() => {
-    mounted.current = true;
-    void host
-      .execute({
-        command: "observations.history",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: {},
-      })
-      .then((r) => {
-        if (!mounted.current) return;
-        if (r.ok) update(r.result.snapshot);
-        else setError(r.error.summary + " " + r.error.recovery);
-      })
-      .catch(() => {
-        if (mounted.current) setError("Observation history could not be loaded.");
-      });
-    return (): void => {
-      mounted.current = false;
-      generation.current++;
-      void host
-        .execute({
-          command: "observations.cancel",
-          id: crypto.randomUUID(),
-          version: HOST_PROTOCOL_VERSION,
-          payload: {},
-        })
-        .catch(() => undefined);
-    };
-  }, [host]);
-  useEffect(() => {
-    const current = Date.now();
-    setNow(current);
-    if (observedAt === undefined) return;
-    const remaining = observedAt + limits.staleMs + 1 - current;
-    if (remaining <= 0) return;
-    const expiry = setTimeout(() => setNow(Date.now()), remaining);
-    return (): void => clearTimeout(expiry);
-  }, [observedAt]);
-  const capture = async (): Promise<void> => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError("");
-    const current = generation.current;
+    if (!series || selectionInitialized.current) return;
+    selectionInitialized.current = true;
+    if (!topic.trim()) {
+      setTopic(series.topic);
+      setGroupId(series.groupId ?? "");
+    }
+  }, [series, topic]);
+  const actionable = connected && backendAvailable && health.current && health.fresh;
+  const analysis = useMemo(
+    () =>
+      series
+        ? analyzeObservations(series, actionable ? health.now : Number.POSITIVE_INFINITY)
+        : null,
+    [series, actionable, health.now],
+  );
+  const request = (): ObservationInput | null => {
     try {
-      const r = await host.execute({
-        command: "observations.capture",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: {
-          topic: topic.trim(),
-          sampleRecords,
-          groupId: groupId.trim() || null,
-          thresholds: {
-            lag: nullableThreshold(lagThreshold),
-            requestMs: nullableThreshold(latencyThreshold),
-          },
-        },
-      });
-      if (!mounted.current || generation.current !== current) return;
-      if (!r.ok) {
-        setError(r.error.summary + " " + r.error.recovery);
-        return;
-      }
-      const next = r.result.capture;
-      setSnapshot((previous) => ({
-        schemaVersion: 1,
-        durability: next.durability,
-        series: [
-          ...previous.series.filter(
-            (s) => observationIdentity(s) !== observationIdentity(next.series),
-          ),
-          next.series,
-        ].slice(-limits.series),
-      }));
-      setSelected(observationIdentity(next.series));
-      setNow(Date.now());
-    } catch {
-      if (mounted.current && generation.current === current)
-        setError(
-          "Observation unavailable. Check the selection, thresholds and current connection.",
+      if (
+        topic.trim().length > 249 ||
+        !/^[A-Za-z0-9._-]+$/.test(topic.trim()) ||
+        topic.trim() === "." ||
+        topic.trim() === ".."
+      )
+        throw new Error(
+          "Choose a valid topic name: up to 249 letters, numbers, dots, hyphens or underscores.",
         );
-    } finally {
-      inFlight.current = false;
-      if (mounted.current) setBusy(false);
+      if (groupId.trim().length > 512)
+        throw new Error("Consumer group names must be 512 characters or fewer.");
+      const input = {
+        topic: topic.trim(),
+        groupId: groupId.trim() || null,
+        sampleRecords,
+        thresholds: {
+          lag: threshold(lagThreshold, "Lag threshold"),
+          requestMs: threshold(latencyThreshold, "Request time threshold", 60_000),
+        },
+      };
+      setSelectionError(null);
+      return input;
+    } catch (error) {
+      setSelectionError(error instanceof Error ? error.message : "Check the selected thresholds.");
+      setSettingsOpen(true);
+      return null;
     }
   };
-  const captureRef = useRef(capture);
-  captureRef.current = capture;
-  useEffect(() => {
-    if (!running) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async (): Promise<void> => {
-      await captureRef.current();
-      if (!cancelled)
-        timer = setTimeout(() => {
-          void tick();
-        }, limits.intervalMs);
-    };
-    void tick();
-    return (): void => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [running]);
-  const stop = (): void => {
-    setRunning(false);
-    generation.current++;
-    void host
-      .execute({
-        command: "observations.cancel",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: {},
-      })
-      .catch(() => undefined);
+  const capture = (): void => {
+    if (!connected || !backendAvailable) return;
+    const input = request();
+    if (input) void health.capture(input);
   };
-  const clear = async (): Promise<void> => {
-    stop();
-    setBusy(true);
-    try {
-      const r = await host.execute({
-        command: "observations.clear",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: { confirmation: "CLEAR HISTORY" },
-      });
-      if (mounted.current) {
-        if (r.ok) {
-          update(r.result.snapshot);
-          setConfirmation("");
-          setError("");
-        } else setError(r.error.summary);
-      }
-    } catch {
-      if (mounted.current) setError("History could not be cleared.");
-    } finally {
-      if (mounted.current) setBusy(false);
-    }
+  const start = (): void => {
+    if (!connected || !backendAvailable) return;
+    const input = request();
+    if (input) health.start(input);
   };
   return (
     <Stack
       component="main"
       aria-label="Observed health page"
-      spacing={2}
-      sx={{ p: 3, overflow: "auto", height: "100%" }}
+      spacing={2.5}
+      sx={{ p: { xs: 2, md: 3 }, overflow: "auto", height: "100%", minWidth: 0 }}
     >
-      <Typography component="h1" variant="h5">
-        Observed health
-      </Typography>
-      <Typography>
-        Observe a selected topic and optional consumer group. Kafka API metadata and offset
-        positions describe this client’s view; broker CPU/disk and consumer processing health are
-        unavailable.
-      </Typography>
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
-        <TextField
-          label="Observed topic"
-          value={topic}
-          disabled={busy || running}
-          onChange={(e) => setTopic(e.target.value)}
-        />
-        <TextField
-          label="Observed consumer group (optional)"
-          value={groupId}
-          disabled={busy || running}
-          onChange={(e) => setGroupId(e.target.value)}
-        />
-        <TextField
-          label="Lag alert threshold (optional)"
-          value={lagThreshold}
-          disabled={busy || running}
-          onChange={(e) => setLagThreshold(e.target.value)}
-        />
-        <TextField
-          label="Request time alert threshold, ms (optional)"
-          value={latencyThreshold}
-          disabled={busy || running}
-          onChange={(e) => setLatencyThreshold(e.target.value)}
-        />
+      <Stack spacing={0.5}>
+        <Typography component="h1" variant="h5">
+          Observed health
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Investigate one topic and optional consumer group using Kafka metadata and offset
+          progress.
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Connection: {connectionName ?? (connected ? "Current connection" : "Disconnected")}.
+          Broker CPU/disk and processing success require other monitoring.
+        </Typography>
       </Stack>
+      {!backendAvailable && (
+        <Alert severity="warning">
+          Host unavailable. Collection is stopped. Restore the application host and reload the
+          workbench if needed, then capture a new observation. Retained evidence remains readable;
+          collection does not resume automatically.
+        </Alert>
+      )}
+      <ObservationControls
+        topic={topic}
+        groupId={groupId}
+        topics={topics}
+        groups={groupInventory?.groups.map((group) => group.id) ?? []}
+        busy={health.busy}
+        running={health.running}
+        connected={connected}
+        backendAvailable={backendAvailable}
+        historyReady={health.historyReady}
+        cooldownSeconds={health.cooldownSeconds}
+        operation={health.operation}
+        selectionError={selectionError}
+        inventoryStatus={inventoryStatus}
+        onTopicChange={setTopic}
+        onGroupChange={setGroupId}
+        onRefresh={() => onRefreshResources?.()}
+        onCapture={capture}
+        onStart={start}
+        onStop={health.stop}
+      />
+      {groupInventory?.error && (
+        <Alert severity="warning">
+          Consumer-group inventory: {groupInventory.error.summary} {groupInventory.error.recovery}{" "}
+          You can still enter a permitted group name.
+        </Alert>
+      )}
       <FormControlLabel
         control={
           <Checkbox
             checked={sampleRecords}
-            disabled={busy || running}
-            onChange={(e) => setSampleRecords(e.target.checked)}
+            disabled={health.busy || health.running}
+            onChange={(event) => setSampleRecords(event.target.checked)}
           />
         }
         label="Sample records for size and key distribution"
       />
-      <Typography variant="body2">
-        Optional reads cover the preceding minute, up to 200 protected records / 2 MiB and five
-        seconds. They use a separate reader and do not change the active message view. Raw keys and
-        payloads are discarded after aggregation.
-      </Typography>
-      <Stack direction="row" spacing={1}>
-        <Button
-          disabled={busy || running || !topic.trim()}
-          onClick={() => {
-            void capture();
-          }}
-        >
-          Capture observation
-        </Button>
-        <Button disabled={busy || running || !topic.trim()} onClick={() => setRunning(true)}>
-          Start observing
-        </Button>
-        <Button disabled={!running && !busy} onClick={stop}>
-          Stop observing
-        </Button>
-      </Stack>
-      <Typography color="text.secondary" variant="body2">
-        {running ? "Collecting" : "Stopped"} · At least 10 seconds between captures; 15-second
-        deadline; 1–128 partitions. Sampling and local alerts stop when you leave this page or close
-        the app. Threshold breaches appear here and once per transition in Activity. Missing values
-        never satisfy a threshold.
-      </Typography>
-      {error && <Alert severity="error">{error}</Alert>}
-      <Typography variant="body2">
-        History:{" "}
-        {snapshot.durability === "durable"
-          ? "Private desktop storage; retained across restarts"
-          : "Browser session only"}
-        . At most 8 identities, 240 samples each, 24 hours and 4 MiB. Older samples are evicted;
-        payloads, raw keys and credentials are not stored.
-      </Typography>
-      {snapshot.series.length > 0 && (
+      {health.error && (
+        <Alert severity="error">
+          <Typography component="h2" variant="subtitle2">
+            {health.error.summary}
+          </Typography>
+          {health.error.recovery}
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {health.error.operation === "capture" && (
+              <Button
+                disabled={
+                  !connected ||
+                  !backendAvailable ||
+                  !health.historyReady ||
+                  health.busy ||
+                  health.cooldownSeconds > 0 ||
+                  !topic.trim()
+                }
+                onClick={capture}
+              >
+                Retry observation
+              </Button>
+            )}
+            {(health.error.operation === "history" ||
+              health.error.hostError?.code === "OBSERVATION_HISTORY_UNAVAILABLE") && (
+              <Button
+                disabled={!backendAvailable || health.busy}
+                onClick={() => {
+                  void health.refreshHistory();
+                }}
+              >
+                Reload history
+              </Button>
+            )}
+          </Stack>
+        </Alert>
+      )}
+      {health.snapshot.series.length > 0 && (
         <TextField
           select
           label="Recorded observation series"
-          value={selected}
-          onChange={(e) => setSelected(e.target.value)}
+          disabled={health.busy || health.running}
+          value={health.selected}
+          onChange={(event) => {
+            health.setSelected(event.target.value);
+            const selection = health.snapshot.series.find(
+              (value) => observationIdentity(value) === event.target.value,
+            );
+            if (selection) {
+              setTopic(selection.topic);
+              setGroupId(selection.groupId ?? "");
+            }
+          }}
         >
-          {snapshot.series.map((s) => (
-            <MenuItem key={observationIdentity(s)} value={observationIdentity(s)}>
-              {s.topic} · {s.groupId ?? "No group"} · cluster {s.clusterId}
+          {health.snapshot.series.map((value) => (
+            <MenuItem key={observationIdentity(value)} value={observationIdentity(value)}>
+              {value.topic} · {value.groupId ?? "No group"} · cluster {value.clusterId}
             </MenuItem>
           ))}
         </TextField>
       )}
-      {series && latest && (
+      {series && latest && analysis ? (
         <>
-          <Alert severity={!fresh || latest.state === "partial" ? "warning" : "info"}>
-            {fresh ? "Recent observation" : "Stale observation"} ·{" "}
-            {new Date(latest.observedAt).toISOString()} · {latest.state} · Group coverage:{" "}
-            {latest.groupCoverage}. Cluster {series.clusterId}; topic ID {series.topicId}. This
-            retained series may describe a different connection; only a new capture qualifies the
-            current one.
-          </Alert>
-          {latest.alerts.length > 0 && (
-            <Alert severity="warning">
-              {fresh ? "Local alert" : "Historical threshold breach"}:{" "}
-              {latest.alerts
-                .map(
-                  (a) =>
-                    `${a.metric} ${a.observed.toLocaleString()} exceeded ${a.threshold.toLocaleString()}`,
-                )
-                .join("; ")}
-              . Sample-specific evidence; no notification service runs while the desktop is closed.
-            </Alert>
-          )}
-          <Typography>
-            {latest.brokerCount} advertised brokers · Controller{" "}
-            {latest.controllerKnown ? "advertised" : "unknown"} ·{" "}
-            {latest.partitions.filter((p) => p.leader === null).length} partitions without a known
-            leader · {latest.partitions.filter((p) => p.inSyncReplicas < p.replicas).length}{" "}
-            under-replicated partitions. Advertised broker presence does not prove each broker is
-            reachable.
-          </Typography>
-          <Typography>
-            Group state: {latest.groupState ?? "unavailable"} · Visible members:{" "}
-            {latest.members ?? "unavailable"} · Selected-topic lag:{" "}
-            {observationLag(latest)?.toLocaleString() ?? "unknown"} offset positions · Collection:{" "}
-            {latest.requestMs.toFixed(1)} ms across {latest.providerCalls} provider calls (each may
-            issue several Kafka requests).
-          </Typography>
-          <Typography component="h2" variant="h6">
-            Observation history
-          </Typography>
-          <ObservationHistoryPlots series={series} />
-          <ObservationAnalysisPanel series={series} fresh={fresh} />
-          <Table size="small" aria-label="Observed partition positions">
-            <TableHead>
-              <TableRow>
-                {["Partition", "Leader", "ISR / replicas", "End position", "Committed", "Lag"].map(
-                  (s) => (
-                    <TableCell key={s}>{s}</TableCell>
-                  ),
-                )}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {latest.partitions.map((p) => (
-                <TableRow key={p.partition}>
-                  <TableCell>{p.partition}</TableCell>
-                  <TableCell>{p.leader ?? "unknown"}</TableCell>
-                  <TableCell>
-                    {p.inSyncReplicas} / {p.replicas}
-                  </TableCell>
-                  <TableCell>{p.endOffset ?? "unknown"}</TableCell>
-                  <TableCell>{p.committedOffset ?? "unknown"}</TableCell>
-                  <TableCell>{p.lag ?? "unknown"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <ObservationSummary
+            series={series}
+            current={connected && health.current}
+            fresh={health.fresh}
+            connectionName={connectionName}
+            analysis={analysis}
+          />
+          <ObservationFindings
+            series={series}
+            analysis={analysis}
+            actionable={actionable}
+            {...navigation}
+          />
+          <ObservationTrends series={series} />
+          <ObservationPartitionTable sample={latest} />
+          <Accordion>
+            <AccordionSummary
+              expandIcon={<ExpandMoreIcon />}
+              aria-controls="observation-analysis-details"
+              id="observation-analysis-title"
+            >
+              <Typography>Analysis details</Typography>
+            </AccordionSummary>
+            <AccordionDetails id="observation-analysis-details">
+              <Stack spacing={2}>
+                <ObservationAnalysisPanel series={series} fresh={actionable} {...navigation} />
+                <Typography variant="body2">
+                  Collection: {latest.requestMs.toFixed(1)} ms across {latest.providerCalls}{" "}
+                  provider calls. Includes scheduling, sequential metadata/group reads and optional
+                  sampling; it is not broker processing latency.
+                </Typography>
+                <Typography variant="caption" sx={{ overflowWrap: "anywhere" }}>
+                  Source: kafka-api · {new Date(latest.observedAt).toISOString()} · cluster{" "}
+                  {series.clusterId} · topic ID {series.topicId}.
+                </Typography>
+                <ObservationTrends series={series} diagnostic />
+              </Stack>
+            </AccordionDetails>
+          </Accordion>
         </>
+      ) : (
+        !health.busy &&
+        !health.error && (
+          <Alert severity="info">
+            No observation yet. Choose an existing topic and capture once. Add a consumer group to
+            measure its offset backlog; start observing to compare progress over time.
+          </Alert>
+        )
       )}
-      <Stack direction="row" spacing={1}>
-        <TextField
-          label="Clear all history confirmation"
-          value={confirmation}
-          disabled={busy || running}
-          helperText="Type CLEAR HISTORY to delete all retained observation series."
-          onChange={(e) => setConfirmation(e.target.value)}
-        />
-        <Button
-          disabled={busy || running || confirmation !== "CLEAR HISTORY"}
-          onClick={() => {
-            void clear();
-          }}
+      <Accordion expanded={settingsOpen} onChange={(_event, expanded) => setSettingsOpen(expanded)}>
+        <AccordionSummary
+          expandIcon={<ExpandMoreIcon />}
+          aria-controls="observation-history-settings"
+          id="observation-history-title"
         >
-          Clear all observation history
-        </Button>
-      </Stack>
-    </Stack>
-  );
-}
-function ObservationHistoryPlots({
-  series,
-}: {
-  readonly series: ObservationSeries;
-}): React.JSX.Element {
-  const samples = series.samples.flatMap((s, i) => {
-    const previous = series.samples[i - 1];
-    return previous &&
-      (s.segmentId !== previous.segmentId || s.observedAt - previous.observedAt > limits.staleMs)
-      ? [null, s]
-      : [s];
-  });
-  const labels = samples.map((s, i) =>
-    new Date(s?.observedAt ?? (samples[i - 1]?.observedAt ?? 0) + 1).toISOString(),
-  );
-  return (
-    <Stack spacing={1}>
-      <MetricPlot
-        title="Selected-topic consumer lag"
-        unit="offset positions"
-        interpolation="step"
-        sampleLabels={labels}
-        series={[
-          { label: "Measured lag", values: samples.map((s) => (s ? observationLag(s) : null)) },
-        ]}
-      />
-      <MetricPlot
-        title="Kafka API observation request time"
-        unit="ms"
-        sampleLabels={labels}
-        series={[
-          { label: "Client elapsed time", values: samples.map((s) => s?.requestMs ?? null) },
-        ]}
-      />
+          <Typography>History and collection settings</Typography>
+        </AccordionSummary>
+        <AccordionDetails id="observation-history-settings">
+          <Stack spacing={2}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
+              <TextField
+                label="Lag alert threshold (optional)"
+                value={lagThreshold}
+                disabled={health.busy || health.running}
+                inputMode="decimal"
+                onChange={(event) => setLagThreshold(event.target.value)}
+                helperText="Offset positions; only a complete group observation can breach."
+              />
+              <TextField
+                label="Request time alert threshold, ms (optional)"
+                value={latencyThreshold}
+                disabled={health.busy || health.running}
+                inputMode="decimal"
+                onChange={(event) => setLatencyThreshold(event.target.value)}
+                helperText="Client collection cost, including optional reads."
+              />
+            </Stack>
+            <Typography variant="body2">
+              Optional sampling reads a bounded recent window, up to 200 protected records, 2 MiB
+              and five seconds. Raw keys and payloads are discarded after aggregation. Incomplete
+              samples do not support hot-key or record-size conclusions.
+            </Typography>
+            <Typography variant="body2">
+              Threshold breaches appear here and once per transition in Activity. Collection and
+              local alerts stop when you leave this page, disconnect or close the app. Missing data
+              never satisfies a threshold.
+            </Typography>
+            <Typography variant="body2">
+              History:{" "}
+              {health.snapshot.durability === "durable"
+                ? "Private desktop storage; retained across restarts"
+                : "Browser host session only"}
+              . At most eight identities, 240 samples each, 24 hours and 4 MiB. Older evidence is
+              evicted; payloads, raw keys and credentials are not stored.
+            </Typography>
+            <Button
+              disabled={!backendAvailable || health.busy || health.running}
+              onClick={() => {
+                void health.refreshHistory();
+              }}
+            >
+              Reload retained history
+            </Button>
+            <Stack spacing={1}>
+              <TextField
+                label="Clear all history confirmation"
+                value={confirmation}
+                disabled={health.busy || health.running}
+                helperText="Type CLEAR HISTORY to delete every retained series, including other connections."
+                onChange={(event) => setConfirmation(event.target.value)}
+              />
+              <Button
+                color="error"
+                disabled={
+                  !backendAvailable ||
+                  health.busy ||
+                  health.running ||
+                  confirmation !== "CLEAR HISTORY"
+                }
+                onClick={() => {
+                  void health.clear().then((cleared) => {
+                    if (cleared) setConfirmation("");
+                  });
+                }}
+              >
+                Clear all observation history
+              </Button>
+            </Stack>
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
     </Stack>
   );
 }

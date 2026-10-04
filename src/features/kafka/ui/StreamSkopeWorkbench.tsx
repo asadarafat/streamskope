@@ -155,6 +155,7 @@ export function StreamSkopeWorkbench({
     requestTopics,
     startConsumption,
     activateTopic,
+    openObservedRecord,
     stopConsumption,
   } = useWorkbenchTopics(host, connected, navigation, setNavigation, state);
 
@@ -307,6 +308,10 @@ export function StreamSkopeWorkbench({
     onNavigationChange: openResourcePage,
   });
   const topicStatus = topicStatusLabel(state.topicListState, state.topics.length);
+  useEffect(() => {
+    if (navigation !== "observations" || !connected) return;
+    if (state.consumerGroupInventory.state === "unavailable") requestConsumerGroups();
+  }, [navigation, connected, state.consumerGroupInventory.state, requestConsumerGroups]);
   const resourceStatus =
     navigation === "consumer-groups"
       ? consumerGroupStatusLabel(
@@ -536,7 +541,12 @@ export function StreamSkopeWorkbench({
             setSelectionNotice(undefined);
           }}
           onFetchMaximumChange={setFetchMaximum}
-          onFetchModeChange={setFetchMode}
+          onFetchModeChange={(mode) => {
+            setFetchMode(mode);
+            if (mode === "tail" && state.messageFilters.offsetExact !== undefined) {
+              dispatch({ type: "messages.filter.text.changed", field: "offset", value: "" });
+            }
+          }}
           onPartitionFilterChange={(partition) => {
             dispatch({ partition, type: "messages.filter.partition.changed" });
           }}
@@ -548,7 +558,24 @@ export function StreamSkopeWorkbench({
             setSelectionNotice(undefined);
           }}
           onStart={() => {
-            if (selectedTopic !== null) void startConsumption(selectedTopic);
+            if (selectedTopic !== null) {
+              const { key, value, offset, offsetExact, timestamp, partition, expression } =
+                state.messageFilters;
+              void startConsumption(
+                selectedTopic,
+                offsetExact === undefined || fetchMode === "tail"
+                  ? undefined
+                  : {
+                      key,
+                      value,
+                      offset,
+                      offsetExact,
+                      timestamp,
+                      partition,
+                      ...(expression === undefined ? {} : { expression }),
+                    },
+              );
+            }
           }}
           onStop={() => void stopConsumption()}
           onTextFilterChange={(field, value) => {
@@ -608,6 +635,40 @@ export function StreamSkopeWorkbench({
       <ObservedHealthPage
         key={`${state.connectionName ?? "disconnected"}:${state.connectionState}`}
         host={host}
+        backendAvailable={state.backend === "ready"}
+        connected={connected}
+        connectionName={state.connectionName}
+        initialTopic={selectedTopic ?? ""}
+        initialGroupId={selectedConsumerGroupId ?? ""}
+        topics={state.topics}
+        groupInventory={state.consumerGroupInventory}
+        inventoryStatus={`${state.topics.length} topics (${state.topicListState}); ${state.consumerGroupInventory.groups.length} groups (${state.consumerGroupInventory.state})${state.consumerGroupInventory.omittedGroups > 0 ? `; ${state.consumerGroupInventory.omittedGroups} groups omitted from the bounded inventory` : ""}. Refresh if a resource is missing.`}
+        onRefreshResources={() => {
+          void requestTopics();
+          requestConsumerGroups();
+        }}
+        onOpenTopic={(topic) => {
+          dispatch({ type: "messages.filters.cleared" });
+          activateTopic(topic);
+        }}
+        onOpenGroup={(groupId) => {
+          changeNavigation("consumer-groups");
+          selectConsumerGroup(groupId);
+        }}
+        onOpenRecord={(locator) => {
+          dispatch({
+            type: "query.restored",
+            filters: {
+              key: "",
+              value: "",
+              offset: "",
+              offsetExact: locator.offset,
+              timestamp: "",
+              partition: locator.partition,
+            },
+          });
+          openObservedRecord(locator);
+        }}
       />
     ) : navigation === "connect" ? (
       <ConnectPage

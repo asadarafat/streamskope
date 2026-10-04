@@ -1,17 +1,29 @@
 import { useMemo } from "react";
-import { Stack, Typography, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material";
+import {
+  Box,
+  Stack,
+  Typography,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@mui/material";
 
-import { StudioAlert as Alert } from "../../../platform/ui/controls";
+import { StudioAlert as Alert, StudioButton as Button } from "../../../platform/ui/controls";
 import type { ObservationSeries } from "../contracts/observations";
 import { analyzeObservations } from "../contracts/observation-analysis";
+
+import type { ObservationNavigation } from "./ObservationFindings";
 
 export function ObservationAnalysisPanel({
   series,
   fresh,
+  onOpenRecord,
 }: {
   readonly series: ObservationSeries;
   readonly fresh: boolean;
-}): React.JSX.Element {
+} & ObservationNavigation): React.JSX.Element {
   const analysis = useMemo(
     () => analyzeObservations(series, fresh ? Date.now() : Number.POSITIVE_INFINITY),
     [series, fresh],
@@ -32,16 +44,10 @@ export function ObservationAnalysisPanel({
       <Typography component="h2" variant="h6">
         Explain these observations
       </Typography>
-      <Typography>
+      <Typography variant="body2">
         {analysis.contiguousSamples} samples in the recent continuous segment. Gaps, restarts,
         decreasing offsets and changed partition identities break continuity. Only recent evidence
         produces hints or forecasts.
-      </Typography>
-      <Typography>
-        Latest interval: {format(analysis.interval?.appendedPerSecond ?? null)} appended offset
-        positions/s; {format(analysis.interval?.committedPerSecond ?? null)} committed positions/s.
-        These rates are not exact record throughput or proof of processing; compaction, control
-        records and manual resets affect offsets.
       </Typography>
       <Typography component="h3" variant="subtitle1">
         Lag scenario, 60 seconds ahead
@@ -72,34 +78,42 @@ export function ObservationAnalysisPanel({
         positives. Three successive deviations identify a baseline change. Record-size baselines
         require at least 20 records and complete window coverage per sample.
       </Typography>
-      <Table size="small" aria-label="Observation anomalies">
-        <TableHead>
-          <TableRow>
-            {["Metric / meaning", "Observed", "Prior median", "Deviation threshold", "Result"].map(
-              (s) => (
+      <Box sx={{ overflowX: "auto" }}>
+        <Table size="small" aria-label="Observation anomalies">
+          <TableHead>
+            <TableRow>
+              {[
+                "Metric / meaning",
+                "Observed",
+                "Prior median",
+                "Deviation threshold",
+                "Result",
+              ].map((s) => (
                 <TableCell key={s}>{s}</TableCell>
-              ),
-            )}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {analysis.anomalies.map((a) => (
-            <TableRow key={a.metric}>
-              <TableCell>
-                {a.metric} ({a.unit})
-              </TableCell>
-              <TableCell>{format(a.observed)}</TableCell>
-              <TableCell>{format(a.median)}</TableCell>
-              <TableCell>{format(a.threshold)}</TableCell>
-              <TableCell>
-                {a.state} · {a.samples} baseline samples
-              </TableCell>
+              ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHead>
+          <TableBody>
+            {analysis.anomalies.map((a) => (
+              <TableRow key={a.metric}>
+                <TableCell>
+                  {a.metric} ({a.unit})
+                </TableCell>
+                <TableCell>{format(a.observed)}</TableCell>
+                <TableCell>{format(a.median)}</TableCell>
+                <TableCell>{format(a.threshold)}</TableCell>
+                <TableCell>
+                  {a.state} · {a.samples} baseline samples
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
       {!analysis.fresh && (
-        <Typography>No current anomaly classification; retained evidence is stale.</Typography>
+        <Typography>
+          No current anomaly classification; retained evidence is not current.
+        </Typography>
       )}
       <Typography component="h3" variant="subtitle1">
         Partition and key distribution
@@ -122,34 +136,62 @@ export function ObservationAnalysisPanel({
             {records.unavailableKeys} unavailable.{" "}
             {analysis.hotKey
               ? `${analysis.hotKey.suspected ? "Hot key suspected" : "Sampled key distribution"}: the most frequent key represents ${format(analysis.hotKey.share * 100)}% of available non-null keys.`
-              : "At least 20 available non-null keys and recent evidence are required for a hot-key hint."}{" "}
+              : "A complete recent window, at least 20 available non-null keys and no unavailable keys are required for a hot-key hint."}{" "}
             Capped, overlapping windows can be biased; these are not cluster-wide traffic
             statistics.
           </Typography>
-          <Table size="small" aria-label="Sampled frequent key locators">
-            <TableHead>
-              <TableRow>
-                <TableCell>Rank in this sample</TableCell>
-                <TableCell>Count</TableCell>
-                <TableCell>Example partition / offset</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {records.topKeys.map((k, i) => (
-                <TableRow key={i}>
-                  <TableCell>{i + 1}</TableCell>
-                  <TableCell>{k.count}</TableCell>
-                  <TableCell>
-                    {k.partition} / {k.offset}
-                  </TableCell>
+          {records.analysisEligible === false && (
+            <Alert severity="warning">
+              This bounded window does not cover all required partition ranges. Its counts describe
+              the sample only; it cannot support a hot-key or record-size anomaly conclusion.
+            </Alert>
+          )}
+          <Box sx={{ overflowX: "auto" }}>
+            <Table size="small" aria-label="Sampled frequent key locators">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Rank in this sample</TableCell>
+                  <TableCell>Count</TableCell>
+                  <TableCell>Example partition / offset</TableCell>
+                  {onOpenRecord && <TableCell>Investigate</TableCell>}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHead>
+              <TableBody>
+                {records.topKeys.map((k, i) => (
+                  <TableRow key={i}>
+                    <TableCell>{i + 1}</TableCell>
+                    <TableCell>{k.count}</TableCell>
+                    <TableCell>
+                      {k.partition} / {k.offset}
+                    </TableCell>
+                    {onOpenRecord && (
+                      <TableCell>
+                        <Button
+                          disabled={!fresh}
+                          onClick={() =>
+                            onOpenRecord({
+                              topic: series.topic,
+                              partition: k.partition,
+                              offset: k.offset,
+                              startTimeMs: records.startTimeMs,
+                              endTimeMs: records.endTimeMs,
+                            })
+                          }
+                          aria-label={`Find sampled record partition ${k.partition} offset ${k.offset}`}
+                        >
+                          Find sampled record
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
           <Typography variant="caption">
-            Inspect an example record in Topics to identify the key if permitted. Key bytes are not
-            returned or retained by this analysis. Ranks identify this sample only; masking or
-            unavailable originals prevent key grouping.
+            Find opens a protected bounded read at the example partition and exact offset. Deleted,
+            compacted or out-of-window records may be unavailable. Key bytes are not returned or
+            retained by this analysis; ranks identify this sample only.
           </Typography>
         </>
       ) : (
@@ -158,26 +200,6 @@ export function ObservationAnalysisPanel({
           key distributions.
         </Typography>
       )}
-      <Typography component="h3" variant="subtitle1">
-        Evidence-linked hypotheses
-      </Typography>
-      {analysis.hints.length === 0 && (
-        <Typography>
-          No supported hint from current evidence. This does not establish a healthy cluster.
-        </Typography>
-      )}
-      {analysis.hints.map((h) => (
-        <Alert severity="info" key={h.title}>
-          <Typography component="h4" variant="subtitle2">
-            {h.title}
-          </Typography>
-          {h.detail}
-          <Typography variant="caption" sx={{ display: "block" }}>
-            Evidence: {evidence(h.evidence.slice(-3))}
-            {h.evidence.length > 3 ? `; ${h.evidence.length} observations total.` : ""}
-          </Typography>
-        </Alert>
-      ))}
     </Stack>
   );
 }

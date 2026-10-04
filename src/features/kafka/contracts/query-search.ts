@@ -23,13 +23,26 @@ export interface KafkaSearchFilter {
   readonly key: string;
   readonly value: string;
   readonly offset: string;
+  /** Exact locator matching for bounded investigation reads; ordinary offset remains substring search. */
+  readonly offsetExact?: string;
   readonly timestamp: string;
   readonly partition: number | null;
 }
 
 export function parseKafkaSearchFilter(value: unknown, path: string): KafkaSearchFilter {
   const filter = record(value, path);
-  exactKeys(filter, ["key", "value", "offset", "timestamp", "partition", "expression"], path);
+  exactKeys(
+    filter,
+    ["key", "value", "offset", "offsetExact", "timestamp", "partition", "expression"],
+    path,
+  );
+  let offsetExact: string | undefined;
+  if (filter.offsetExact !== undefined) {
+    offsetExact = text(filter.offsetExact, `${path}.offsetExact`, 20);
+    if (!/^(0|[1-9]\d*)$/u.test(offsetExact) || BigInt(offsetExact) > 9_223_372_036_854_775_807n) {
+      throw new HostContractValidationError(`${path}.offsetExact`, "must be an exact Kafka offset");
+    }
+  }
   let expression: string | undefined;
   if (filter.expression !== undefined) {
     expression = boundedText(
@@ -48,6 +61,7 @@ export function parseKafkaSearchFilter(value: unknown, path: string): KafkaSearc
   }
   return {
     ...(expression === undefined ? {} : { expression }),
+    ...(offsetExact === undefined ? {} : { offsetExact }),
     key: boundedText(filter.key, `${path}.key`, KAFKA_QUERY_LIMITS.filterCharacters),
     value: boundedText(filter.value, `${path}.value`, KAFKA_QUERY_LIMITS.filterCharacters),
     offset: boundedText(filter.offset, `${path}.offset`, KAFKA_QUERY_LIMITS.filterCharacters),
@@ -76,6 +90,7 @@ export function matchesKafkaSearchFilter(
     (value !== null && value.toLowerCase().includes(criterion.trim().toLowerCase()));
   return (
     (filter.partition === null || filter.partition === message.partition) &&
+    (filter.offsetExact === undefined || filter.offsetExact === message.offset) &&
     contains(message.key, filter.key) &&
     contains(message.payload, filter.value) &&
     contains(message.offset, filter.offset) &&

@@ -25,6 +25,7 @@ import {
   resolveKafkaTimeWindow,
 } from "./query-time-window";
 import type { QueryTimeWindowControlsProps } from "./QueryTimeWindowControls";
+import type { ObservationNavigation } from "./ObservationFindings";
 
 type TopicWorkbenchState = Pick<
   KafkaUiState,
@@ -65,6 +66,7 @@ interface WorkbenchTopicController {
   readonly requestTopics: () => Promise<void>;
   readonly startConsumption: (topic: string, search?: KafkaSearchFilter) => Promise<void>;
   readonly activateTopic: (topic: string) => void;
+  readonly openObservedRecord: NonNullable<ObservationNavigation["onOpenRecord"]>;
   readonly stopConsumption: () => Promise<void>;
 }
 
@@ -216,7 +218,8 @@ export function useWorkbenchTopics(
         "Query",
         "turn off Rule matches only; use a JSON expression to save an independent filter",
       );
-    const { key, value, offset, timestamp, partition, expression } = state.messageFilters;
+    const { key, value, offset, offsetExact, timestamp, partition, expression } =
+      state.messageFilters;
     return parseKafkaInvestigationQuery({
       schemaVersion: 1,
       request: requestForTopic(selectedTopic),
@@ -224,6 +227,7 @@ export function useWorkbenchTopics(
         key,
         value,
         offset,
+        ...(offsetExact === undefined ? {} : { offsetExact }),
         timestamp,
         partition,
         ...(expression === undefined ? {} : { expression }),
@@ -296,6 +300,58 @@ export function useWorkbenchTopics(
     [connected, setNavigation, startConsumption],
   );
 
+  const openObservedRecord = useCallback<NonNullable<ObservationNavigation["onOpenRecord"]>>(
+    (locator): void => {
+      if (!connected) return;
+      const search: KafkaSearchFilter = {
+        key: "",
+        value: "",
+        offset: "",
+        offsetExact: locator.offset,
+        timestamp: "",
+        partition: locator.partition,
+      };
+      const query = parseKafkaInvestigationQuery({
+        schemaVersion: 1,
+        request: {
+          topic: locator.topic,
+          mode: "time-window",
+          maxMessages: 1,
+          startTimeMs: locator.startTimeMs,
+          endTimeMs: locator.endTimeMs,
+        },
+        filters: search,
+      });
+      restoreQuery(query, false);
+      setNavigation("topics");
+      void host
+        .execute({
+          command: "messages.start",
+          id: crypto.randomUUID(),
+          version: HOST_PROTOCOL_VERSION,
+          payload: { ...query.request, search },
+        })
+        .then((response) => {
+          if (!response.ok) setMessageRequestError(response.error.summary);
+        })
+        .catch(() =>
+          setMessageRequestError(
+            "The sampled record could not be read. Check the current connection and read coverage.",
+          ),
+        );
+    },
+    [connected, host, restoreQuery, setNavigation],
+  );
+
+  useEffect(() => {
+    const search = state.consumptionRequest?.search;
+    if (search?.offsetExact === undefined || selectedMessageId !== null) return;
+    const record = visibleMessages.find(
+      (message) => message.partition === search.partition && message.offset === search.offsetExact,
+    );
+    if (record) setSelectedMessageId(record.id);
+  }, [state.consumptionRequest, visibleMessages, selectedMessageId]);
+
   const stopConsumption = useCallback(async (): Promise<void> => {
     setMessageRequestError(undefined);
     setConsumptionStopping(true);
@@ -349,6 +405,7 @@ export function useWorkbenchTopics(
     requestTopics,
     startConsumption,
     activateTopic,
+    openObservedRecord,
     stopConsumption,
   };
 }

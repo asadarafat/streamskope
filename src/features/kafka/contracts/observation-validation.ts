@@ -1,4 +1,5 @@
 import { parseObservationRecords } from "./observation-records";
+import { HOST_ERROR_CODES } from "./types";
 import {
   declaredValue,
   exactKeys,
@@ -14,6 +15,7 @@ import {
   type ObservationHistory,
   type ObservationInput,
   type ObservationSeries,
+  type ObservationIssue,
   observationIdentity,
 } from "./observations";
 
@@ -36,6 +38,24 @@ function array(value: unknown, maximum: number): unknown[] {
   if (!Array.isArray(value) || value.length > maximum)
     throw new Error("Observation collection exceeds its limit.");
   return value as unknown[];
+}
+export function parseObservationIssues(value: unknown): readonly ObservationIssue[] {
+  if (value === undefined) return [];
+  return array(value, 8).map((item) => {
+    const p = record(item, "observation issue");
+    exactKeys(p, ["measurement", "code", "summary", "recovery", "retryable"], "observation issue");
+    return {
+      measurement: declaredValue(
+        p.measurement,
+        ["end-offsets", "group-offsets", "group-members", "records"] as const,
+        "measurement",
+      ),
+      code: declaredValue(p.code, HOST_ERROR_CODES, "issue code"),
+      summary: text(p.summary, "issue summary", 512),
+      recovery: text(p.recovery, "issue recovery", 1024),
+      retryable: truth(p.retryable, "issue retryable"),
+    };
+  });
 }
 export function parseObservationInput(value: unknown): ObservationInput {
   const p = record(value, "observation");
@@ -76,6 +96,7 @@ export function parseObservation(value: unknown): KafkaObservation {
       "partitions",
       "alerts",
       "records",
+      "issues",
     ],
     "sample",
   );
@@ -104,6 +125,7 @@ export function parseObservation(value: unknown): KafkaObservation {
     throw new Error("Invalid observation partition coverage.");
   return {
     id: text(p.id, "id", 128),
+    issues: parseObservationIssues(p.issues),
     segmentId: text(p.segmentId, "segmentId", 128),
     startedAt,
     observedAt,

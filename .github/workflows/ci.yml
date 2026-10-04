@@ -44,14 +44,17 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run check -- --ci
-      - name: Verify Topic Monitor browser workflow
-        run: node tools/package/e2e.mjs web test/e2e/web-stream-monitor.spec.ts
+      - name: Verify real observed-health collection and replication recovery
+        run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts
+      - name: Verify monitoring browser workflows
+        run: node tools/package/e2e.mjs web test/e2e/web-stream-monitor.spec.ts test/e2e/web-observations-recovery.spec.ts
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !cancelled() }}
         with:
           name: qualification
           path: |
             .artifacts/ci/vitest.json
+            .artifacts/ci/observations-real.json
             .artifacts/website
             test-results/web
           include-hidden-files: true

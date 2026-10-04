@@ -48,6 +48,12 @@ export interface KafkaConsumptionObserver {
 }
 
 export interface KafkaActiveConnection {
+  observeConsumerGroup?(
+    groupId: string,
+    topic: string,
+    partitions: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<import("../contracts/observations").ObservationGroupHealth>;
   observeTopicHealth?(
     topic: string,
     signal?: AbortSignal,

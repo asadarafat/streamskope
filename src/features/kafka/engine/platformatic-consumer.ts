@@ -224,6 +224,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
 
 export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
   async open(input: KafkaConsumerInput): Promise<KafkaRawMessageStream> {
+    input.signal?.throwIfAborted();
     const consumer = new Consumer<Buffer, Buffer, Buffer, Buffer>({
       ...platformaticClientOptions(input, `streamskope-consumer-${input.groupId}`),
       groupId: input.groupId,
@@ -231,6 +232,13 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
       retryDelay: 200,
     });
     const cleanupDiagnostics = fetchDiagnosticCleanup(consumer, input.onFetchSample);
+    let closing: Promise<void> | undefined;
+    const close = (force = false): Promise<void> =>
+      (closing ??= Promise.resolve(consumer.close(force)));
+    const abort = (): void => {
+      void close(true).catch(() => undefined);
+    };
+    input.signal?.addEventListener("abort", abort, { once: true });
     try {
       const plan = await resolveKafkaFetchPlan(
         {
@@ -249,6 +257,7 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
         input.request,
         Date.now(),
       );
+      input.signal?.throwIfAborted();
       const offsets = [...plan.startOffsets].map(([partition, offset]) => ({
         offset,
         partition,
@@ -280,11 +289,12 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
         offsets,
         topics: [input.request.topic],
       });
+      input.signal?.throwIfAborted();
       return new PlatformaticMessageStream(consumer, stream, plan, cleanupDiagnostics);
     } catch (error) {
       cleanupDiagnostics();
       try {
-        await consumer.close();
+        await close();
       } catch (cleanupError) {
         throw new AggregateError(
           [error, cleanupError],
@@ -293,6 +303,8 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
         );
       }
       throw error;
+    } finally {
+      input.signal?.removeEventListener("abort", abort);
     }
   }
 }

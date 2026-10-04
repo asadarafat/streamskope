@@ -137,3 +137,43 @@ it("labels stalled commits and sampled group-state changes as hypotheses with tr
     analyzeObservations(observationSeries(samples), samples.at(-1)!.observedAt + 50_000).hints,
   ).toEqual([]);
 });
+
+it("does not infer hot keys or size anomalies from capped samples and resets baselines when window duration changes", () => {
+  const records = (
+    i: number,
+    windowMs: number,
+    eligible = true,
+  ): NonNullable<ReturnType<typeof observation>["records"]> => ({
+    source: "protected-kafka-record-sample" as const,
+    startTimeMs: linear(10)[i]!.observedAt - windowMs,
+    endTimeMs: linear(10)[i]!.observedAt,
+    state: eligible ? ("complete" as const) : ("partial" as const),
+    reason: eligible ? ("range-complete" as const) : ("limit" as const),
+    analysisEligible: eligible,
+    partitionCoverage: { expected: 1, completed: eligible ? 1 : 0 },
+    count: 20,
+    bytes: 2000,
+    meanBytes: 100,
+    p95Bytes: 100,
+    knownKeys: 20,
+    nullKeys: 0,
+    unavailableKeys: 0,
+    distinctKeys: 1,
+    topKeys: [{ count: 20, partition: 0, offset: "1" }],
+    partitions: [{ partition: 0, count: 20 }],
+  });
+  const complete = linear(9).map((s, i) => ({ ...s, records: records(i, 1000) }));
+  const ordinary = analyzeObservations(observationSeries(complete), complete.at(-1)!.observedAt);
+  expect(ordinary.anomalies.find((a) => a.metric === "record-size")?.state).toBe("ordinary");
+  expect(ordinary.hotKey?.suspected).toBe(true);
+  const changed = [...complete, observation(9, { records: records(9, 100) })];
+  expect(
+    analyzeObservations(observationSeries(changed), changed.at(-1)!.observedAt).anomalies.find(
+      (a) => a.metric === "record-size",
+    )?.state,
+  ).toBe("baseline");
+  const partial = [...complete, observation(9, { records: records(9, 1000, false) })];
+  const analysis = analyzeObservations(observationSeries(partial), partial.at(-1)!.observedAt);
+  expect(analysis.hotKey).toBeNull();
+  expect(analysis.anomalies.find((a) => a.metric === "record-size")?.state).toBe("baseline");
+});

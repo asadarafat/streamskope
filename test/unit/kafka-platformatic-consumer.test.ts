@@ -25,6 +25,7 @@ const kafkaState = vi.hoisted(() => ({
   messages: [] as KafkaRawMessage[],
   offsets: new Map<string, readonly bigint[]>(),
   offsetFailure: undefined as Error | undefined,
+  pendingOffsets: undefined as Promise<ReadonlyMap<string, readonly bigint[]>> | undefined,
   streamCloseCalls: 0,
 }));
 
@@ -72,6 +73,7 @@ vi.mock("@platformatic/kafka", () => {
         if (kafkaState.offsetFailure !== undefined) {
           return Promise.reject(kafkaState.offsetFailure);
         }
+        if (kafkaState.pendingOffsets !== undefined) return kafkaState.pendingOffsets;
         const timestamp = options.timestamp;
         const offsets =
           kafkaState.offsets.get(String(timestamp)) ?? kafkaState.offsets.get("recent") ?? [];
@@ -130,6 +132,7 @@ beforeEach(() => {
   kafkaState.messages.length = 0;
   kafkaState.offsets.clear();
   kafkaState.offsetFailure = undefined;
+  kafkaState.pendingOffsets = undefined;
   kafkaState.streamCloseCalls = 0;
 });
 
@@ -154,6 +157,37 @@ it("retains the client's ordered header entries including duplicate names and nu
 });
 
 describe("Platformatic Kafka fetch adapter", () => {
+  it("closes a pending consumer immediately on cancellation and never starts a later fetch", async () => {
+    let finish!: (offsets: ReadonlyMap<string, readonly bigint[]>) => void;
+    kafkaState.pendingOffsets = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const controller = new AbortController();
+    const opening = new PlatformaticConsumerFactory().open({
+      ...input({ mode: "earliest", topic: "orders", maxMessages: 10 }),
+      signal: controller.signal,
+      onFetchSample: () => undefined,
+    });
+    const rejected = expect(opening).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    expect(kafkaState.closeCalls).toEqual([true]);
+    finish(new Map([["orders", [0n]]]));
+    await rejected;
+    expect(kafkaState.consumeCalls).toEqual([]);
+    expect(kafkaState.closeCalls).toEqual([true]);
+    expect(kafkaState.fetchSubscribers.size).toBe(0);
+  });
+
+  it("does not construct a consumer for an already cancelled read", async () => {
+    await expect(
+      new PlatformaticConsumerFactory().open({
+        ...input({ mode: "earliest", topic: "orders", maxMessages: 10 }),
+        signal: AbortSignal.abort(),
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(kafkaState.consumers).toEqual([]);
+  });
+
   it("preserves cancelled coverage and closes an unopened iteration exactly once", async () => {
     kafkaState.offsets.set("-2", [0n]);
     kafkaState.offsets.set("-1", [100n]);
