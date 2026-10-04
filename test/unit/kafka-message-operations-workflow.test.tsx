@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  HostError,
   KafkaExploredMessage,
   KafkaFetchRequest,
   KafkaLiveRuleEvaluation,
@@ -100,8 +101,12 @@ const request: KafkaFetchRequest = {
 
 function Harness({
   download = (): Promise<void> => Promise.resolve(),
+  consumptionError = null,
+  onStop = (): void => undefined,
 }: {
   readonly download?: TextDocumentTransferPort["download"];
+  readonly consumptionError?: HostError | null;
+  readonly onStop?: () => void;
 }): React.JSX.Element {
   const [filters, setFilters] = useState<KafkaMessageFilters>(initialKafkaMessageFilters);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -124,9 +129,9 @@ function Harness({
     <div style={{ height: 650, width: 1_000 }}>
       <MessageWorkspace
         connectionAvailable
-        consumptionError={null}
+        consumptionError={consumptionError}
         consumptionRequest={request}
-        consumptionState="streaming"
+        consumptionState={consumptionError === null ? "streaming" : "failed"}
         consumptionStopping={false}
         droppedMessages={0}
         fetchMaximum={1_000}
@@ -151,7 +156,7 @@ function Harness({
         }}
         onSelectMessage={setSelectedMessageId}
         onStart={() => undefined}
-        onStop={() => undefined}
+        onStop={onStop}
         onTextFilterChange={changeText}
         retainedMessageCount={retained.length}
         savedProfileCount={0}
@@ -171,6 +176,29 @@ afterEach(() => {
 });
 
 describe("Kafka message operation Material UI workflow", () => {
+  it("retries only an unfinished cleanup without calling the failed request active", async () => {
+    const onStop = vi.fn();
+    const error: HostError = {
+      activeStateChanged: true,
+      code: "TIMEOUT",
+      correlationId: "cleanup",
+      recovery: "Cleanup is still pending. Retry stop to wait again.",
+      retryable: true,
+      stage: "kafka",
+      summary: "Stop cleanup timed out.",
+      target: "kafka-consumption-cleanup",
+    };
+    const view = render(<Harness consumptionError={error} onStop={onStop} />);
+    expect(screen.getByRole("status", { name: "Consumption status" })).toHaveTextContent(
+      "Consumption failed",
+    );
+    expect(screen.getByText(error.recovery)).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry stop orders" }));
+    expect(onStop).toHaveBeenCalledOnce();
+    view.rerender(<Harness consumptionError={{ ...error, target: "orders" }} onStop={onStop} />);
+    expect(screen.queryByRole("button", { name: "Retry stop orders" })).not.toBeInTheDocument();
+  });
+
   it("combines all field controls and the rule filter with exact visible counts", async () => {
     const user = userEvent.setup();
     render(<Harness />);

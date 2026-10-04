@@ -1,6 +1,7 @@
 import type {
   ConnectionState,
   ConsumptionState,
+  HostError,
   KafkaConsumerGroupInventoryState,
   KafkaFetchRequest,
   TopicListState,
@@ -16,6 +17,28 @@ export function isKafkaConsumptionActive(
     state === "streaming" ||
     (state === "empty" && request?.mode === "tail")
   );
+}
+
+export type KafkaConsumptionStopLabel = "Stop tail" | "Cancel fetch" | "Retry stop";
+
+export function kafkaConsumptionStopLabel(
+  state: ConsumptionState,
+  request: KafkaFetchRequest | null,
+  error: HostError | null,
+): KafkaConsumptionStopLabel | null {
+  if (request === null) return null;
+  if (
+    state === "failed" &&
+    error?.code === "TIMEOUT" &&
+    error.retryable &&
+    error.target === "kafka-consumption-cleanup"
+  )
+    return "Retry stop";
+  return isKafkaConsumptionActive(state, request)
+    ? request.mode === "tail"
+      ? "Stop tail"
+      : "Cancel fetch"
+    : null;
 }
 
 export function connectionColor(

@@ -47,6 +47,7 @@ import {
   consumptionStateLabel,
   topicStatusLabel,
   isKafkaConsumptionActive,
+  kafkaConsumptionStopLabel,
 } from "./workbench-status";
 import { WorkbenchApplicationBar } from "./WorkbenchApplicationBar";
 import { WorkbenchCommandPalette } from "./WorkbenchCommandPalette";
@@ -480,9 +481,14 @@ export function StreamSkopeWorkbench({
               onOpenActivity={openActivity}
               onOpenObservedHealth={() => selectNavigation("observations")}
               onStop={() => void stopConsumption()}
-              consumptionActive={
-                isKafkaConsumptionActive(state.consumptionState, state.consumptionRequest) &&
+              stopActionLabel={
                 state.consumptionRequest?.topic === selectedTopic
+                  ? kafkaConsumptionStopLabel(
+                      state.consumptionState,
+                      state.consumptionRequest,
+                      state.consumptionError,
+                    )
+                  : null
               }
               consumptionStopping={consumptionStopping}
               rendererObserver={rendererStreamMonitor}

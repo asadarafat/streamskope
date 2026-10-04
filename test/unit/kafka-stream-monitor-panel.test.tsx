@@ -6,7 +6,10 @@ import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "@mui/material";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { type KafkaStreamMonitorSnapshot } from "../../src/features/kafka/contracts";
+import {
+  type HostError,
+  type KafkaStreamMonitorSnapshot,
+} from "../../src/features/kafka/contracts";
 import {
   StreamMonitorPanel,
   type StreamMonitorPanelProperties,
@@ -16,6 +19,7 @@ import {
   initialRendererStreamMonitorSample,
   type RendererStreamMonitorSnapshot,
 } from "../../src/features/kafka/ui/stream-monitor-observer";
+import { kafkaConsumptionStopLabel } from "../../src/features/kafka/ui/workbench-status";
 import { streamSkopeTheme } from "../../src/platform/ui/createStreamSkopeTheme";
 
 const now = Date.parse("2026-07-26T12:00:30.000Z");
@@ -99,7 +103,7 @@ function renderPanel(
   const actions = { onOpenActivity: vi.fn(), onOpenObservedHealth: vi.fn(), onStop: vi.fn() };
   const properties: StreamMonitorPanelProperties = {
     activeConnectionName: "Local Kafka",
-    consumptionActive: true,
+    stopActionLabel: "Stop tail",
     consumptionStopping: false,
     consumptionError: null,
     history: [],
@@ -147,7 +151,7 @@ describe("operator Stream Monitor", () => {
   });
   it("explains unavailable evidence without manufactured metric rows", () => {
     renderPanel({
-      consumptionActive: false,
+      stopActionLabel: null,
       snapshot: hostSnapshot({
         operationId: null,
         request: null,
@@ -172,6 +176,7 @@ describe("operator Stream Monitor", () => {
   it("supports cancellation while loading and disables duplicate stops", () => {
     renderPanel({
       consumptionStopping: true,
+      stopActionLabel: "Cancel fetch",
       snapshot: hostSnapshot({
         state: "loading",
         request: { topic: "orders", maxMessages: 50, mode: "newest" },
@@ -190,7 +195,7 @@ describe("operator Stream Monitor", () => {
   ] as const)("keeps $state lifecycle separate from historical losses", ({ state, expected }) => {
     const base = hostSnapshot();
     renderPanel({
-      consumptionActive: false,
+      stopActionLabel: null,
       snapshot: {
         ...base,
         state,
@@ -272,10 +277,35 @@ describe("operator Stream Monitor", () => {
     );
     expect(screen.getByLabelText("Display omission reasons")).not.toHaveTextContent("99");
   });
+  it("retains the shared retry-stop action for a cleanup timeout", async () => {
+    const error: HostError = {
+      activeStateChanged: true,
+      code: "TIMEOUT",
+      correlationId: "cleanup",
+      recovery: "Cleanup is still pending. Retry stop to wait again.",
+      retryable: true,
+      stage: "kafka",
+      summary: "Stop cleanup timed out.",
+      target: "kafka-consumption-cleanup",
+    };
+    const current = hostSnapshot({ state: "failed" });
+    const actions = renderPanel({
+      snapshot: current,
+      consumptionError: error,
+      stopActionLabel: kafkaConsumptionStopLabel("failed", current.request, error),
+    });
+    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
+      "Failed",
+    );
+    expect(screen.getByText(/Cleanup is still pending/u)).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry stop orders" }));
+    expect(actions.onStop).toHaveBeenCalledOnce();
+  });
+
   it("keeps failure recovery linked to Activity", async () => {
     const actions = renderPanel({
       snapshot: hostSnapshot({ state: "failed" }),
-      consumptionActive: false,
+      stopActionLabel: null,
     });
     await userEvent.setup().click(screen.getByRole("button", { name: "Open activity" }));
     expect(actions.onOpenActivity).toHaveBeenCalledOnce();

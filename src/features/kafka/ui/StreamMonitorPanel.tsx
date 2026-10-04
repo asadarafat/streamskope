@@ -12,6 +12,7 @@ import {
   type RendererStreamMonitorObserver,
   initialRendererStreamMonitorSample,
 } from "./stream-monitor-observer";
+import type { KafkaConsumptionStopLabel } from "./workbench-status";
 import { MetricPlot } from "./MetricPlot";
 import { StatusIndicator } from "./StatusIndicator";
 import { TopicWorkspaceToolbar } from "./TopicWorkspaceToolbar";
@@ -33,7 +34,7 @@ import {
 
 export interface StreamMonitorPanelProperties {
   readonly activeConnectionName: string | null;
-  readonly consumptionActive: boolean;
+  readonly stopActionLabel: KafkaConsumptionStopLabel | null;
   readonly consumptionStopping: boolean;
   readonly consumptionError: HostError | null;
   readonly history: readonly KafkaStreamMonitorSnapshot[];
@@ -71,7 +72,7 @@ function OperatorMetric({
 
 export function StreamMonitorPanel({
   activeConnectionName,
-  consumptionActive,
+  stopActionLabel,
   consumptionStopping,
   consumptionError,
   history,
@@ -114,7 +115,6 @@ export function StreamMonitorPanel({
   const delivery = snapshot.delivery;
   const historical = !monitorIsActive(snapshot) || status.stale;
   const topic = snapshot.request?.topic ?? selectedTopic;
-  const stopLabel = snapshot.request?.mode === "tail" ? "Stop tail" : "Cancel fetch";
   const occupancy =
     queue === null
       ? null
@@ -140,15 +140,15 @@ export function StreamMonitorPanel({
           live="polite"
           tone={status.tone}
         />
-        {consumptionActive ? (
+        {stopActionLabel !== null ? (
           <StudioButton
-            aria-label={`${stopLabel} ${topic ?? ""}`}
+            aria-label={`${stopActionLabel} ${topic ?? ""}`}
             disabled={consumptionStopping}
             onClick={onStop}
             size="small"
             variant="outlined"
           >
-            {consumptionStopping ? "Stopping…" : stopLabel}
+            {consumptionStopping ? "Stopping…" : stopActionLabel}
           </StudioButton>
         ) : null}
       </TopicWorkspaceToolbar>
