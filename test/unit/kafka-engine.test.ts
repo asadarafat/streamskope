@@ -248,6 +248,34 @@ describe("StreamSkope Kafka engine connection test", () => {
     expect(admin.closeCalls).toBe(1);
   });
 
+  it("does not report a closed connection after an owned stream failed to close", async () => {
+    const cleanupFailure = new Error("stream cleanup failed");
+    class FailingCloseStream extends RecordingRawMessageStream {
+      override close(): Promise<void> {
+        this.closeCalls += 1;
+        return Promise.reject(cleanupFailure);
+      }
+    }
+    const rawStream = new FailingCloseStream([]);
+    const admin = new RecordingAdmin(["test"]);
+    const engine = new StreamSkopeKafkaEngine({
+      adminFactory: new RecordingAdminFactory(admin),
+      consumerFactory: new RecordingConsumerFactory(rawStream),
+      requestOAuthToken: (): Promise<OAuthToken> => Promise.resolve({ value: "active-token" }),
+    });
+    const activeConnection = await engine.openConnection(connection, new AbortController().signal);
+    const stream = await activeConnection.openMessageStream(
+      tailRequest(),
+      new AbortController().signal,
+    );
+
+    await expect(stream.close()).rejects.toBe(cleanupFailure);
+    await expect(activeConnection.close()).rejects.toMatchObject({ errors: [cleanupFailure] });
+    await expect(activeConnection.close()).rejects.toMatchObject({ errors: [cleanupFailure] });
+    expect(rawStream.closeCalls).toBe(1);
+    expect(admin.closeCalls).toBe(1);
+  });
+
   it("reuses one OAuth refresh for concurrent authenticated Registry requests", async () => {
     let tokenRequests = 0;
     const engine = new StreamSkopeKafkaEngine({

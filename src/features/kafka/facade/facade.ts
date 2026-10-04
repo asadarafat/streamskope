@@ -97,6 +97,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private connectionIntent = 0;
   private connectionPluginId: string | undefined;
   private readonly consumption: ConsumptionFacadeController;
+  private consumptionCommandIntent = 0;
   private readonly consumerGroups;
   private readonly createCorrelationId;
   private readonly clusterDiagnostics;
@@ -278,8 +279,13 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     )
       this.authorizationIntent += 1;
     const intent = this.authorizationIntent;
+    if (command.command === "messages.start" || command.command === "messages.stop") {
+      this.consumptionCommandIntent += 1;
+    }
+    const consumptionIntent = this.consumptionCommandIntent;
     return this.protection.execute(command, correlationId, () =>
-      intent === this.authorizationIntent
+      intent === this.authorizationIntent &&
+      (command.command !== "messages.start" || consumptionIntent === this.consumptionCommandIntent)
         ? this.dispatch(command, correlationId)
         : Promise.resolve(
             failureResponse(
@@ -616,9 +622,9 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private async completeShutdown(): Promise<void> {
     this.connectionIntent += 1;
     this.beginConnectionLifetime();
-    this.invalidateClusterState();
-    this.trustAcquisitions?.clear();
     const finishConsumption = this.consumption.prepareShutdown();
+    this.invalidateClusterState(true);
+    this.trustAcquisitions?.clear();
     let shutdownFailure: unknown;
     try {
       await Promise.all([
@@ -632,7 +638,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     } catch (error) {
       shutdownFailure = error;
     }
-    finishConsumption();
+    finishConsumption(shutdownFailure);
     this.available = false;
     this.publish(
       backendAvailabilityEvent(
@@ -871,7 +877,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.consumerGroups.invalidate();
   }
 
-  private invalidateClusterState(): void {
+  private invalidateClusterState(preserveConsumption = false): void {
+    if (!preserveConsumption) this.consumption.invalidate();
     this.observations.cancel();
     this.relationships.cancel();
     void this.recordReplay.invalidate().catch(() => undefined);
