@@ -87,4 +87,4 @@ permalink = true
 
 [project.extra]
 generator = false
-desktop_release = "v0.7.1"
+desktop_release = "v0.8.0"

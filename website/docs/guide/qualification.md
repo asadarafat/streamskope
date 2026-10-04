@@ -113,7 +113,16 @@ pressure, but no controlled comparison establishes that as the cause. The budget
 were not relaxed. Earlier passing lifecycle, soak and recovery results above remain
 historical evidence, rather than qualification of this candidate.
 
-## Published release: v0.7.1
+<!-- publication-qualification -->
+
+## Published release: v0.8.0
+
+These pages describe [v0.8.0](../releases/v0.8.0.md) at source [`8c1e452`](https://github.com/asadarafat/streamskope/commit/8c1e452d5397ebd2a52070d70b18dd35ff7fb48e). The release notes link the packaging workflow; earlier release results below are historical.
+
+The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.8.0/qualification-v0.8.0.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
+<!-- /publication-qualification -->
+
+## Historical qualification: v0.7.1
 
 [v0.7.1](../releases/v0.7.1.md) was published on **2026-10-04** from source
 [`be138de`](https://github.com/asadarafat/streamskope/commit/be138de69618f4cd136015dad22e93f831a71caa).
