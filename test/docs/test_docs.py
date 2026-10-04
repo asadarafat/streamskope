@@ -340,9 +340,11 @@ class DocumentationArtifactTests(unittest.TestCase):
     def test_accepts_only_named_public_qualification_summary(self):
         directory = self.root / "assets/qualification"
         directory.mkdir(parents=True)
-        (directory / "lifecycle-2026-10-04.json").write_text('{"schemaVersion":1}')
+        names = ("lifecycle-2026-10-04.json", "topic-monitor-2026-10-04.json")
+        for name in names:
+            (directory / name).write_text('{"schemaVersion":1}')
         (self.root / "index.html").write_text(
-            '<a href="assets/qualification/lifecycle-2026-10-04.json">Qualification</a>'
+            "".join(f'<a href="assets/qualification/{name}">Qualification</a>' for name in names)
         )
         docs.inspect_site(self.root)
         (directory / "raw-live-report.json").write_text('{"private":"not for publication"}')
