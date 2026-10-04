@@ -22,7 +22,7 @@ function snapshot(
 ): KafkaStreamMonitorSnapshot {
   const publishedMessages = sample + 1;
   return {
-    operationId: "monitor-operation",
+    operationId: "operation-1",
     connectionName: "local-aio",
     delivery: {
       batchCount: publishedMessages,
@@ -32,23 +32,23 @@ function snapshot(
       intervalMs: 20,
       lastBatchMessages: 1,
       messagesPerSecond: publishedMessages * 10,
+      rateSampledAt: new Date(Date.UTC(2026, 6, 26, 9, 0, sample)).toISOString(),
+      rateWindowMs: 1000,
+      publicationSampledAt: new Date(Date.UTC(2026, 6, 26, 9, 0, sample)).toISOString(),
+      queueWaitSampledAt: new Date(Date.UTC(2026, 6, 26, 9, 0, sample)).toISOString(),
       publicationDurationMs: 0.5,
       queueWaitMs: 1,
       receivedMessages: publishedMessages,
       tuningSource: "confirmed",
-      rateSampledAt: "2026-07-26T09:00:00.000Z",
-      rateWindowMs: 1_000,
-      publicationSampledAt: "2026-07-26T09:00:00.000Z",
-      queueWaitSampledAt: "2026-07-26T09:00:00.000Z",
     },
     queue: {
-      oldestMessageAgeMs: null,
-      pressureReasons: [],
-      dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
       capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
       capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
       currentBytes: 0,
       currentMessages: 0,
+      oldestMessageAgeMs: null,
+      pressureReasons: [],
+      dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
       droppedMessages: 0,
       droppedPerSecond: 0,
       droppedSincePrevious: 0,
@@ -114,13 +114,32 @@ describe("Kafka stream-monitor UI state", () => {
       mode: "newest",
       topic: "payments.events",
     };
-    const replacement = snapshot(1, replacementRequest);
+    const replacement: KafkaStreamMonitorSnapshot = {
+      ...snapshot(1, replacementRequest),
+      operationId: "operation-2",
+      state: "loading",
+    };
     const state = reduceKafkaHostEvent(first, monitorEvent(2, replacement));
 
     expect(state.streamMonitor).toEqual({
       current: replacement,
       history: [replacement],
     });
+  });
+
+  it("scopes identical restarts by operation id and rejects late old terminal evidence", () => {
+    const first = reduceKafkaHostEvent(initialKafkaUiState, monitorEvent(1, snapshot(0)));
+    const replacement: KafkaStreamMonitorSnapshot = {
+      ...snapshot(1),
+      operationId: "operation-2",
+      state: "loading",
+    };
+    const restarted = reduceKafkaHostEvent(first, monitorEvent(2, replacement));
+    const late = reduceKafkaHostEvent(
+      restarted,
+      monitorEvent(3, { ...snapshot(2), state: "stopped" }),
+    );
+    expect(late.streamMonitor).toEqual({ current: replacement, history: [replacement] });
   });
 
   it("marks retained evidence stale on disconnect without fabricating a sample", () => {

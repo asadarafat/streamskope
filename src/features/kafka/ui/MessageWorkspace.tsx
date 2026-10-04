@@ -45,7 +45,11 @@ import {
 import { StatusIndicator, type StatusIndicatorTone } from "./StatusIndicator";
 import { WorkspaceState } from "./WorkspaceState";
 import { TopicWorkspaceToolbar } from "./TopicWorkspaceToolbar";
-import { consumptionStateLabel, isKafkaConsumptionActive } from "./workbench-status";
+import {
+  consumptionStateLabel,
+  isKafkaConsumptionActive,
+  kafkaConsumptionStopLabel,
+} from "./workbench-status";
 import { WorkbenchIcon } from "./WorkbenchIcons";
 import {
   QueryTimeWindowControls,
@@ -160,7 +164,12 @@ export function MessageWorkspace({
     consumptionRequest !== null &&
     selectedTopic === consumptionRequest.topic;
   const active = isKafkaConsumptionActive(consumptionState, consumptionRequest);
-  const operationBelongsToTopic = active && topicMatches;
+  const stopLabel = kafkaConsumptionStopLabel(
+    consumptionState,
+    consumptionRequest,
+    consumptionError,
+  );
+  const operationBelongsToTopic = stopLabel !== null && topicMatches;
   const readPlanningControlsVisible = selectedMessage === null || !compactInspectorToolbar;
   const fetchMaximumOptions = useMemo(
     () =>
@@ -195,9 +204,7 @@ export function MessageWorkspace({
       ? new Date(consumptionRequest.startTimeMs).toISOString()
       : null;
   const readActionLabel = operationBelongsToTopic
-    ? consumptionRequest?.mode === "tail"
-      ? "Stop tail"
-      : "Cancel fetch"
+    ? stopLabel
     : fetchMode === "tail"
       ? "Start tail"
       : "Load messages";

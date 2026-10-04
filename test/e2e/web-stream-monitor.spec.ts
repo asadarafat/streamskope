@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { resolve } from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import {
   HOST_PROTOCOL_VERSION,
@@ -14,7 +14,7 @@ import {
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
-import { testHostAccepted } from "../support/host-response";
+import { testHostAccepted, testHostResponse } from "../support/host-response";
 
 class StreamMonitorBackend implements StreamSkopeBackend {
   readonly commands: HostCommand[] = [];
@@ -38,6 +38,16 @@ class StreamMonitorBackend implements StreamSkopeBackend {
   ): Promise<HostCommandResponse<Command["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
     this.commands.push(command);
+    if (command.command === "plugins.list")
+      return Promise.resolve(
+        testHostResponse(command, {
+          command: command.command,
+          id: command.id,
+          ok: true,
+          result: { correlationId: command.id, pluginSnapshot: { plugins: [] } },
+          version: HOST_PROTOCOL_VERSION,
+        }),
+      );
     return Promise.resolve(testHostAccepted(command, `monitor-${command.id}`));
   }
 
@@ -93,6 +103,24 @@ function activeLaunch(): RunningWebDevelopment {
   return launch;
 }
 
+async function expectCircularMarkers(plot: Locator, inspected = false): Promise<void> {
+  await expect(async () => {
+    const sizes = await plot.locator("[data-plot-point]").evaluateAll((points) =>
+      points.map((point) => {
+        const { width, height } = point.getBoundingClientRect();
+        return { width, height };
+      }),
+    );
+    expect(sizes).toHaveLength(8);
+    for (const [index, size] of sizes.entries()) {
+      // Bounds exclude the 2px outline: visible diameters are 8px / 10px.
+      const diameter = inspected && index === sizes.length - 1 ? 8 : 6;
+      expect(size.width).toBeCloseTo(diameter, 1);
+      expect(size.height).toBeCloseTo(diameter, 1);
+    }
+  }).toPass({ timeout: 5_000 });
+}
+
 test.describe("StreamSkope browser Stream Monitor", () => {
   test.describe.configure({ mode: "serial" });
 
@@ -115,7 +143,13 @@ test.describe("StreamSkope browser Stream Monitor", () => {
     test.setTimeout(45_000);
     await page.setViewportSize({ height: 650, width: 1000 });
     await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    const eventStreamReady = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/__streamskope_host/events" &&
+        response.status() === 200,
+    );
     await page.goto(activeLaunch().browserUrl);
+    await eventStreamReady;
     await expect(page.getByRole("banner", { name: "StreamSkope application bar" })).toContainText(
       "StreamSkope",
     );
@@ -125,7 +159,7 @@ test.describe("StreamSkope browser Stream Monitor", () => {
         return (
           commands.has("profiles.list") &&
           commands.has("rules.list") &&
-          commands.has("recipes.list")
+          commands.has("preferences.get")
         );
       })
       .toBe(true);
@@ -165,12 +199,13 @@ test.describe("StreamSkope browser Stream Monitor", () => {
     });
     const queueDepths = [0, 4, 2, 8, 3, 10, 4, 1];
     const deliveryRates = [20, 34, 28, 51, 37, 62, 46, 55];
+    const sampleStart = Date.now() - 7_000;
     const emitStreamSample = (sample: number, currentMessages: number): void => {
       backend.emit({
         event: "streamMetrics.changed",
         payload: {
-          operationId: "monitor-operation",
           connectionName: "Monitor fixture",
+          operationId: "monitor-request-1",
           delivery: {
             batchCount: sample + 1,
             batchSize: 200,
@@ -179,23 +214,23 @@ test.describe("StreamSkope browser Stream Monitor", () => {
             intervalMs: 20,
             lastBatchMessages: 2,
             messagesPerSecond: deliveryRates[sample] ?? 0,
+            rateSampledAt: new Date(sampleStart + sample * 1000).toISOString(),
+            rateWindowMs: 1000,
+            publicationSampledAt: new Date(sampleStart + sample * 1000).toISOString(),
+            queueWaitSampledAt: new Date(sampleStart + sample * 1000).toISOString(),
             publicationDurationMs: 0.55 + sample * 0.08,
             queueWaitMs: 0.9 + currentMessages * 0.12,
             receivedMessages: (sample + 1) * 2 + currentMessages,
             tuningSource: "confirmed",
-            rateSampledAt: `2026-07-26T12:00:${String(sample + 1).padStart(2, "0")}.000Z`,
-            rateWindowMs: 1_000,
-            publicationSampledAt: `2026-07-26T12:00:${String(sample + 1).padStart(2, "0")}.000Z`,
-            queueWaitSampledAt: `2026-07-26T12:00:${String(sample + 1).padStart(2, "0")}.000Z`,
           },
           queue: {
-            oldestMessageAgeMs: currentMessages === 0 ? null : 5,
-            pressureReasons: [],
-            dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
             capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
             capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
             currentBytes: currentMessages * 128,
             currentMessages,
+            oldestMessageAgeMs: currentMessages === 0 ? null : 20,
+            pressureReasons: [],
+            dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
             droppedMessages: 0,
             droppedPerSecond: 0,
             droppedSincePrevious: 0,
@@ -207,7 +242,7 @@ test.describe("StreamSkope browser Stream Monitor", () => {
             mode: "tail",
             topic: "orders",
           },
-          sampledAt: `2026-07-26T12:00:${String(sample + 1).padStart(2, "0")}.000Z`,
+          sampledAt: new Date(sampleStart + sample * 1000).toISOString(),
           state: "streaming",
           status: "nominal",
         },
@@ -239,63 +274,48 @@ test.describe("StreamSkope browser Stream Monitor", () => {
     await expect(page.getByRole("heading", { name: "Stream Monitor" })).toBeVisible();
     for (const [sample, currentMessages] of queueDepths.entries()) {
       emitStreamSample(sample, currentMessages);
-      await expect(page.getByRole("region", { name: /^Queue depth trend\./u })).toHaveAttribute(
+      await expect(page.getByRole("region", { name: /^Buffer depth trend\./u })).toHaveAttribute(
         "aria-label",
-        new RegExp(`Queue: ${String(sample + 1)} ${sample === 0 ? "sample" : "samples"}`, "u"),
+        new RegExp(`Buffered: ${String(sample + 1)} ${sample === 0 ? "sample" : "samples"}`, "u"),
       );
     }
-    const queuePlot = page.getByRole("group", { name: "Queue depth trend plot" });
+    const queuePlot = page.getByRole("group", { name: "Buffer depth trend plot" });
+    await expectCircularMarkers(queuePlot);
+    await expectCircularMarkers(page.getByRole("group", { name: "Delivery rate trend plot" }));
     await expect(queuePlot).toHaveAttribute("tabindex", "0");
     expect(await queuePlot.locator('[tabindex="0"]').count()).toBe(0);
     await queuePlot.focus();
     await page.keyboard.press("End");
+    await expectCircularMarkers(queuePlot, true);
     await expect(
-      page.getByRole("region", { name: /^Queue depth trend\./u }).getByRole("status"),
-    ).toContainText("Queue at");
+      page.getByRole("region", { name: /^Buffer depth trend\./u }).getByRole("status"),
+    ).toContainText("Buffered at");
     await page.keyboard.press("Tab");
     await expect(queuePlot).not.toBeFocused();
-    for (const sectionName of [
-      "Context",
-      "Host queue",
-      "Delivery",
-      "Renderer",
-      "Recent host samples",
-      "Recent renderer samples",
-    ]) {
-      const section = page.getByRole("region", { exact: true, name: sectionName });
-      const headingTextStart = await section
-        .getByRole("heading", { name: sectionName })
-        .evaluate(
-          (element) =>
-            element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft),
-        );
-      const childTextStart = await section
-        .locator("dt, th")
-        .first()
-        .evaluate(
-          (element) =>
-            element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft),
-        );
-      expect(childTextStart).toBe(headingTextStart);
-    }
+    await expectCircularMarkers(queuePlot);
+    const diagnostics = page.getByText("Diagnostics", { exact: true });
+    await expect(diagnostics.locator("..")).not.toHaveAttribute("open");
+    await diagnostics.focus();
+    await page.keyboard.press("Enter");
+    await expect(diagnostics.locator("..")).toHaveAttribute("open", "");
+    await expect(page.getByText(/Messages workspace unmounted/u)).toBeVisible();
+    await expect(page.getByLabel("Renderer metrics")).toContainText("Application frame rate");
+    await diagnostics.focus();
+    await page.keyboard.press("Enter");
     const monitorStatus = page.getByRole("status", { name: "Stream monitor status" });
-    await expect
-      .poll(async () => monitorStatus.textContent())
-      .toMatch(/^(?:Backpressure|Nominal)$/u);
-    if ((await monitorStatus.textContent()) === "Backpressure") {
-      await expect(page.getByRole("region", { name: "Stream monitor", exact: true })).toContainText(
-        /(?:Host-event-to-commit|Message filtering|Message workspace render|Renderer)/u,
-      );
-    }
+    await expect(monitorStatus).toHaveText(/Delivering|Stale evidence/u);
     await expect(page.getByRole("region", { name: "Message workspace" })).toHaveCount(0);
     expect(backend.commands).toHaveLength(commandCount);
 
-    await expect(page.getByRole("button", { name: /Stop tail/u })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop tail orders" })).toBeVisible();
     await expect(
       page
-        .getByRole("region", { name: "Stream Monitor workspace" })
-        .getByRole("button", { name: /Stop/u }),
-    ).toHaveCount(0);
+        .getByRole("region", { name: "Stream monitor", exact: true })
+        .getByRole("button", { name: "Observed health", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("region", { name: "Stream monitor", exact: true }).evaluate((element) => {
+      element.scrollTop = 0;
+    });
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -329,7 +349,10 @@ test.describe("StreamSkope browser Stream Monitor", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: "Stream Monitor" })).toBeVisible();
 
+    await page.setViewportSize({ height: 900, width: 1440 });
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+    await expectCircularMarkers(queuePlot);
+    await expectCircularMarkers(page.getByRole("group", { name: "Delivery rate trend plot" }));
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.screenshot({
       animations: "disabled",
@@ -339,9 +362,7 @@ test.describe("StreamSkope browser Stream Monitor", () => {
     const priorStops = backend.commands.filter(
       (candidate) => candidate.command === "messages.stop",
     ).length;
-    await messagesTab.focus();
-    await page.keyboard.press("Enter");
-    stop = page.getByRole("button", { name: /Stop tail/u });
+    stop = page.getByRole("button", { name: "Stop tail orders" });
     await stop.focus();
     await page.keyboard.press("Enter");
     await expect

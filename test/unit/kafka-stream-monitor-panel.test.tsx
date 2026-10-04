@@ -1,72 +1,39 @@
 // @vitest-environment jsdom
-
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "@mui/material";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  KAFKA_MESSAGE_LIMITS,
   type HostError,
   type KafkaStreamMonitorSnapshot,
 } from "../../src/features/kafka/contracts";
-import { StreamMonitorPanel } from "../../src/features/kafka/ui/StreamMonitorPanel";
-import type {
-  RendererStreamMonitorObserver,
-  RendererStreamMonitorSnapshot,
+import {
+  StreamMonitorPanel,
+  type StreamMonitorPanelProperties,
+} from "../../src/features/kafka/ui/StreamMonitorPanel";
+import {
+  createRendererStreamMonitorObserver,
+  initialRendererStreamMonitorSample,
+  type RendererStreamMonitorSnapshot,
 } from "../../src/features/kafka/ui/stream-monitor-observer";
+import { kafkaConsumptionStopLabel } from "../../src/features/kafka/ui/workbench-status";
 import { streamSkopeTheme } from "../../src/platform/ui/createStreamSkopeTheme";
-import { streamSkopeTypography } from "../../src/platform/ui/typographyContract";
 
-const unavailableRenderer: RendererStreamMonitorSnapshot = {
-  eventBacklog: 0,
-  eventToCommitMs: null,
-  filterDurationMs: null,
-  fps: null,
-  history: [],
-  rendererDroppedMessages: 0,
-  renderDurationMs: null,
-  retainedMessages: 0,
-  sampledAt: null,
-  samplingState: "unavailable",
-  visibleMessages: 0,
-};
-
-const measuredRenderer: RendererStreamMonitorSnapshot = {
-  eventBacklog: 1,
-  eventToCommitMs: 2.5,
-  filterDurationMs: 0.25,
-  fps: 58,
-  history: [],
-  rendererDroppedMessages: 1,
-  renderDurationMs: 4.75,
-  retainedMessages: 8,
-  sampledAt: "2026-07-26T12:00:01.000Z",
-  samplingState: "ready",
-  visibleMessages: 7,
-};
-
-function observer(snapshot: RendererStreamMonitorSnapshot): RendererStreamMonitorObserver {
-  return {
-    commit: vi.fn(),
-    dispose: vi.fn(),
-    eventReceived: vi.fn(),
-    getSnapshot: () => snapshot,
-    recordFilterDuration: vi.fn(),
-    recordRenderDuration: vi.fn(),
-    setPresentationActive: vi.fn(),
-    subscribe: () => () => undefined,
-  };
-}
-
+const now = Date.parse("2026-07-26T12:00:30.000Z");
+const stamp = (seconds: number): string => new Date(now - seconds * 1_000).toISOString();
 function hostSnapshot(
   overrides: Partial<KafkaStreamMonitorSnapshot> = {},
 ): KafkaStreamMonitorSnapshot {
   return {
-    operationId: "monitor-operation",
-    connectionName: "Local aio-kafka",
+    operationId: "request-1",
+    connectionName: "Local Kafka",
+    request: { topic: "orders", maxMessages: 1000, mode: "tail" },
+    sampledAt: stamp(0),
+    state: "streaming",
+    status: "nominal",
     delivery: {
       batchCount: 2,
       batchSize: 200,
@@ -75,497 +42,304 @@ function hostSnapshot(
       intervalMs: 20,
       lastBatchMessages: 3,
       messagesPerSecond: 25.5,
+      rateSampledAt: stamp(0),
+      rateWindowMs: 1000,
       publicationDurationMs: 0.75,
+      publicationSampledAt: stamp(3),
       queueWaitMs: 1.25,
+      queueWaitSampledAt: stamp(3),
       receivedMessages: 10,
       tuningSource: "confirmed",
-      rateSampledAt: "2026-07-26T09:00:00.000Z",
-      rateWindowMs: 1_000,
-      publicationSampledAt: "2026-07-26T09:00:00.000Z",
-      queueWaitSampledAt: "2026-07-26T09:00:00.000Z",
     },
     queue: {
-      oldestMessageAgeMs: 1.25,
-      pressureReasons: [],
-      dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
-      capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
-      capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
-      currentBytes: 2_048,
+      capacityBytes: 16_777_216,
+      capacityMessages: 1000,
+      currentBytes: 2048,
       currentMessages: 2,
       droppedMessages: 0,
       droppedPerSecond: 0,
       droppedSincePrevious: 0,
-      peakBytes: 4_096,
+      oldestMessageAgeMs: 30,
+      peakBytes: 4096,
       peakMessages: 3,
+      pressureReasons: [],
+      dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
     },
-    request: {
-      maxMessages: 1_000,
-      mode: "tail",
-      topic: "orders.events",
-    },
-    sampledAt: "2026-07-26T12:00:00.000Z",
-    state: "streaming",
-    status: "nominal",
     ...overrides,
   };
 }
-
-const unavailableHost: KafkaStreamMonitorSnapshot = {
-  operationId: null,
-  connectionName: null,
-  delivery: null,
-  queue: null,
-  request: null,
-  sampledAt: null,
-  state: "unavailable",
-  status: "unavailable",
+const rendererSample: RendererStreamMonitorSnapshot = {
+  ...initialRendererStreamMonitorSample,
+  operationId: "request-1",
+  messagesMounted: false,
+  eventToCommitMs: 2.5,
+  eventSampledAt: stamp(1),
+  filterDurationMs: 0.25,
+  filterSampledAt: stamp(5),
+  renderDurationMs: 4.75,
+  renderSampledAt: stamp(5),
+  fps: 58,
+  fpsSampledAt: stamp(0),
+  fpsWindowMs: 1000,
+  samplingState: "ready",
+  sampledAt: stamp(0),
+  rendererDroppedMessages: 1,
+  rendererWindowEvictions: 10,
+  retainedMessages: 8,
+  visibleMessages: 7,
+  history: [],
 };
-
-const consumptionFailure: HostError = {
-  activeStateChanged: true,
-  code: "BROKER_UNREACHABLE",
-  correlationId: "correlation-monitor",
-  recovery: "Verify the broker route and retry consumption.",
-  retryable: true,
-  stage: "broker",
-  summary: "The broker closed the fetch connection.",
-  target: "orders.events",
-};
-
-interface RenderPanelResult {
-  readonly onOpenActivity: ReturnType<typeof vi.fn<() => void>>;
-}
-
-function renderPanel({
-  activeConnectionName = "Local aio-kafka",
-  current = hostSnapshot(),
-  error = null,
-  history = [],
-  renderer = measuredRenderer,
-}: {
-  readonly activeConnectionName?: string | null;
-  readonly current?: KafkaStreamMonitorSnapshot;
-  readonly error?: HostError | null;
-  readonly history?: readonly KafkaStreamMonitorSnapshot[];
-  readonly renderer?: RendererStreamMonitorSnapshot;
-} = {}): RenderPanelResult {
-  const onOpenActivity = vi.fn<() => void>();
-  render(
+function renderPanel(
+  overrides: Partial<StreamMonitorPanelProperties> = {},
+  renderer = rendererSample,
+): ReturnType<typeof render> & {
+  readonly onOpenActivity: ReturnType<typeof vi.fn>;
+  readonly onOpenObservedHealth: ReturnType<typeof vi.fn>;
+  readonly onStop: ReturnType<typeof vi.fn>;
+} {
+  const observer = createRendererStreamMonitorObserver();
+  vi.spyOn(observer, "getSnapshot").mockReturnValue(renderer);
+  vi.spyOn(observer, "subscribe").mockImplementation(() => (): void => undefined);
+  const actions = { onOpenActivity: vi.fn(), onOpenObservedHealth: vi.fn(), onStop: vi.fn() };
+  const properties: StreamMonitorPanelProperties = {
+    activeConnectionName: "Local Kafka",
+    stopActionLabel: "Stop tail",
+    consumptionStopping: false,
+    consumptionError: null,
+    history: [],
+    rendererObserver: observer,
+    selectedTopic: "orders",
+    snapshot: hostSnapshot(),
+    ...actions,
+    ...overrides,
+  };
+  const view = render(
     <ThemeProvider theme={streamSkopeTheme}>
-      <StreamMonitorPanel
-        activeConnectionName={activeConnectionName}
-        consumptionError={error}
-        history={history}
-        onOpenActivity={onOpenActivity}
-        rendererObserver={observer(renderer)}
-        selectedTopic="orders.events"
-        snapshot={current}
-      />
+      <StreamMonitorPanel {...properties} />
     </ThemeProvider>,
   );
-  return { onOpenActivity };
+  return { ...actions, ...view };
 }
-
+beforeEach(() => {
+  vi.spyOn(Date, "now").mockReturnValue(now);
+});
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
-describe("Material UI Stream Monitor", () => {
-  it("shows one selected-topic empty state without unavailable metric rows or duplicate navigation", () => {
-    renderPanel({
-      current: unavailableHost,
-      renderer: unavailableRenderer,
-    });
-
-    expect(screen.getByRole("heading", { name: "Stream Monitor" })).toBeVisible();
-    expect(screen.queryByText("Live telemetry", { exact: true })).not.toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      "Unavailable",
+describe("operator Stream Monitor", () => {
+  it("leads with delivery, buffering, historical omissions and freshness; technical evidence is collapsed", () => {
+    renderPanel();
+    expect(screen.getByLabelText("Current stream measurements")).toHaveTextContent(
+      "Published rate25.5 msg/s",
     );
-    expect(screen.getByText("No live sample for orders.events.")).toBeVisible();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(1);
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open topics" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current stream measurements")).toHaveTextContent("2 / 1,000");
+    expect(screen.getByLabelText("Current stream measurements")).not.toHaveTextContent("FPS");
+    expect(screen.getByLabelText("Current stream measurements")).not.toHaveTextContent("React");
+    expect(screen.getByText(/Tail.*1,000 record limit/u)).toBeVisible();
+    expect(screen.getByText("Diagnostics").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByLabelText("Display omission reasons")).toHaveTextContent(
+      "Renderer overload omissions1",
+    );
+    expect(screen.getByLabelText("Display omission reasons")).toHaveTextContent(
+      "Display retention evictions10",
+    );
+    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
+      "Delivering",
+    );
   });
-
-  it.each([
-    {
-      expected: "Sampling",
-      name: "loading",
+  it("explains unavailable evidence without manufactured metric rows", () => {
+    renderPanel({
+      stopActionLabel: null,
       snapshot: hostSnapshot({
+        operationId: null,
+        request: null,
         delivery: null,
         queue: null,
         sampledAt: null,
-        state: "loading",
-        status: "idle",
+        state: "unavailable",
+        status: "unavailable",
       }),
-    },
-    {
-      expected: "Idle",
-      name: "idle",
-      snapshot: hostSnapshot({
-        delivery: {
-          batchCount: 0,
-          batchSize: 200,
-          publishedMessages: 0,
-          historySamples: 50,
-          intervalMs: 20,
-          lastBatchMessages: 0,
-          messagesPerSecond: null,
-          publicationDurationMs: null,
-          queueWaitMs: null,
-          receivedMessages: 0,
-          tuningSource: "confirmed",
-          rateSampledAt: null,
-          rateWindowMs: null,
-          publicationSampledAt: null,
-          queueWaitSampledAt: null,
-        },
-        queue: {
-          oldestMessageAgeMs: null,
-          pressureReasons: [],
-          dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
-          capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
-          capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
-          currentBytes: 0,
-          currentMessages: 0,
-          droppedMessages: 0,
-          droppedPerSecond: null,
-          droppedSincePrevious: 0,
-          peakBytes: 0,
-          peakMessages: 0,
-        },
-        state: "streaming",
-        status: "idle",
-      }),
-    },
-    { expected: "Nominal", name: "nominal", snapshot: hostSnapshot() },
-    {
-      expected: "Backpressure",
-      name: "backpressure",
-      snapshot: hostSnapshot({
-        delivery: {
-          ...hostSnapshot().delivery!,
-          publishedMessages: 7,
-        },
-        queue: {
-          ...hostSnapshot().queue!,
-          droppedMessages: 1,
-          droppedPerSecond: 2,
-          droppedSincePrevious: 1,
-        },
-        status: "backpressure",
-      }),
-    },
-    {
-      expected: "Degraded",
-      name: "degraded",
-      snapshot: hostSnapshot({
-        delivery: null,
-        queue: null,
-        state: "failed",
-        status: "degraded",
-      }),
-    },
-    {
-      expected: "Complete · Nominal",
-      name: "terminal",
-      snapshot: hostSnapshot({ state: "complete" }),
-    },
-    {
-      expected: "Stale",
-      name: "stale",
-      snapshot: hostSnapshot({ state: "stale", status: "stale" }),
-    },
-  ])("labels $name evidence honestly", ({ expected, snapshot }) => {
-    renderPanel({
-      current: snapshot,
-      renderer:
-        snapshot.status === "nominal"
-          ? { ...measuredRenderer, rendererDroppedMessages: 0 }
-          : unavailableRenderer,
     });
-
+    expect(screen.getByText("No live sample for orders.")).toBeVisible();
+    expect(screen.queryByLabelText("Current stream measurements")).not.toBeInTheDocument();
+  });
+  it("exposes the existing stop callback and cluster observations", async () => {
+    const actions = renderPanel();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Stop tail orders" }));
+    await user.click(screen.getByRole("button", { name: "Observed health" }));
+    expect(actions.onStop).toHaveBeenCalledOnce();
+    expect(actions.onOpenObservedHealth).toHaveBeenCalledOnce();
+  });
+  it("supports cancellation while loading and disables duplicate stops", () => {
+    renderPanel({
+      consumptionStopping: true,
+      stopActionLabel: "Cancel fetch",
+      snapshot: hostSnapshot({
+        state: "loading",
+        request: { topic: "orders", maxMessages: 50, mode: "newest" },
+      }),
+    });
+    expect(screen.getByRole("button", { name: "Cancel fetch orders" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel fetch orders" })).toHaveTextContent(
+      "Stopping…",
+    );
+  });
+  it.each([
+    { state: "complete", expected: "Complete" },
+    { state: "stopped", expected: "Stopped" },
+    { state: "failed", expected: "Failed" },
+    { state: "stale", expected: "Stale evidence" },
+  ] as const)("keeps $state lifecycle separate from historical losses", ({ state, expected }) => {
+    const base = hostSnapshot();
+    renderPanel({
+      stopActionLabel: null,
+      snapshot: {
+        ...base,
+        state,
+        queue: {
+          ...base.queue!,
+          droppedMessages: 4,
+          dropReasons: { countCapacity: 4, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
+        },
+      },
+    });
     expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
       expected,
     );
+    expect(screen.getByLabelText("Last stream measurements")).toHaveTextContent(
+      "Last delivery rate",
+    );
+    expect(screen.queryByRole("button", { name: /Stop tail/u })).not.toBeInTheDocument();
+  });
+  it("names current transport pressure without turning historical omissions into pressure", () => {
+    const base = hostSnapshot();
+    renderPanel({
+      snapshot: { ...base, queue: { ...base.queue!, pressureReasons: ["transport"] } },
+    });
+    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
+      "Buffer pressure",
+    );
+    expect(screen.getByText("Display transport is paused")).toBeVisible();
+  });
+  it("advances historical age text from visible application frame observations", () => {
+    let monotonicTime = 0;
+    let frame: ((timestamp: number) => void) | undefined;
+    const observer = createRendererStreamMonitorObserver({
+      monotonicNow: () => monotonicTime,
+      wallNow: () => new Date(Date.now()),
+      isDocumentVisible: () => true,
+      requestFrame: (callback) => {
+        frame = callback;
+        return 1;
+      },
+      cancelFrame: () => undefined,
+    });
+    observer.setOperation("request-1");
+    const view = renderPanel({
+      snapshot: hostSnapshot({ state: "stopped" }),
+      stopActionLabel: null,
+      rendererObserver: observer,
+    });
+    act(() => {
+      vi.mocked(Date.now).mockReturnValue(now + 1000);
+      monotonicTime = 1000;
+      frame?.(monotonicTime);
+    });
+    expect(screen.getByLabelText("Last stream measurements")).toHaveTextContent("Measured 1s ago");
+    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
+      "Stopped",
+    );
+    view.unmount();
+    observer.dispose();
   });
 
-  it("shows exact current host and renderer measurements before bounded history", () => {
-    const history = Array.from({ length: 15 }, (_unused, index) =>
+  it("marks aged host evidence stale and preserves the last chart window", () => {
+    const current = hostSnapshot({
+      sampledAt: stamp(20),
+      delivery: { ...hostSnapshot().delivery!, rateSampledAt: stamp(20) },
+    });
+    renderPanel({ snapshot: current });
+    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
+      "Stale evidence",
+    );
+    expect(screen.getByRole("region", { name: /^Delivery rate trend/u })).toHaveTextContent(
+      "12:00:10",
+    );
+  });
+  it("uses a shared time domain and all retained samples within it instead of twelve rows", async () => {
+    const history = Array.from({ length: 20 }, (_, i) =>
       hostSnapshot({
-        sampledAt: new Date(Date.UTC(2026, 6, 26, 12, 0, index)).toISOString(),
+        sampledAt: stamp(20 - i),
+        delivery: { ...hostSnapshot().delivery!, rateSampledAt: stamp(20 - i) },
       }),
     );
-    const rendererHistory = Array.from({ length: 15 }, (_unused, index) => ({
-      ...measuredRenderer,
-      sampledAt: new Date(Date.UTC(2026, 6, 26, 12, 1, index)).toISOString(),
-    }));
-    renderPanel({
-      history,
-      renderer: { ...measuredRenderer, history: rendererHistory },
-    });
-
-    expect(screen.getByRole("region", { name: /Queue depth trend/u })).toHaveAccessibleName(
-      /12 samples.*latest 2 messages/u,
-    );
-    expect(screen.getByRole("region", { name: /Delivery rate trend/u })).toHaveAccessibleName(
-      /12 samples.*latest 25.5 msg\/s/u,
-    );
-    expect(screen.getByRole("region", { name: /Renderer work trend/u })).toHaveAccessibleName(
-      /Event to commit.*12 samples.*2.5 ms/u,
-    );
-    const overview = screen.getByLabelText("Current stream measurements");
-    const queueTable = screen.getByLabelText("Host queue metrics");
-    expect(
-      overview.compareDocumentPosition(queueTable) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-
-    expect(screen.getByLabelText("Host queue metrics")).toHaveTextContent("2 / 1,000 messages");
-    expect(screen.getByLabelText("Host queue metrics")).toHaveTextContent("2 KiB / 16 MiB");
-    expect(screen.getByLabelText("Host delivery metrics")).toHaveTextContent("25.5 msg/s");
-    expect(screen.getByLabelText("Host delivery metrics")).toHaveTextContent("0.75 ms");
-    expect(screen.getByLabelText("Host delivery metrics")).toHaveTextContent(
-      "Confirmed preferences",
-    );
-    expect(screen.getByLabelText("Host delivery metrics")).toHaveTextContent(
-      "Effective batch200 messages",
-    );
-    expect(screen.getByLabelText("Host delivery metrics")).toHaveTextContent(
-      "Shaping interval20 ms",
-    );
-    expect(screen.getByLabelText("Host delivery metrics")).toHaveTextContent(
-      "History limit50 samples",
-    );
-    expect(screen.getByLabelText("Renderer metrics")).toHaveTextContent("2.5 ms");
-    expect(screen.getByLabelText("Renderer metrics")).toHaveTextContent("58 FPS");
-    expect(screen.getByRole("table", { name: "Recent host samples" })).not.toHaveTextContent(
-      "12:00:02",
-    );
-    expect(screen.getByRole("table", { name: "Recent host samples" })).toHaveTextContent(
-      "12:00:14",
-    );
-    const hostSamples = screen.getByRole("table", { name: "Recent host samples" });
-    const timeHeader = within(hostSamples).getByRole("columnheader", { name: "Sample" });
-    const latestHostSample = within(hostSamples).getByText(/12:00:14/u);
-    const compactFontSize = `${String(
-      streamSkopeTypography.roles.compact.size / streamSkopeTypography.rootSize,
-    )}rem`;
-    expect(getComputedStyle(timeHeader).fontFamily).toContain("system-ui");
-    expect(getComputedStyle(timeHeader).fontSize).toBe(compactFontSize);
-    expect(getComputedStyle(latestHostSample).fontFamily).toContain("system-ui");
-    expect(getComputedStyle(latestHostSample).fontSize).toBe(compactFontSize);
-    expect(screen.getByRole("table", { name: "Recent renderer samples" })).not.toHaveTextContent(
-      "12:01:02",
-    );
-    expect(screen.getByRole("table", { name: "Recent renderer samples" })).toHaveTextContent(
-      "12:01:14",
-    );
-  });
-
-  it("nests every evidence body under one named section with explicit key and value rows", () => {
-    renderPanel({
-      history: [hostSnapshot()],
-      renderer: { ...measuredRenderer, history: [measuredRenderer] },
-    });
-
-    for (const sectionName of ["Context", "Host queue", "Delivery", "Renderer"]) {
-      const section = screen.getByRole("region", { name: sectionName });
-      const terms = section.querySelectorAll("dt");
-      const definitions = section.querySelectorAll("dd");
-
-      expect(terms.length).toBeGreaterThan(0);
-      expect(definitions).toHaveLength(terms.length);
-      expect(within(section).queryByRole("table")).not.toBeInTheDocument();
+    renderPanel({ history });
+    const rate = screen.getByRole("region", { name: /^Delivery rate trend/u });
+    const buffer = screen.getByRole("region", { name: /^Buffer depth trend/u });
+    expect(rate).toHaveAccessibleName(/21 samples/u);
+    expect(buffer).toHaveAccessibleName(/21 samples/u);
+    for (const chart of [rate, buffer]) {
+      expect(chart).toHaveTextContent("11:59:30");
+      expect(chart).toHaveTextContent("12:00:30");
     }
-
-    const context = screen.getByRole("region", { name: "Context" });
-    expect(context.querySelector("dt")?.textContent).toBe("Active cluster");
-    expect(context.querySelector("dd")?.textContent).toBe("Local aio-kafka");
-
-    for (const sectionName of ["Recent host samples", "Recent renderer samples"]) {
-      const section = screen.getByRole("region", { name: sectionName });
-      expect(within(section).getByRole("table", { name: sectionName })).toBeVisible();
-    }
+    const plot = within(rate).getByRole("group", { name: "Delivery rate trend plot" });
+    plot.focus();
+    await userEvent.setup().keyboard("{End}");
+    expect(within(rate).getByRole("status")).toHaveTextContent("25.5 msg/s");
   });
-
-  it("identifies renderer loss as backpressure without hiding the affected stage", () => {
+  it("keeps last render timings and their ages in Diagnostics, labels application FPS", async () => {
     renderPanel();
-
+    await userEvent.setup().click(screen.getByText("Diagnostics"));
+    expect(screen.getByText(/Messages workspace unmounted/u)).toBeVisible();
+    const metrics = screen.getByLabelText("Renderer metrics");
+    expect(metrics).toHaveTextContent("Last message workspace render4.75 ms · Measured 5s ago");
+    expect(metrics).toHaveTextContent("Application frame rate58 FPS");
+    expect(metrics).toHaveTextContent("Unavailable while Messages is unmounted");
+    expect(screen.getByLabelText("Host delivery metrics")).toHaveTextContent(
+      "Last host publication0.75 ms · Measured 3s ago",
+    );
+  });
+  it("never combines a previous request's renderer losses or plots", () => {
+    renderPanel(
+      {},
+      { ...rendererSample, operationId: "prior-request", rendererDroppedMessages: 99 },
+    );
+    expect(screen.getByLabelText("Display omission reasons")).not.toHaveTextContent("99");
+  });
+  it("retains the shared retry-stop action for a cleanup timeout", async () => {
+    const error: HostError = {
+      activeStateChanged: true,
+      code: "TIMEOUT",
+      correlationId: "cleanup",
+      recovery: "Cleanup is still pending. Retry stop to wait again.",
+      retryable: true,
+      stage: "kafka",
+      summary: "Stop cleanup timed out.",
+      target: "kafka-consumption-cleanup",
+    };
+    const current = hostSnapshot({ state: "failed" });
+    const actions = renderPanel({
+      snapshot: current,
+      consumptionError: error,
+      stopActionLabel: kafkaConsumptionStopLabel("failed", current.request, error),
+    });
     expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      "Backpressure",
+      "Failed",
     );
-    expect(screen.getByText("Renderer evictions confirm record loss.")).toBeVisible();
-    expect(screen.getByLabelText("Renderer metrics")).toHaveTextContent("1 message");
+    expect(screen.getByText(/Cleanup is still pending/u)).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry stop orders" }));
+    expect(actions.onStop).toHaveBeenCalledOnce();
   });
 
-  it("identifies measured slow renderer work as backpressure instead of nominal health", () => {
-    renderPanel({
-      renderer: {
-        ...measuredRenderer,
-        renderDurationMs: 25,
-        rendererDroppedMessages: 0,
-      },
+  it("keeps failure recovery linked to Activity", async () => {
+    const actions = renderPanel({
+      snapshot: hostSnapshot({ state: "failed" }),
+      stopActionLabel: null,
     });
-
-    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      "Backpressure",
-    );
-    expect(screen.getByText("Message workspace render work exceeded 24 ms.")).toBeVisible();
-    expect(screen.getByLabelText("Renderer metrics")).toHaveTextContent("25 ms");
-  });
-
-  it.each([
-    {
-      explanation: "Renderer event backlog reached its 512-event observation bound.",
-      renderer: { eventBacklog: 512 },
-    },
-    {
-      explanation: "Host-event-to-commit time exceeded 120 ms.",
-      renderer: { eventToCommitMs: 121 },
-    },
-    {
-      explanation: "Message filtering work exceeded 24 ms.",
-      renderer: { filterDurationMs: 25 },
-    },
-  ])("identifies bounded $explanation pressure evidence", (scenario) => {
-    renderPanel({
-      renderer: {
-        ...measuredRenderer,
-        rendererDroppedMessages: 0,
-        ...scenario.renderer,
-      },
-    });
-
-    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      "Backpressure",
-    );
-    expect(screen.getByText(scenario.explanation)).toBeVisible();
-  });
-
-  it("does not call the exact 24 ms renderer boundary pressure", () => {
-    renderPanel({
-      renderer: {
-        ...measuredRenderer,
-        eventBacklog: 0,
-        eventToCommitMs: 120,
-        filterDurationMs: 24,
-        renderDurationMs: 24,
-        rendererDroppedMessages: 0,
-      },
-    });
-
-    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      "Nominal",
-    );
-  });
-
-  it("retains terminal lifecycle while naming prior renderer pressure", () => {
-    renderPanel({
-      current: hostSnapshot({ state: "stopped" }),
-      renderer: {
-        ...measuredRenderer,
-        eventToCommitMs: 121,
-        rendererDroppedMessages: 0,
-      },
-    });
-
-    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      "Stopped · Backpressure",
-    );
-    expect(
-      screen.getByText(
-        "The stopped operation is no longer sampling. Last renderer evidence: Host-event-to-commit time exceeded 120 ms.",
-      ),
-    ).toBeVisible();
-  });
-
-  it("does not claim nominal health before visible renderer sampling is complete", () => {
-    renderPanel({
-      renderer: {
-        ...measuredRenderer,
-        fps: null,
-        rendererDroppedMessages: 0,
-        samplingState: "sampling",
-      },
-    });
-
-    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      "Sampling",
-    );
-    expect(
-      screen.getByText("Host delivery is current; visible-frame sampling is still in progress."),
-    ).toBeVisible();
-  });
-
-  it.each([
-    {
-      explanation: "Host delivery is current; renderer frame evidence is unavailable.",
-      label: "Renderer unavailable",
-      samplingState: "unavailable" as const,
-    },
-    {
-      explanation: "Host delivery is current; renderer frame sampling is paused while hidden.",
-      label: "Renderer hidden",
-      samplingState: "hidden" as const,
-    },
-  ])("labels $samplingState renderer evidence instead of nominal health", (scenario) => {
-    renderPanel({
-      renderer: {
-        ...measuredRenderer,
-        fps: null,
-        rendererDroppedMessages: 0,
-        samplingState: scenario.samplingState,
-      },
-    });
-
-    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
-      scenario.label,
-    );
-    expect(screen.getByText(scenario.explanation)).toBeVisible();
-  });
-
-  it("states nominal status once instead of repeating decorative status text", () => {
-    renderPanel({
-      renderer: { ...measuredRenderer, rendererDroppedMessages: 0 },
-    });
-
-    expect(screen.getAllByText("Nominal")).toHaveLength(1);
-    expect(screen.getByRole("heading", { level: 3, name: "Trends" })).toBeVisible();
-  });
-
-  it("keeps exact failure and recovery evidence in Activity", async () => {
-    const user = userEvent.setup();
-    const { onOpenActivity } = renderPanel({
-      current: hostSnapshot({
-        delivery: null,
-        queue: null,
-        state: "failed",
-        status: "degraded",
-      }),
-      error: consumptionFailure,
-      renderer: unavailableRenderer,
-    });
-
-    expect(screen.getByText(consumptionFailure.summary)).toBeVisible();
-    expect(screen.getByText(consumptionFailure.recovery)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Open activity" }));
-    expect(onOpenActivity).toHaveBeenCalledOnce();
-  });
-
-  it("retains the evidence owner when its active connection has ended", () => {
-    renderPanel({
-      activeConnectionName: null,
-      current: hostSnapshot({
-        connectionName: "Previous production cluster",
-        state: "stale",
-        status: "stale",
-      }),
-      renderer: unavailableRenderer,
-    });
-
-    expect(screen.getByLabelText("Stream context")).toHaveTextContent(
-      "Previous production cluster",
-    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Open activity" }));
+    expect(actions.onOpenActivity).toHaveBeenCalledOnce();
   });
 });

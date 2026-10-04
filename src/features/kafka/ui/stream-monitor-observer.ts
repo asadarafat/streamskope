@@ -1,5 +1,7 @@
 import { KAFKA_STREAM_MONITOR_HISTORY_LIMIT, type HostEvent } from "../contracts";
 
+export const MONITOR_STALE_AFTER_MS = 5_000;
+
 export const RENDERER_STREAM_MONITOR_PENDING_EVENT_LIMIT = 512 as const;
 export const RENDERER_STREAM_MONITOR_PRESSURE_LIMITS = Object.freeze({
   eventToCommitMs: 120,
@@ -18,11 +20,19 @@ export type RendererStreamMonitorSamplingState =
   (typeof RENDERER_STREAM_MONITOR_SAMPLING_STATES)[number];
 
 export interface RendererStreamMonitorSample {
+  readonly operationId: string | null;
+  readonly messagesMounted: boolean;
+  readonly eventSampledAt: string | null;
+  readonly filterSampledAt: string | null;
+  readonly renderSampledAt: string | null;
+  readonly fpsSampledAt: string | null;
+  readonly fpsWindowMs: number | null;
   readonly eventBacklog: number;
   readonly eventToCommitMs: number | null;
   readonly filterDurationMs: number | null;
   readonly fps: number | null;
   readonly rendererDroppedMessages: number;
+  readonly rendererWindowEvictions: number;
   readonly renderDurationMs: number | null;
   readonly retainedMessages: number;
   readonly sampledAt: string | null;
@@ -37,6 +47,7 @@ export interface RendererStreamMonitorSnapshot extends RendererStreamMonitorSamp
 export interface RendererStreamMonitorCommit {
   readonly lastSequence: number;
   readonly rendererDroppedMessages: number;
+  readonly rendererWindowEvictions: number;
   readonly retainedMessages: number;
   readonly visibleMessages: number;
 }
@@ -49,6 +60,9 @@ export interface RendererStreamMonitorObserver {
   recordFilterDuration(durationMs: number): void;
   recordRenderDuration(durationMs: number): void;
   setPresentationActive(active: boolean): void;
+  setMessagesMounted(mounted: boolean): void;
+  setOperation(operationId: string | null): void;
+  setHostFreshness(sampledAt: string | null): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -66,12 +80,20 @@ interface PendingRendererEvent {
   readonly receivedAtMs: number;
 }
 
-const initialSample: RendererStreamMonitorSample = Object.freeze({
+export const initialRendererStreamMonitorSample: RendererStreamMonitorSample = Object.freeze({
+  operationId: null,
+  messagesMounted: true,
+  eventSampledAt: null,
+  filterSampledAt: null,
+  renderSampledAt: null,
+  fpsSampledAt: null,
+  fpsWindowMs: null,
   eventBacklog: 0,
   eventToCommitMs: null,
   filterDurationMs: null,
   fps: null,
   rendererDroppedMessages: 0,
+  rendererWindowEvictions: 0,
   renderDurationMs: null,
   retainedMessages: 0,
   sampledAt: null,
@@ -95,11 +117,19 @@ function freezeSnapshot(
 
 function currentSample(snapshot: RendererStreamMonitorSnapshot): RendererStreamMonitorSample {
   return {
+    operationId: snapshot.operationId,
+    messagesMounted: snapshot.messagesMounted,
+    eventSampledAt: snapshot.eventSampledAt,
+    filterSampledAt: snapshot.filterSampledAt,
+    renderSampledAt: snapshot.renderSampledAt,
+    fpsSampledAt: snapshot.fpsSampledAt,
+    fpsWindowMs: snapshot.fpsWindowMs,
     eventBacklog: snapshot.eventBacklog,
     eventToCommitMs: snapshot.eventToCommitMs,
     filterDurationMs: snapshot.filterDurationMs,
     fps: snapshot.fps,
     rendererDroppedMessages: snapshot.rendererDroppedMessages,
+    rendererWindowEvictions: snapshot.rendererWindowEvictions,
     renderDurationMs: snapshot.renderDurationMs,
     retainedMessages: snapshot.retainedMessages,
     sampledAt: snapshot.sampledAt,
@@ -155,15 +185,19 @@ export function createRendererStreamMonitorObserver(
   const listeners = new Set<() => void>();
   const pendingEvents = new Map<number, PendingRendererEvent>();
   let activeFrameId: number | null = null;
+  let hostSampledAt: string | null = null;
+  let freshnessExpiry: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let frameCount = 0;
   let frameWindowStartedAt = 0;
   let history: readonly RendererStreamMonitorSample[] = [];
   let lastCommittedSequence = -1;
+  let lastReceivedSequence = -1;
   let pendingFilterDurationMs: number | null = null;
   let pendingRenderDurationMs: number | null = null;
   let presentationActive = true;
-  let snapshot = freezeSnapshot(initialSample, history);
+  let messagesMounted = true;
+  let snapshot = freezeSnapshot(initialRendererStreamMonitorSample, history);
 
   function publish(next: RendererStreamMonitorSnapshot): void {
     if (disposed) {
@@ -173,6 +207,24 @@ export function createRendererStreamMonitorObserver(
     for (const listener of listeners) {
       listener();
     }
+  }
+
+  function clearFreshnessExpiry(): void {
+    clearTimeout(freshnessExpiry);
+    freshnessExpiry = undefined;
+  }
+
+  // One expiry for the current host sample; frame observations already refresh visible ages.
+  // Expiry notifies the view without changing any measurement time or adding history.
+  function scheduleFreshnessExpiry(): void {
+    clearFreshnessExpiry();
+    if (disposed || !presentationActive || listeners.size === 0 || hostSampledAt === null) return;
+    const remaining = Date.parse(hostSampledAt) + MONITOR_STALE_AFTER_MS + 1 - wallNow().getTime();
+    if (!Number.isFinite(remaining) || remaining <= 0) return;
+    freshnessExpiry = setTimeout(() => {
+      freshnessExpiry = undefined;
+      publish(freezeSnapshot(currentSample(snapshot), history));
+    }, remaining);
   }
 
   function publishBacklog(): void {
@@ -196,6 +248,8 @@ export function createRendererStreamMonitorObserver(
         freezeSample({
           ...currentSample(snapshot),
           fps,
+          fpsSampledAt: null,
+          fpsWindowMs: null,
           samplingState,
         }),
         history,
@@ -226,13 +280,28 @@ export function createRendererStreamMonitorObserver(
     const elapsedMs = sampledAtMs - frameWindowStartedAt;
     if (elapsedMs >= 1_000) {
       const fps = Math.max(0, Math.round((frameCount * 1_000) / elapsedMs));
+      const measuredAt = wallNow().toISOString();
       const sample = freezeSample({
         ...currentSample(snapshot),
         fps,
-        sampledAt: wallNow().toISOString(),
+        fpsSampledAt: measuredAt,
+        fpsWindowMs: elapsedMs,
+        sampledAt: measuredAt,
         samplingState: "ready",
       });
-      history = [...history, sample].slice(-KAFKA_STREAM_MONITOR_HISTORY_LIMIT);
+      // A frame tick is new frame evidence only, never another message-work measurement.
+      history = [
+        ...history,
+        freezeSample({
+          ...sample,
+          eventToCommitMs: null,
+          eventSampledAt: null,
+          filterDurationMs: null,
+          filterSampledAt: null,
+          renderDurationMs: null,
+          renderSampledAt: null,
+        }),
+      ].slice(-KAFKA_STREAM_MONITOR_HISTORY_LIMIT);
       frameCount = 0;
       frameWindowStartedAt = sampledAtMs;
       publish(freezeSnapshot(sample, history));
@@ -273,6 +342,29 @@ export function createRendererStreamMonitorObserver(
 
   const removeVisibilityListener = subscribeVisibility?.(onVisibilityChanged);
 
+  function setOperation(operationId: string | null): void {
+    if (disposed || snapshot.operationId === operationId) return;
+    pendingEvents.clear();
+    clearFreshnessExpiry();
+    hostSampledAt = null;
+    pendingFilterDurationMs = null;
+    pendingRenderDurationMs = null;
+    history = [];
+    frameCount = 0;
+    frameWindowStartedAt = monotonicNow();
+    publish(
+      freezeSnapshot(
+        {
+          ...initialRendererStreamMonitorSample,
+          operationId,
+          messagesMounted,
+          samplingState: snapshot.samplingState === "ready" ? "sampling" : snapshot.samplingState,
+        },
+        history,
+      ),
+    );
+  }
+
   return {
     commit(input): void {
       if (disposed || !presentationActive) {
@@ -295,31 +387,53 @@ export function createRendererStreamMonitorObserver(
       }
       const eventToCommitMs =
         latestReceivedAt === undefined ? null : measuredDuration(committedAt - latestReceivedAt);
+      const measuredAt = wallNow().toISOString();
+      const filterDurationMs =
+        committedMessageWork && messagesMounted ? pendingFilterDurationMs : null;
+      const renderDurationMs =
+        committedMessageWork && messagesMounted ? pendingRenderDurationMs : null;
       const sample = freezeSample({
+        ...currentSample(snapshot),
         eventBacklog: pendingEvents.size,
-        eventToCommitMs,
-        filterDurationMs: committedMessageWork
-          ? pendingFilterDurationMs
-          : snapshot.filterDurationMs,
-        fps: snapshot.fps,
+        eventToCommitMs: eventToCommitMs ?? snapshot.eventToCommitMs,
+        eventSampledAt: eventToCommitMs === null ? snapshot.eventSampledAt : measuredAt,
+        filterDurationMs: filterDurationMs ?? snapshot.filterDurationMs,
+        filterSampledAt: filterDurationMs === null ? snapshot.filterSampledAt : measuredAt,
+        renderDurationMs: renderDurationMs ?? snapshot.renderDurationMs,
+        renderSampledAt: renderDurationMs === null ? snapshot.renderSampledAt : measuredAt,
         rendererDroppedMessages: boundedCount(
           input.rendererDroppedMessages,
           "rendererDroppedMessages",
         ),
-        renderDurationMs: committedMessageWork
-          ? pendingRenderDurationMs
-          : snapshot.renderDurationMs,
+        rendererWindowEvictions: boundedCount(
+          input.rendererWindowEvictions,
+          "rendererWindowEvictions",
+        ),
         retainedMessages: boundedCount(input.retainedMessages, "retainedMessages"),
-        sampledAt: wallNow().toISOString(),
-        samplingState: snapshot.samplingState,
+        sampledAt: measuredAt,
         visibleMessages: boundedCount(input.visibleMessages, "visibleMessages"),
       });
-      history = [...history, sample].slice(-KAFKA_STREAM_MONITOR_HISTORY_LIMIT);
+      history = [
+        ...history,
+        freezeSample({
+          ...sample,
+          eventToCommitMs,
+          eventSampledAt: eventToCommitMs === null ? null : measuredAt,
+          filterDurationMs,
+          filterSampledAt: filterDurationMs === null ? null : measuredAt,
+          renderDurationMs,
+          renderSampledAt: renderDurationMs === null ? null : measuredAt,
+          fps: null,
+          fpsSampledAt: null,
+          fpsWindowMs: null,
+        }),
+      ].slice(-KAFKA_STREAM_MONITOR_HISTORY_LIMIT);
       pendingFilterDurationMs = null;
       pendingRenderDurationMs = null;
       publish(freezeSnapshot(sample, history));
     },
     dispose(): void {
+      clearFreshnessExpiry();
       if (activeFrameId !== null) {
         cancelFrame(activeFrameId);
         activeFrameId = null;
@@ -333,7 +447,15 @@ export function createRendererStreamMonitorObserver(
       pendingRenderDurationMs = null;
     },
     eventReceived(event): void {
-      if (disposed || !presentationActive || event.sequence <= lastCommittedSequence) {
+      if (disposed || event.sequence <= Math.max(lastCommittedSequence, lastReceivedSequence))
+        return;
+      lastReceivedSequence = event.sequence;
+      if (event.event === "streamMetrics.changed") {
+        if (event.payload.state === "loading" || snapshot.operationId === null)
+          setOperation(event.payload.operationId);
+        else if (snapshot.operationId !== event.payload.operationId) return;
+      }
+      if (!presentationActive) {
         return;
       }
       pendingEvents.set(event.sequence, {
@@ -353,16 +475,29 @@ export function createRendererStreamMonitorObserver(
       return snapshot;
     },
     recordFilterDuration(durationMs): void {
-      if (!presentationActive) {
+      if (!presentationActive || !messagesMounted) {
         return;
       }
       pendingFilterDurationMs = measuredDuration(durationMs);
     },
     recordRenderDuration(durationMs): void {
-      if (!presentationActive) {
+      if (!presentationActive || !messagesMounted) {
         return;
       }
       pendingRenderDurationMs = measuredDuration(durationMs);
+    },
+    setOperation,
+    setHostFreshness(sampledAt): void {
+      if (disposed) return;
+      hostSampledAt = sampledAt;
+      scheduleFreshnessExpiry();
+    },
+    setMessagesMounted(mounted): void {
+      if (disposed || messagesMounted === mounted) return;
+      messagesMounted = mounted;
+      pendingFilterDurationMs = null;
+      pendingRenderDurationMs = null;
+      publish(freezeSnapshot({ ...currentSample(snapshot), messagesMounted: mounted }, history));
     },
     setPresentationActive(active): void {
       if (disposed || presentationActive === active) {
@@ -370,6 +505,7 @@ export function createRendererStreamMonitorObserver(
       }
       presentationActive = active;
       if (!active) {
+        clearFreshnessExpiry();
         if (activeFrameId !== null) {
           cancelFrame(activeFrameId);
           activeFrameId = null;
@@ -390,6 +526,7 @@ export function createRendererStreamMonitorObserver(
         return;
       }
       startFrameLoop();
+      scheduleFreshnessExpiry();
     },
     subscribe(listener): () => void {
       if (disposed) {
@@ -398,10 +535,12 @@ export function createRendererStreamMonitorObserver(
       listeners.add(listener);
       if (listeners.size === 1 && presentationActive) {
         startFrameLoop();
+        scheduleFreshnessExpiry();
       }
       return (): void => {
         listeners.delete(listener);
         if (listeners.size === 0 && !disposed) {
+          clearFreshnessExpiry();
           stopFrameLoop("unavailable");
         }
       };

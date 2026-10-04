@@ -76,7 +76,10 @@ or a throughput guarantee. Both the record-count and byte limits apply.
 | Saved query library              | 100 queries / 1 MiB                  | Unreadable or unsupported files are preserved for recovery                                                   |
 | Portable query document          | 32 KiB                               | Versioned settings only; import requires review and explicit opening                                         |
 
-Check **Monitor** for overload drops as well as ordinary retention evictions.
+Check [Monitor](operations.md#stream-monitor) for historical display omissions and
+current pressure. Ordinary retention eviction as the selected window advances is
+separate from overload loss. Stopping can also omit queued records when bounded
+terminal publication reaches its budget or the transport is paused.
 Filters operate on the records currently available to the workbench, including
 previews for truncated content. **Search broker** separately scans the selected
 finite range within its budgets and reports offset coverage. Neither mode proves

@@ -49,16 +49,46 @@ missing offsets and stale evidence.
 
 ## Stream monitor
 
-If messages stop updating or the display falls behind:
+Use the topic's **Monitor** tab to understand the current StreamSkope read:
+is it publishing records, waiting for data, buffering work or omitting records
+from the display? This is the application's delivery path. For partition,
+replication and consumer-group evidence, open [Observed health](observed-health.md).
 
-1. Return to the topic and open **Monitor**.
-2. Check the stream state and freshness before interpreting counters.
-3. Inspect delivery, host queues and renderer retention to locate the backlog.
-4. Compare history evictions with display-drop counters.
+1. Check the connection, topic, read mode, operation state and sample age.
+2. Compare the host publication rate with queue occupancy and oldest queued age.
+3. Inspect historical display loss and its reasons, even after pressure recovers.
+4. Use **Stop** or **Cancel** in Monitor to end the same read started in Messages.
+   Switching tabs does not start another Kafka consumer.
 
-**You should know:** whether the view is receiving data, waiting, stopped or
-reporting degraded delivery. Normal history eviction and overload drops are
-separate conditions.
+| Evidence             | Meaning and limit                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Host publication     | Records emitted by the host toward the UI. Publication is not confirmation that every record reached or painted in the renderer.                                                                             |
+| Queue and oldest age | Records waiting at the host, bounded by both count and bytes. Age follows the oldest record still waiting, including across partial drains.                                                                  |
+| Current pressure     | Transport pause, a queue at its count limit, or bytes nearing their capacity. It can recover while historical display loss remains nonzero.                                                                  |
+| Display loss         | Records omitted from the application's delivery path. Host reasons distinguish count capacity, byte capacity, an oversized transfer record and a terminal discard. This does not mean Kafka deleted records. |
+| Publication rate     | A measured interval, including zero after an active quiet interval. An unavailable or stale sample is not zero.                                                                                              |
+| Freshness            | The time of the aggregate host observation. Last publication, queue-wait and renderer measurements retain their own timestamps. A fresh observation does not make old work measurements fresh.               |
+
+The queue and publication charts share a time window. Open **Diagnostics** for
+renderer measurements, effective limits and exact sample tables. Application FPS
+measures visible document frames, not message-table throughput. Message-workspace
+render/filter timings are measured while **Messages** is mounted; in Monitor they
+are unavailable or explicitly last measured with their age. Normal eviction as
+the selected message window advances is separate from overload omissions.
+
+Stop first cancels the Kafka read, then performs bounded publication while the
+transport can accept it. If pressure or the terminal budget leaves queued records,
+they are counted as terminal display omissions. A cleanup timeout or close failure
+is reported as a failure; it is not confirmation that all resources closed.
+If Stop times out while cleanup continues, **Retry stop** checks that same request.
+Last terminal evidence remains inspectable. Starting another read, including the
+same topic and settings, gives it new evidence; old callbacks cannot become the
+new operation's measurements.
+
+Monitor history is bounded, local to this workbench session and contains aggregate
+measurements, not message payloads. Sampling does not poll the broker or produce
+messages. For retained records and export limits, see
+[Data, exports and limits](data-handling.md#message-limits).
 
 ## Raw logs
 

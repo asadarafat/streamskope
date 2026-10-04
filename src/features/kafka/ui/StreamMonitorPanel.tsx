@@ -1,542 +1,139 @@
-import { type ReactNode, useCallback, useSyncExternalStore } from "react";
-import {
-  Box,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-} from "@mui/material";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Box, Stack, Typography } from "@mui/material";
 
 import {
   KAFKA_FETCH_MODE_LABELS,
   type HostError,
   type KafkaStreamMonitorSnapshot,
 } from "../contracts";
-import { StudioDetailRow } from "../../../platform/ui/StudioPropertyRow";
-import { StudioAlert, StudioButton } from "../../../platform/ui/controls";
-import { studioSpace } from "../../../platform/ui/muiSpacing";
+import {
+  StudioAlert,
+  StudioButton,
+  StudioMenuItem as MenuItem,
+  StudioSelect as Select,
+} from "../../../platform/ui/controls";
 
 import {
-  RENDERER_STREAM_MONITOR_PENDING_EVENT_LIMIT,
-  RENDERER_STREAM_MONITOR_PRESSURE_LIMITS,
   type RendererStreamMonitorObserver,
-  type RendererStreamMonitorSample,
-  type RendererStreamMonitorSnapshot,
+  initialRendererStreamMonitorSample,
 } from "./stream-monitor-observer";
-import { DiagnosticMetric } from "./DiagnosticMetric";
+import type { KafkaConsumptionStopLabel } from "./workbench-status";
 import { MetricPlot } from "./MetricPlot";
-import { StatusIndicator, type StatusIndicatorTone } from "./StatusIndicator";
+import { StatusIndicator } from "./StatusIndicator";
 import { TopicWorkspaceToolbar } from "./TopicWorkspaceToolbar";
-import { formatUtcTimestamp, formatUtcTimestampStacked } from "./timestamp-presentation";
-
-const RECENT_SAMPLE_PRESENTATION_LIMIT = 12;
+import { MonitorDetails, StreamMonitorDiagnostics } from "./StreamMonitorDiagnostics";
+import {
+  MONITOR_TIME_WINDOWS,
+  measurementAge,
+  monitorBytes,
+  monitorIsActive,
+  monitorLossRows,
+  monitorNumber,
+  monitorRateSamples,
+  monitorStatus,
+  monitorValue,
+  monitorWindow,
+  scopedHostHistory,
+  withinMonitorWindow,
+} from "./stream-monitor-presentation";
 
 export interface StreamMonitorPanelProperties {
   readonly activeConnectionName: string | null;
+  readonly stopActionLabel: KafkaConsumptionStopLabel | null;
+  readonly consumptionStopping: boolean;
   readonly consumptionError: HostError | null;
   readonly history: readonly KafkaStreamMonitorSnapshot[];
   readonly onOpenActivity: () => void;
+  readonly onOpenObservedHealth: () => void;
+  readonly onStop: () => void;
   readonly rendererObserver: RendererStreamMonitorObserver;
   readonly selectedTopic: string | null;
   readonly snapshot: KafkaStreamMonitorSnapshot;
 }
 
-interface MetricRow {
+function OperatorMetric({
+  label,
+  value,
+  detail,
+}: {
   readonly label: string;
   readonly value: string;
-}
-
-type MonitorPresentationStatus =
-  | "backpressure"
-  | "degraded"
-  | "idle"
-  | "nominal"
-  | "sampling"
-  | "stale"
-  | "terminal"
-  | "unavailable";
-
-interface PresentedStatus {
-  readonly color: StatusIndicatorTone;
-  readonly explanation: string;
-  readonly kind: MonitorPresentationStatus;
-  readonly label: string;
-}
-
-function formatNumber(value: number): string {
-  return value.toLocaleString();
-}
-
-function formatBytes(value: number): string {
-  if (value >= 1_048_576) {
-    return `${(value / 1_048_576).toLocaleString(undefined, {
-      maximumFractionDigits: 2,
-    })} MiB`;
-  }
-  if (value >= 1_024) {
-    return `${(value / 1_024).toLocaleString(undefined, {
-      maximumFractionDigits: 2,
-    })} KiB`;
-  }
-  return `${formatNumber(value)} B`;
-}
-
-function formatDuration(value: number | null): string {
-  return value === null
-    ? "Unavailable"
-    : `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} ms`;
-}
-
-function formatRate(value: number | null): string {
-  return value === null
-    ? "Unavailable"
-    : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} msg/s`;
-}
-
-function formatSampleTime(value: string | null): string {
-  return value === null ? "Unavailable" : formatUtcTimestampStacked(value);
-}
-
-function countLabel(value: number, singular: string, plural: string): string {
-  return `${formatNumber(value)} ${value === 1 ? singular : plural}`;
-}
-
-function rendererPressureExplanation(renderer: RendererStreamMonitorSnapshot): string | null {
-  if (renderer.rendererDroppedMessages > 0) {
-    return "Renderer evictions confirm record loss.";
-  }
-  if (renderer.eventBacklog >= RENDERER_STREAM_MONITOR_PENDING_EVENT_LIMIT) {
-    return `Renderer event backlog reached its ${formatNumber(
-      RENDERER_STREAM_MONITOR_PENDING_EVENT_LIMIT,
-    )}-event observation bound.`;
-  }
-  if (
-    renderer.eventToCommitMs !== null &&
-    renderer.eventToCommitMs > RENDERER_STREAM_MONITOR_PRESSURE_LIMITS.eventToCommitMs
-  ) {
-    return `Host-event-to-commit time exceeded ${formatNumber(
-      RENDERER_STREAM_MONITOR_PRESSURE_LIMITS.eventToCommitMs,
-    )} ms.`;
-  }
-  if (
-    renderer.filterDurationMs !== null &&
-    renderer.filterDurationMs > RENDERER_STREAM_MONITOR_PRESSURE_LIMITS.filterDurationMs
-  ) {
-    return `Message filtering work exceeded ${formatNumber(
-      RENDERER_STREAM_MONITOR_PRESSURE_LIMITS.filterDurationMs,
-    )} ms.`;
-  }
-  if (
-    renderer.renderDurationMs !== null &&
-    renderer.renderDurationMs > RENDERER_STREAM_MONITOR_PRESSURE_LIMITS.renderDurationMs
-  ) {
-    return `Message workspace render work exceeded ${formatNumber(
-      RENDERER_STREAM_MONITOR_PRESSURE_LIMITS.renderDurationMs,
-    )} ms.`;
-  }
-  return null;
-}
-
-function lifecycleLabel(state: KafkaStreamMonitorSnapshot["state"]): string {
-  switch (state) {
-    case "unavailable":
-      return "Unavailable";
-    case "loading":
-      return "Loading";
-    case "fetching":
-      return "Fetching";
-    case "streaming":
-      return "Streaming";
-    case "complete":
-      return "Complete";
-    case "stopped":
-      return "Stopped";
-    case "empty":
-      return "Empty";
-    case "failed":
-      return "Failed";
-    case "stale":
-      return "Stale";
-  }
-}
-
-function presentedStatus(
-  snapshot: KafkaStreamMonitorSnapshot,
-  renderer: RendererStreamMonitorSnapshot,
-): PresentedStatus {
-  if (snapshot.state === "unavailable" || snapshot.status === "unavailable") {
-    return {
-      color: "neutral",
-      explanation: "No current stream evidence is available.",
-      kind: "unavailable",
-      label: "Unavailable",
-    };
-  }
-  if (snapshot.state === "stale" || snapshot.status === "stale") {
-    return {
-      color: "warning",
-      explanation: "The retained evidence no longer belongs to an active connection.",
-      kind: "stale",
-      label: "Stale",
-    };
-  }
-  if (snapshot.state === "failed" || snapshot.status === "degraded") {
-    return {
-      color: "error",
-      explanation: "The message operation failed; the last measurements are not healthy.",
-      kind: "degraded",
-      label: "Degraded",
-    };
-  }
-  const rendererPressure = rendererPressureExplanation(renderer);
-  if (snapshot.state === "complete" || snapshot.state === "stopped" || snapshot.state === "empty") {
-    const lifecycle = lifecycleLabel(snapshot.state);
-    const hostPressure =
-      snapshot.status === "backpressure"
-        ? "The host queue confirms record loss or capacity pressure."
-        : null;
-    const pressure = hostPressure ?? rendererPressure;
-    if (pressure !== null) {
-      return {
-        color: "warning",
-        explanation: `The ${lifecycle.toLowerCase()} operation is no longer sampling. Last ${
-          hostPressure === null ? "renderer" : "host"
-        } evidence: ${pressure}`,
-        kind: "terminal",
-        label: `${lifecycle} · Backpressure`,
-      };
-    }
-    const evidenceLabel = snapshot.status === "nominal" ? "Nominal" : "Idle";
-    return {
-      color: snapshot.status === "nominal" ? "success" : "neutral",
-      explanation: `The ${lifecycle.toLowerCase()} operation is no longer sampling.`,
-      kind: "terminal",
-      label: `${lifecycle} · ${evidenceLabel}`,
-    };
-  }
-  if (snapshot.status === "backpressure") {
-    return {
-      color: "warning",
-      explanation: "The host queue confirms record loss or capacity pressure.",
-      kind: "backpressure",
-      label: "Backpressure",
-    };
-  }
-  if (rendererPressure !== null) {
-    return {
-      color: "warning",
-      explanation: rendererPressure,
-      kind: "backpressure",
-      label: "Backpressure",
-    };
-  }
-  if (snapshot.state === "loading" || snapshot.state === "fetching") {
-    return {
-      color: "neutral",
-      explanation: "The request is active, but no complete delivery sample exists yet.",
-      kind: "sampling",
-      label: "Sampling",
-    };
-  }
-  if (snapshot.status === "idle") {
-    return {
-      color: "neutral",
-      explanation: "The stream is active with no queued records or measured delivery.",
-      kind: "idle",
-      label: "Idle",
-    };
-  }
-  if (renderer.samplingState === "sampling") {
-    return {
-      color: "neutral",
-      explanation: "Host delivery is current; visible-frame sampling is still in progress.",
-      kind: "sampling",
-      label: "Sampling",
-    };
-  }
-  if (renderer.samplingState === "hidden") {
-    return {
-      color: "neutral",
-      explanation: "Host delivery is current; renderer frame sampling is paused while hidden.",
-      kind: "unavailable",
-      label: "Renderer hidden",
-    };
-  }
-  if (renderer.samplingState === "unavailable") {
-    return {
-      color: "neutral",
-      explanation: "Host delivery is current; renderer frame evidence is unavailable.",
-      kind: "unavailable",
-      label: "Renderer unavailable",
-    };
-  }
-  if (snapshot.status === "nominal") {
-    return {
-      color: "success",
-      explanation: "Current evidence confirms delivery without observed record loss.",
-      kind: "nominal",
-      label: "Nominal",
-    };
-  }
-  return {
-    color: "neutral",
-    explanation: "Current monitor evidence does not support a health conclusion.",
-    kind: "unavailable",
-    label: "Unavailable",
-  };
-}
-
-function MetricList({
-  label,
-  rows,
-}: {
-  readonly label: string;
-  readonly rows: readonly MetricRow[];
+  readonly detail: string;
 }): React.JSX.Element {
   return (
-    <Box aria-label={label} component="dl" sx={{ m: 0 }}>
-      {rows.map((row) => (
-        <StudioDetailRow key={row.label} label={row.label} value={row.value} />
-      ))}
-    </Box>
-  );
-}
-
-function MonitorSection({
-  children,
-  title,
-}: {
-  readonly children: ReactNode;
-  readonly title: string;
-}): React.JSX.Element {
-  const headingId = `stream-monitor-${title.toLowerCase().replaceAll(" ", "-")}-heading`;
-  return (
-    <Box
-      aria-labelledby={headingId}
-      component="section"
-      sx={{ borderTop: 1, borderColor: "divider", minWidth: 0, py: studioSpace.space8 }}
-    >
-      <Typography
-        component="h3"
-        id={headingId}
-        sx={{ px: studioSpace.space12, pb: studioSpace.space8 }}
-        variant="subtitle2"
-      >
-        {title}
+    <Box component="dl" sx={{ m: 0, minWidth: 0, p: 1.5, border: 1, borderColor: "divider" }}>
+      <Typography component="dt" color="text.secondary" variant="body2">
+        {label}
       </Typography>
-      <Box
-        className="studio-monitor-section-body"
-        sx={{
-          bgcolor: "background.paper",
-          minWidth: 0,
-          overflow: "hidden",
-          "& tr > th:first-of-type, & tr > td:first-of-type": { pl: studioSpace.space12 },
-        }}
-      >
-        {children}
-      </Box>
+      <Typography component="dd" variant="h6" sx={{ m: 0, mt: 0.5, overflowWrap: "anywhere" }}>
+        {value}
+      </Typography>
+      <Typography color="text.secondary" variant="caption" component="dd" sx={{ m: 0, mt: 0.5 }}>
+        {detail}
+      </Typography>
     </Box>
   );
-}
-
-function queueRows(snapshot: KafkaStreamMonitorSnapshot): readonly MetricRow[] {
-  const queue = snapshot.queue;
-  return [
-    {
-      label: "Current queue",
-      value:
-        queue === null
-          ? "Unavailable"
-          : `${formatNumber(queue.currentMessages)} / ${formatNumber(queue.capacityMessages)} messages`,
-    },
-    {
-      label: "Peak queue",
-      value: queue === null ? "Unavailable" : countLabel(queue.peakMessages, "message", "messages"),
-    },
-    {
-      label: "Current queued bytes",
-      value:
-        queue === null
-          ? "Unavailable"
-          : `${formatBytes(queue.currentBytes)} / ${formatBytes(queue.capacityBytes)}`,
-    },
-    {
-      label: "Peak queued bytes",
-      value: queue === null ? "Unavailable" : formatBytes(queue.peakBytes),
-    },
-    {
-      label: "Drops",
-      value:
-        queue === null
-          ? "Unavailable"
-          : `${formatNumber(queue.droppedMessages)} total · ${formatNumber(
-              queue.droppedSincePrevious,
-            )} since prior sample`,
-    },
-    {
-      label: "Drop rate",
-      value: queue === null ? "Unavailable" : formatRate(queue.droppedPerSecond),
-    },
-  ];
-}
-
-function deliveryRows(snapshot: KafkaStreamMonitorSnapshot): readonly MetricRow[] {
-  const delivery = snapshot.delivery;
-  return [
-    {
-      label: "Tuning source",
-      value:
-        delivery === null
-          ? "Unavailable"
-          : delivery.tuningSource === "confirmed"
-            ? "Confirmed preferences"
-            : "Factory fallback",
-    },
-    {
-      label: "Effective batch",
-      value:
-        delivery === null ? "Unavailable" : countLabel(delivery.batchSize, "message", "messages"),
-    },
-    {
-      label: "Shaping interval",
-      value: delivery === null ? "Unavailable" : `${formatNumber(delivery.intervalMs)} ms`,
-    },
-    {
-      label: "History limit",
-      value:
-        delivery === null
-          ? "Unavailable"
-          : countLabel(delivery.historySamples, "sample", "samples"),
-    },
-    {
-      label: "Received",
-      value: delivery === null ? "Unavailable" : formatNumber(delivery.receivedMessages),
-    },
-    {
-      label: "Published by host",
-      value: delivery === null ? "Unavailable" : formatNumber(delivery.publishedMessages),
-    },
-    {
-      label: "Published batches",
-      value: delivery === null ? "Unavailable" : formatNumber(delivery.batchCount),
-    },
-    {
-      label: "Latest batch",
-      value:
-        delivery === null
-          ? "Unavailable"
-          : countLabel(delivery.lastBatchMessages, "message", "messages"),
-    },
-    {
-      label: "Delivery rate",
-      value: delivery === null ? "Unavailable" : formatRate(delivery.messagesPerSecond),
-    },
-    {
-      label: "Queue wait",
-      value: delivery === null ? "Unavailable" : formatDuration(delivery.queueWaitMs),
-    },
-    {
-      label: "Host publication",
-      value: delivery === null ? "Unavailable" : formatDuration(delivery.publicationDurationMs),
-    },
-  ];
-}
-
-function rendererRows(renderer: RendererStreamMonitorSnapshot): readonly MetricRow[] {
-  return [
-    {
-      label: "Event backlog",
-      value: countLabel(renderer.eventBacklog, "event", "events"),
-    },
-    {
-      label: "Event to React commit",
-      value: formatDuration(renderer.eventToCommitMs),
-    },
-    {
-      label: "Message filtering",
-      value: formatDuration(renderer.filterDurationMs),
-    },
-    {
-      label: "Message workspace render",
-      value: formatDuration(renderer.renderDurationMs),
-    },
-    {
-      label: "Retained rows",
-      value: countLabel(renderer.retainedMessages, "message", "messages"),
-    },
-    {
-      label: "Visible rows",
-      value: countLabel(renderer.visibleMessages, "message", "messages"),
-    },
-    {
-      label: "Renderer evictions",
-      value: countLabel(renderer.rendererDroppedMessages, "message", "messages"),
-    },
-    {
-      label: "Visible frame rate",
-      value: renderer.fps === null ? "Unavailable" : `${formatNumber(renderer.fps)} FPS`,
-    },
-    {
-      label: "Frame sampling",
-      value: lifecycleLabelForRenderer(renderer.samplingState),
-    },
-  ];
-}
-
-function lifecycleLabelForRenderer(state: RendererStreamMonitorSnapshot["samplingState"]): string {
-  switch (state) {
-    case "unavailable":
-      return "Unavailable";
-    case "sampling":
-      return "Sampling";
-    case "ready":
-      return "Ready";
-    case "hidden":
-      return "Document hidden";
-  }
-}
-
-function hostHistoryRows(
-  history: readonly KafkaStreamMonitorSnapshot[],
-): readonly KafkaStreamMonitorSnapshot[] {
-  return history.slice(-RECENT_SAMPLE_PRESENTATION_LIMIT);
-}
-
-function rendererHistoryRows(
-  history: readonly RendererStreamMonitorSample[],
-): readonly RendererStreamMonitorSample[] {
-  return history.slice(-RECENT_SAMPLE_PRESENTATION_LIMIT);
 }
 
 export function StreamMonitorPanel({
   activeConnectionName,
+  stopActionLabel,
+  consumptionStopping,
   consumptionError,
   history,
   onOpenActivity,
+  onOpenObservedHealth,
+  onStop,
   rendererObserver,
   selectedTopic,
   snapshot,
 }: StreamMonitorPanelProperties): React.JSX.Element {
   const subscribe = useCallback(
-    (listener: () => void): (() => void) => rendererObserver.subscribe(listener),
+    (listener: () => void) => rendererObserver.subscribe(listener),
     [rendererObserver],
   );
-  const getSnapshot = useCallback(
-    (): RendererStreamMonitorSnapshot => rendererObserver.getSnapshot(),
-    [rendererObserver],
+  const getSnapshot = useCallback(() => rendererObserver.getSnapshot(), [rendererObserver]);
+  const observedRenderer = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const renderer =
+    observedRenderer.operationId === snapshot.operationId
+      ? observedRenderer
+      : {
+          ...initialRendererStreamMonitorSample,
+          operationId: null,
+          messagesMounted: false,
+          history: [],
+        };
+  const now = Date.now();
+  const [windowSeconds, setWindowSeconds] = useState(60);
+  const activeHostSample = monitorIsActive(snapshot) ? snapshot.sampledAt : null;
+  useEffect(() => {
+    rendererObserver.setHostFreshness(activeHostSample);
+    return (): void => rendererObserver.setHostFreshness(null);
+  }, [activeHostSample, rendererObserver, snapshot.operationId]);
+  const status = monitorStatus(snapshot, now);
+  const window = monitorWindow(snapshot, now, windowSeconds);
+  const scopedHistory = scopedHostHistory(snapshot, history);
+  const hostSamples = scopedHistory.filter((sample) =>
+    withinMonitorWindow(sample.sampledAt, window),
   );
-  const renderer = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  const status = presentedStatus(snapshot, renderer);
-  const hostSampleUnavailable =
-    snapshot.state === "unavailable" || snapshot.status === "unavailable";
+  const rates = monitorRateSamples(scopedHistory, window);
+  const queue = snapshot.queue;
+  const delivery = snapshot.delivery;
+  const historical = !monitorIsActive(snapshot) || status.stale;
   const topic = snapshot.request?.topic ?? selectedTopic;
-  const recentHost = hostHistoryRows(history);
-  const recentRenderer = rendererHistoryRows(renderer.history);
-  const summary = (
-    <>
+  const occupancy =
+    queue === null
+      ? null
+      : Math.max(
+          queue.currentMessages / queue.capacityMessages,
+          queue.currentBytes / queue.capacityBytes,
+        ) * 100;
+  return (
+    <Box
+      aria-label="Stream monitor"
+      component="section"
+      sx={{ bgcolor: "background.paper", height: "100%", minHeight: 0, overflow: "auto" }}
+    >
       <TopicWorkspaceToolbar label="Monitor controls">
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component="h2" noWrap variant="subtitle2">
@@ -547,323 +144,211 @@ export function StreamMonitorPanel({
           ariaLabel="Stream monitor status"
           label={status.label}
           live="polite"
-          tone={status.color}
+          tone={status.tone}
         />
+        {stopActionLabel !== null ? (
+          <StudioButton
+            aria-label={`${stopActionLabel} ${topic ?? ""}`}
+            disabled={consumptionStopping}
+            onClick={onStop}
+            size="small"
+            variant="outlined"
+          >
+            {consumptionStopping ? "Stopping…" : stopActionLabel}
+          </StudioButton>
+        ) : null}
       </TopicWorkspaceToolbar>
-      {hostSampleUnavailable ? null : (
-        <Typography color="text.secondary" component="p" sx={{ px: 2, py: 1 }} variant="body2">
-          {status.explanation}
-        </Typography>
-      )}
-    </>
-  );
-
-  if (hostSampleUnavailable) {
-    return (
-      <Box
-        aria-label="Stream monitor"
-        component="section"
-        sx={{
-          bgcolor: "background.paper",
-          height: "100%",
-          minHeight: 0,
-          overflow: "auto",
-        }}
-      >
-        {summary}
-        <Box component="section" sx={{ maxWidth: 720, p: 2 }}>
+      {snapshot.state === "unavailable" ? (
+        <Box sx={{ p: 2 }}>
           <Typography component="h3" variant="subtitle2">
             No live sample for {topic ?? "the selected topic"}.
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }} variant="body2">
-            Activate the selected topic to start message consumption and collect current host and
-            renderer evidence.
+            Start a message request in Messages to collect delivery measurements.
           </Typography>
         </Box>
-      </Box>
-    );
-  }
-
-  return (
-    <Box
-      aria-label="Stream monitor"
-      component="section"
-      sx={{
-        bgcolor: "background.paper",
-        height: "100%",
-        minHeight: 0,
-        overflow: "auto",
-      }}
-    >
-      {summary}
-
-      <Box
-        aria-label="Current stream measurements"
-        component="section"
-        sx={{
-          bgcolor: "background.paper",
-          borderBottom: 1,
-          borderColor: "divider",
-          borderTop: 1,
-          display: "grid",
-          gridTemplateColumns: {
-            md: "repeat(5, minmax(0, 1fr))",
-            xs: "repeat(2, minmax(0, 1fr))",
-          },
-          m: 0,
-          "& > :last-child": { borderRight: 0 },
-        }}
-      >
-        <DiagnosticMetric
-          label="Queue depth"
-          value={
-            snapshot.queue === null
-              ? "Unavailable"
-              : `${formatNumber(snapshot.queue.currentMessages)} / ${formatNumber(snapshot.queue.capacityMessages)}`
-          }
-        />
-        <DiagnosticMetric
-          label="Delivery rate"
-          value={
-            snapshot.delivery === null
-              ? "Unavailable"
-              : formatRate(snapshot.delivery.messagesPerSecond)
-          }
-        />
-        <DiagnosticMetric
-          label="Host publication"
-          value={
-            snapshot.delivery === null
-              ? "Unavailable"
-              : formatDuration(snapshot.delivery.publicationDurationMs)
-          }
-        />
-        <DiagnosticMetric label="React commit" value={formatDuration(renderer.eventToCommitMs)} />
-        <DiagnosticMetric
-          label="Visible frames"
-          value={renderer.fps === null ? "Unavailable" : `${formatNumber(renderer.fps)} FPS`}
-        />
-      </Box>
-
-      {status.kind === "stale" ? (
-        <StudioAlert severity="warning" sx={{ mx: 2, my: 1 }}>
-          Retained evidence is stale. Start a new message request for current measurements.
-        </StudioAlert>
-      ) : null}
-
-      {status.kind === "degraded" ? (
-        <StudioAlert
-          action={
-            <StudioButton color="inherit" onClick={onOpenActivity} size="small">
-              Open activity
-            </StudioButton>
-          }
-          severity="error"
-          sx={{ mx: 2, my: 1 }}
-        >
-          <Typography component="p" variant="subtitle2">
-            {consumptionError?.summary ?? "Message consumption failed."}
-          </Typography>
-          <Typography component="p" variant="body2">
-            {consumptionError?.recovery ??
-              "Open Activity for the exact failure and recovery guidance."}
-          </Typography>
-        </StudioAlert>
-      ) : null}
-
-      <Box
-        aria-label="Stream trends"
-        component="section"
-        sx={{
-          display: "grid",
-          gap: 1.5,
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-          p: 2,
-        }}
-      >
-        <Typography component="h3" sx={{ gridColumn: "1 / -1" }} variant="subtitle2">
-          Trends
-        </Typography>
-        <MetricPlot
-          interpolation="step"
-          sampleLabels={recentHost.map(
-            (sample, index) => sample.sampledAt ?? `Sample ${String(index + 1)}`,
-          )}
-          series={[
-            {
-              label: "Queue",
-              values: recentHost.map((sample) => sample.queue?.currentMessages ?? null),
-            },
-          ]}
-          title="Queue depth trend"
-          unit="messages"
-        />
-        <MetricPlot
-          sampleLabels={recentHost.map(
-            (sample, index) => sample.sampledAt ?? `Sample ${String(index + 1)}`,
-          )}
-          series={[
-            {
-              label: "Delivery",
-              values: recentHost.map((sample) => sample.delivery?.messagesPerSecond ?? null),
-            },
-          ]}
-          title="Delivery rate trend"
-          unit="msg/s"
-        />
-        <MetricPlot
-          sampleLabels={recentRenderer.map(
-            (sample, index) => sample.sampledAt ?? `Sample ${String(index + 1)}`,
-          )}
-          series={[
-            {
-              label: "Event to commit",
-              values: recentRenderer.map((sample) => sample.eventToCommitMs),
-            },
-            { label: "Render", values: recentRenderer.map((sample) => sample.renderDurationMs) },
-          ]}
-          title="Renderer work trend"
-          unit="ms"
-        />
-        <MetricPlot
-          sampleLabels={recentRenderer.map(
-            (sample, index) => sample.sampledAt ?? `Sample ${String(index + 1)}`,
-          )}
-          series={[{ label: "Frames", values: recentRenderer.map((sample) => sample.fps) }]}
-          title="Visible frame-rate trend"
-          unit="FPS"
-        />
-      </Box>
-
-      <MonitorSection title="Context">
-        <MetricList
-          label="Stream context"
-          rows={[
-            {
-              label: snapshot.state === "stale" ? "Evidence cluster" : "Active cluster",
-              value: snapshot.connectionName ?? activeConnectionName ?? "Unavailable",
-            },
-            {
-              label: "Topic",
-              value: topic ?? "Unavailable",
-            },
-            {
-              label: "Fetch mode",
-              value:
-                snapshot.request === null
-                  ? "Unavailable"
-                  : KAFKA_FETCH_MODE_LABELS[snapshot.request.mode],
-            },
-            {
-              label: "Maximum results",
-              value:
-                snapshot.request === null
-                  ? "Unavailable"
-                  : formatNumber(snapshot.request.maxMessages),
-            },
-            {
-              label: "Lifecycle",
-              value: lifecycleLabel(snapshot.state),
-            },
-            {
-              label: "Last sampled",
-              value: formatSampleTime(snapshot.sampledAt),
-            },
-          ]}
-        />
-      </MonitorSection>
-
-      <MonitorSection title="Host queue">
-        <MetricList label="Host queue metrics" rows={queueRows(snapshot)} />
-      </MonitorSection>
-      <MonitorSection title="Delivery">
-        <MetricList label="Host delivery metrics" rows={deliveryRows(snapshot)} />
-      </MonitorSection>
-      <MonitorSection title="Renderer">
-        <MetricList label="Renderer metrics" rows={rendererRows(renderer)} />
-      </MonitorSection>
-      <MonitorSection title="Recent host samples">
-        {recentHost.length === 0 ? (
-          <Typography color="text.secondary" sx={{ px: 2, pb: 1 }} variant="body2">
-            No host samples retained.
-          </Typography>
-        ) : (
-          <TableContainer aria-label="Recent host samples scroll area" role="region" tabIndex={0}>
-            <Table aria-label="Recent host samples">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Sample</TableCell>
-                  <TableCell>State</TableCell>
-                  <TableCell align="right">Queue</TableCell>
-                  <TableCell align="right">Published</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {recentHost.map((sample, index) => (
-                  <TableRow key={`${sample.sampledAt ?? "unavailable"}-${String(index)}`}>
-                    <TableCell title={sample.sampledAt ?? undefined}>
-                      {sample.sampledAt === null
-                        ? "Unavailable"
-                        : formatUtcTimestamp(sample.sampledAt)}
-                    </TableCell>
-                    <TableCell>{lifecycleLabel(sample.state)}</TableCell>
-                    <TableCell align="right">
-                      {sample.queue === null
-                        ? "Unavailable"
-                        : formatNumber(sample.queue.currentMessages)}
-                    </TableCell>
-                    <TableCell align="right">
-                      {sample.delivery === null
-                        ? "Unavailable"
-                        : formatNumber(sample.delivery.publishedMessages)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </MonitorSection>
-      <MonitorSection title="Recent renderer samples">
-        {recentRenderer.length === 0 ? (
-          <Typography color="text.secondary" sx={{ px: 2, pb: 2 }} variant="body2">
-            No renderer samples retained.
-          </Typography>
-        ) : (
-          <TableContainer
-            aria-label="Recent renderer samples scroll area"
-            role="region"
-            tabIndex={0}
+      ) : (
+        <>
+          <Stack spacing={0.5} sx={{ px: 2, py: 1.5 }}>
+            <Typography variant="body2">{status.explanation}</Typography>
+            <Typography color="text.secondary" variant="caption">
+              {snapshot.connectionName ?? activeConnectionName ?? "Unknown cluster"} · {topic} ·{" "}
+              {snapshot.request === null
+                ? "Request unavailable"
+                : `${KAFKA_FETCH_MODE_LABELS[snapshot.request.mode]} · ${monitorNumber(snapshot.request.maxMessages)} record limit`}{" "}
+              · {measurementAge(snapshot.sampledAt, now)}
+              {historical ? " · Historical request evidence" : " · Current request"}
+            </Typography>
+          </Stack>
+          {status.stale ? (
+            <StudioAlert severity="warning" sx={{ mx: 2, mb: 1.5 }}>
+              Retained evidence is stale. Check the connection or start a new message request.
+            </StudioAlert>
+          ) : null}
+          {snapshot.state === "failed" ? (
+            <StudioAlert
+              action={
+                <StudioButton color="inherit" onClick={onOpenActivity} size="small">
+                  Open activity
+                </StudioButton>
+              }
+              severity="error"
+              sx={{ mx: 2, mb: 1.5 }}
+            >
+              <Typography variant="body2">
+                {consumptionError?.summary ?? "Message consumption failed."}{" "}
+                {consumptionError?.recovery ?? "Open Activity for failure and recovery guidance."}
+              </Typography>
+            </StudioAlert>
+          ) : null}
+          <Box
+            aria-label={historical ? "Last stream measurements" : "Current stream measurements"}
+            component="section"
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 1.5,
+              px: 2,
+            }}
           >
-            <Table aria-label="Recent renderer samples">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Sample</TableCell>
-                  <TableCell align="right">Backlog</TableCell>
-                  <TableCell align="right">Commit</TableCell>
-                  <TableCell align="right">FPS</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {recentRenderer.map((sample, index) => (
-                  <TableRow key={`${sample.sampledAt ?? "unavailable"}-${String(index)}`}>
-                    <TableCell title={sample.sampledAt ?? undefined}>
-                      {sample.sampledAt === null
-                        ? "Unavailable"
-                        : formatUtcTimestamp(sample.sampledAt)}
-                    </TableCell>
-                    <TableCell align="right">{formatNumber(sample.eventBacklog)}</TableCell>
-                    <TableCell align="right">{formatDuration(sample.eventToCommitMs)}</TableCell>
-                    <TableCell align="right">
-                      {sample.fps === null ? "Unavailable" : formatNumber(sample.fps)}
-                    </TableCell>
-                  </TableRow>
+            <OperatorMetric
+              label={historical ? "Last delivery rate" : "Published rate"}
+              value={monitorValue(delivery?.messagesPerSecond, "msg/s")}
+              detail={`${measurementAge(delivery?.rateSampledAt ?? null, now)} · ${monitorValue(delivery?.rateWindowMs, "ms")} window`}
+            />
+            <OperatorMetric
+              label={historical ? "Last buffered records" : "Buffered records"}
+              value={
+                queue === null
+                  ? "Unavailable"
+                  : `${monitorNumber(queue.currentMessages)} / ${monitorNumber(queue.capacityMessages)}`
+              }
+              detail={
+                queue === null
+                  ? "No buffer sample"
+                  : `${monitorBytes(queue.currentBytes)} / ${monitorBytes(queue.capacityBytes)} · ${monitorValue(occupancy, "%")} capacity`
+              }
+            />
+            <OperatorMetric
+              label="Host display omissions"
+              value={monitorValue(queue?.droppedMessages)}
+              detail="Cumulative host omissions; reasons below"
+            />
+            <OperatorMetric
+              label="Oldest buffered record"
+              value={
+                queue?.currentMessages === 0
+                  ? "None buffered"
+                  : monitorValue(queue?.oldestMessageAgeMs, "ms")
+              }
+              detail={
+                queue?.currentMessages === 0
+                  ? "Buffer is empty"
+                  : measurementAge(snapshot.sampledAt, now)
+              }
+            />
+          </Box>
+          <Box aria-label="Stream trends" component="section" sx={{ p: 2 }}>
+            <Stack
+              direction="row"
+              sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1.5 }}
+            >
+              <Typography component="h3" variant="subtitle2">
+                Delivery and buffering
+              </Typography>
+              <Select
+                size="small"
+                inputProps={{ "aria-label": "Chart time window" }}
+                value={windowSeconds}
+                onChange={(event) => setWindowSeconds(Number(event.target.value))}
+              >
+                {MONITOR_TIME_WINDOWS.map((seconds) => (
+                  <MenuItem key={seconds} value={seconds}>
+                    {seconds < 60 ? `${seconds}s` : `${seconds / 60} min`}
+                  </MenuItem>
                 ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </MonitorSection>
+              </Select>
+            </Stack>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                gap: 1.5,
+              }}
+            >
+              <MetricPlot
+                height={190}
+                timeDomain={window}
+                zeroBaseline
+                sampleLabels={rates.map((sample) => sample.sampledAt)}
+                series={[{ label: "Published", values: rates.map((sample) => sample.value) }]}
+                title="Delivery rate trend"
+                unit="msg/s"
+              />
+              <MetricPlot
+                height={190}
+                timeDomain={window}
+                zeroBaseline
+                interpolation="step"
+                sampleLabels={hostSamples.map((sample) => sample.sampledAt!)}
+                series={[
+                  {
+                    label: "Buffered",
+                    values: hostSamples.map((sample) => sample.queue?.currentMessages ?? null),
+                  },
+                ]}
+                title="Buffer depth trend"
+                unit="messages"
+              />
+            </Box>
+            <Typography color="text.secondary" variant="caption" sx={{ display: "block", mt: 1 }}>
+              Both charts use the same{" "}
+              {windowSeconds < 60 ? `${windowSeconds}-second` : `${windowSeconds / 60}-minute`} UTC
+              window. Gaps mean no measurement. Delivery is host publication to the display
+              transport.
+            </Typography>
+          </Box>
+          <Box aria-label="Historical display loss" component="section" sx={{ px: 2, pb: 2 }}>
+            <Typography component="h3" variant="subtitle2">
+              Display history and omissions
+            </Typography>
+            <Typography color="text.secondary" variant="body2" sx={{ my: 0.5 }}>
+              Totals belong to this request and do not indicate current pressure. Display retention
+              can remove older rows. These counters do not establish loss in Kafka.
+            </Typography>
+            <MonitorDetails
+              label="Display omission reasons"
+              rows={monitorLossRows(snapshot, renderer)}
+            />
+          </Box>
+          <StreamMonitorDiagnostics
+            snapshot={snapshot}
+            hostHistory={hostSamples}
+            renderer={renderer}
+            now={now}
+            window={window}
+          />
+        </>
+      )}
+      <Stack
+        direction="row"
+        sx={{
+          alignItems: "center",
+          px: 2,
+          py: 1,
+          gap: 1,
+          flexWrap: "wrap",
+          borderTop: 1,
+          borderColor: "divider",
+        }}
+      >
+        <Typography color="text.secondary" variant="body2">
+          For cluster and broker observations:
+        </Typography>
+        <StudioButton onClick={onOpenObservedHealth} size="small">
+          Observed health
+        </StudioButton>
+      </Stack>
     </Box>
   );
 }

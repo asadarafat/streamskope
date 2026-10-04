@@ -47,6 +47,7 @@ import {
   consumptionStateLabel,
   topicStatusLabel,
   isKafkaConsumptionActive,
+  kafkaConsumptionStopLabel,
 } from "./workbench-status";
 import { WorkbenchApplicationBar } from "./WorkbenchApplicationBar";
 import { WorkbenchCommandPalette } from "./WorkbenchCommandPalette";
@@ -164,7 +165,10 @@ export function StreamSkopeWorkbench({
     lastSequence: state.lastSequence,
     observer: rendererStreamMonitor,
     presentationActive: rendererPresentationActive,
+    messagesMounted: navigation === "topics" && topicWorkspace === "messages",
+    operationId: state.streamMonitor.current.operationId,
     rendererDroppedMessages: state.rendererDroppedMessages,
+    rendererWindowEvictions: state.rendererWindowEvictions,
     retainedMessages: state.messages.length,
     visibleMessages: visibleMessages.length,
   });
@@ -475,6 +479,18 @@ export function StreamSkopeWorkbench({
               consumptionError={state.consumptionError}
               history={state.streamMonitor.history}
               onOpenActivity={openActivity}
+              onOpenObservedHealth={() => selectNavigation("observations")}
+              onStop={() => void stopConsumption()}
+              stopActionLabel={
+                state.consumptionRequest?.topic === selectedTopic
+                  ? kafkaConsumptionStopLabel(
+                      state.consumptionState,
+                      state.consumptionRequest,
+                      state.consumptionError,
+                    )
+                  : null
+              }
+              consumptionStopping={consumptionStopping}
               rendererObserver={rendererStreamMonitor}
               selectedTopic={selectedTopic}
               snapshot={state.streamMonitor.current}
