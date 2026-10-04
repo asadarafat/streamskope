@@ -1,9 +1,11 @@
 import type { KafkaStreamMonitorSnapshot } from "../contracts";
 
-import type { RendererStreamMonitorSnapshot } from "./stream-monitor-observer";
+import {
+  MONITOR_STALE_AFTER_MS,
+  type RendererStreamMonitorSnapshot,
+} from "./stream-monitor-observer";
 import type { StatusIndicatorTone } from "./StatusIndicator";
 
-export const MONITOR_STALE_AFTER_MS = 5_000;
 export const MONITOR_TIME_WINDOWS = [30, 60, 300] as const;
 
 export function monitorNumber(value: number): string {

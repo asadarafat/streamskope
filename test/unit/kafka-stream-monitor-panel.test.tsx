@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "@mui/material";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -224,6 +224,38 @@ describe("operator Stream Monitor", () => {
     );
     expect(screen.getByText("Display transport is paused")).toBeVisible();
   });
+  it("advances historical age text from visible application frame observations", () => {
+    let monotonicTime = 0;
+    let frame: ((timestamp: number) => void) | undefined;
+    const observer = createRendererStreamMonitorObserver({
+      monotonicNow: () => monotonicTime,
+      wallNow: () => new Date(Date.now()),
+      isDocumentVisible: () => true,
+      requestFrame: (callback) => {
+        frame = callback;
+        return 1;
+      },
+      cancelFrame: () => undefined,
+    });
+    observer.setOperation("request-1");
+    const view = renderPanel({
+      snapshot: hostSnapshot({ state: "stopped" }),
+      stopActionLabel: null,
+      rendererObserver: observer,
+    });
+    act(() => {
+      vi.mocked(Date.now).mockReturnValue(now + 1000);
+      monotonicTime = 1000;
+      frame?.(monotonicTime);
+    });
+    expect(screen.getByLabelText("Last stream measurements")).toHaveTextContent("Measured 1s ago");
+    expect(screen.getByRole("status", { name: "Stream monitor status" })).toHaveTextContent(
+      "Stopped",
+    );
+    view.unmount();
+    observer.dispose();
+  });
+
   it("marks aged host evidence stale and preserves the last chart window", () => {
     const current = hostSnapshot({
       sampledAt: stamp(20),

@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { Box, MenuItem, Select, Stack, Typography } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 
 import {
   KAFKA_FETCH_MODE_LABELS,
   type HostError,
   type KafkaStreamMonitorSnapshot,
 } from "../contracts";
-import { StudioAlert, StudioButton } from "../../../platform/ui/controls";
+import {
+  StudioAlert,
+  StudioButton,
+  StudioMenuItem as MenuItem,
+  StudioSelect as Select,
+} from "../../../platform/ui/controls";
 
 import {
   type RendererStreamMonitorObserver,
@@ -98,12 +103,13 @@ export function StreamMonitorPanel({
           messagesMounted: false,
           history: [],
         };
-  const [now, setNow] = useState(Date.now);
+  const now = Date.now();
   const [windowSeconds, setWindowSeconds] = useState(60);
+  const activeHostSample = monitorIsActive(snapshot) ? snapshot.sampledAt : null;
   useEffect(() => {
-    const timer = globalThis.setInterval(() => setNow(Date.now()), 1_000);
-    return (): void => globalThis.clearInterval(timer);
-  }, []);
+    rendererObserver.setHostFreshness(activeHostSample);
+    return (): void => rendererObserver.setHostFreshness(null);
+  }, [activeHostSample, rendererObserver, snapshot.operationId]);
   const status = monitorStatus(snapshot, now);
   const window = monitorWindow(snapshot, now, windowSeconds);
   const scopedHistory = scopedHostHistory(snapshot, history);

@@ -33,6 +33,56 @@ function messageBatchEvent(sequence: number): HostEvent {
 }
 
 describe("renderer stream-monitor observer", () => {
+  it("expires host freshness once without inventing measurements and clears replaced or inactive deadlines", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-26T12:00:00.000Z");
+    const observer = createRendererStreamMonitorObserver();
+    const listener = vi.fn();
+    const unsubscribe = observer.subscribe(listener);
+    try {
+      observer.eventReceived(messageBatchEvent(1));
+      observer.recordFilterDuration(2);
+      observer.recordRenderDuration(3);
+      observer.commit({
+        lastSequence: 1,
+        rendererDroppedMessages: 0,
+        rendererWindowEvictions: 0,
+        retainedMessages: 1,
+        visibleMessages: 1,
+      });
+      listener.mockClear();
+      observer.setHostFreshness(new Date().toISOString());
+      const beforeExpiry = observer.getSnapshot();
+      vi.advanceTimersByTime(4000);
+      expect(listener).not.toHaveBeenCalled();
+      observer.setHostFreshness(new Date().toISOString());
+      vi.advanceTimersByTime(1001);
+      expect(listener).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(4000);
+      expect(listener).toHaveBeenCalledOnce();
+      expect(observer.getSnapshot()).not.toBe(beforeExpiry);
+      expect(observer.getSnapshot()).toEqual(beforeExpiry);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(60000);
+      expect(listener).toHaveBeenCalledOnce();
+      observer.setHostFreshness(new Date().toISOString());
+      expect(vi.getTimerCount()).toBe(1);
+      observer.setPresentationActive(false);
+      expect(vi.getTimerCount()).toBe(0);
+      observer.setPresentationActive(true);
+      expect(vi.getTimerCount()).toBe(1);
+      unsubscribe();
+      expect(vi.getTimerCount()).toBe(0);
+      observer.subscribe(listener);
+      expect(vi.getTimerCount()).toBe(1);
+      observer.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      observer.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it("publishes one immutable aggregate snapshot at the post-commit boundary", () => {
     let monotonicTime = 10;
     let wallTime = Date.UTC(2026, 6, 26, 9, 0, 0);

@@ -1,5 +1,7 @@
 import { KAFKA_STREAM_MONITOR_HISTORY_LIMIT, type HostEvent } from "../contracts";
 
+export const MONITOR_STALE_AFTER_MS = 5_000;
+
 export const RENDERER_STREAM_MONITOR_PENDING_EVENT_LIMIT = 512 as const;
 export const RENDERER_STREAM_MONITOR_PRESSURE_LIMITS = Object.freeze({
   eventToCommitMs: 120,
@@ -60,6 +62,7 @@ export interface RendererStreamMonitorObserver {
   setPresentationActive(active: boolean): void;
   setMessagesMounted(mounted: boolean): void;
   setOperation(operationId: string | null): void;
+  setHostFreshness(sampledAt: string | null): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -182,6 +185,8 @@ export function createRendererStreamMonitorObserver(
   const listeners = new Set<() => void>();
   const pendingEvents = new Map<number, PendingRendererEvent>();
   let activeFrameId: number | null = null;
+  let hostSampledAt: string | null = null;
+  let freshnessExpiry: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let frameCount = 0;
   let frameWindowStartedAt = 0;
@@ -202,6 +207,24 @@ export function createRendererStreamMonitorObserver(
     for (const listener of listeners) {
       listener();
     }
+  }
+
+  function clearFreshnessExpiry(): void {
+    clearTimeout(freshnessExpiry);
+    freshnessExpiry = undefined;
+  }
+
+  // One expiry for the current host sample; frame observations already refresh visible ages.
+  // Expiry notifies the view without changing any measurement time or adding history.
+  function scheduleFreshnessExpiry(): void {
+    clearFreshnessExpiry();
+    if (disposed || !presentationActive || listeners.size === 0 || hostSampledAt === null) return;
+    const remaining = Date.parse(hostSampledAt) + MONITOR_STALE_AFTER_MS + 1 - wallNow().getTime();
+    if (!Number.isFinite(remaining) || remaining <= 0) return;
+    freshnessExpiry = setTimeout(() => {
+      freshnessExpiry = undefined;
+      publish(freezeSnapshot(currentSample(snapshot), history));
+    }, remaining);
   }
 
   function publishBacklog(): void {
@@ -322,6 +345,8 @@ export function createRendererStreamMonitorObserver(
   function setOperation(operationId: string | null): void {
     if (disposed || snapshot.operationId === operationId) return;
     pendingEvents.clear();
+    clearFreshnessExpiry();
+    hostSampledAt = null;
     pendingFilterDurationMs = null;
     pendingRenderDurationMs = null;
     history = [];
@@ -408,6 +433,7 @@ export function createRendererStreamMonitorObserver(
       publish(freezeSnapshot(sample, history));
     },
     dispose(): void {
+      clearFreshnessExpiry();
       if (activeFrameId !== null) {
         cancelFrame(activeFrameId);
         activeFrameId = null;
@@ -461,6 +487,11 @@ export function createRendererStreamMonitorObserver(
       pendingRenderDurationMs = measuredDuration(durationMs);
     },
     setOperation,
+    setHostFreshness(sampledAt): void {
+      if (disposed) return;
+      hostSampledAt = sampledAt;
+      scheduleFreshnessExpiry();
+    },
     setMessagesMounted(mounted): void {
       if (disposed || messagesMounted === mounted) return;
       messagesMounted = mounted;
@@ -474,6 +505,7 @@ export function createRendererStreamMonitorObserver(
       }
       presentationActive = active;
       if (!active) {
+        clearFreshnessExpiry();
         if (activeFrameId !== null) {
           cancelFrame(activeFrameId);
           activeFrameId = null;
@@ -494,6 +526,7 @@ export function createRendererStreamMonitorObserver(
         return;
       }
       startFrameLoop();
+      scheduleFreshnessExpiry();
     },
     subscribe(listener): () => void {
       if (disposed) {
@@ -502,10 +535,12 @@ export function createRendererStreamMonitorObserver(
       listeners.add(listener);
       if (listeners.size === 1 && presentationActive) {
         startFrameLoop();
+        scheduleFreshnessExpiry();
       }
       return (): void => {
         listeners.delete(listener);
         if (listeners.size === 0 && !disposed) {
+          clearFreshnessExpiry();
           stopFrameLoop("unavailable");
         }
       };
