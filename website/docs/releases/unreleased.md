@@ -22,6 +22,13 @@ The internal host protocol changes from **47 to 48**. Host and renderer must be
 updated together; plugin API **4** is unchanged. This does not assign a new plugin
 release or change declared target-system compatibility.
 
+## Documentation
+
+Documentation publication now checks the latest immutable stable desktop release
+before build and deployment. Plugin guides separate source requirements from a
+verified catalog availability snapshot; source rehearsal records keep their exact
+revision and qualification limits.
+
 The next version will be assigned when a maintainer starts the release workflow.
 Plugin releases remain independent. These changes are not included in
 [v0.7.1](v0.7.1.md).

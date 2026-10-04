@@ -12,8 +12,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  select:
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.draft && !github.event.release.prerelease
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - id: release
+        name: Select the latest immutable stable desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/docs.py guard
+
   build:
-    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.draft
+    needs: select
+    if: needs.select.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -41,6 +58,8 @@ jobs:
           cache-dependency-path: website/requirements.txt
       - run: npm ci --no-audit --no-fund
       - name: Prepare documentation for the published desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           node --import tsx tools/package/release-version.ts desktop "${RELEASE_TAG#v}" --stamp
           npm run docs -- prepare
@@ -78,9 +97,16 @@ jobs:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ needs.build.outputs.revision }}
+      - name: Recheck the release immediately before deployment
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/docs.py guard
       - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        if: steps.release.outputs.publish == 'true'
         id: deployment
       - name: Verify published documentation
+        if: steps.release.outputs.publish == 'true'
         env:
           DOCS_URL: ${{ steps.deployment.outputs.page_url }}
           DOCS_REVISION: ${{ needs.build.outputs.revision }}

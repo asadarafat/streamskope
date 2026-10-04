@@ -138,7 +138,7 @@ class DocumentationVersionTests(unittest.TestCase):
             "| [v0.1.0+build.1](v0.1.0+build.1.md) | 0.1.0 | Historical release |\n")
         self.event = self.root / "release-event.json"
         self.event.write_text(json.dumps({"action": "published", "release": {
-            "tag_name": tag, "draft": False, "prerelease": "-" in version,
+            "tag_name": tag, "draft": False, "prerelease": "-" in version, "immutable": True,
             "body": f"# StreamSkope {tag}\n\nReviewed **final** notes, with edits from the draft.\n",
         }}))
         return {"GITHUB_EVENT_NAME": "release", "GITHUB_REF_NAME": tag,
@@ -221,11 +221,12 @@ class DocumentationVersionTests(unittest.TestCase):
         self.assertEqual(links["tag"], "v0.2.0")
         self.assertTrue(all("/v0.2.0/StreamSkope-0.2.0-" in a["url"] for a in links["assets"]))
 
-    def test_published_prerelease_keeps_its_exact_identity(self):
+    def test_published_prerelease_cannot_replace_stable_documentation(self):
         environment = self.release_environment("0.3.0-rc.1")
-        docs.publication.prepare_publication(self.root, environment)
-        self.assertEqual(docs.documentation_context(self.root, environment)["source_release"], "v0.3.0-rc.1")
-        self.assertIn("| 0.3.0-rc.1 | Published prerelease;", (self.root / "website/docs/releases/index.md").read_text())
+        before = self.qualification.read_text()
+        with self.assertRaisesRegex(ValueError, "stable desktop"):
+            docs.publication.prepare_publication(self.root, environment)
+        self.assertEqual(self.qualification.read_text(), before)
 
     def test_publication_links_only_the_exact_uploaded_qualification_asset(self):
         environment = self.release_environment()
@@ -272,7 +273,7 @@ class DocumentationVersionTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 docs.publication.prepare_publication(self.root, {**environment, **change})
         for key, value in (("draft", True), ("body", ""), ("body", None),
-                           ("tag_name", "plugins/nsp/v0.2.0")):
+                           ("tag_name", "plugins/nsp/v0.2.0"), ("immutable", False)):
             self.event.write_text(json.dumps({**event, "release": {**event["release"], key: value}}))
             with self.subTest(key=key), self.assertRaises(ValueError):
                 docs.publication.prepare_publication(self.root, environment)

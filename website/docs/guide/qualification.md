@@ -27,13 +27,16 @@ installers. Results from an earlier revision do not qualify changed source.
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
 | Native plugin dialogs and credential-backed restore       | Source-specific candidate lifecycle/recovery evidence, with release-source equivalence and exact artifact limits    |
 
-## Current-source qualification
+<span id="current-source-qualification"></span>
 
-The following checks exercised source candidates on **2026-10-03 UTC**. The
-[v0.7.1 report](https://github.com/asadarafat/streamskope/releases/download/v0.7.1/qualification-v0.7.1.json)
-records which candidate application sources match the published patch. These
-checks do not retroactively qualify older installers or establish a published-to-published
-upgrade. Plugin publication remains independent.
+## Source-bound rehearsal evidence
+
+The following rehearsals exercised the listed source candidates on **2026-10-03 UTC**.
+They are source-bound evidence, not an automatic pass for the desktop named at the
+top of this page. Use that desktop’s **Published release** section and its exact
+qualification report to establish source equivalence and remaining limits.
+These records do not establish a published-to-published upgrade or public plugin
+package availability. Plugin publication remains independent.
 The [sanitized qualification summary](../assets/qualification/lifecycle-2026-10-04.json)
 records the individual source revisions, package and retained-report hashes,
 results and limits. Plugin checks used built API 4 packages through an isolated

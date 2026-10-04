@@ -85,6 +85,7 @@ try {
     );
     const metadata = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(source)?.[1] ?? "";
     const unreleased = /^unreleased:\s*true\s*$/mu.test(metadata);
+    const pluginScope = /^plugin_scope:\s*(all|eda|nsp)\s*$/mu.exec(metadata)?.[1];
     const releaseTag = /^releases\/(v[^/]+)\/$/u.exec(route)?.[1];
     const expectedRelease =
       !unreleased && releaseTag !== undefined && releaseTag !== desktopRelease
@@ -98,9 +99,34 @@ try {
     );
     assert.equal(
       (await versionNotice.innerText()).includes("Applies to desktop"),
-      published && !unreleased && releaseTag === undefined,
+      published && !unreleased && releaseTag === undefined && pluginScope === undefined,
       `${route}: only a published release snapshot can claim desktop applicability`,
     );
+    if (published) {
+      assert.doesNotMatch(
+        await versionNotice.innerText(),
+        /Unreleased source changes|version not yet assigned/u,
+      );
+    }
+    const pluginNotice = page.getByRole("complementary", { name: "Plugin availability" });
+    if (pluginScope !== undefined) {
+      await expect(pluginNotice).toBeVisible();
+      await expect(pluginNotice).toContainText("Desktop and plugins release independently");
+      await expect(pluginNotice).toContainText("This guide describes source plugin behavior");
+      for (const plugin of pluginScope === "all" ? ["eda", "nsp"] : [pluginScope]) {
+        const manifest = JSON.parse(await readFile(`plugins/${plugin}/manifest.json`, "utf8"));
+        const row = pluginNotice.getByRole("row", { name: new RegExp(manifest.name, "u") });
+        await expect(row).toContainText(`API ${manifest.apiVersion} source`);
+        if (!published) await expect(row).toContainText("Availability not checked in this preview");
+      }
+      if (published) {
+        await expect(versionNotice).toContainText(`Desktop release: ${desktopRelease}`);
+        await expect(pluginNotice).toContainText("Catalog checked");
+        await expect(pluginNotice).not.toContainText("Availability not checked in this preview");
+      }
+    } else {
+      await expect(pluginNotice).toHaveCount(0);
+    }
     if (route === "plugins/versioning/") {
       for (const plugin of ["eda", "nsp"]) {
         const manifest = JSON.parse(await readFile(`plugins/${plugin}/manifest.json`, "utf8"));

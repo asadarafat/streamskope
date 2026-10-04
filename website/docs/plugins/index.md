@@ -1,5 +1,5 @@
 ---
-unreleased: true
+plugin_scope: all
 ---
 
 # Plugins
@@ -8,6 +8,11 @@ Plugins add connection setup and management for a particular platform to
 StreamSkope. Install one when you want the app to discover that platform's Kafka
 endpoints, obtain connection material, or manage a temporary capture for you.
 Ordinary Kafka connections work without a plugin.
+
+Read the **Plugin availability** notice above before following a setup guide.
+It separates the source behavior described here from packages available for the
+documented desktop. Desktop and plugin publication are independent; installing a
+new desktop does not make an unreleased plugin update available.
 
 The plugin adds its own action under **Add connection**, a setup dialog, and
 actions for its saved profiles. Once connected, you use the same **Topics**,

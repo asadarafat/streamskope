@@ -435,20 +435,27 @@ site. Pages includes the desktop publication event's body automatically in its
 release snapshot. Keep the archival documentation PR for repository history and
 subsequent snapshots; it does not deploy Pages or change an existing release snapshot.
 
-For a desktop publication, update the published download baseline and applicable
-unreleased notices. Reset only the commentary shipped in that component's release;
+For a desktop publication, update the published download baseline. Keep desktop
+release identity separate from source plugin guide scope and package availability. Reset only the commentary shipped in that component's release;
 preserve notes for work merged after its source commit and other unreleased
 components. Keep historical notes intact. The website's
 `project.extra.desktop_release` identifies an actually published installer;
 starting release CI does not change it. Release qualification can validate the
 stamped notes while downloads still point to the last published desktop.
 
-The **Pages** workflow runs only when a desktop GitHub release is **published**
-(including prereleases). PRs, `main` pushes, tag creation, draft releases and plugin
+The **Pages** workflow deploys only the highest published **stable desktop SemVer**.
+Prereleases remain downloadable from GitHub but do not replace the stable site. PRs, `main` pushes, tag creation, draft releases and plugin
 publication do not deploy it; there is no manual Pages dispatch. They still run
 the usual documentation qualification where applicable.
 
-Pages checks out the release event's exact commit, even if `main` has advanced.
+Before building, Pages reads all GitHub release pages and selects the highest
+stable desktop SemVer, ignoring plugin tags, publication dates and the mutable
+**Latest** designation. It requires an immutable release and checks that its tag
+resolves to the event commit. An older event is skipped; API failure or an
+unverifiable identity fails closed. Pages checks out that exact commit, even if
+`main` has advanced, and repeats selection immediately before deployment.
+Existing workflow runs retain their original workflow revision; these guards apply
+to releases containing this policy.
 It stamps a disposable checkout with that desktop version using the existing
 release tool, then `npm run docs -- prepare` aligns the download baseline and
 release index, copies the publication event's exact release body, and removes
@@ -456,17 +463,29 @@ that checkout's unreleased page. Main stays `0.0.0-dev`. Local and PR previews
 label source guides as unreleased rather than claiming they apply to the last
 published desktop; stamped release previews remain explicitly labeled previews.
 
-Publication refuses a non-release event, wrong source commit, mismatched version
-or incomplete notes. The build also verifies that the exact three installers and
+Publication refuses a non-release event, prerelease, mutable release, wrong source
+commit, mismatched version or incomplete notes. The build also verifies that the exact three installers and
 `SHA256SUMS` exist in the published release, qualifies the site and then verifies
 its public revision, key pages and bookmark redirects. Docs changes become public
 with the next desktop release. To recover a failed deployment, rerun that release's
-Pages run after inspecting its failure; never build newer main under an older
+Pages run after inspecting its failure, provided it is still the latest stable desktop; never build newer main under an older
 release label. Set Pages source to **GitHub Actions** and permit desktop release
 tags (`v*`) in the `github-pages` environment's deployment rules.
 
-Source plugin declarations are rendered directly from the release's manifests;
-keep published and historical package facts in the compatibility/release references.
+Plugin pages use `plugin_scope: eda`, `nsp` or `all`, not a generic `unreleased` flag.
+The source requirements come from the release checkout's plugin manifests.
+During publication preparation, the production official catalog selects compatible
+published packages for the documented desktop and verifies their manifest digests.
+A source-bound, timestamped snapshot supplies the separate plugin availability
+notice; builds reuse that snapshot. A catalog error fails preparation rather than
+claiming that no package exists. Local/PR previews stay offline and say availability
+was not checked. The catalog snapshot does not prove every source procedure shipped
+in the selected plugin, nor does it qualify live behavior.
+
+`npm run docs -- qualify` rejects ambiguous guide metadata and qualification
+headings. Only the development release-notes page may carry generic `unreleased`
+metadata; it is removed before publication. Source rehearsal evidence must name its
+source and limits, without presenting itself as current-release qualification.
 Installation links use the prepared `project.extra.desktop_release`; keep the
 download marker in the installation page. The publication-only preparation
 changes the build checkout, not the source tag or main.
