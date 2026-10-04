@@ -1,7 +1,16 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { StrictMode } from "react";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { HostCommand, HostError, StreamSkopeHost } from "../../src/features/kafka/contracts";
@@ -15,6 +24,7 @@ import {
 } from "../../src/features/kafka/ui/ObservedHealthPage";
 import { ObservationPartitionTable } from "../../src/features/kafka/ui/ObservationPartitionTable";
 import { ObservationAnalysisPanel } from "../../src/features/kafka/ui/ObservationAnalysisPanel";
+import { useObservedHealth } from "../../src/features/kafka/ui/use-observed-health";
 import { StreamSkopeThemeProvider } from "../../src/platform/ui/StreamSkopeThemeProvider";
 import { testHostExecute } from "../support/host-response";
 import { observation, observationSeries } from "../support/observation-fixture";
@@ -236,13 +246,76 @@ it("shows measured lag and blocks an immediate second capture with a visible coo
     1,
   );
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(9_999);
+    await vi.advanceTimersByTimeAsync(9_000);
+  });
+  expect(screen.getByRole("status", { name: "Observation collection status" })).toHaveTextContent(
+    "Next capture available in 1 second",
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(999);
   });
   expect(screen.getByRole("button", { name: "Capture observation" })).toBeDisabled();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1);
   });
   expect(screen.getByRole("button", { name: "Capture observation" })).toBeEnabled();
+});
+
+it("owns one absolute clock deadline only while cooldown or freshness can change", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const { result } = renderHook(() => useObservedHealth(f.host));
+  await ready();
+  expect(vi.getTimerCount()).toBe(0);
+  await act(async () => {
+    await result.current.capture({
+      topic: "events",
+      groupId: "workers",
+      thresholds: { lag: null, requestMs: null },
+    });
+  });
+  expect(result.current.cooldownSeconds).toBe(10);
+  expect(vi.getTimerCount()).toBe(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10_000);
+  });
+  expect(result.current.cooldownSeconds).toBe(0);
+  expect(result.current.fresh).toBe(true);
+  expect(vi.getTimerCount()).toBe(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(35_000);
+  });
+  expect(result.current.fresh).toBe(true);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+  expect(result.current.fresh).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("disposes its cooldown and collection deadlines on navigation without another capture", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const { result, unmount } = renderHook(() => useObservedHealth(f.host));
+  await ready();
+  act(() => {
+    result.current.start({
+      topic: "events",
+      groupId: "workers",
+      thresholds: { lag: null, requestMs: null },
+    });
+  });
+  await ready();
+  expect(f.commands.filter((command) => command.command === "observations.capture")).toHaveLength(
+    1,
+  );
+  expect(vi.getTimerCount()).toBe(2);
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(f.commands.filter((command) => command.command === "observations.capture")).toHaveLength(
+    1,
+  );
 });
 
 it("runs only opted-in captures and stops the timer immediately", async () => {

@@ -145,18 +145,22 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
   useEffect(() => {
     const observedAt = latest?.observedAt;
     const expiry = observedAt === undefined ? 0 : observedAt + limits.staleMs + 1;
-    const tick = (): void => setNow(Date.now());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = (): void => {
+      const timestamp = Date.now();
+      setNow(timestamp);
+      const remaining = nextCaptureAt - timestamp;
+      const nextSecond =
+        remaining > 0 ? nextCaptureAt - (Math.ceil(remaining / 1000) - 1) * 1000 : Infinity;
+      const nextDeadline = Math.min(nextSecond, expiry > timestamp ? expiry : Infinity);
+      if (Number.isFinite(nextDeadline))
+        timer = setTimeout(tick, Math.max(1, nextDeadline - timestamp));
+    };
     tick();
-    if (nextCaptureAt > Date.now()) {
-      const timer = setInterval(tick, 250);
-      return (): void => clearInterval(timer);
-    }
-    if (expiry > Date.now()) {
-      const timer = setTimeout(tick, expiry - Date.now());
-      return (): void => clearTimeout(timer);
-    }
-    return undefined;
-  }, [latest?.observedAt, nextCaptureAt, cooldownSeconds]);
+    return (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [latest?.observedAt, nextCaptureAt]);
 
   const capture = useCallback(
     async (request: ObservationInput): Promise<void> => {
@@ -232,7 +236,7 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
     void tick();
     return (): void => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
     };
   }, [running]);
   const stop = useCallback((): void => {

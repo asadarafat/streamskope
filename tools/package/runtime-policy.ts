@@ -12,6 +12,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     // Two-minute review expiry closes idle isolated destination connections.
     "src/features/kafka/application/record-replay-service.ts",
     "src/features/kafka/application/trust-acquisition-lifecycle.ts",
+    // Protected sampling owns one five-second deadline, cleared on settlement.
+    "src/features/kafka/application/observation-record-sample.ts",
     "src/features/kafka/facade/facade-support.ts",
     "src/features/kafka/engine/engine.ts",
     "src/features/kafka/engine/platformatic-latency.ts",
@@ -20,8 +22,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     // Each explicit decode owns a worker deadline cleared on every settlement path.
     "src/features/kafka/engine/record-codec.ts",
     "src/features/kafka/ui/LatencyWorkspace.tsx",
-    // Opted-in observation collection and one-shot sample freshness expiry.
-    "src/features/kafka/ui/ObservedHealthPage.tsx",
+    // Page-scoped opted-in collection and absolute cooldown/freshness deadlines; disposed on unmount.
+    "src/features/kafka/ui/use-observed-health.ts",
     // One-shot snapshot freshness expiry, cleared on navigation or replacement.
     "src/features/kafka/ui/RelationshipsPage.tsx",
     "src/features/kafka/ui/OperationalPreferencesDialog.tsx",
