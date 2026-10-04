@@ -233,7 +233,8 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
     });
     const cleanupDiagnostics = fetchDiagnosticCleanup(consumer, input.onFetchSample);
     let closing: Promise<void> | undefined;
-    const close = (force = false): Promise<void> => (closing ??= consumer.close(force));
+    const close = (force = false): Promise<void> =>
+      (closing ??= Promise.resolve(consumer.close(force)));
     const abort = (): void => {
       void close(true).catch(() => undefined);
     };

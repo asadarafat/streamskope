@@ -209,6 +209,9 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
+    await health.evaluate((element) => {
+      element.scrollTop = 0;
+    });
     await page.screenshot({
       path: testInfo.outputPath("observed-health-narrow.png"),
       animations: "disabled",
