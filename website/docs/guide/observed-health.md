@@ -78,10 +78,14 @@ unreadable or unsupported history file remains preserved until explicitly cleare
   background notification service.
 - Desktop history is stored privately in `history/kafka-observations.json` inside
   application data. Browser development retains history only for the host session.
-- Retention is bounded by eight resource identities, **240 samples per identity**,
+- History loaded or updated by the host is bounded by eight resource identities, **240 samples per identity**,
   24 hours of age and 4 MiB total. At a ten-second cadence, the sample cap holds
   approximately **40 minutes plus collection time**, rather than a full day of
   continuous readings. Older evidence is evicted first.
+
+The 24-hour cutoff filters loaded history; it does not schedule deletion. On
+desktop, expired entries remain on disk until a successful capture rewrites
+history or you explicitly clear it. There is no background erasure.
 
 Only aggregates, offsets and Kafka resource identities are retained. Payloads,
 raw keys, member identities and credentials are excluded. Clear history through
