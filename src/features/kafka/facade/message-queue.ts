@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import {
   HOST_PROTOCOL_VERSION,
   KAFKA_MESSAGE_LIMITS,
@@ -6,6 +8,26 @@ import {
 } from "../contracts";
 
 import type { ActiveFacadeConsumption, QueuedFacadeMessage } from "./facade-support";
+
+const retainedByteSizes = new WeakMap<QueuedFacadeMessage, number>();
+const serializedByteSizes = new WeakMap<QueuedFacadeMessage, number>();
+
+function retainedBytes(queued: QueuedFacadeMessage): number {
+  const cached = retainedByteSizes.get(queued);
+  if (cached !== undefined) return cached;
+  const bytes = kafkaMessageRetainedBytes(queued.message);
+  retainedByteSizes.set(queued, bytes);
+  return bytes;
+}
+
+/** Size only records reaching publication; queue eviction needs no serialized copy. */
+export function facadeMessageSerializedBytes(queued: QueuedFacadeMessage): number {
+  const cached = serializedByteSizes.get(queued);
+  if (cached !== undefined) return cached;
+  const bytes = Buffer.byteLength(JSON.stringify(queued.message), "utf8") + 1;
+  serializedByteSizes.set(queued, bytes);
+  return bytes;
+}
 
 // Reserve the actual topic plus the largest supported counters in each event envelope.
 export function facadeMessageBatchEnvelopeBytes(consumption: ActiveFacadeConsumption): number {
@@ -27,7 +49,7 @@ export function appendFacadeMessage(
   consumption: ActiveFacadeConsumption,
   queued: QueuedFacadeMessage,
 ): void {
-  const messageBytes = kafkaMessageRetainedBytes(queued.message);
+  const messageBytes = retainedBytes(queued);
   consumption.messages.push(queued);
   consumption.queuedBytes += messageBytes;
   while (
@@ -41,7 +63,7 @@ export function appendFacadeMessage(
         : "byteCapacity";
     const dropped = consumption.messages.shift();
     if (dropped === undefined) return;
-    consumption.queuedBytes -= kafkaMessageRetainedBytes(dropped.message);
+    consumption.queuedBytes -= retainedBytes(dropped);
     consumption.droppedMessages += 1;
     consumption.streamMonitoring.dropReasons[reason] += 1;
   }
@@ -67,10 +89,10 @@ export function takeFacadeMessageBatch(
   while (batch.length < maximumMessages && consumption.messages.length > 0) {
     const next = consumption.messages[0];
     if (next === undefined) break;
-    const nextBytes = kafkaMessageRetainedBytes(next.message);
+    const nextBytes = retainedBytes(next);
     if (
       nextBytes > KAFKA_MESSAGE_LIMITS.batchBytes ||
-      next.serializedBytes + envelopeBytes > KAFKA_MESSAGE_LIMITS.batchBytes
+      facadeMessageSerializedBytes(next) + envelopeBytes > KAFKA_MESSAGE_LIMITS.batchBytes
     ) {
       consumption.messages.shift();
       consumption.queuedBytes -= nextBytes;
@@ -78,16 +100,17 @@ export function takeFacadeMessageBatch(
       consumption.streamMonitoring.dropReasons.oversized += 1;
       continue;
     }
+    const nextSerializedBytes = facadeMessageSerializedBytes(next);
     if (
       batchBytes + nextBytes > KAFKA_MESSAGE_LIMITS.batchBytes ||
-      serializedBytes + next.serializedBytes > maximumSerializedBytes
+      serializedBytes + nextSerializedBytes > maximumSerializedBytes
     )
       break;
     consumption.messages.shift();
     consumption.queuedBytes -= nextBytes;
     batch.push(next);
     batchBytes += nextBytes;
-    serializedBytes += next.serializedBytes;
+    serializedBytes += nextSerializedBytes;
   }
   return batch;
 }

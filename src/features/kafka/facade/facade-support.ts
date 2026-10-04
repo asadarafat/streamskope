@@ -102,7 +102,6 @@ export interface ActiveFacadeConsumption {
 
 export interface QueuedFacadeMessage {
   readonly enqueuedAtMs: number;
-  readonly serializedBytes: number;
   readonly message: KafkaExploredMessage;
   readonly ruleOutput: KafkaRulePreferences;
 }

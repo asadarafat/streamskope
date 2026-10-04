@@ -59,7 +59,6 @@ const message: KafkaExploredMessage = Object.freeze({
 
 const queuedMessage: QueuedFacadeMessage = Object.freeze({
   enqueuedAtMs: 0,
-  serializedBytes: Buffer.byteLength(JSON.stringify(message)) + 1,
   message,
   ruleOutput: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.rules,
 });

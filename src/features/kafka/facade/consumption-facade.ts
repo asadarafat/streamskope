@@ -6,7 +6,6 @@ import {
   type HostError,
   type HostEvent,
   type KafkaMessage,
-  utf8ByteLength,
 } from "../contracts";
 import {
   ConnectionAttemptSupersededError,
@@ -166,7 +165,6 @@ export class ConsumptionFacadeController {
     }
     appendFacadeMessage(consumption, {
       enqueuedAtMs: this.bindings.monotonicNow(),
-      serializedBytes: utf8ByteLength(JSON.stringify(exploredMessage)) + 1,
       message: exploredMessage,
       ruleOutput: { ...this.bindings.preferences.currentSnapshot().preferences.rules },
     });

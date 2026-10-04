@@ -9,6 +9,7 @@ import type { ActiveFacadeConsumption, ActivityInput, QueuedFacadeMessage } from
 import {
   discardFacadeMessages,
   facadeMessageBatchEnvelopeBytes,
+  facadeMessageSerializedBytes,
   takeFacadeMessageBatch,
 } from "./message-queue";
 import { aggregateFacadeRuleOutputs, ruleNotificationEvent } from "./rule-output";
@@ -89,7 +90,8 @@ export function flushFacadeMessages(
     batchCount += 1;
     lastBatchMessages = batch.length;
     serializedBytesRemaining -=
-      envelopeBytes + batch.reduce((bytes, queued) => bytes + queued.serializedBytes, 0);
+      envelopeBytes +
+      batch.reduce((bytes, queued) => bytes + facadeMessageSerializedBytes(queued), 0);
     bindings.publish({
       event: "messages.batch",
       payload: {
