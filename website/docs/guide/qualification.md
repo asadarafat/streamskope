@@ -51,9 +51,10 @@ local catalog; they do not establish public package availability.
 | macOS ARM64 installer recovery      | Passed: published 0.6.0 DMG replaced by a source `0.0.0-dev` installer; candidate restart, full baseline-backup restoration and filtered export without re-entering credentials                | Source `c284afc`; [hosted run](https://github.com/asadarafat/streamskope/actions/runs/37160807855) |
 | Windows x64 installer recovery      | Passed: published 0.6.0 NSIS installer replaced by a source `0.0.0-dev` installer; candidate restart, full baseline-backup restoration and filtered export using Windows DPAPI                 | Source `c284afc`; [hosted run](https://github.com/asadarafat/streamskope/actions/runs/37160807855) |
 
-The merged application and plugin source, plus npm manifests and lockfile, match
-the passing EDA, NSP native UI and native installer runs listed above. The summary
-records those Git object identities. A complete local check on tree `10c0b1e`
+At the time of those rehearsals, the candidate application and plugin source,
+plus npm manifests and lockfile, matched the passing EDA, NSP native UI and native
+installer runs listed above. The summary records those historical Git object
+identities; they do not establish equivalence to later source changes. A complete local check on tree `10c0b1e`
 (identical to merged `552de73`) passed 2,379 tests across 290 files, Go race and
 dependency checks, the original 60-second soak, 50 HTML pages and 45 documentation
 browser routes including media. Configured live EDA (12 checks) and NSP (23 checks)
@@ -80,6 +81,37 @@ claimed. Linux launches the AppImage's extracted payload, leaving FUSE and deskt
 launcher integration outside this check. None of these installer recovery results
 establishes cross-account credential transfer, lost-keyring recovery or plugin
 rollback. Historical published-release evidence below remains unchanged.
+
+## Topic Monitor candidate: 2026-10-04
+
+The Monitor changes in PRs [#52](https://github.com/asadarafat/streamskope/pull/52),
+[#53](https://github.com/asadarafat/streamskope/pull/53) and
+[#54](https://github.com/asadarafat/streamskope/pull/54) change application behavior.
+The [integrated shared CI and Monitor browser workflow](https://github.com/asadarafat/streamskope/actions/runs/37199802840)
+passed. Those checks do not include the local performance soak or live EDA.
+
+The [retained candidate report](../assets/qualification/topic-monitor-2026-10-04.json)
+records the 60-second soak source `63c1d7a`, its application source-tree identity,
+the original report digest, configuration, budgets and failing results. The
+merged Monitor implementation has the same application source tree. Documentation
+edits do not convert these results into passing qualification.
+
+| Check                               | Candidate result                                                                                         |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Display omissions                   | **Failed:** 28.56%; maximum 2%                                                                           |
+| CPU usage                           | **Failed:** 78.99% of one CPU core; maximum 60%                                                          |
+| Event-loop p99                      | **Failed:** 265.16 ms; maximum 150 ms                                                                    |
+| Memory bounds and record accounting | Passed in the same replay                                                                                |
+| Live EDA                            | Incomplete: capture readiness and lease renewal passed; Kafka connection timed out before record receipt |
+| EDA cleanup                         | Stop, owned-resource removal and repeat Stop passed                                                      |
+| Installed native upgrade/rollback   | No new rehearsal for the changed Monitor source                                                          |
+
+The replay exercised production ingestion, the facade and reducer with mixed
+payloads and clone round trips; it did not measure Kafka fetch, actual desktop
+IPC, React rendering or product interaction latency. The host was under memory
+pressure, but no controlled comparison establishes that as the cause. The budgets
+were not relaxed. Earlier passing lifecycle, soak and recovery results above remain
+historical evidence, rather than qualification of this candidate.
 
 ## Published release: v0.7.1
 
