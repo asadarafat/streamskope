@@ -25,12 +25,15 @@ installers. Results from an earlier revision do not qualify changed source.
 | EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal in the exact source-specific report                |
 | NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal in the exact source-specific report                  |
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
-| Native plugin dialogs and credential-backed restore       | Separate source-specific native evidence; published v0.7.0 has no recorded installed credential-service restore     |
+| Native plugin dialogs and credential-backed restore       | Source-specific candidate lifecycle/recovery evidence, with release-source equivalence and exact artifact limits     |
 
 ## Current-source qualification
 
-The following checks exercised unreleased source on **2026-10-03 UTC**. They do
-not update the published v0.7.0 installers or assign a desktop or plugin release.
+The following checks exercised source candidates on **2026-10-03 UTC**. The
+[v0.7.1 report](https://github.com/asadarafat/streamskope/releases/download/v0.7.1/qualification-v0.7.1.json)
+records which candidate application sources match the published patch. These
+checks do not retroactively qualify older installers or establish a published-to-published
+upgrade. Plugin publication remains independent.
 The [sanitized qualification summary](../assets/qualification/lifecycle-2026-10-04.json)
 records the individual source revisions, package and retained-report hashes,
 results and limits. Plugin checks used built API 4 packages through an isolated
@@ -75,7 +78,34 @@ launcher integration outside this check. None of these installer recovery result
 establishes cross-account credential transfer, lost-keyring recovery or plugin
 rollback. Historical published-release evidence below remains unchanged.
 
-## Published release: v0.7.0
+## Published release: v0.7.1
+
+[v0.7.1](../releases/v0.7.1.md) was published on **2026-10-04** from source
+[`be138de`](https://github.com/asadarafat/streamskope/commit/be138de69618f4cd136015dad22e93f831a71caa).
+The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.7.1/qualification-v0.7.1.json)
+separates the release checks from earlier source-bound lifecycle, recovery and
+performance runs. The [release workflow](https://github.com/asadarafat/streamskope/actions/runs/37181432250)
+passed. All installers remain unsigned.
+
+| Check | Recorded result and evidence |
+| --- | --- |
+| Shared release qualification | 2,384 tests across 291 files; 49 Python documentation tests and four JavaScript accessibility tests; 50 HTML pages and 45 browser routes, including media |
+| Native packages | Linux x64 AppImage, macOS ARM64 DMG and Windows x64 installer build and packaged-app checks passed on native runners |
+| Live installed plugin lifecycle | Separate source-bound EDA 26-check native run, NSP 23-check host run and NSP 12-check native run; source and environment limits are recorded above |
+| Native credential recovery | Earlier published 0.6.0 to source-candidate rehearsals passed on all three platforms; candidate restart and full same-account backup restoration passed |
+| Integrated local qualification | The identical application source passed shared checks, the original 60-second soak, documentation qualification and configured live EDA/NSP checks |
+| Unsigned EDA application | Complete OCI packaging passed; signed publication remains separate |
+| Download integrity | [SHA256SUMS](https://github.com/asadarafat/streamskope/releases/download/v0.7.1/SHA256SUMS) matches the three uploaded installer digests and includes the qualification report |
+
+This is not a recorded installed upgrade from published 0.7.0 to published 0.7.1.
+The earlier native rehearsals used a `0.0.0-dev` candidate with identical application
+source; test and documentation trees differ. They cover the same OS account and
+credential service, with Linux using the extracted AppImage payload. They do not
+establish cross-account recovery, lost-keyring recovery, FUSE integration or
+plugin rollback. The soak measures application ingestion, not UI, real IPC or
+Kafka latency. No existing plugin release or compatibility manifest was changed.
+
+## Historical qualification: v0.7.0
 
 [v0.7.0](../releases/v0.7.0.md) was published on **2026-10-03** from source
 [`05c972c`](https://github.com/asadarafat/streamskope/commit/05c972c615de1417b0243bc309ccb93e267c1809).
