@@ -64,7 +64,7 @@ describe("Kafka consumption facade lifecycle", () => {
             connectionName: "Local aio",
             state: cleanupRejects ? "failed" : "stopped",
             request: { topic: "test" },
-            delivery: { receivedMessages: 1, deliveredMessages: 1 },
+            delivery: { receivedMessages: 1, publishedMessages: 1 },
           },
         });
         expect(events.filter((event) => event.event === "consumption.state").at(-1)).toMatchObject({
@@ -173,7 +173,7 @@ describe("Kafka consumption facade lifecycle", () => {
     expect(events.filter((event) => event.event === "streamMetrics.changed").at(-1)).toMatchObject({
       payload: {
         state: "stopped",
-        delivery: { receivedMessages: 1, deliveredMessages: 1 },
+        delivery: { receivedMessages: 1, publishedMessages: 1 },
         request: { topic: "test" },
       },
     });
@@ -261,7 +261,7 @@ describe("Kafka consumption facade lifecycle", () => {
       payload: {
         state: "stopped",
         connectionName: "Local aio",
-        delivery: { receivedMessages: 1, deliveredMessages: 1 },
+        delivery: { receivedMessages: 1, publishedMessages: 1 },
       },
     });
   });

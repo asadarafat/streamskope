@@ -31,6 +31,21 @@ export class ElectronEventDelivery {
 
   enqueue(event: HostEvent): void {
     if (this.closed) return;
+    // Aggregate heartbeats can replace an older unsent observation of the same operation.
+    // Preserve loading evidence: it establishes renderer ownership for a new operation.
+    // Append at the end after removing it so intervening lifecycle events keep sequence order.
+    if (event.event === "streamMetrics.changed" && event.payload.state !== "loading") {
+      const previous = this.pending.findIndex(
+        (pending) =>
+          pending.event.event === "streamMetrics.changed" &&
+          pending.event.payload.state !== "loading" &&
+          pending.event.payload.operationId === event.payload.operationId,
+      );
+      if (previous >= 0) {
+        const removed = this.pending.splice(previous, 1)[0];
+        if (removed !== undefined) this.bytes -= removed.bytes;
+      }
+    }
     // Serialized-byte budget, not a claim about V8 heap or zero-copy transport.
     const bytes = Buffer.byteLength(JSON.stringify(event));
     const records = event.event === "messages.batch" ? event.payload.messages.length : 0;

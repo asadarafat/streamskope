@@ -15,6 +15,7 @@ import {
 import type { KafkaMessageStream } from "../../src/features/kafka/application";
 import { initialKafkaUiState, reduceKafkaHostEvent } from "../../src/features/kafka/ui/state";
 import { writePerformanceEvidence } from "../support/performance-evidence";
+import { StreamReplayAccounting } from "../support/stream-replay-accounting";
 import {
   command,
   createFacade,
@@ -49,7 +50,6 @@ async function main(): Promise<void> {
   const payloads = [bytes, ...(mixed ? [1024, 65536] : [])].map((size) => "x".repeat(size));
   let generated = 0;
   let generatedBytes = 0;
-  let delivered = 0;
   let batches = 0;
   let serializedBytes = 0;
   let stopped = false;
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   let peakQueue = 0;
   let peakQueueBytes = 0;
   let peakRetainedBytes = 0;
-  let hostDisplayDrops = 0;
+  const accounting = new StreamReplayAccounting();
   let rendererEvictions = 0;
   let peakRss = 0;
   let peakHeap = 0;
@@ -130,18 +130,17 @@ async function main(): Promise<void> {
     () => performance.now(),
   );
   const unsubscribe = facade.subscribe((event) => {
+    accounting.observe(event);
     if (event.event === "streamMetrics.changed") {
       peakQueue = Math.max(peakQueue, event.payload.queue?.peakMessages ?? 0);
       peakQueueBytes = Math.max(peakQueueBytes, event.payload.queue?.peakBytes ?? 0);
     }
     if (event.event === "messages.batch") {
       batches += 1;
-      delivered += event.payload.messages.length;
       if (roundTrip) serializedBytes += Buffer.byteLength(JSON.stringify(event));
       const received = roundTrip ? structuredClone(event) : event;
       const before = performance.now();
       state = reduceKafkaHostEvent(state, received);
-      hostDisplayDrops = Math.max(hostDisplayDrops, event.payload.droppedMessages);
       rendererEvictions = Math.max(rendererEvictions, state.rendererWindowEvictions ?? 0);
       reduction.record(Math.max(1, Math.round((performance.now() - before) * 1000)));
       for (const record of event.payload.messages) {
@@ -197,12 +196,13 @@ async function main(): Promise<void> {
     const cpu = process.cpuUsage(cpuStart);
     const cpuMs = (cpu.user + cpu.system) / 1000;
     const offered = rate * seconds;
+    const accounted = accounting.snapshot(generated);
     const boundsPassed =
       state.messages.length <= KAFKA_MESSAGE_LIMITS.retainedMessages &&
       peakRetainedBytes <= KAFKA_MESSAGE_LIMITS.retainedBytes &&
       peakQueue <= KAFKA_MESSAGE_LIMITS.queuedMessages &&
       peakQueueBytes <= KAFKA_MESSAGE_LIMITS.queuedBytes &&
-      delivered + hostDisplayDrops === generated;
+      accounted.accountingPassed;
     const evidence = {
       method:
         "Deterministic application-ingestion replay: production session, facade, live-rule evaluation and reducer in one Node process. Not Kafka fetch, actual IPC, React rendering or interaction latency.",
@@ -235,10 +235,9 @@ async function main(): Promise<void> {
       generatedPerSecond: (generated / elapsedMs) * 1000,
       generatedMiBPerSecond: (generatedBytes / 1048576 / elapsedMs) * 1000,
       ungeneratedOffered: Math.max(0, offered - generated),
-      delivered,
+      ...accounted,
       batches,
       serializedBytes,
-      hostDisplayDrops,
       rendererEvictions,
       retained: state.messages.length,
       retainedBytes: state.retainedMessageBytes,

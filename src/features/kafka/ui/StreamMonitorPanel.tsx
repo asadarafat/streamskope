@@ -416,8 +416,8 @@ function deliveryRows(snapshot: KafkaStreamMonitorSnapshot): readonly MetricRow[
       value: delivery === null ? "Unavailable" : formatNumber(delivery.receivedMessages),
     },
     {
-      label: "Delivered",
-      value: delivery === null ? "Unavailable" : formatNumber(delivery.deliveredMessages),
+      label: "Published by host",
+      value: delivery === null ? "Unavailable" : formatNumber(delivery.publishedMessages),
     },
     {
       label: "Published batches",
@@ -795,7 +795,7 @@ export function StreamMonitorPanel({
                   <TableCell>Sample</TableCell>
                   <TableCell>State</TableCell>
                   <TableCell align="right">Queue</TableCell>
-                  <TableCell align="right">Delivered</TableCell>
+                  <TableCell align="right">Published</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -815,7 +815,7 @@ export function StreamMonitorPanel({
                     <TableCell align="right">
                       {sample.delivery === null
                         ? "Unavailable"
-                        : formatNumber(sample.delivery.deliveredMessages)}
+                        : formatNumber(sample.delivery.publishedMessages)}
                     </TableCell>
                   </TableRow>
                 ))}

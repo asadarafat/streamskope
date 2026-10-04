@@ -145,6 +145,8 @@ export {
 export { parseExternalUrlOpenRequest, parseExternalUrlOpenResult } from "./external-url-validation";
 export {
   KAFKA_STREAM_MONITOR_HISTORY_LIMIT,
+  KAFKA_STREAM_PRESSURE_REASONS,
+  KAFKA_STREAM_QUEUE_BYTE_PRESSURE_THRESHOLD,
   KAFKA_STREAM_MONITOR_STATES,
   KAFKA_STREAM_MONITOR_STATUSES,
   KAFKA_STREAM_TUNING_SOURCES,
@@ -350,6 +352,8 @@ export type {
   KafkaStreamMonitorStatus,
   KafkaStreamTuningSource,
   KafkaStreamQueueMetrics,
+  KafkaStreamDropReasons,
+  KafkaStreamPressureReason,
 } from "./stream-monitor-types";
 export type {
   KafkaConfigurationEntry,

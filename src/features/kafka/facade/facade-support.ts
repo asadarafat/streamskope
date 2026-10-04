@@ -59,6 +59,9 @@ export interface ActiveFacadeConsumption {
   coverage?: KafkaReadCoverage;
   cancelScheduledFlush: (() => void) | undefined;
   readonly correlationId: string;
+  readonly operationId: string;
+  cancelScheduledSample: (() => void) | undefined;
+  presentationPaused: boolean;
   droppedMessages: number;
   flushScheduled: boolean;
   readonly messages: QueuedFacadeMessage[];
@@ -72,22 +75,33 @@ export interface ActiveFacadeConsumption {
   };
   readonly streamMonitoring: {
     batchCount: number;
-    deliveredMessages: number;
+    publishedMessages: number;
+    dropReasons: {
+      countCapacity: number;
+      byteCapacity: number;
+      oversized: number;
+      terminalDiscarded: number;
+    };
+    droppedSincePrevious: number;
+    rateSampledAt: string | null;
+    rateWindowMs: number | null;
+    publicationSampledAt: string | null;
+    queueWaitSampledAt: string | null;
     droppedPerSecond: number | null;
     lastBatchMessages: number;
     lastMeasuredAtMs: number;
     lastPublicationDurationMs: number | null;
     lastQueueWaitMs: number | null;
-    lastReportedDeliveredMessages: number;
+    lastReportedPublishedMessages: number;
     lastReportedDroppedMessages: number;
     messagesPerSecond: number | null;
     peakQueuedBytes: number;
     peakQueuedMessages: number;
-    queueStartedAtMs: number | null;
   };
 }
 
 export interface QueuedFacadeMessage {
+  readonly enqueuedAtMs: number;
   readonly message: KafkaExploredMessage;
   readonly ruleOutput: KafkaRulePreferences;
 }

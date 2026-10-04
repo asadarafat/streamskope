@@ -65,11 +65,12 @@ function hostSnapshot(
   overrides: Partial<KafkaStreamMonitorSnapshot> = {},
 ): KafkaStreamMonitorSnapshot {
   return {
+    operationId: "monitor-operation",
     connectionName: "Local aio-kafka",
     delivery: {
       batchCount: 2,
       batchSize: 200,
-      deliveredMessages: 8,
+      publishedMessages: 8,
       historySamples: 50,
       intervalMs: 20,
       lastBatchMessages: 3,
@@ -78,8 +79,15 @@ function hostSnapshot(
       queueWaitMs: 1.25,
       receivedMessages: 10,
       tuningSource: "confirmed",
+      rateSampledAt: "2026-07-26T09:00:00.000Z",
+      rateWindowMs: 1_000,
+      publicationSampledAt: "2026-07-26T09:00:00.000Z",
+      queueWaitSampledAt: "2026-07-26T09:00:00.000Z",
     },
     queue: {
+      oldestMessageAgeMs: 1.25,
+      pressureReasons: [],
+      dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
       capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
       capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
       currentBytes: 2_048,
@@ -103,6 +111,7 @@ function hostSnapshot(
 }
 
 const unavailableHost: KafkaStreamMonitorSnapshot = {
+  operationId: null,
   connectionName: null,
   delivery: null,
   queue: null,
@@ -198,7 +207,7 @@ describe("Material UI Stream Monitor", () => {
         delivery: {
           batchCount: 0,
           batchSize: 200,
-          deliveredMessages: 0,
+          publishedMessages: 0,
           historySamples: 50,
           intervalMs: 20,
           lastBatchMessages: 0,
@@ -207,8 +216,15 @@ describe("Material UI Stream Monitor", () => {
           queueWaitMs: null,
           receivedMessages: 0,
           tuningSource: "confirmed",
+          rateSampledAt: null,
+          rateWindowMs: null,
+          publicationSampledAt: null,
+          queueWaitSampledAt: null,
         },
         queue: {
+          oldestMessageAgeMs: null,
+          pressureReasons: [],
+          dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
           capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
           capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
           currentBytes: 0,
@@ -230,7 +246,7 @@ describe("Material UI Stream Monitor", () => {
       snapshot: hostSnapshot({
         delivery: {
           ...hostSnapshot().delivery!,
-          deliveredMessages: 7,
+          publishedMessages: 7,
         },
         queue: {
           ...hostSnapshot().queue!,

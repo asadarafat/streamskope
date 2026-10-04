@@ -12,7 +12,7 @@ import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { loadFixtureConnection, provisionSeededFixtureTopic } from "../support/kafka-fixture";
 
 describe("real Kafka stream monitoring", () => {
-  it("reports strict aggregate delivery evidence for a bounded aio-kafka fetch", async () => {
+  it("reports strict aggregate publication evidence for a bounded aio-kafka fetch", async () => {
     const seeded = await provisionSeededFixtureTopic();
     const fixture = await loadFixtureConnection();
     const connection: SecureConnectionInput = {
@@ -67,15 +67,15 @@ describe("real Kafka stream monitoring", () => {
       );
 
       const monitorEvents = events.filter((event) => event.event === "streamMetrics.changed");
-      const delivered = monitorEvents.find(
-        (event) => event.payload.delivery?.deliveredMessages === 1,
+      const published = monitorEvents.find(
+        (event) => event.payload.delivery?.publishedMessages === 1,
       );
-      expect(delivered).toMatchObject({
+      expect(published).toMatchObject({
         payload: {
           connectionName: "Stream monitor acceptance",
           delivery: {
             batchCount: 1,
-            deliveredMessages: 1,
+            publishedMessages: 1,
             lastBatchMessages: 1,
             receivedMessages: 1,
           },
@@ -94,10 +94,13 @@ describe("real Kafka stream monitoring", () => {
           status: "nominal",
         },
       });
-      expect(delivered?.payload.delivery?.messagesPerSecond).toBeGreaterThan(0);
-      expect(delivered?.payload.delivery?.publicationDurationMs).toBeGreaterThanOrEqual(0);
-      expect(delivered?.payload.delivery?.queueWaitMs).toBeGreaterThanOrEqual(0);
-      expect(monitorEvents).toHaveLength(4);
+      expect(published?.payload.delivery?.messagesPerSecond).toBeGreaterThan(0);
+      expect(published?.payload.delivery?.publicationDurationMs).toBeGreaterThanOrEqual(0);
+      expect(published?.payload.delivery?.queueWaitMs).toBeGreaterThanOrEqual(0);
+      expect(monitorEvents.length).toBeGreaterThanOrEqual(3);
+      expect(monitorEvents.every((event) => event.payload.operationId === "monitor-fetch")).toBe(
+        true,
+      );
 
       const visibleEvidence = JSON.stringify(monitorEvents);
       expect(visibleEvidence).not.toContain(seeded.config.oauthClientSecret);

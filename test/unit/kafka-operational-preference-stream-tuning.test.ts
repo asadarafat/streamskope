@@ -93,7 +93,7 @@ describe("Kafka operational-preference stream tuning", () => {
       payload: {
         delivery: {
           batchSize: 10,
-          deliveredMessages: 10,
+          publishedMessages: 10,
           historySamples: 10,
           intervalMs: 50,
           lastBatchMessages: 10,
@@ -104,8 +104,10 @@ describe("Kafka operational-preference stream tuning", () => {
           capacityMessages: 100,
           currentMessages: 90,
           droppedMessages: 5,
+          pressureReasons: [],
+          dropReasons: { countCapacity: 5, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
         },
-        status: "backpressure",
+        status: "nominal",
       },
     });
 

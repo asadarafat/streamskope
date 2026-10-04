@@ -1,16 +1,29 @@
-import { HOST_PROTOCOL_VERSION, type HostEvent } from "../contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  KAFKA_MESSAGE_LIMITS,
+  KAFKA_OPERATIONAL_PREFERENCE_LIMITS,
+  type HostEvent,
+} from "../contracts";
 
 import type { ActiveFacadeConsumption, ActivityInput, QueuedFacadeMessage } from "./facade-support";
-import { takeFacadeMessageBatch } from "./message-queue";
-import { aggregateFacadeRuleOutputs, ruleNotificationEvent } from "./rule-output";
 import {
-  completeStreamMeasurement,
-  recordStreamFlush,
-  streamQueueWaitMs,
-} from "./stream-monitor-facade";
+  discardFacadeMessages,
+  facadeMessageBatchEnvelopeBytes,
+  facadeMessageSerializedBytes,
+  takeFacadeMessageBatch,
+} from "./message-queue";
+import { aggregateFacadeRuleOutputs, ruleNotificationEvent } from "./rule-output";
+import { recordStreamFlush } from "./stream-monitor-facade";
+
+const MAX_PUBLICATION_BYTES_PER_TURN = 4 * 1_024 * 1_024;
+const MAX_TERMINAL_BATCHES =
+  KAFKA_OPERATIONAL_PREFERENCE_LIMITS.queueDepth.maximum /
+  KAFKA_OPERATIONAL_PREFERENCE_LIMITS.batchSize.minimum;
 
 interface FacadeMessageFlushBindings {
   readonly monotonicNow: () => number;
+  readonly now: () => Date;
+  readonly isPresentationPaused: () => boolean;
   readonly nextSequence: () => number;
   readonly publish: (event: HostEvent) => void;
   readonly recordActivity: (input: ActivityInput) => void;
@@ -18,7 +31,7 @@ interface FacadeMessageFlushBindings {
 
 export interface FacadeMessageFlushResult {
   readonly completedAtMs: number;
-  readonly droppedSincePrevious: number;
+  readonly publishedMessages: number;
 }
 
 function publishRuleOutputs(
@@ -48,48 +61,59 @@ export function flushFacadeMessages(
   bindings: FacadeMessageFlushBindings,
 ): FacadeMessageFlushResult {
   const startedAtMs = bindings.monotonicNow();
-  const queueWaitMs = streamQueueWaitMs(consumption, startedAtMs);
-  let deliveredMessages = 0;
+  let publishedMessages = 0;
   let batchCount = 0;
   let lastBatchMessages = 0;
+  let oldestPublishedAtMs: number | null = null;
+  let serializedBytesRemaining = MAX_PUBLICATION_BYTES_PER_TURN;
+  const envelopeBytes = facadeMessageBatchEnvelopeBytes(consumption);
   const delivered: QueuedFacadeMessage[] = [];
-  do {
+  // A terminal operation has a finite synchronous budget; it never waits for an ACK.
+  // Pressure is rechecked after every publish because transport callbacks are synchronous.
+  while (
+    consumption.messages.length > 0 &&
+    !bindings.isPresentationPaused() &&
+    batchCount < (drainAll ? MAX_TERMINAL_BATCHES : 4) &&
+    (drainAll || publishedMessages < consumption.streamTuning.batchSize)
+  ) {
     const batch = takeFacadeMessageBatch(
       consumption,
       drainAll
         ? consumption.streamTuning.batchSize
-        : consumption.streamTuning.batchSize - deliveredMessages,
+        : consumption.streamTuning.batchSize - publishedMessages,
+      Math.min(KAFKA_MESSAGE_LIMITS.batchBytes, serializedBytesRemaining),
     );
-    if (batch.length > 0) {
-      delivered.push(...batch);
-      deliveredMessages += batch.length;
-      batchCount += 1;
-      lastBatchMessages = batch.length;
-      bindings.publish({
-        event: "messages.batch",
-        payload: {
-          droppedMessages: consumption.droppedMessages,
-          messages: batch.map((queued) => queued.message),
-          topic: consumption.request.topic,
-        },
-        sequence: bindings.nextSequence(),
-        version: HOST_PROTOCOL_VERSION,
-      });
-    }
-  } while (
-    consumption.messages.length > 0 &&
-    (drainAll || (batchCount < 4 && deliveredMessages < consumption.streamTuning.batchSize))
-  );
+    if (batch.length === 0) break;
+    oldestPublishedAtMs ??= batch[0]?.enqueuedAtMs ?? null;
+    delivered.push(...batch);
+    publishedMessages += batch.length;
+    batchCount += 1;
+    lastBatchMessages = batch.length;
+    serializedBytesRemaining -=
+      envelopeBytes +
+      batch.reduce((bytes, queued) => bytes + facadeMessageSerializedBytes(queued), 0);
+    bindings.publish({
+      event: "messages.batch",
+      payload: {
+        droppedMessages: consumption.droppedMessages,
+        messages: batch.map((queued) => queued.message),
+        topic: consumption.request.topic,
+      },
+      sequence: bindings.nextSequence(),
+      version: HOST_PROTOCOL_VERSION,
+    });
+  }
+  if (drainAll) discardFacadeMessages(consumption);
   publishRuleOutputs(consumption, delivered, bindings);
   const completedAtMs = bindings.monotonicNow();
-  const droppedSincePrevious = recordStreamFlush(consumption, {
+  recordStreamFlush(consumption, {
     batchCount,
-    completedAtMs,
-    deliveredMessages,
+    publishedMessages,
     lastBatchMessages,
     publicationDurationMs: Math.max(0, completedAtMs - startedAtMs),
-    queueWaitMs,
+    queueWaitMs:
+      oldestPublishedAtMs === null ? null : Math.max(0, startedAtMs - oldestPublishedAtMs),
+    sampledAt: bindings.now().toISOString(),
   });
-  completeStreamMeasurement(consumption, completedAtMs);
-  return { completedAtMs, droppedSincePrevious };
+  return { completedAtMs, publishedMessages };
 }

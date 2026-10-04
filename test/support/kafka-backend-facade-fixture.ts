@@ -285,6 +285,7 @@ export function createFacade(
   preferences?: KafkaOperationalPreferenceService,
   schemaRegistry?: SchemaRegistryPort,
   plugins?: PluginRuntimePort,
+  now?: () => Date,
 ): KafkaBackendFacade {
   let correlation = 0;
   const evaluator = new StreamSkopeKafkaRuleEvaluator();
@@ -322,7 +323,7 @@ export function createFacade(
     ),
     {
       createCorrelationId: () => `correlation-${++correlation}`,
-      now: () => new Date("2026-07-25T13:00:00.000Z"),
+      now: now ?? ((): Date => new Date("2026-07-25T13:00:00.000Z")),
       ...(monotonicNow === undefined ? {} : { monotonicNow }),
       ...(preferences === undefined ? {} : { preferences }),
       ...(schemaRegistry === undefined ? {} : { schemaRegistry }),

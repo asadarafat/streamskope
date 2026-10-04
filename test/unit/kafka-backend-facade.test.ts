@@ -469,13 +469,8 @@ describe("Kafka backend facade", () => {
     const port = new RecordingConnectionPort();
     port.openOperations.push(() => Promise.resolve(activeConnection));
     const scheduledFlushes: Array<() => void> = [];
-    const monotonicNow = vi
-      .fn<() => number>()
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(10)
-      .mockReturnValueOnce(20)
-      .mockReturnValueOnce(25)
-      .mockReturnValue(25);
+    let nowMs = 0;
+    const monotonicNow = (): number => nowMs;
     const facade = createFacade(
       port,
       (flush) => {
@@ -486,10 +481,12 @@ describe("Kafka backend facade", () => {
     const events: HostEvent[] = [];
     facade.subscribe((event) => {
       events.push(event);
+      if (event.event === "messages.batch") nowMs = 25;
     });
     await facade.execute(command("connection.connect", "request-connect"));
     await facade.execute(command("messages.start", "request-start"));
 
+    nowMs = 10;
     stream.push(message("1", "first-private-payload"));
     stream.push(message("2", "second-private-payload"));
     stream.push(message("3", "third-private-payload"));
@@ -497,18 +494,19 @@ describe("Kafka backend facade", () => {
       expect(stream.deliveredMessages).toBe(3);
     });
     expect(scheduledFlushes).toHaveLength(1);
+    nowMs = 20;
     scheduledFlushes.shift()?.();
 
     const monitorEvents = events.filter((event) => event.event === "streamMetrics.changed");
     const delivered = monitorEvents.find(
-      (event) => event.payload.delivery?.deliveredMessages === 3,
+      (event) => event.payload.delivery?.publishedMessages === 3,
     );
     expect(delivered).toMatchObject({
       payload: {
         connectionName: "Local aio",
         delivery: {
           batchCount: 1,
-          deliveredMessages: 3,
+          publishedMessages: 3,
           lastBatchMessages: 3,
           messagesPerSecond: 120,
           publicationDurationMs: 5,
@@ -538,7 +536,7 @@ describe("Kafka backend facade", () => {
     await facade.execute(command("messages.stop", "request-stop"));
     expect(events.filter((event) => event.event === "streamMetrics.changed").at(-1)).toMatchObject({
       payload: {
-        delivery: { deliveredMessages: 3 },
+        delivery: { publishedMessages: 3 },
         state: "stopped",
         status: "nominal",
       },
@@ -752,7 +750,7 @@ describe("Kafka backend facade", () => {
     expect(events.filter((event) => event.event === "streamMetrics.changed").at(-1)).toMatchObject({
       payload: {
         delivery: {
-          deliveredMessages: 0,
+          publishedMessages: 0,
           receivedMessages: 0,
         },
         state: "empty",
@@ -863,14 +861,14 @@ describe("Kafka backend facade", () => {
       payload: {
         delivery: {
           batchCount: KAFKA_MESSAGE_LIMITS.queuedMessages / KAFKA_MESSAGE_LIMITS.batchMessages,
-          deliveredMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
+          publishedMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
           receivedMessages: KAFKA_MESSAGE_LIMITS.queuedMessages + 1,
         },
         queue: {
           droppedMessages: 1,
           peakMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
         },
-        status: "backpressure",
+        status: "nominal",
       },
     });
   });
@@ -928,7 +926,13 @@ describe("Kafka backend facade", () => {
 
     const batches = events.filter((event) => event.event === "messages.batch");
     // Retention includes the separately retained preview as well as the payload.
-    expect(batches).toHaveLength(26);
+    expect(batches).toHaveLength(6);
+    expect(events.filter((event) => event.event === "streamMetrics.changed").at(-1)).toMatchObject({
+      payload: {
+        queue: { dropReasons: { byteCapacity: 2, terminalDiscarded: 20 }, droppedMessages: 22 },
+        delivery: { publishedMessages: 6, receivedMessages: 28 },
+      },
+    });
     expect(batches[0]).toMatchObject({
       payload: {
         droppedMessages: 2,
@@ -966,7 +970,7 @@ describe("Kafka backend facade", () => {
     await facade.shutdown();
   });
 
-  it("reports an oversize batch omission as backpressure without exposing content", async () => {
+  it("reports an oversize display omission separately from current pressure without exposing content", async () => {
     const stream = new ControlledMessageStream();
     const activeConnection = new RecordingActiveConnection();
     activeConnection.messageStreamOperations.push(() => Promise.resolve(stream));
@@ -995,7 +999,7 @@ describe("Kafka backend facade", () => {
       payload: {
         delivery: {
           batchCount: 0,
-          deliveredMessages: 0,
+          publishedMessages: 0,
           lastBatchMessages: 0,
           receivedMessages: 1,
         },
@@ -1005,7 +1009,7 @@ describe("Kafka backend facade", () => {
           droppedMessages: 1,
           peakMessages: 1,
         },
-        status: "backpressure",
+        status: "idle",
       },
     });
     expect(JSON.stringify(pressure)).not.toContain("private-");

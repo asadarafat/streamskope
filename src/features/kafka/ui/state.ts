@@ -156,6 +156,7 @@ const unavailableLatency: KafkaLatencySnapshot = {
 };
 
 const unavailableStreamMonitorSnapshot: KafkaStreamMonitorSnapshot = {
+  operationId: null,
   connectionName: null,
   delivery: null,
   queue: null,

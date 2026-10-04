@@ -20,23 +20,31 @@ function snapshot(
   sample: number,
   request: KafkaFetchRequest = firstRequest,
 ): KafkaStreamMonitorSnapshot {
-  const deliveredMessages = sample + 1;
+  const publishedMessages = sample + 1;
   return {
+    operationId: "monitor-operation",
     connectionName: "local-aio",
     delivery: {
-      batchCount: deliveredMessages,
+      batchCount: publishedMessages,
       batchSize: 200,
-      deliveredMessages,
+      publishedMessages,
       historySamples: 50,
       intervalMs: 20,
       lastBatchMessages: 1,
-      messagesPerSecond: deliveredMessages * 10,
+      messagesPerSecond: publishedMessages * 10,
       publicationDurationMs: 0.5,
       queueWaitMs: 1,
-      receivedMessages: deliveredMessages,
+      receivedMessages: publishedMessages,
       tuningSource: "confirmed",
+      rateSampledAt: "2026-07-26T09:00:00.000Z",
+      rateWindowMs: 1_000,
+      publicationSampledAt: "2026-07-26T09:00:00.000Z",
+      queueWaitSampledAt: "2026-07-26T09:00:00.000Z",
     },
     queue: {
+      oldestMessageAgeMs: null,
+      pressureReasons: [],
+      dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
       capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
       capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
       currentBytes: 0,
@@ -70,6 +78,7 @@ describe("Kafka stream-monitor UI state", () => {
   it("starts unavailable with no manufactured sample or history", () => {
     expect(initialKafkaUiState.streamMonitor).toEqual({
       current: {
+        operationId: null,
         connectionName: null,
         delivery: null,
         queue: null,
