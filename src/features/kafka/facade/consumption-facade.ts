@@ -354,6 +354,11 @@ export class ConsumptionFacadeController {
             }
             this.flushMessages(consumption, true);
             this.activeConsumption = undefined;
+            this.stoppingConsumption = {
+              consumption,
+              intent: this.consumptionIntent,
+              operation: undefined,
+            };
             this.bindings.liveRules.deactivate();
             const translated = this.bindings.translateFailure(error, {
               activeStateChanged: false,

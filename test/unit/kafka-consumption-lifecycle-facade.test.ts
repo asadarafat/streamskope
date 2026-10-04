@@ -28,6 +28,66 @@ afterEach(() => {
 });
 
 describe("Kafka consumption facade lifecycle", () => {
+  it.each([true, false])(
+    "retains the failed operation for subsequent Stop when automatic cleanup rejects=%s",
+    async (cleanupRejects) => {
+      const stream = new ControlledMessageStream();
+      const cleanupFailure = new Error("automatic cleanup failed");
+      if (cleanupRejects) vi.spyOn(stream, "close").mockRejectedValue(cleanupFailure);
+      const connection = new RecordingActiveConnection();
+      const openStream = vi.spyOn(connection, "openMessageStream");
+      connection.messageStreamOperations.push(() => Promise.resolve(stream));
+      const port = new RecordingConnectionPort();
+      port.openOperations.push(() => Promise.resolve(connection));
+      const facade = createFacade(port, () => undefined);
+      const events: HostEvent[] = [];
+      const failed = deferred<void>();
+      facade.subscribe((event) => {
+        events.push(event);
+        if (event.event === "consumption.state" && event.payload.state === "failed")
+          failed.resolve();
+      });
+      try {
+        await facade.execute(command("connection.connect", "connect"));
+        await facade.execute(command("messages.start", "original-operation"));
+        stream.push(message("queued"));
+        await settleAsyncIteration();
+        stream.fail(new Error("record iteration failed"));
+        await failed.promise;
+        expect(await facade.execute(command("messages.stop", "stop"))).toMatchObject({
+          ok: !cleanupRejects,
+        });
+        expect(
+          events.filter((event) => event.event === "streamMetrics.changed").at(-1),
+        ).toMatchObject({
+          payload: {
+            connectionName: "Local aio",
+            state: cleanupRejects ? "failed" : "stopped",
+            request: { topic: "test" },
+            delivery: { receivedMessages: 1, deliveredMessages: 1 },
+          },
+        });
+        expect(events.filter((event) => event.event === "consumption.state").at(-1)).toMatchObject({
+          payload: { receivedMessages: 1, droppedMessages: 0, request: { topic: "test" } },
+        });
+        expect(events.filter((event) => event.event === "messages.batch")).toHaveLength(1);
+        if (cleanupRejects) {
+          expect(await facade.execute(command("messages.start", "replacement"))).toMatchObject({
+            ok: false,
+          });
+          expect(openStream).toHaveBeenCalledOnce();
+          expect(
+            events.some(
+              (event) => event.event === "consumption.state" && event.payload.state === "stopped",
+            ),
+          ).toBe(false);
+        }
+      } finally {
+        await facade.shutdown().catch(() => undefined);
+      }
+    },
+  );
+
   it("coalesces concurrent Stops and publishes one terminal result for the original queue", async () => {
     const closing = deferred<void>();
     const stream = new ControlledMessageStream();

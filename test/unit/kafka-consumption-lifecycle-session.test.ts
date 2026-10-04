@@ -59,6 +59,47 @@ afterEach(() => {
 });
 
 describe("Kafka application consumption lifecycle", () => {
+  it.each(["finite-end", "iterator-failure"] as const)(
+    "retains automatic cleanup failure after %s and rejects later Stop and Start",
+    async (ending) => {
+      const stream = new ControlledMessageStream();
+      const cleanupFailure = new Error("automatic stream cleanup failed");
+      const iterationFailure = new Error("record iteration failed");
+      const close = vi.spyOn(stream, "close").mockRejectedValue(cleanupFailure);
+      const connection = new RecordingConnection();
+      connection.messageStreamOperations.push(() => Promise.resolve(stream));
+      const port = new RecordingConnectionPort();
+      port.openOperations.push(() => Promise.resolve(connection));
+      const session = new KafkaApplicationSession(port);
+      const failed = deferred<unknown>();
+      const observer = {
+        onComplete: vi.fn(),
+        onEmpty: vi.fn(),
+        onFailure: vi.fn((error: unknown): void => {
+          failed.resolve(error);
+        }),
+        onMessage: vi.fn(),
+      };
+      await session.connect(firstConnection);
+      await session.startConsumption(
+        ending === "finite-end" ? { ...tailRequest(), mode: "earliest" } : tailRequest(),
+        observer,
+      );
+      if (ending === "finite-end") stream.end();
+      else stream.fail(iterationFailure);
+      expect(await failed.promise).toBe(
+        ending === "finite-end" ? cleanupFailure : iterationFailure,
+      );
+      expect(observer.onComplete).not.toHaveBeenCalled();
+      await expect(session.stopConsumption()).rejects.toBe(cleanupFailure);
+      await expect(session.startConsumption(tailRequest(), observer)).rejects.toBe(cleanupFailure);
+      await expect(session.stopConsumption()).rejects.toBe(cleanupFailure);
+      expect(connection.messageStreamCalls).toHaveLength(1);
+      expect(close).toHaveBeenCalledOnce();
+      await session.shutdown().catch(() => undefined);
+    },
+  );
+
   it.each(["reconnect", "disconnect", "shutdown"] as const)(
     "bounds %s when connection closure awaits a stalled active stream and retains teardown ownership",
     async (action) => {

@@ -479,13 +479,24 @@ export class KafkaApplicationSession {
     consumption?.controller.abort();
     if (consumption !== undefined) this.clearEmptyTimer(consumption);
     const operation = this.completeConsumptionStop(consumption, pending, previousStop);
-    this.consumptionStop = operation;
     // A pending open may create an unregistered stream after connection teardown.
-    this.consumptionStopCoveredByConnectionClose =
+    this.trackConsumptionStop(
+      operation,
+      consumption?.connection ?? pending?.connection ?? this.consumptionStopConnection,
       (previousStop === undefined || this.consumptionStopCoveredByConnectionClose) &&
-      pending?.openingStarted !== true;
-    this.consumptionStopConnection =
-      consumption?.connection ?? pending?.connection ?? this.consumptionStopConnection;
+        pending?.openingStarted !== true,
+    );
+    return this.waitForConsumptionStop(operation);
+  }
+
+  private trackConsumptionStop(
+    operation: Promise<void>,
+    connection: KafkaActiveConnection | undefined,
+    coveredByConnectionClose: boolean,
+  ): void {
+    this.consumptionStop = operation;
+    this.consumptionStopCoveredByConnectionClose = coveredByConnectionClose;
+    this.consumptionStopConnection = connection;
     this.consumptionStopSettled = false;
     const settled = (failed: boolean): void => {
       if (this.consumptionStop !== operation) return;
@@ -505,7 +516,6 @@ export class KafkaApplicationSession {
       () => settled(false),
       () => settled(true),
     );
-    return this.waitForConsumptionStop(operation);
   }
 
   private waitForConsumptionStop(operation: Promise<void> | undefined): Promise<void> {
@@ -817,11 +827,15 @@ export class KafkaApplicationSession {
       }
     } finally {
       this.clearEmptyTimer(consumption);
+      let cleanup: Promise<void> | undefined;
       try {
-        await this.closeConsumptionStream(consumption);
+        cleanup = this.closeConsumptionStream(consumption);
+        await cleanup;
       } catch (error) {
-        if (failure === undefined && this.isCurrentConsumption(consumption)) {
-          failure = error;
+        if (this.isCurrentConsumption(consumption)) {
+          // Automatic completion/failure owns the same cleanup obligation as explicit Stop.
+          this.trackConsumptionStop(cleanup ?? Promise.reject(error), consumption.connection, true);
+          if (failure === undefined) failure = error;
         }
       }
       if (this.isCurrentConsumption(consumption)) {
