@@ -70,7 +70,9 @@ class StablePublicationTests(unittest.TestCase):
             root = Path(directory)
             event = root / "event.json"
             output = root / "output"
-            event.write_text(json.dumps({"action": "published", "release": self.release("v1.10.0")}))
+            event_release = self.release("v1.10.0")
+            event_release.pop("immutable")  # This field belongs to the REST API, not the webhook contract.
+            event.write_text(json.dumps({"action": "published", "release": event_release}))
             environment = {"GITHUB_EVENT_NAME": "release", "GITHUB_EVENT_PATH": str(event),
                            "GITHUB_REF": "refs/tags/v1.10.0", "GITHUB_SHA": self.revision,
                            "GITHUB_REPOSITORY": "owner/repo", "GITHUB_OUTPUT": str(output)}

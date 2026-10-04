@@ -177,8 +177,8 @@ def published_release(root=ROOT, environment=None):
         raise ValueError("Pages requires the exact published desktop release and its notes")
     if release.get("prerelease") is not False or stable_version(tag) is None:
         raise ValueError("Public Pages requires a stable desktop release")
-    if release.get("immutable") is not True:
-        raise ValueError("Public Pages requires an immutable desktop release")
+    # The webhook schema does not guarantee an immutable field. The Pages guard
+    # verifies immutability through the REST API before build and deployment.
     if json.loads((Path(root) / "package.json").read_text())["version"] != version:
         raise ValueError("Published desktop tag differs from the stamped application version")
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()

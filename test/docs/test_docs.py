@@ -138,7 +138,7 @@ class DocumentationVersionTests(unittest.TestCase):
             "| [v0.1.0+build.1](v0.1.0+build.1.md) | 0.1.0 | Historical release |\n")
         self.event = self.root / "release-event.json"
         self.event.write_text(json.dumps({"action": "published", "release": {
-            "tag_name": tag, "draft": False, "prerelease": "-" in version, "immutable": True,
+            "tag_name": tag, "draft": False, "prerelease": "-" in version,
             "body": f"# StreamSkope {tag}\n\nReviewed **final** notes, with edits from the draft.\n",
         }}))
         return {"GITHUB_EVENT_NAME": "release", "GITHUB_REF_NAME": tag,
@@ -273,7 +273,7 @@ class DocumentationVersionTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 docs.publication.prepare_publication(self.root, {**environment, **change})
         for key, value in (("draft", True), ("body", ""), ("body", None),
-                           ("tag_name", "plugins/nsp/v0.2.0"), ("immutable", False)):
+                           ("tag_name", "plugins/nsp/v0.2.0")):
             self.event.write_text(json.dumps({**event, "release": {**event["release"], key: value}}))
             with self.subTest(key=key), self.assertRaises(ValueError):
                 docs.publication.prepare_publication(self.root, environment)
