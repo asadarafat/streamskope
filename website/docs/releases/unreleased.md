@@ -5,7 +5,7 @@ unreleased: true
 
 # Unreleased changes
 
-These changes follow [v0.7.0](v0.7.0.md). A maintainer assigns the next version when starting release CI.
+This patch fixes profile recovery and protected credential startup after [v0.7.0](v0.7.0.md).
 
 ## Desktop
 
@@ -19,12 +19,15 @@ These changes follow [v0.7.0](v0.7.0.md). A maintainer assigns the next version 
   as unavailable. Initialization still completes immediately when ready and
   refuses unprotected storage backends.
 
-The manual native recovery workflow can build and qualify unreleased installers
-without assigning a release version. Candidate results identify their source
-revision and artifact hashes; they do not change the qualification of previously
-published installers.
+## Qualification and compatibility
 
 See the [current-source qualification record](../guide/qualification.md#current-source-qualification)
 for installed EDA/NSP lifecycle results and passing Linux, macOS and Windows
-installer recovery. These results do not imply publication
-of a new desktop or plugin package.
+installer recovery. Those rehearsals used published 0.6.0 as the baseline and a
+source candidate with the same application code as this patch; they verified
+candidate restart and full backup restoration under the same OS account.
+They do not claim the old baseline's restart succeeded or qualify cross-account
+credential transfer. Linux FUSE/launcher integration remains outside that test.
+
+The host protocol and plugin API are unchanged. Desktop publication does not
+republish EDA/NSP plugins or change the compatibility manifests of existing packages.

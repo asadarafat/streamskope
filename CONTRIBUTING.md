@@ -171,7 +171,9 @@ The application's `TrustAcquisitionLifecycle` owns editor leases, identity
 challenges and cancellation deadlines. `KafkaProfileDraftResolver` resolves
 trust and bindings; `KafkaProfileService` owns profile persistence and mutations.
 
-The internal host protocol is version **34**. EDA-specific commands/events now
+The internal host protocol version is declared by `HOST_PROTOCOL_VERSION` in
+[`src/features/kafka/contracts/types.ts`](src/features/kafka/contracts/types.ts).
+EDA-specific commands/events now
 belong to the plugin's own protocol and travel through generic `plugin.execute`
 and `plugin.event` envelopes. `plugins.*` commands manage installation and exit.
 Upgrade the host, preload and renderer together. Plugin API version 4 is separate
