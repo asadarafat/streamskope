@@ -1,3 +1,4 @@
+import { parseHostError } from "./host-error-validation";
 import { parseRelationshipCommand, parseRelationshipResponse } from "./relationship-protocol";
 import { parseObservationCommand, parseObservationResponse } from "./observation-protocol";
 import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
@@ -83,8 +84,6 @@ import { parseProtocolVersion, parseBackendAvailability } from "./protocol-valid
 import { kafkaMessageRetainedBytes, kafkaRawMessageRetainedBytes } from "./message-limits";
 import {
   HOST_COMMANDS,
-  HOST_ERROR_CODES,
-  HOST_ERROR_STAGES,
   HOST_EVENTS,
   KAFKA_MESSAGE_LIMITS,
   SECURE_CONNECTION_LIMITS,
@@ -123,7 +122,6 @@ import {
   nonNegativeInteger,
   nullableBoundedUtf8Text,
   nullableText,
-  optionalText,
   parseBoundedBrokers as parseBrokers,
   record,
   text,
@@ -204,35 +202,6 @@ function parseConnection(value: unknown, path: string): HostSecureConnectionInpu
     throw new HostContractValidationError(`${path}.${issue.field}`, issue.message);
   }
   return withServices;
-}
-
-function parseHostError(value: unknown, path: string): HostError {
-  const error = record(value, path);
-  exactKeys(
-    error,
-    [
-      "activeStateChanged",
-      "code",
-      "correlationId",
-      "recovery",
-      "retryable",
-      "stage",
-      "summary",
-      "target",
-    ],
-    path,
-  );
-  const target = optionalText(error, "target", path, 2_048);
-  const base = {
-    activeStateChanged: truth(error.activeStateChanged, `${path}.activeStateChanged`),
-    code: declaredValue(error.code, HOST_ERROR_CODES, `${path}.code`),
-    correlationId: text(error.correlationId, `${path}.correlationId`, 128),
-    recovery: text(error.recovery, `${path}.recovery`, 2_048),
-    retryable: truth(error.retryable, `${path}.retryable`),
-    stage: declaredValue(error.stage, HOST_ERROR_STAGES, `${path}.stage`),
-    summary: text(error.summary, `${path}.summary`, 2_048),
-  };
-  return target === undefined ? base : { ...base, target };
 }
 
 export function parseHostCommand(value: unknown): HostCommand {

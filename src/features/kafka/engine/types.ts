@@ -60,7 +60,16 @@ export type KafkaClientInput = KafkaClientInputBase &
 export type KafkaAdminInput = KafkaClientInput;
 
 export interface KafkaAdminPort {
-  observeTopicHealth?(topic: string): Promise<import("../contracts/observations").TopicHealth>;
+  observeTopicHealth?(
+    topic: string,
+    signal?: AbortSignal,
+  ): Promise<import("../contracts/observations").TopicHealth>;
+  observeConsumerGroup?(
+    groupId: string,
+    topic: string,
+    partitions: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<import("../contracts/observations").ObservationGroupHealth>;
   alterTopicConfiguration(
     topic: string,
     changes: readonly KafkaTopicConfigurationChange[],
@@ -100,6 +109,7 @@ export interface KafkaRawMessageStream extends AsyncIterable<KafkaRawMessage> {
 
 export type KafkaConsumerInput = KafkaClientInput & {
   readonly groupId: string;
+  readonly signal?: AbortSignal;
   readonly onFetchSample?: (sample: KafkaLatencyFetchSample) => void;
   readonly request: KafkaFetchRequest;
 };

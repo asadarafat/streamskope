@@ -51,6 +51,23 @@ function offsetsMap(offsets: readonly bigint[]): ReadonlyMap<number, bigint> {
   return new Map(offsets.map((offset, partition) => [partition, offset]));
 }
 
+/** An exact locator seeks only its position, without scanning preceding topic traffic. */
+function exactLocatorPlan(plan: KafkaFetchPlan): KafkaFetchPlan {
+  const search = plan.request.search;
+  if (search?.offsetExact === undefined || plan.endOffsets === null) return plan;
+  const exact = BigInt(search.offsetExact);
+  const startOffsets = new Map<number, bigint>();
+  const endOffsets = new Map<number, bigint>();
+  for (const [partition, low] of plan.startOffsets) {
+    if (search.partition !== null && partition !== search.partition) continue;
+    const high = plan.endOffsets.get(partition) ?? low;
+    const start = exact < low ? low : exact > high ? high : exact;
+    startOffsets.set(partition, start);
+    endOffsets.set(partition, exact >= low && exact < high ? exact + 1n : start);
+  }
+  return { ...plan, startOffsets, endOffsets };
+}
+
 async function loadTopicBounds(
   lookup: KafkaOffsetLookup,
   topic: string,
@@ -165,13 +182,13 @@ export async function resolveKafkaFetchPlan(
   const bounds = await loadTopicBounds(lookup, request.topic);
 
   if (request.mode === "earliest") {
-    return {
+    return exactLocatorPlan({
       continuous: false,
       endOffsets: offsetsMap(bounds.high),
       maxMessages: request.maxMessages,
       request,
       startOffsets: offsetsMap(bounds.low),
-    };
+    });
   }
 
   if (request.mode === "time-window") {
@@ -201,13 +218,13 @@ export async function resolveKafkaFetchPlan(
       const end = clampOffset(endCandidates[partition] ?? high, low, high);
       return end < startOffset ? startOffset : end;
     });
-    return {
+    return exactLocatorPlan({
       continuous: false,
       endOffsets: offsetsMap(windowEnd),
       maxMessages: request.maxMessages,
       request,
       startOffsets: offsetsMap(start),
-    };
+    });
   }
 
   const start = await resolveRecentOffsets(
@@ -218,11 +235,11 @@ export async function resolveKafkaFetchPlan(
     bounds,
     nowMs,
   );
-  return {
+  return exactLocatorPlan({
     continuous: request.mode === "tail",
     endOffsets: request.mode === "tail" ? null : offsetsMap(bounds.high),
     maxMessages: request.maxMessages,
     request,
     startOffsets: offsetsMap(start),
-  };
+  });
 }

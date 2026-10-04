@@ -1,5 +1,7 @@
 import type { GroupBase } from "@platformatic/kafka";
 
+import type { KafkaConsumerGroupBrokerState } from "../contracts";
+
 import { KafkaEngineFailure } from "./failure";
 
 /** The client's DescribeGroups decoder assumes Kafka's consumer subscription format. */
@@ -20,4 +22,32 @@ export async function requireConsumerGroupProtocol(
       recovery:
         "Select a consumer-protocol group. Connect worker coordination is not a consumer subscription.",
     });
+}
+
+export function consumerGroupState(value: GroupBase["state"]): KafkaConsumerGroupBrokerState {
+  switch (value) {
+    case "PREPARING_REBALANCE":
+    case "PreparingRebalance":
+      return "preparing-rebalance";
+    case "COMPLETING_REBALANCE":
+    case "CompletingRebalance":
+      return "completing-rebalance";
+    case "STABLE":
+    case "Stable":
+      return "stable";
+    case "DEAD":
+    case "Dead":
+      return "dead";
+    case "EMPTY":
+    case "Empty":
+      return "empty";
+    case "Unknown":
+      return "unknown";
+    case "Assigning":
+      return "assigning";
+    case "Reconciling":
+      return "reconciling";
+    case "NotReady":
+      return "not-ready";
+  }
 }

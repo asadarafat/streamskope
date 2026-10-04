@@ -2,6 +2,7 @@ import Accordion, { type AccordionProps } from "@mui/material/Accordion";
 import AccordionDetails, { type AccordionDetailsProps } from "@mui/material/AccordionDetails";
 import AccordionSummary, { type AccordionSummaryProps } from "@mui/material/AccordionSummary";
 import Alert, { type AlertProps } from "@mui/material/Alert";
+import Autocomplete, { type AutocompleteProps } from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button, { type ButtonProps } from "@mui/material/Button";
 import Checkbox, { type CheckboxProps } from "@mui/material/Checkbox";
@@ -118,6 +119,13 @@ export function StudioTextField({
 
 export function StudioSelect<Value = unknown>(properties: SelectProps<Value>): React.JSX.Element {
   return <Select fullWidth size="small" {...properties} />;
+}
+
+/** Search a known inventory while allowing an explicitly entered resource name. */
+export function StudioResourceAutocomplete(
+  properties: AutocompleteProps<string, false, false, true>,
+): React.JSX.Element {
+  return <Autocomplete fullWidth size="small" {...properties} />;
 }
 
 export function StudioListItemButton(properties: ListItemButtonProps): React.JSX.Element {

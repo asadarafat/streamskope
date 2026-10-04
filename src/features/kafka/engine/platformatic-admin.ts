@@ -20,6 +20,7 @@ import {
   type Group,
   type GroupBase,
   type ListConsumerGroupOffsetsGroup,
+  type ListConsumerGroupOffsetsOptions,
   type ListedOffsetsTopic,
 } from "@platformatic/kafka";
 
@@ -28,7 +29,6 @@ import type {
   KafkaAclBinding,
   KafkaConfigurationSource,
   KafkaConfigurationType,
-  KafkaConsumerGroupBrokerState,
   KafkaConsumerGroupDetails,
   KafkaConsumerGroupMember,
   KafkaConsumerGroupOffset,
@@ -39,9 +39,10 @@ import type {
 import { KAFKA_CONSUMER_GROUP_LIMITS, kafkaAclIdentity } from "../contracts";
 import type { KafkaClusterMetadata, KafkaConsumerGroupInventory } from "../application";
 
-import { requireConsumerGroupProtocol } from "./platformatic-group-protocol";
+import { consumerGroupState, requireConsumerGroupProtocol } from "./platformatic-group-protocol";
 import { platformaticClientOptions } from "./platformatic-options";
 import type { KafkaAdminFactory, KafkaAdminInput, KafkaAdminPort } from "./types";
+import { observeSelectedGroup, observeSelectedTopic } from "./platformatic-observation";
 
 export interface PlatformaticAdminClient {
   close(): Promise<void>;
@@ -62,7 +63,7 @@ export interface PlatformaticAdminClient {
   }): Promise<Map<string, Group>>;
   incrementalAlterConfigs(options: IncrementalAlterConfigsOptions): Promise<void>;
   listConsumerGroupOffsets(options: {
-    readonly groups: string[];
+    readonly groups: ListConsumerGroupOffsetsOptions["groups"];
     readonly requireStable: false;
   }): Promise<ListConsumerGroupOffsetsGroup[]>;
   listGroups(): Promise<Map<string, GroupBase>>;
@@ -166,34 +167,6 @@ function kafkaAclBinding(
     resourceName: target.resourceName,
     resourceType: aclResourceType(target.resourceType),
   };
-}
-
-function consumerGroupState(value: GroupBase["state"]): KafkaConsumerGroupBrokerState {
-  switch (value) {
-    case "PREPARING_REBALANCE":
-    case "PreparingRebalance":
-      return "preparing-rebalance";
-    case "COMPLETING_REBALANCE":
-    case "CompletingRebalance":
-      return "completing-rebalance";
-    case "STABLE":
-    case "Stable":
-      return "stable";
-    case "DEAD":
-    case "Dead":
-      return "dead";
-    case "EMPTY":
-    case "Empty":
-      return "empty";
-    case "Unknown":
-      return "unknown";
-    case "Assigning":
-      return "assigning";
-    case "Reconciling":
-      return "reconciling";
-    case "NotReady":
-      return "not-ready";
-  }
 }
 
 function consumerGroupSummary(group: GroupBase): KafkaConsumerGroupSummary {
@@ -363,7 +336,31 @@ function configurationEntries(
 }
 
 export class PlatformaticAdminPort implements KafkaAdminPort {
-  constructor(private readonly admin: PlatformaticAdminClient) {}
+  constructor(
+    private readonly admin: PlatformaticAdminClient,
+    private readonly observationClient?: () => PlatformaticAdminClient,
+  ) {}
+
+  private async observation<T>(
+    signal: AbortSignal | undefined,
+    read: (admin: PlatformaticAdminClient) => Promise<T>,
+  ): Promise<T> {
+    if (!this.observationClient) return read(this.admin);
+    const admin = this.observationClient();
+    let closing: Promise<void> | undefined;
+    const close = (): Promise<void> => (closing ??= admin.close());
+    const abort = (): void => {
+      void close().catch(() => undefined);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      signal?.throwIfAborted();
+      return await read(admin);
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      await close();
+    }
+  }
 
   alterTopicConfiguration(
     topic: string,
@@ -425,61 +422,22 @@ export class PlatformaticAdminPort implements KafkaAdminPort {
     return configurationEntries(descriptions, ConfigResourceTypes.BROKER, resourceName);
   }
 
-  async observeTopicHealth(
+  observeTopicHealth(
     topic: string,
+    signal?: AbortSignal,
   ): Promise<import("../contracts/observations").TopicHealth> {
-    const metadata = await this.admin.metadata({
-      forceUpdate: true,
-      topics: [topic],
-      autocreateTopics: false,
-    });
-    const selected = metadata.topics.get(topic);
-    if (
-      !metadata.id ||
-      !selected?.id ||
-      !selected.partitions.length ||
-      selected.partitions.length > 128
-    )
-      throw new Error("Topic health requires a cluster/topic identity and 1–128 partitions.");
-    let ends = new Map<number, string | null>();
-    try {
-      const offsets = await this.admin.listOffsets({
-        topics: [
-          {
-            name: topic,
-            partitions: selected.partitions.map((_, partitionIndex) => ({
-              partitionIndex,
-              timestamp: ListOffsetTimestamps.LATEST,
-            })),
-          },
-        ],
-      });
-      ends = new Map(
-        offsets
-          .filter((t) => t.name === topic)
-          .flatMap((t) =>
-            t.partitions.map(
-              (p) => [p.partitionIndex, p.offset >= 0n ? p.offset.toString() : null] as const,
-            ),
-          ),
-      );
-    } catch {
-      /* Metadata remains useful; unavailable offsets are never reported as zero. */
-    }
-    return {
-      clusterId: metadata.id,
-      topicId: selected.id,
-      topic,
-      brokerCount: metadata.brokers.size,
-      controllerKnown: metadata.brokers.has(metadata.controllerId),
-      partitions: selected.partitions.map((p, partition) => ({
-        partition,
-        leader: p.leader >= 0 ? p.leader : null,
-        replicas: p.replicas.length,
-        inSyncReplicas: p.isr.length,
-        endOffset: ends.get(partition) ?? null,
-      })),
-    };
+    return this.observation(signal, (admin) => observeSelectedTopic(admin, topic, signal));
+  }
+
+  observeConsumerGroup(
+    groupId: string,
+    topic: string,
+    partitions: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<import("../contracts/observations").ObservationGroupHealth> {
+    return this.observation(signal, (admin) =>
+      observeSelectedGroup(admin, groupId, topic, partitions, signal),
+    );
   }
 
   async describeClusterMetadata(): Promise<KafkaClusterMetadata> {
@@ -627,6 +585,7 @@ export class PlatformaticAdminFactory implements KafkaAdminFactory {
   create(input: KafkaAdminInput): KafkaAdminPort {
     return new PlatformaticAdminPort(
       new Admin(platformaticClientOptions(input, "streamskope-connection")),
+      () => new Admin(platformaticClientOptions(input, "streamskope-observation")),
     );
   }
 }

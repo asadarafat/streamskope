@@ -1,5 +1,6 @@
 import type { JsonValue, PluginEvent, PluginSnapshot } from "../../../plugins/contracts";
 
+import type { HostError } from "./host-errors";
 import type { KafkaSavedQuery } from "./query-library";
 import type { KafkaOriginalRecord } from "./record-bytes";
 import type { KafkaReadCoverage, KafkaSearchFilter } from "./query-search";
@@ -71,7 +72,10 @@ import type {
   RedpandaTransformLogsSnapshot,
 } from "./transform-types";
 
-export const HOST_PROTOCOL_VERSION = 48 as const;
+export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
+export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
+
+export const HOST_PROTOCOL_VERSION = 49 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -219,84 +223,6 @@ export const HOST_EVENTS = [
   "streamMetrics.changed",
 ] as const;
 
-export const HOST_ERROR_CODES = [
-  "QUERY_UNAVAILABLE",
-  "VALIDATION",
-  "CANCELLED",
-  "TIMEOUT",
-  "OAUTH_REJECTED",
-  "OAUTH_UNREACHABLE",
-  "TLS_TRUST",
-  "HTTPS_AUTHENTICATION",
-  "HTTPS_AUTHORIZATION",
-  "HTTPS_REDIRECT",
-  "HTTPS_RESPONSE",
-  "BROKER_UNREACHABLE",
-  "KAFKA_AUTHENTICATION",
-  "AUTHORIZATION_DENIED",
-  "UNSUPPORTED_OPERATION",
-  "BACKEND_UNAVAILABLE",
-  "PROFILE_STORE_UNAVAILABLE",
-  "PROFILE_DUPLICATE",
-  "PROFILE_NOT_FOUND",
-  "PROFILE_ACTIVE",
-  "PROFILE_CORRUPT",
-  "PROFILE_DECRYPTION",
-  "TEMPLATE_STORE_UNAVAILABLE",
-  "TEMPLATE_DUPLICATE",
-  "TEMPLATE_NOT_FOUND",
-  "TEMPLATE_CORRUPT",
-  "PREFERENCE_STORE_UNAVAILABLE",
-  "PREFERENCE_CORRUPT",
-  "RULE_VALIDATION",
-  "RULE_DUPLICATE",
-  "RULE_NOT_FOUND",
-  "RULE_CAPACITY",
-  "RULE_SAMPLE",
-  "RULE_STORE_UNAVAILABLE",
-  "RULE_CORRUPT",
-  "TRUST_MATERIAL",
-  "TRUSTSTORE_PASSWORD",
-  "SSH_IDENTITY",
-  "SSH_AUTHENTICATION",
-  "SSH_UNREACHABLE",
-  "REMOTE_COMMAND",
-  "REMOTE_TRANSFER",
-  "REMOTE_CLEANUP",
-  "ACQUISITION_NOT_FOUND",
-  "ACQUISITION_EXPIRED",
-  "ACQUISITION_INCOMPLETE",
-  "ACQUISITION_CAPACITY",
-  "TOPIC_NOT_FOUND",
-  "CONSUMER_GROUP_NOT_FOUND",
-  "INVALID_TOPIC_CONFIG",
-  "TOPIC_CONFIG_HISTORY_UNAVAILABLE",
-  "TOPIC_CONFIG_HISTORY_CORRUPT",
-  "INTERNAL",
-] as const;
-
-export const HOST_ERROR_STAGES = [
-  "query",
-  "validation",
-  "oauth",
-  "tls",
-  "broker",
-  "kafka",
-  "authorization",
-  "backend",
-  "profile",
-  "template",
-  "preference",
-  "rule",
-  "storage",
-  "trust",
-  "ssh",
-  "remote-command",
-  "remote-transfer",
-  "acquisition",
-  "internal",
-] as const;
-
 export const SECURE_CONNECTION_LIMITS = {
   brokers: 32,
   brokerCharacters: 512,
@@ -339,8 +265,6 @@ export const KAFKA_FETCH_LIMITS = {
 
 export type HostCommandName = (typeof HOST_COMMANDS)[number];
 export type HostEventName = (typeof HOST_EVENTS)[number];
-export type HostErrorCode = (typeof HOST_ERROR_CODES)[number];
-export type HostErrorStage = (typeof HOST_ERROR_STAGES)[number];
 export type KafkaFetchMode = (typeof KAFKA_FETCH_MODES)[number];
 
 interface KafkaFetchRequestBase {
@@ -770,17 +694,6 @@ type DistributeHostCommand<Command> = Command extends { readonly command: HostCo
     }[Command["command"]]
   : never;
 export type HostCommand = DistributeHostCommand<HostCommandDefinition>;
-
-export interface HostError {
-  readonly activeStateChanged: boolean;
-  readonly code: HostErrorCode;
-  readonly correlationId: string;
-  readonly recovery: string;
-  readonly retryable: boolean;
-  readonly stage: HostErrorStage;
-  readonly summary: string;
-  readonly target?: string;
-}
 
 export interface HostCommandAccepted {
   readonly correlationId: string;

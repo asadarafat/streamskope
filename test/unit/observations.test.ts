@@ -258,3 +258,128 @@ it("validates commands, exact destructive confirmation and structured responses 
     }),
   ).toThrow();
 });
+
+it("keeps selected-topic lag complete when unrelated group inventory was omitted", async () => {
+  const f = fixture();
+  f.connection.group = {
+    ...f.connection.group,
+    omittedOffsets: 3000,
+    omittedAssignments: 1000,
+    omittedMembers: 1,
+  };
+  const selected = vi.fn(() =>
+    Promise.resolve({
+      id: "workers",
+      state: "stable",
+      members: 1000,
+      offsets: f.connection.group.offsets.map((p) => ({
+        partition: p.partition,
+        committedOffset: p.committedOffset,
+      })),
+      issues: [
+        {
+          measurement: "group-members" as const,
+          code: "OBSERVATION_INCOMPLETE" as const,
+          summary: "Member count is capped.",
+          recovery: "Inspect the full group separately.",
+          retryable: false,
+        },
+      ],
+    }),
+  );
+  Object.assign(f.connection, { observeConsumerGroup: selected });
+  const sample = (await f.service.capture(input)).series.samples[0]!;
+  expect(selected).toHaveBeenCalledWith("workers", "events", [0, 1], expect.any(AbortSignal));
+  expect(sample.groupCoverage).toBe("complete");
+  expect(observationLag(sample)).toBe(30);
+  expect(sample.issues).toMatchObject([{ measurement: "group-members" }]);
+});
+
+it("retains safe permission reasons with unknown group lag and schema-1 history accepts older samples", async () => {
+  const f = fixture();
+  Object.assign(f.connection, {
+    observeConsumerGroup: () =>
+      Promise.reject(
+        Object.assign(new Error("Kafka denied group offset access."), {
+          code: "AUTHORIZATION_DENIED",
+          stage: "authorization",
+          retryable: false,
+          recovery: "Request group DESCRIBE permission.",
+          cause: new Error("password=private"),
+        }),
+      ),
+  });
+  const series = (await f.service.capture(input)).series;
+  expect(series.samples[0]).toMatchObject({
+    groupCoverage: "unavailable",
+    issues: [
+      {
+        measurement: "group-offsets",
+        code: "AUTHORIZATION_DENIED",
+        recovery: "Request group DESCRIBE permission.",
+      },
+    ],
+  });
+  expect(observationLag(series.samples[0]!)).toBeNull();
+  expect(JSON.stringify(series)).not.toContain("password=private");
+  const old = { ...series.samples[0]! };
+  delete old.issues;
+  expect(
+    parseObservationHistory({ schemaVersion: 1, series: [{ ...series, samples: [old] }] }).series[0]
+      ?.samples[0]?.issues,
+  ).toEqual([]);
+});
+
+it("adapts only from fresh continuous topic evidence and starts a full window after gaps or explicit stop", async () => {
+  const f = fixture();
+  const open = vi.fn((request: import("../../src/features/kafka/contracts").KafkaFetchRequest) =>
+    Promise.resolve({
+      close: () => Promise.resolve(),
+      coverage: () => ({
+        reason: "range-complete" as const,
+        scannedRecords: 0,
+        scannedBytes: 0,
+        matchedRecords: 0,
+        unavailableRecords: 0,
+        partitions: [0, 1].map((partition) => ({
+          partition,
+          startOffset: "0",
+          endOffset: "0",
+          nextOffset: "0",
+        })),
+      }),
+      async *[Symbol.asyncIterator](): AsyncIterator<
+        import("../../src/features/kafka/contracts").KafkaMessage
+      > {
+        void request;
+        yield* await Promise.resolve<import("../../src/features/kafka/contracts").KafkaMessage[]>(
+          [],
+        );
+      },
+    }),
+  );
+  Object.assign(f.connection, { openMessageStream: open });
+  const selected = { ...input, groupId: null };
+  await f.service.capture(selected);
+  f.advance();
+  f.connection.health = {
+    ...f.connection.health,
+    partitions: f.connection.health.partitions.map((p) => ({ ...p, endOffset: "10000" })),
+  };
+  await f.service.capture({ ...selected, sampleRecords: true });
+  const window = (
+    request: import("../../src/features/kafka/contracts").KafkaFetchRequest,
+  ): number => (request.mode === "time-window" ? request.endTimeMs - request.startTimeMs : 0);
+  expect(window(open.mock.calls.at(-1)![0])).toBe(100);
+  f.advance(50000);
+  await f.service.capture({ ...selected, sampleRecords: true });
+  expect(window(open.mock.calls.at(-1)![0])).toBe(60000);
+  f.service.cancel();
+  f.advance();
+  f.connection.health = {
+    ...f.connection.health,
+    partitions: f.connection.health.partitions.map((p) => ({ ...p, endOffset: "20000" })),
+  };
+  await f.service.capture({ ...selected, sampleRecords: true });
+  expect(window(open.mock.calls.at(-1)![0])).toBe(60000);
+});

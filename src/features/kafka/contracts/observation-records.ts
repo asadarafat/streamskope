@@ -5,9 +5,13 @@ import {
   nonNegativeInteger,
   record,
   text,
+  truth,
 } from "./validation-primitives";
 
 export interface ObservationRecords {
+  /** Size analysis eligibility for this complete bounded window, never a topic-wide census. */
+  readonly analysisEligible?: boolean;
+  readonly partitionCoverage?: { readonly expected: number; readonly completed: number };
   readonly source: "protected-kafka-record-sample";
   readonly startTimeMs: number;
   readonly endTimeMs: number;
@@ -53,13 +57,15 @@ export function parseObservationRecords(value: unknown): ObservationRecords {
       "distinctKeys",
       "topKeys",
       "partitions",
+      "analysisEligible",
+      "partitionCoverage",
     ],
     "records",
   );
   const startTimeMs = count(p.startTimeMs, 8.64e15),
     endTimeMs = count(p.endTimeMs, 8.64e15);
-  if (endTimeMs - startTimeMs !== 60_000)
-    throw new Error("Record sample requires a one-minute window.");
+  if (endTimeMs - startTimeMs < 100 || endTimeMs - startTimeMs > 60_000)
+    throw new Error("Record sample window must be between 100 ms and one minute.");
   const sampleCount = count(p.count, limits.sampleRecords),
     knownKeys = count(p.knownKeys, sampleCount),
     nullKeys = count(p.nullKeys, sampleCount),
@@ -98,7 +104,32 @@ export function parseObservationRecords(value: unknown): ObservationRecords {
     topKeys.reduce((n, v) => n + v.count, 0) > knownKeys
   )
     throw new Error("Invalid sample distribution.");
+  const coverage =
+    p.partitionCoverage === undefined
+      ? undefined
+      : record(p.partitionCoverage, "partition coverage");
+  if (coverage) exactKeys(coverage, ["expected", "completed"], "partition coverage");
+  const partitionCoverage = coverage
+    ? {
+        expected: count(coverage.expected, limits.partitions),
+        completed: count(coverage.completed, limits.partitions),
+      }
+    : undefined;
+  const analysisEligible =
+    p.analysisEligible === undefined ? false : truth(p.analysisEligible, "analysis eligibility");
+  if (partitionCoverage && partitionCoverage.completed > partitionCoverage.expected)
+    throw new Error("Invalid record partition coverage.");
+  if (
+    analysisEligible &&
+    (p.state !== "complete" ||
+      p.reason !== "range-complete" ||
+      !partitionCoverage?.expected ||
+      partitionCoverage.completed !== partitionCoverage.expected)
+  )
+    throw new Error("Incomplete record samples cannot qualify analysis.");
   return {
+    analysisEligible,
+    ...(partitionCoverage === undefined ? {} : { partitionCoverage }),
     source: declaredValue(p.source, ["protected-kafka-record-sample"] as const, "source"),
     startTimeMs,
     endTimeMs,

@@ -154,6 +154,7 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
     const health = page.getByRole("main", { name: "Observed health page" });
     await health.getByLabel("Observed topic", { exact: true }).fill(topic);
     await health.getByLabel("Observed consumer group (optional)").fill(groupId);
+    await health.getByRole("button", { name: "History and collection settings" }).click();
     await health.getByLabel("Lag alert threshold (optional)").fill("15");
     await health
       .getByRole("checkbox", { name: "Sample records for size and key distribution" })
@@ -169,6 +170,9 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
           partition: 0,
           key: Buffer.from("fixture-key"),
           value: Buffer.from('{"id":42}'),
+          // Controlled CreateTime keeps the next bounded window deterministic while
+          // real offset growth and the ten-second polling cadence remain under test.
+          timestamp: BigInt(Date.now() + 1_000),
         })),
       });
       await expect(health).toContainText(`${i + 1} samples in the recent continuous segment`, {
@@ -176,6 +180,7 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
       });
     }
     await health.getByRole("button", { name: "Stop observing" }).click();
+    await health.getByRole("button", { name: "Analysis details", exact: true }).click();
     await expect(health).toContainText("Projected lag:");
     await expect(health).toContainText("Skew suspected");
     await expect(health).toContainText("Hot key suspected");

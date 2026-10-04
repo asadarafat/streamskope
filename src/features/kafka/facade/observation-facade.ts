@@ -4,8 +4,9 @@ import { observationIdentity, observationLag } from "../contracts/observations";
 import { ObservationService } from "../application/observation-service";
 import type { ObservationStore } from "../application/observation-store";
 import type { KafkaApplicationSession } from "../application";
+import { ObservationOperationError } from "../application/observation-errors";
 
-import { failureResponse, type ActivityInput } from "./facade-support";
+import { failureResponse, translateFacadeFailure, type ActivityInput } from "./facade-support";
 export class ObservationFacade {
   private readonly service: ObservationService;
   private readonly alerts = new Map<string, string>();
@@ -76,16 +77,17 @@ export class ObservationFacade {
           this.service.cancel();
           return { ...base, command: command.command, result: { correlationId } };
       }
-    } catch {
+    } catch (error) {
+      const translated = translateFacadeFailure(
+        error,
+        { activeStateChanged: false, connection: undefined, correlationId },
+        true,
+      );
       return failureResponse(command, {
-        code: "VALIDATION",
-        stage: "kafka",
-        correlationId,
-        retryable: false,
-        activeStateChanged: false,
-        summary: "The observation could not complete; unavailable data is not a zero measurement.",
-        recovery:
-          "Use one existing topic with 1–128 partitions and a permitted group. Wait ten seconds between captures. Check the current connection and history-file permissions; unreadable history is preserved until explicitly cleared.",
+        ...translated.error,
+        ...(error instanceof ObservationOperationError && error.retryAfterMs !== undefined
+          ? { retryAfterMs: error.retryAfterMs }
+          : {}),
       });
     }
   }

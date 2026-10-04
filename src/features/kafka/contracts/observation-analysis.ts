@@ -171,6 +171,10 @@ export function forecastLag(samples: readonly KafkaObservation[], now: number): 
     last = recent.at(-1);
   if (!last || now < last.observedAt || now - last.observedAt > limits.staleMs)
     return unavailable("Recent evidence is missing or stale.");
+  if (last.groupState === null)
+    return unavailable(
+      "Consumer group state is unavailable; comparable lag observations cannot be established.",
+    );
   // Use only a contiguous suffix of complete lag observations in the current group state.
   let start = recent.length - 1;
   while (
@@ -363,7 +367,10 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
     });
   const records = fresh ? latest?.records : null;
   const hotKey =
-    records && records.knownKeys >= 20
+    records &&
+    records.analysisEligible === true &&
+    records.unavailableKeys === 0 &&
+    records.knownKeys >= 20
       ? {
           share: (records.topKeys[0]?.count ?? 0) / records.knownKeys,
           known: records.knownKeys,
@@ -374,7 +381,14 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
   // Keep latency baselines separate when optional record sampling changes the work performed.
   const comparable = latest
     ? recent.slice(
-        recent.map((s) => Boolean(s.records) === Boolean(latest.records)).lastIndexOf(false) + 1,
+        recent
+          .map(
+            (s) =>
+              Boolean(s.records) === Boolean(latest.records) &&
+              (s.records?.endTimeMs ?? 0) - (s.records?.startTimeMs ?? 0) ===
+                (latest.records?.endTimeMs ?? 0) - (latest.records?.startTimeMs ?? 0),
+          )
+          .lastIndexOf(false) + 1,
       )
     : [];
   const anomalies = fresh
@@ -396,7 +410,9 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
           "sample mean bytes",
           comparable.map((s) => ({
             value:
-              s.records?.state === "complete" && s.records.count >= 20 ? s.records.meanBytes : null,
+              s.records?.analysisEligible === true && s.records.count >= 20
+                ? s.records.meanBytes
+                : null,
             id: s.id,
           })),
           32,
