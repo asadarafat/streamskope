@@ -127,14 +127,6 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
         { timeout: 15_000 },
       )
       .toBe(true);
-    await producer.send({
-      messages: Array.from({ length: 40 }, (_, index) => ({
-        topic,
-        partition: index % 2,
-        ...(index % 2 === 0 ? { key: Buffer.from("shared-investigation-key") } : {}),
-        value: Buffer.from(`{"fixtureRecord":${index}}`),
-      })),
-    });
     launch = await launchWebDevelopment({
       backend,
       hostPort: await port(),
@@ -179,6 +171,16 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
       .getByRole("checkbox", { name: "Sample records for size and key distribution" })
       .check();
     const capture = (): Locator => health.getByRole("button", { name: "Capture observation" });
+    // Seed only after cold renderer startup so the protected sixty-second sample
+    // remains deterministic without extending its production sampling budget.
+    await producer.send({
+      messages: Array.from({ length: 40 }, (_, index) => ({
+        topic,
+        partition: index % 2,
+        ...(index % 2 === 0 ? { key: Buffer.from("shared-investigation-key") } : {}),
+        value: Buffer.from(`{"fixtureRecord":${index}}`),
+      })),
+    });
     await capture().click();
     await expect(health.getByRole("region", { name: "Observation summary" })).toContainText("40", {
       timeout: 20_000,
@@ -232,13 +234,18 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
         return read?.payload;
       })
       .toMatchObject({
-        request: {
-          topic,
-          mode: "time-window",
-          maxMessages: 1,
-          search: { partition: 0, offsetExact: "0" },
+        topic,
+        mode: "time-window",
+        maxMessages: 1,
+        search: {
+          key: "",
+          value: "",
+          offset: "",
+          timestamp: "",
+          partition: 0,
+          offsetExact: "0",
         },
-      });
+      } satisfies Partial<Extract<HostCommand, { command: "messages.start" }>["payload"]>);
     await expect(page.getByRole("region", { name: "Message workspace" })).toContainText(
       '"fixtureRecord":0',
       { timeout: 15_000 },
@@ -360,7 +367,7 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
     await health.getByRole("button", { name: "History and collection settings" }).click();
     await health.getByRole("button", { name: "Reload retained history", exact: true }).click();
     await expect(health.getByRole("region", { name: "Observation summary" })).toContainText(
-      /stale|historical/iu,
+      "Stale evidence",
     );
     await expect(health.getByRole("button", { name: `Inspect topic ${topic}` })).toBeDisabled();
     await page.screenshot({
