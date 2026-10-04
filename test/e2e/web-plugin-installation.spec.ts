@@ -151,8 +151,11 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await card.getByRole("button", { name: "Remove", exact: true }).click();
     await page.getByRole("button", { name: "Remove plugin", exact: true }).click();
     await expect(card).toContainText("Not installed");
-    // The card updates before the confirmation dialog finishes its exit transition.
-    await expect(page.getByRole("button", { name: "Remove plugin", exact: true })).toHaveCount(0);
+    // Wait for the modal itself: its controls disappear before its exit transition
+    // releases the keyboard to Preferences.
+    await expect(
+      page.locator('[role="dialog"][aria-labelledby="change-plugin-title"]'),
+    ).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "Workbench Preferences" })).toHaveCount(0);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
