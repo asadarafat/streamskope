@@ -246,16 +246,15 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
           offsetExact: "0",
         },
       } satisfies Partial<Extract<HostCommand, { command: "messages.start" }>["payload"]>);
-    await expect(page.getByRole("region", { name: "Message workspace" })).toContainText(
-      '"fixtureRecord":0',
-      { timeout: 15_000 },
-    );
-    await expect(page.getByRole("region", { name: "Message workspace" })).not.toContainText(
-      '"fixtureRecord":20',
-    );
-    await expect(page.getByRole("region", { name: "Message workspace" })).not.toContainText(
-      '"fixtureRecord":1',
-    );
+    const messageWorkspace = page.getByRole("region", { name: "Message workspace" });
+    await expect(messageWorkspace).toContainText("Partition 0 · Offset 0", { timeout: 15_000 });
+    await messageWorkspace.getByRole("tab", { name: "Value", exact: true }).click();
+    const valueEvidence = messageWorkspace.getByRole("region", {
+      name: "Message evidence content",
+    });
+    await expect(valueEvidence).toContainText(/"fixtureRecord"\s*:\s*0\b/u);
+    await expect(valueEvidence).not.toContainText(/"fixtureRecord"\s*:\s*20\b/u);
+    await expect(valueEvidence).not.toContainText(/"fixtureRecord"\s*:\s*1\b/u);
 
     health = await openHealth();
     await choose(health.getByRole("combobox", { name: "Observed topic", exact: true }), topic);

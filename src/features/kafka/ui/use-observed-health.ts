@@ -43,7 +43,10 @@ interface ObservedHealthController {
 const emptyHistory: ObservationSnapshot = { schemaVersion: 1, series: [], durability: "session" };
 
 /** Owns page-scoped collection, cooldown and late-result cancellation. */
-export function useObservedHealth(host: StreamSkopeHost): ObservedHealthController {
+export function useObservedHealth(
+  host: StreamSkopeHost,
+  backendAvailable = true,
+): ObservedHealthController {
   const [snapshot, setSnapshot] = useState(emptyHistory);
   const [selected, setSelected] = useState("");
   const [currentCapture, setCurrentCapture] = useState<string | null>(null);
@@ -55,7 +58,10 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
   const [now, setNow] = useState(Date.now());
   const mounted = useRef(false);
   const generation = useRef(0);
-  const inFlight = useRef(false);
+  const inFlight = useRef<number | null>(null);
+  const readiness = useRef(backendAvailable);
+  readiness.current = backendAvailable;
+  const previousReadiness = useRef(backendAvailable);
   const cooldown = useRef(0);
   const input = useRef<ObservationInput | null>(null);
   const series = snapshot.series.find((value) => observationIdentity(value) === selected);
@@ -87,11 +93,11 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
     );
   }, []);
   const refreshHistory = useCallback(async (): Promise<void> => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+    if (!readiness.current || inFlight.current !== null) return;
+    const current = generation.current;
+    inFlight.current = current;
     setOperation("history");
     setHistoryReady(false);
-    const current = generation.current;
     try {
       const response = await host.execute({
         command: "observations.history",
@@ -99,7 +105,7 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
         version: HOST_PROTOCOL_VERSION,
         payload: {},
       });
-      if (!mounted.current || generation.current !== current) return;
+      if (!mounted.current || !readiness.current || generation.current !== current) return;
       if (response.ok) {
         update(response.result.snapshot);
         setHistoryReady(true);
@@ -117,10 +123,13 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
         setError(null);
       } else failure("history", response.error);
     } catch {
-      if (mounted.current && generation.current === current) failure("history");
+      if (mounted.current && readiness.current && generation.current === current)
+        failure("history");
     } finally {
-      inFlight.current = false;
-      if (mounted.current) setOperation(null);
+      if (inFlight.current === current) {
+        inFlight.current = null;
+        if (mounted.current) setOperation(null);
+      }
     }
   }, [host, update, failure]);
   useEffect(() => {
@@ -143,6 +152,30 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
     };
   }, [host, refreshHistory]);
   useEffect(() => {
+    const previouslyAvailable = previousReadiness.current;
+    previousReadiness.current = backendAvailable;
+    if (backendAvailable) {
+      if (!previouslyAvailable && !historyReady) void refreshHistory();
+      return;
+    }
+    setOperation(null);
+    if (!previouslyAvailable) return;
+    generation.current++;
+    inFlight.current = null;
+    input.current = null;
+    setCurrentCapture(null);
+    setRunning(false);
+    void host
+      .execute({
+        command: "observations.cancel",
+        id: crypto.randomUUID(),
+        version: HOST_PROTOCOL_VERSION,
+        payload: {},
+      })
+      .catch(() => undefined);
+  }, [backendAvailable, historyReady, host, refreshHistory]);
+  useEffect(() => {
+    if (!backendAvailable) return;
     const observedAt = latest?.observedAt;
     const expiry = observedAt === undefined ? 0 : observedAt + limits.staleMs + 1;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -160,16 +193,16 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
     return (): void => {
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [latest?.observedAt, nextCaptureAt]);
+  }, [backendAvailable, latest?.observedAt, nextCaptureAt]);
 
   const capture = useCallback(
     async (request: ObservationInput): Promise<void> => {
-      if (inFlight.current || Date.now() < cooldown.current) return;
-      inFlight.current = true;
+      if (!readiness.current || inFlight.current !== null || Date.now() < cooldown.current) return;
+      const current = generation.current;
+      inFlight.current = current;
       input.current = request;
       setOperation("capture");
       setError(null);
-      const current = generation.current;
       let retryDelay = limits.intervalMs as number;
       try {
         const response = await host.execute({
@@ -178,7 +211,7 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
           version: HOST_PROTOCOL_VERSION,
           payload: request,
         });
-        if (!mounted.current || generation.current !== current) return;
+        if (!mounted.current || !readiness.current || generation.current !== current) return;
         if (!response.ok) {
           if (response.error.code === "OBSERVATION_HISTORY_UNAVAILABLE") setHistoryReady(false);
           retryDelay = Math.max(retryDelay, response.error.retryAfterMs ?? 0);
@@ -200,18 +233,20 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
         setSelected(observationIdentity(next.series));
         setCurrentCapture(next.series.samples.at(-1)!.id);
       } catch {
-        if (mounted.current && generation.current === current) {
+        if (mounted.current && readiness.current && generation.current === current) {
           failure("capture");
           setRunning(false);
         }
       } finally {
-        inFlight.current = false;
-        if (mounted.current) {
-          // Conservative UI spacing also prevents an immediate retry after Stop or a failed read.
-          cooldown.current = Date.now() + retryDelay;
-          setNextCaptureAt(cooldown.current);
-          setNow(Date.now());
-          setOperation(null);
+        if (inFlight.current === current) {
+          inFlight.current = null;
+          if (mounted.current) {
+            // Conservative UI spacing also prevents an immediate retry after Stop or a failed read.
+            cooldown.current = Date.now() + retryDelay;
+            setNextCaptureAt(cooldown.current);
+            setNow(Date.now());
+            setOperation(null);
+          }
         }
       }
     },
@@ -220,7 +255,7 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
   const captureRef = useRef(capture);
   captureRef.current = capture;
   useEffect(() => {
-    if (!running) return;
+    if (!running || !backendAvailable) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async (): Promise<void> => {
@@ -238,7 +273,7 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [running]);
+  }, [backendAvailable, running]);
   const stop = useCallback((): void => {
     setRunning(false);
     generation.current++;
@@ -252,16 +287,16 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
       .catch(() => undefined);
   }, [host]);
   const start = (request: ObservationInput): void => {
-    if (inFlight.current || Date.now() < cooldown.current) return;
+    if (!readiness.current || inFlight.current !== null || Date.now() < cooldown.current) return;
     input.current = request;
     setRunning(true);
   };
   const clear = async (): Promise<boolean> => {
-    if (inFlight.current) return false;
+    if (!readiness.current || inFlight.current !== null) return false;
     stop();
-    inFlight.current = true;
-    setOperation("clear");
     const current = generation.current;
+    inFlight.current = current;
+    setOperation("clear");
     try {
       const response = await host.execute({
         command: "observations.clear",
@@ -269,7 +304,7 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
         version: HOST_PROTOCOL_VERSION,
         payload: { confirmation: "CLEAR HISTORY" },
       });
-      if (!mounted.current || current !== generation.current) return false;
+      if (!mounted.current || !readiness.current || current !== generation.current) return false;
       if (response.ok) {
         update(response.result.snapshot);
         setHistoryReady(true);
@@ -279,10 +314,12 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
       }
       failure("clear", response.error);
     } catch {
-      if (mounted.current && current === generation.current) failure("clear");
+      if (mounted.current && readiness.current && current === generation.current) failure("clear");
     } finally {
-      inFlight.current = false;
-      if (mounted.current) setOperation(null);
+      if (inFlight.current === current) {
+        inFlight.current = null;
+        if (mounted.current) setOperation(null);
+      }
     }
     return false;
   };
@@ -294,7 +331,7 @@ export function useObservedHealth(host: StreamSkopeHost): ObservedHealthControll
     latest,
     fresh,
     now,
-    current: latest?.id === currentCapture,
+    current: backendAvailable && latest?.id === currentCapture,
     running,
     busy: operation !== null,
     operation,

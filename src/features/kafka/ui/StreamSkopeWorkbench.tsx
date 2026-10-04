@@ -635,6 +635,7 @@ export function StreamSkopeWorkbench({
       <ObservedHealthPage
         key={`${state.connectionName ?? "disconnected"}:${state.connectionState}`}
         host={host}
+        backendAvailable={state.backend === "ready"}
         connected={connected}
         connectionName={state.connectionName}
         initialTopic={selectedTopic ?? ""}

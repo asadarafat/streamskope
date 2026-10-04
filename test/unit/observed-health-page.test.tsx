@@ -100,11 +100,11 @@ function fixture(initial: readonly ObservationSeries[] = []): ObservationFixture
     },
   };
 }
-function show(
+function healthPage(
   f: ReturnType<typeof fixture>,
   props: Partial<ObservedHealthPageProperties> = {},
-): ReturnType<typeof render> {
-  return render(
+): React.JSX.Element {
+  return (
     <StreamSkopeThemeProvider>
       <ObservedHealthPage
         host={f.host}
@@ -114,8 +114,14 @@ function show(
         onOpenGroup={vi.fn()}
         {...props}
       />
-    </StreamSkopeThemeProvider>,
+    </StreamSkopeThemeProvider>
   );
+}
+function show(
+  f: ReturnType<typeof fixture>,
+  props: Partial<ObservedHealthPageProperties> = {},
+): ReturnType<typeof render> {
+  return render(healthPage(f, props));
 }
 async function ready(): Promise<void> {
   await act(async () => {
@@ -338,6 +344,174 @@ it("disposes its cooldown and collection deadlines on navigation without another
   expect(f.commands.filter((command) => command.command === "observations.capture")).toHaveLength(
     1,
   );
+});
+
+it("preserves measured evidence but blocks collection and drilldowns after host loss until an explicit new capture", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const onOpenGroup = vi.fn();
+  const view = show(f, { onOpenGroup });
+  await ready();
+  select();
+  fireEvent.click(screen.getByRole("button", { name: "Start observing" }));
+  await ready();
+  expect(screen.getByText("Recent evidence")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Inspect consumer group workers" })).toBeEnabled();
+
+  view.rerender(healthPage(f, { backendAvailable: false, onOpenGroup }));
+  await ready();
+  expect(screen.getByText(/Host unavailable\. Collection is stopped/u)).toBeVisible();
+  expect(screen.getByText("Retained evidence")).toBeVisible();
+  expect(
+    within(screen.getByRole("region", { name: "Observation summary" })).getByText("100"),
+  ).toBeVisible();
+  for (const name of ["Capture observation", "Start observing", "Refresh resources"]) {
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+  }
+  const group = screen.getByRole("button", { name: "Inspect consumer group workers" });
+  expect(group).toBeDisabled();
+  fireEvent.click(group);
+  expect(onOpenGroup).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "History and collection settings" }));
+  expect(screen.getByRole("button", { name: "Reload retained history" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Clear all history confirmation"), {
+    target: { value: "CLEAR HISTORY" },
+  });
+  expect(screen.getByRole("button", { name: "Clear all observation history" })).toBeDisabled();
+  const commandsAfterLoss = f.commands.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
+  expect(f.commands).toHaveLength(commandsAfterLoss);
+
+  view.rerender(healthPage(f, { backendAvailable: true, onOpenGroup }));
+  await ready();
+  expect(f.commands).toHaveLength(commandsAfterLoss);
+  expect(screen.getByText("Retained evidence")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Inspect consumer group workers" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Stop observing" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Capture observation" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Capture observation" }));
+  await ready();
+  expect(screen.getByText("Recent evidence")).toBeVisible();
+  expect(
+    within(screen.getByRole("region", { name: "Observation summary" })).getByText("110"),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "Inspect consumer group workers" })).toBeEnabled();
+  expect(f.commands.filter((command) => command.command === "observations.capture")).toHaveLength(
+    2,
+  );
+});
+
+it("ignores a lost-host capture settling while a new explicit recovered capture is still pending", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const view = show(f);
+  await ready();
+  select();
+  fireEvent.click(screen.getByRole("button", { name: "Capture observation" }));
+  await ready();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10_000);
+  });
+  let releaseLost!: () => void;
+  f.deferCapture(
+    () =>
+      new Promise<void>((resolve) => {
+        releaseLost = resolve;
+      }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Capture observation" }));
+  await ready();
+  view.rerender(healthPage(f, { backendAvailable: false }));
+  await ready();
+  expect(screen.getByText("Retained evidence")).toBeVisible();
+
+  let releaseRecovered!: () => void;
+  f.deferCapture(
+    () =>
+      new Promise<void>((resolve) => {
+        releaseRecovered = resolve;
+      }),
+  );
+  view.rerender(healthPage(f, { backendAvailable: true }));
+  await ready();
+  fireEvent.click(screen.getByRole("button", { name: "Capture observation" }));
+  await ready();
+  await act(async () => {
+    releaseLost();
+    await Promise.resolve();
+  });
+  expect(screen.getByRole("status", { name: "Observation collection status" })).toHaveTextContent(
+    "Collecting observation",
+  );
+  expect(screen.getByRole("button", { name: "Stop observing" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Capture observation" })).toBeDisabled();
+  expect(
+    within(screen.getByRole("region", { name: "Observation summary" })).getByText("100"),
+  ).toBeVisible();
+  expect(screen.queryByText("Recent evidence")).not.toBeInTheDocument();
+  await act(async () => {
+    // The validated history requires distinct chronological completion times.
+    await vi.advanceTimersByTimeAsync(1);
+    releaseRecovered();
+    await Promise.resolve();
+  });
+  expect(
+    within(screen.getByRole("region", { name: "Observation summary" })).getByText("120"),
+  ).toBeVisible();
+  expect(screen.getByText("Recent evidence")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Capture observation" })).toBeDisabled();
+});
+
+it("disposes every observation deadline on host loss and never resumes opted-in collection on recovery", async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const { result, rerender } = renderHook(({ available }) => useObservedHealth(f.host, available), {
+    initialProps: { available: true },
+  });
+  await ready();
+  act(() => {
+    result.current.start({
+      topic: "events",
+      groupId: "workers",
+      thresholds: { lag: null, requestMs: null },
+    });
+  });
+  await ready();
+  expect(vi.getTimerCount()).toBe(2);
+  const retained = result.current.snapshot;
+  rerender({ available: false });
+  await ready();
+  expect(result.current.snapshot).toEqual(retained);
+  expect(result.current.current).toBe(false);
+  expect(result.current.running).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+  const commandsAfterLoss = f.commands.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
+  expect(f.commands).toHaveLength(commandsAfterLoss);
+  rerender({ available: true });
+  await ready();
+  expect(f.commands).toHaveLength(commandsAfterLoss);
+  expect(result.current.current).toBe(false);
+  expect(result.current.running).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("loads only retained history when an initially unavailable host recovers", async () => {
+  const f = fixture();
+  const props = { initialTopic: "events", initialGroupId: "workers" };
+  const view = show(f, { ...props, backendAvailable: false });
+  await ready();
+  expect(f.commands).toHaveLength(0);
+  expect(screen.getByRole("button", { name: "Capture observation" })).toBeDisabled();
+  view.rerender(healthPage(f, { ...props, backendAvailable: true }));
+  await ready();
+  expect(f.commands.map((command) => command.command)).toEqual(["observations.history"]);
+  expect(screen.getByRole("button", { name: "Capture observation" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Stop observing" })).toBeDisabled();
 });
 
 it("runs only opted-in captures and stops the timer immediately", async () => {

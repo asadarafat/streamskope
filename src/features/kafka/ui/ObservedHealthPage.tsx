@@ -34,6 +34,7 @@ function threshold(value: string, label: string, maximum = Number.MAX_SAFE_INTEG
 }
 export interface ObservedHealthPageProperties extends ObservationNavigation {
   readonly host: StreamSkopeHost;
+  readonly backendAvailable?: boolean;
   readonly connected?: boolean;
   readonly connectionName?: string | null;
   readonly initialTopic?: string;
@@ -46,6 +47,7 @@ export interface ObservedHealthPageProperties extends ObservationNavigation {
 
 export function ObservedHealthPage({
   host,
+  backendAvailable = true,
   connected = true,
   connectionName = null,
   initialTopic = "",
@@ -64,7 +66,7 @@ export function ObservedHealthPage({
   const [confirmation, setConfirmation] = useState("");
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const health = useObservedHealth(host);
+  const health = useObservedHealth(host, backendAvailable);
   const { series, latest } = health;
   const selectionInitialized = useRef(false);
   useEffect(() => {
@@ -75,7 +77,7 @@ export function ObservedHealthPage({
       setGroupId(series.groupId ?? "");
     }
   }, [series, topic]);
-  const actionable = health.current && health.fresh;
+  const actionable = connected && backendAvailable && health.current && health.fresh;
   const analysis = useMemo(
     () =>
       series
@@ -114,10 +116,12 @@ export function ObservedHealthPage({
     }
   };
   const capture = (): void => {
+    if (!connected || !backendAvailable) return;
     const input = request();
     if (input) void health.capture(input);
   };
   const start = (): void => {
+    if (!connected || !backendAvailable) return;
     const input = request();
     if (input) health.start(input);
   };
@@ -141,6 +145,13 @@ export function ObservedHealthPage({
           Broker CPU/disk and processing success require other monitoring.
         </Typography>
       </Stack>
+      {!backendAvailable && (
+        <Alert severity="warning">
+          Host unavailable. Collection is stopped. Restore the application host and reload the
+          workbench if needed, then capture a new observation. Retained evidence remains readable;
+          collection does not resume automatically.
+        </Alert>
+      )}
       <ObservationControls
         topic={topic}
         groupId={groupId}
@@ -149,6 +160,7 @@ export function ObservedHealthPage({
         busy={health.busy}
         running={health.running}
         connected={connected}
+        backendAvailable={backendAvailable}
         historyReady={health.historyReady}
         cooldownSeconds={health.cooldownSeconds}
         operation={health.operation}
@@ -188,6 +200,7 @@ export function ObservedHealthPage({
               <Button
                 disabled={
                   !connected ||
+                  !backendAvailable ||
                   !health.historyReady ||
                   health.busy ||
                   health.cooldownSeconds > 0 ||
@@ -201,7 +214,7 @@ export function ObservedHealthPage({
             {(health.error.operation === "history" ||
               health.error.hostError?.code === "OBSERVATION_HISTORY_UNAVAILABLE") && (
               <Button
-                disabled={health.busy}
+                disabled={!backendAvailable || health.busy}
                 onClick={() => {
                   void health.refreshHistory();
                 }}
@@ -240,7 +253,7 @@ export function ObservedHealthPage({
         <>
           <ObservationSummary
             series={series}
-            current={health.current}
+            current={connected && health.current}
             fresh={health.fresh}
             connectionName={connectionName}
             analysis={analysis}
@@ -334,7 +347,7 @@ export function ObservedHealthPage({
               evicted; payloads, raw keys and credentials are not stored.
             </Typography>
             <Button
-              disabled={health.busy || health.running}
+              disabled={!backendAvailable || health.busy || health.running}
               onClick={() => {
                 void health.refreshHistory();
               }}
@@ -351,7 +364,12 @@ export function ObservedHealthPage({
               />
               <Button
                 color="error"
-                disabled={health.busy || health.running || confirmation !== "CLEAR HISTORY"}
+                disabled={
+                  !backendAvailable ||
+                  health.busy ||
+                  health.running ||
+                  confirmation !== "CLEAR HISTORY"
+                }
                 onClick={() => {
                   void health.clear().then((cleared) => {
                     if (cleared) setConfirmation("");

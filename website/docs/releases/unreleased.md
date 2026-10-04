@@ -11,6 +11,8 @@ Observed health now prioritizes selected-topic findings, measurement coverage an
 investigation actions. Existing resources can be selected from the connected
 profile; collection progress and cooldown are visible. Partition filtering and
 sorting and group/topic/exact-record drilldowns reduce manual investigation work.
+Host loss stops collection and marks previous measurements as retained evidence;
+recovery requires a new capture before resource links become actionable.
 
 Collection errors retain specific safe recovery reasons. Selected-topic lag is
 independent of unrelated group-member/assignment omissions. Record sampling uses

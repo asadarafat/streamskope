@@ -14,6 +14,7 @@ export interface ObservationControlsProperties {
   readonly busy: boolean;
   readonly running: boolean;
   readonly connected: boolean;
+  readonly backendAvailable: boolean;
   readonly historyReady: boolean;
   readonly cooldownSeconds: number;
   readonly operation: "history" | "capture" | "clear" | null;
@@ -31,6 +32,7 @@ export function ObservationControls(p: ObservationControlsProperties): React.JSX
   const disabled = p.busy || p.running;
   const canCapture =
     p.connected &&
+    p.backendAvailable &&
     p.historyReady &&
     !disabled &&
     p.cooldownSeconds === 0 &&
@@ -44,7 +46,7 @@ export function ObservationControls(p: ObservationControlsProperties): React.JSX
           options={[...p.topics]}
           value={p.topic || null}
           inputValue={p.topic}
-          disabled={disabled || !p.connected}
+          disabled={disabled || !p.connected || !p.backendAvailable}
           onInputChange={(_event, value) => p.onTopicChange(value)}
           onChange={(_event, value) => p.onTopicChange(value ?? "")}
           renderInput={(params) => (
@@ -61,7 +63,7 @@ export function ObservationControls(p: ObservationControlsProperties): React.JSX
           options={[...p.groups]}
           value={p.groupId || null}
           inputValue={p.groupId}
-          disabled={disabled || !p.connected}
+          disabled={disabled || !p.connected || !p.backendAvailable}
           onInputChange={(_event, value) => p.onGroupChange(value)}
           onChange={(_event, value) => p.onGroupChange(value ?? "")}
           renderInput={(params) => (
@@ -83,7 +85,7 @@ export function ObservationControls(p: ObservationControlsProperties): React.JSX
         <Button disabled={!p.running && p.operation !== "capture"} onClick={p.onStop}>
           Stop observing
         </Button>
-        <Button disabled={disabled || !p.connected} onClick={p.onRefresh}>
+        <Button disabled={disabled || !p.connected || !p.backendAvailable} onClick={p.onRefresh}>
           Refresh resources
         </Button>
       </Stack>
@@ -94,21 +96,23 @@ export function ObservationControls(p: ObservationControlsProperties): React.JSX
         variant="body2"
         color="text.secondary"
       >
-        {!p.connected
-          ? "Disconnected — connect a profile to collect new evidence."
-          : p.operation === "capture"
-            ? "Collecting observation… One request at a time; stops after 15 seconds."
-            : p.operation === "history"
-              ? "Loading retained observations…"
-              : p.operation === "clear"
-                ? "Clearing retained history…"
-                : !p.historyReady
-                  ? "Retained history is unavailable. Reload it or explicitly clear it before collecting."
-                  : p.cooldownSeconds > 0
-                    ? `${p.running ? "Observing" : "Stopped"} · Next capture available in ${p.cooldownSeconds} seconds.`
-                    : p.running
-                      ? "Observing · Waiting for the next capture."
-                      : "Stopped · Capture once or observe every 10 seconds after collection completes."}
+        {!p.backendAvailable
+          ? "Host unavailable — restore the application host before collecting new evidence."
+          : !p.connected
+            ? "Disconnected — connect a profile to collect new evidence."
+            : p.operation === "capture"
+              ? "Collecting observation… One request at a time; stops after 15 seconds."
+              : p.operation === "history"
+                ? "Loading retained observations…"
+                : p.operation === "clear"
+                  ? "Clearing retained history…"
+                  : !p.historyReady
+                    ? "Retained history is unavailable. Reload it or explicitly clear it before collecting."
+                    : p.cooldownSeconds > 0
+                      ? `${p.running ? "Observing" : "Stopped"} · Next capture available in ${p.cooldownSeconds} seconds.`
+                      : p.running
+                        ? "Observing · Waiting for the next capture."
+                        : "Stopped · Capture once or observe every 10 seconds after collection completes."}
       </Typography>
       <Typography variant="caption" color="text.secondary">
         {p.inventoryStatus}

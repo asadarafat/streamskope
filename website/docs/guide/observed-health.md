@@ -52,6 +52,11 @@ different connection: collecting successfully on the current connection is
 required before treating it as current evidence. Failed reads do not create zero
 measurements, and stale evidence produces no current diagnosis or forecast.
 
+If the application host becomes unavailable, collection stops and its last
+measurements become retained evidence. Capture and resource links stay disabled
+while the host is unavailable. Follow the host recovery action, then capture
+again to verify the connection; repeated collection does not resume automatically.
+
 Group-access failures leave available topic evidence intact. Selected-topic lag
 uses that topic's committed and end positions; omitted unrelated group members
 or assignments do not by themselves invalidate those positions. Missing,
@@ -68,7 +73,7 @@ unreadable or unsupported history file remains preserved until explicitly cleare
   selected-topic partitions**.
 - Repeated collection waits at least **ten seconds after each completed attempt**.
   A one-shot attempt also observes the host cooldown.
-- **Stop observing**, navigation away, disconnect and app shutdown stop collection.
+- **Stop observing**, navigation away, disconnect, host loss and app shutdown stop collection.
   Sampling and local alerts run only while this page is open; there is no
   background notification service.
 - Desktop history is stored privately in `history/kafka-observations.json` inside
