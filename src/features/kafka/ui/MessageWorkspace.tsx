@@ -502,7 +502,14 @@ export function MessageWorkspace({
             Finding partition {filters.partition ?? "any"}, exact offset {filters.offsetExact} in
             the selected time window. Deleted or compacted records may be unavailable; read coverage
             describes the attempted range.
-            <Button onClick={onClearFilters}>Clear exact locator</Button>
+            <Button
+              onClick={() => {
+                onTextFilterChange("offset", "");
+                onPartitionFilterChange(null);
+              }}
+            >
+              Clear exact locator
+            </Button>
           </Alert>
         )}
         {selectedTopic !== null && filterPanelOpen ? (

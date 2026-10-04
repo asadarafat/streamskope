@@ -108,7 +108,7 @@ export function ObservationSummary({
             <Typography variant="body2" color="text.secondary">
               {metric.label}
             </Typography>
-            <Typography variant="h6" sx={{ overflowWrap: "anywhere" }}>
+            <Typography component="p" variant="h6" sx={{ overflowWrap: "anywhere" }}>
               {metric.value}
             </Typography>
             <Typography variant="caption" color="text.secondary">

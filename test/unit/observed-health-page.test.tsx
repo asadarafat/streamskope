@@ -18,12 +18,14 @@ import type {
   ObservationSeries,
   ObservationSnapshot,
 } from "../../src/features/kafka/contracts/observations";
+import { analyzeObservations } from "../../src/features/kafka/contracts/observation-analysis";
 import {
   ObservedHealthPage,
   type ObservedHealthPageProperties,
 } from "../../src/features/kafka/ui/ObservedHealthPage";
 import { ObservationPartitionTable } from "../../src/features/kafka/ui/ObservationPartitionTable";
 import { ObservationAnalysisPanel } from "../../src/features/kafka/ui/ObservationAnalysisPanel";
+import { ObservationSummary } from "../../src/features/kafka/ui/ObservationSummary";
 import { useObservedHealth } from "../../src/features/kafka/ui/use-observed-health";
 import { StreamSkopeThemeProvider } from "../../src/platform/ui/StreamSkopeThemeProvider";
 import { testHostExecute } from "../support/host-response";
@@ -136,6 +138,26 @@ const timeout: HostError = {
   summary: "The Kafka observation timed out.",
   recovery: "Check the broker endpoint and retry.",
 };
+
+it("keeps measured summary values outside the document heading outline", () => {
+  const now = Date.now();
+  const series = observationSeries([observation(0, { startedAt: now, observedAt: now })]);
+  render(
+    <StreamSkopeThemeProvider>
+      <ObservationSummary
+        series={series}
+        current
+        fresh
+        connectionName="Test Kafka"
+        analysis={analyzeObservations(series, now)}
+      />
+    </StreamSkopeThemeProvider>,
+  );
+  const summary = within(screen.getByRole("region", { name: "Observation summary" }));
+  expect(summary.getByText("100")).toBeVisible();
+  expect(summary.getAllByRole("heading")).toHaveLength(1);
+  expect(summary.getByRole("heading", { level: 2, name: "events" })).toBeVisible();
+});
 
 it("rejects out-of-range collection settings before issuing a request or entering cooldown", async () => {
   const f = fixture();

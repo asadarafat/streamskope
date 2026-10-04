@@ -111,7 +111,9 @@ export function ObservationAnalysisPanel({
         </Table>
       </Box>
       {!analysis.fresh && (
-        <Typography>No current anomaly classification; retained evidence is stale.</Typography>
+        <Typography>
+          No current anomaly classification; retained evidence is not current.
+        </Typography>
       )}
       <Typography component="h3" variant="subtitle1">
         Partition and key distribution
