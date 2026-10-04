@@ -1,0 +1,510 @@
+{
+  "schemaVersion": 1,
+  "source": "63c1d7ad8fa3d2c363c58ccdb6fa3f1638112eda",
+  "applicationSourceTree": "71f7da0aedf76dd4d3dfc09eac8dac576b20cc98",
+  "originalReportSha256": "c77fee392d76d1bfb0beb56988a5ac2c7363b8f958106982baf2e97b8c0f7365",
+  "soak": {
+    "check": "bounded-stream-replay",
+    "command": "node --import tsx test/performance/stream-pipeline-replay.ts --seconds=60 --rate=1000 --bytes=256 --mixed --clone",
+    "evidence": {
+      "method": "Deterministic application-ingestion replay: production session, facade, live-rule evaluation and reducer in one Node process. Not Kafka fetch, actual IPC, React rendering or interaction latency.",
+      "config": {
+        "seconds": 60,
+        "rate": 1000,
+        "bytes": 256,
+        "mixed": true,
+        "rules": false,
+        "partitions": 6,
+        "presentationMs": 25,
+        "burstMs": 10,
+        "roundTrip": true
+      },
+      "environment": {
+        "node": {
+          "node": "24.12.0",
+          "acorn": "8.15.0",
+          "ada": "3.3.0",
+          "amaro": "1.1.5",
+          "ares": "1.34.5",
+          "brotli": "1.1.0",
+          "cjs_module_lexer": "2.1.0",
+          "cldr": "47.0",
+          "icu": "77.1",
+          "llhttp": "9.3.0",
+          "modules": "137",
+          "napi": "10",
+          "nbytes": "0.1.1",
+          "ncrypto": "0.0.1",
+          "nghttp2": "1.67.1",
+          "openssl": "3.5.4",
+          "simdjson": "4.1.0",
+          "simdutf": "6.4.0",
+          "sqlite": "3.50.4",
+          "tz": "2025b",
+          "undici": "7.16.0",
+          "unicode": "16.0",
+          "uv": "1.51.0",
+          "uvwasi": "0.0.23",
+          "v8": "13.6.233.17-node.37",
+          "zlib": "1.3.1-470d3a2",
+          "zstd": "1.5.7"
+        },
+        "platform": "linux",
+        "arch": "arm64",
+        "cpu": "unknown",
+        "logicalCpus": 8,
+        "totalMemory": 29453111296,
+        "availableMemory": 1337851904
+      },
+      "elapsedMs": 60149.831518,
+      "cpuMs": 47509.42,
+      "cpuPercentOneCore": 78.98512564541876,
+      "offered": 60000,
+      "generated": 59972,
+      "generatedBytes": 1335941870,
+      "generatedPerSecond": 997.0435242541489,
+      "generatedMiBPerSecond": 21.18133031261232,
+      "ungeneratedOffered": 28,
+      "accepted": 59972,
+      "published": 42842,
+      "hostDisplayDrops": 17130,
+      "queued": 0,
+      "unacceptedGenerated": 0,
+      "accountingPassed": true,
+      "batches": 2458,
+      "serializedBytes": 2373944716,
+      "rendererEvictions": 41842,
+      "retained": 1000,
+      "retainedBytes": 55106681,
+      "peakQueue": 302,
+      "peakQueueBytes": 16647872,
+      "peakRetainedBytes": 55582314,
+      "peakRss": 388460544,
+      "peakHeap": 504230664,
+      "peakExternal": 57069096,
+      "memoryStart": {
+        "rss": 153546752,
+        "heapTotal": 110190592,
+        "heapUsed": 65634392,
+        "external": 8002745,
+        "arrayBuffers": 4129863
+      },
+      "memoryEnd": {
+        "rss": 329863168,
+        "heapTotal": 463437824,
+        "heapUsed": 302222144,
+        "external": 9403771,
+        "arrayBuffers": 5401819
+      },
+      "lastMemorySamples": [
+        {
+          "rss": 298119168,
+          "heapTotal": 298106880,
+          "heapUsed": 175825904,
+          "external": 26749639,
+          "arrayBuffers": 22743021
+        },
+        {
+          "rss": 378953728,
+          "heapTotal": 414556160,
+          "heapUsed": 292371016,
+          "external": 38427336,
+          "arrayBuffers": 34420718
+        },
+        {
+          "rss": 270725120,
+          "heapTotal": 314605568,
+          "heapUsed": 172460352,
+          "external": 19252893,
+          "arrayBuffers": 15246275
+        },
+        {
+          "rss": 275701760,
+          "heapTotal": 422817792,
+          "heapUsed": 279406592,
+          "external": 19323148,
+          "arrayBuffers": 15316530
+        },
+        {
+          "rss": 238813184,
+          "heapTotal": 527601664,
+          "heapUsed": 384059528,
+          "external": 27005342,
+          "arrayBuffers": 22998724
+        },
+        {
+          "rss": 348921856,
+          "heapTotal": 333668352,
+          "heapUsed": 185197976,
+          "external": 20063283,
+          "arrayBuffers": 16056665
+        },
+        {
+          "rss": 282021888,
+          "heapTotal": 406843392,
+          "heapUsed": 307109696,
+          "external": 50551553,
+          "arrayBuffers": 46544935
+        },
+        {
+          "rss": 374427648,
+          "heapTotal": 541437952,
+          "heapUsed": 378394680,
+          "external": 12977894,
+          "arrayBuffers": 8971276
+        },
+        {
+          "rss": 388460544,
+          "heapTotal": 319279104,
+          "heapUsed": 138647888,
+          "external": 25155394,
+          "arrayBuffers": 21148776
+        },
+        {
+          "rss": 290324480,
+          "heapTotal": 372424704,
+          "heapUsed": 228546192,
+          "external": 20686729,
+          "arrayBuffers": 16680111
+        },
+        {
+          "rss": 314793984,
+          "heapTotal": 506363904,
+          "heapUsed": 377159568,
+          "external": 39632924,
+          "arrayBuffers": 35626306
+        },
+        {
+          "rss": 319496192,
+          "heapTotal": 309690368,
+          "heapUsed": 109987760,
+          "external": 13655378,
+          "arrayBuffers": 9648760
+        },
+        {
+          "rss": 313511936,
+          "heapTotal": 377716736,
+          "heapUsed": 254765496,
+          "external": 54269737,
+          "arrayBuffers": 50263119
+        },
+        {
+          "rss": 239673344,
+          "heapTotal": 454451200,
+          "heapUsed": 338251976,
+          "external": 47409311,
+          "arrayBuffers": 43402693
+        },
+        {
+          "rss": 319934464,
+          "heapTotal": 589398016,
+          "heapUsed": 412703552,
+          "external": 10558968,
+          "arrayBuffers": 6552350
+        },
+        {
+          "rss": 321732608,
+          "heapTotal": 390316032,
+          "heapUsed": 255204032,
+          "external": 47479212,
+          "arrayBuffers": 43477260
+        },
+        {
+          "rss": 299515904,
+          "heapTotal": 464068608,
+          "heapUsed": 335122872,
+          "external": 36453546,
+          "arrayBuffers": 32451594
+        },
+        {
+          "rss": 193806336,
+          "heapTotal": 551903232,
+          "heapUsed": 409243904,
+          "external": 33281410,
+          "arrayBuffers": 29279458
+        },
+        {
+          "rss": 125509632,
+          "heapTotal": 336097280,
+          "heapUsed": 120482112,
+          "external": 8863257,
+          "arrayBuffers": 4861305
+        },
+        {
+          "rss": 105676800,
+          "heapTotal": 360013824,
+          "heapUsed": 237261632,
+          "external": 52417415,
+          "arrayBuffers": 48415463
+        },
+        {
+          "rss": 387219456,
+          "heapTotal": 335241216,
+          "heapUsed": 158095400,
+          "external": 38151503,
+          "arrayBuffers": 34149551
+        },
+        {
+          "rss": 367022080,
+          "heapTotal": 460718080,
+          "heapUsed": 310997040,
+          "external": 22274474,
+          "arrayBuffers": 18272522
+        },
+        {
+          "rss": 355745792,
+          "heapTotal": 582176768,
+          "heapUsed": 440153776,
+          "external": 33486328,
+          "arrayBuffers": 29484376
+        },
+        {
+          "rss": 281681920,
+          "heapTotal": 333869056,
+          "heapUsed": 131669888,
+          "external": 17821124,
+          "arrayBuffers": 13819172
+        },
+        {
+          "rss": 357056512,
+          "heapTotal": 391946240,
+          "heapUsed": 249966992,
+          "external": 20711772,
+          "arrayBuffers": 16709820
+        },
+        {
+          "rss": 297398272,
+          "heapTotal": 495411200,
+          "heapUsed": 344160808,
+          "external": 20069657,
+          "arrayBuffers": 16067705
+        },
+        {
+          "rss": 386650112,
+          "heapTotal": 638029824,
+          "heapUsed": 504230664,
+          "external": 37496520,
+          "arrayBuffers": 33494568
+        },
+        {
+          "rss": 228831232,
+          "heapTotal": 342843392,
+          "heapUsed": 192369656,
+          "external": 35612362,
+          "arrayBuffers": 31610410
+        },
+        {
+          "rss": 314765312,
+          "heapTotal": 459501568,
+          "heapUsed": 340768456,
+          "external": 47482141,
+          "arrayBuffers": 43480189
+        },
+        {
+          "rss": 290668544,
+          "heapTotal": 539713536,
+          "heapUsed": 376411352,
+          "external": 15804348,
+          "arrayBuffers": 11802396
+        },
+        {
+          "rss": 321826816,
+          "heapTotal": 366694400,
+          "heapUsed": 198122344,
+          "external": 45094979,
+          "arrayBuffers": 41093027
+        },
+        {
+          "rss": 363368448,
+          "heapTotal": 429965312,
+          "heapUsed": 280875752,
+          "external": 11159985,
+          "arrayBuffers": 7158033
+        },
+        {
+          "rss": 339238912,
+          "heapTotal": 538755072,
+          "heapUsed": 385371840,
+          "external": 14949755,
+          "arrayBuffers": 10947803
+        },
+        {
+          "rss": 318357504,
+          "heapTotal": 333455360,
+          "heapUsed": 130884240,
+          "external": 57069096,
+          "arrayBuffers": 20246937
+        },
+        {
+          "rss": 266715136,
+          "heapTotal": 374833152,
+          "heapUsed": 213508520,
+          "external": 6051896,
+          "arrayBuffers": 2049944
+        },
+        {
+          "rss": 353370112,
+          "heapTotal": 513351680,
+          "heapUsed": 382541056,
+          "external": 33287524,
+          "arrayBuffers": 29285572
+        },
+        {
+          "rss": 307879936,
+          "heapTotal": 316375040,
+          "heapUsed": 97343336,
+          "external": 6974650,
+          "arrayBuffers": 2972698
+        },
+        {
+          "rss": 315981824,
+          "heapTotal": 374358016,
+          "heapUsed": 238991752,
+          "external": 52520074,
+          "arrayBuffers": 48518122
+        },
+        {
+          "rss": 245817344,
+          "heapTotal": 470515712,
+          "heapUsed": 301703592,
+          "external": 6000054,
+          "arrayBuffers": 1998102
+        },
+        {
+          "rss": 260075520,
+          "heapTotal": 331137024,
+          "heapUsed": 131165824,
+          "external": 19312962,
+          "arrayBuffers": 15311010
+        },
+        {
+          "rss": 287354880,
+          "heapTotal": 407277568,
+          "heapUsed": 299281888,
+          "external": 44480017,
+          "arrayBuffers": 40478065
+        },
+        {
+          "rss": 371142656,
+          "heapTotal": 525565952,
+          "heapUsed": 357349056,
+          "external": 6575698,
+          "arrayBuffers": 2573746
+        },
+        {
+          "rss": 361324544,
+          "heapTotal": 353390592,
+          "heapUsed": 168188120,
+          "external": 36572366,
+          "arrayBuffers": 32570414
+        },
+        {
+          "rss": 336433152,
+          "heapTotal": 385085440,
+          "heapUsed": 245111864,
+          "external": 28573892,
+          "arrayBuffers": 24571940
+        },
+        {
+          "rss": 345886720,
+          "heapTotal": 496406528,
+          "heapUsed": 356280464,
+          "external": 29741878,
+          "arrayBuffers": 25739926
+        },
+        {
+          "rss": 365817856,
+          "heapTotal": 350879744,
+          "heapUsed": 177683928,
+          "external": 42048170,
+          "arrayBuffers": 38046218
+        },
+        {
+          "rss": 379334656,
+          "heapTotal": 402591744,
+          "heapUsed": 296525528,
+          "external": 48561725,
+          "arrayBuffers": 44559773
+        },
+        {
+          "rss": 320856064,
+          "heapTotal": 518443008,
+          "heapUsed": 359172120,
+          "external": 11640479,
+          "arrayBuffers": 7638527
+        },
+        {
+          "rss": 312557568,
+          "heapTotal": 380186624,
+          "heapUsed": 201968768,
+          "external": 51840475,
+          "arrayBuffers": 47838523
+        },
+        {
+          "rss": 281825280,
+          "heapTotal": 376668160,
+          "heapUsed": 267180656,
+          "external": 14409793,
+          "arrayBuffers": 10407841
+        },
+        {
+          "rss": 329203712,
+          "heapTotal": 463437824,
+          "heapUsed": 302195688,
+          "external": 9403771,
+          "arrayBuffers": 5401819
+        }
+      ],
+      "gcCount": 229,
+      "gcMs": 15406.917883962393,
+      "eventLoopP95Ms": 111.935487,
+      "eventLoopP99Ms": 265.158655,
+      "reductionP95Ms": 4.627,
+      "reductionP99Ms": 10.783,
+      "ingestToReducerP95Ms": 311.551,
+      "ingestToReducerP99Ms": 475.647,
+      "boundsPassed": true,
+      "qualification": {
+        "passed": false,
+        "failures": [
+          "CPU exceeded the one-core percentage budget",
+          "event-loop p99 exceeded the budget",
+          "accounted display drops exceeded the budget"
+        ]
+      },
+      "qualificationBudgets": {
+        "maximumCpuPercentOneCore": 60,
+        "maximumPeakRssBytes": 805306368,
+        "maximumEventLoopP99Ms": 150,
+        "maximumDisplayDropRatio": 0.02,
+        "maximumIngestToReducerP95Ms": 1000,
+        "maximumIngestToReducerP99Ms": 2000,
+        "minimumGeneratedRatio": 0.99
+      },
+      "productUiInteractionP95Ms": "not measured by this replay; <100 ms remains unverified"
+    },
+    "failure": "Replay qualification failed: CPU exceeded the one-core percentage budget; event-loop p99 exceeded the budget; accounted display drops exceeded the budget",
+    "outcome": "failed",
+    "sampleMethod": "Deterministic 60-second production-session and facade replay at 1000 offered records per second with mixed payloads, structured-clone round trips enabled, bounded queues, and the production reducer.",
+    "capturedAt": "2026-10-04T11:35:37.166Z",
+    "runtime": {
+      "arch": "arm64",
+      "node": "v24.12.0",
+      "platform": "linux"
+    },
+    "schemaVersion": 1
+  },
+  "liveEda": {
+    "result": "incomplete",
+    "captureReadiness": "passed",
+    "leaseRenewal": "passed",
+    "kafkaRecordReceipt": "connection timed out before record receipt",
+    "stopAndOwnedCleanup": "passed",
+    "repeatStop": "passed"
+  },
+  "limitations": [
+    "The EDA result is source-bound to the integrated Monitor candidate documented in PR 54; it is not a new release-artifact rehearsal.",
+    "The host was under memory pressure; no controlled comparison established that as the cause of the performance failure.",
+    "The replay does not measure Kafka fetch, actual IPC, React rendering or interaction latency."
+  ]
+}

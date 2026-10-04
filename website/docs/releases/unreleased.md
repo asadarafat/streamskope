@@ -29,6 +29,23 @@ before build and deployment. Plugin guides separate source requirements from a
 verified catalog availability snapshot; source rehearsal records keep their exact
 revision and qualification limits.
 
+## Qualification limits
+
+Shared CI and the Topic Monitor browser workflow passed on the integrated source.
+Local qualification remains incomplete: the unchanged 60-second mixed-payload
+replay recorded **28.56% display omissions** (limit 2%), **78.99% of one CPU core**
+(limit 60%), and **265.16 ms event-loop p99** (limit 150 ms). Memory bounds and
+record accounting passed. This is application-ingestion replay evidence, not a
+measurement of Kafka fetch, desktop IPC or UI interaction latency.
+
+Live EDA reached capture readiness and lease renewal, but Kafka connection timed
+out before record receipt. Stop, owned-resource cleanup and repeat Stop passed;
+end-to-end EDA capture remains unqualified on this candidate. Earlier passing EDA,
+performance and native recovery rehearsals do not qualify the changed source.
+See the [source-bound qualification record](https://asadarafat.github.io/streamskope/guide/qualification/#topic-monitor-candidate-2026-10-04)
+for the report and exact limits. Native installers are qualified separately by
+this release's build workflow; no new installed upgrade/rollback rehearsal is claimed.
+
 The next version will be assigned when a maintainer starts the release workflow.
 Plugin releases remain independent. These changes are not included in
 [v0.7.1](v0.7.1.md).
