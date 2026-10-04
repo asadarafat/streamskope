@@ -16,6 +16,7 @@ from docs import publication
 from docs.publication import documentation_context, publication_identity, verify_publication
 from docs.media import media_inputs, media_selection
 from docs.downloads import desktop_downloads
+from docs.plugins import SNAPSHOT, capture_publications, plugin_context
 from docs.procedures import inspect_retrieval_procedure
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -133,7 +134,7 @@ def inspect_site(root, base_path="/"):
         if file.is_dir():
             continue
         special = relative in {
-            ".nojekyll", "objects.inv", "search.json", "search/search_index.json", "documentation.json",
+            ".nojekyll", "objects.inv", "search.json", "search/search_index.json", "documentation.json", "plugin-publications.json",
             "assets/launch-score.mp3", "launch/assets/launch-score.mp3",
             "assets/streamskope-intro-light.mp4", "assets/streamskope-intro-dark.mp4",
             "assets/qualification/lifecycle-2026-10-04.json",
@@ -193,6 +194,7 @@ def setup():
 
 
 def prepare(url, serving=False):
+    publication.inspect_release_content(ROOT, published=os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1")
     source = (WEBSITE / "zensical.toml").read_text()
     source = re.sub(r'^site_url = .*$', f"site_url = {json.dumps(url)}", source, flags=re.M)
     if serving:
@@ -210,13 +212,7 @@ def prepare(url, serving=False):
             f"{key} = {json.dumps(value)}\n" for key, value in asset.items()
         )
     # Only these public manifest fields enter the rendered compatibility reference.
-    for file in sorted((ROOT / "plugins").glob("*/manifest.json")):
-        manifest = json.loads(file.read_text())
-        target = manifest["compatibility"]["target"]
-        fields = {"name": manifest["name"], "version": manifest["version"],
-                  "api": manifest["apiVersion"], "minimum_host": manifest["compatibility"]["streamskope"]["minimum"],
-                  "maximum_host_exclusive": manifest["compatibility"]["streamskope"]["maximumExclusive"],
-                  "system": target["system"], "minimum": target["minimum"], "maximum": target["maximum"]}
+    for fields in plugin_context(ROOT, published=os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1"):
         source += "\n[[project.extra.source_plugins]]\n" + "".join(
             f"{key} = {json.dumps(value)}\n" for key, value in fields.items())
     configuration = WEBSITE / (".zensical.serve.toml" if serving else ".zensical.local.toml")
@@ -265,7 +261,7 @@ def prepare(url, serving=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["setup", "prepare", "build", "serve", "check", "qualify", "verify"])
+    parser.add_argument("action", choices=["setup", "prepare", "build", "serve", "check", "qualify", "verify", "guard"])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8002)
     parser.add_argument("--media", action="store_true", help="Force full intro playback qualification")
@@ -273,6 +269,9 @@ def main():
     parser.add_argument("--revision")
     parser.add_argument("--release")
     args = parser.parse_args()
+    if args.action == "guard":
+        publication.guard_publication()
+        return
     public_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     url = args.url or os.environ.get("STREAMSKOPE_DOCS_URL", f"http://{public_host}:{args.port}/")
     parsed = urlsplit(url)
@@ -288,7 +287,9 @@ def main():
         return
     if args.action == "prepare" and os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1":
         publication.prepare_publication()
+        capture_publications(ROOT)
     if args.action == "qualify":
+        publication.inspect_release_content(ROOT, published=os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1")
         inspect_repository_commands()
         inspect_message_limits()
         inspect_retrieval_procedure(ROOT)
@@ -323,6 +324,8 @@ def main():
             shutil.rmtree(SITE)
         shutil.copytree(BUILD, SITE)
         (SITE / "documentation.json").write_text(json.dumps(publication_identity()) + "\n")
+        if os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1":
+            shutil.copyfile(ROOT / SNAPSHOT, SITE / "plugin-publications.json")
         inspect_site(SITE, urlsplit(url).path)
 
 

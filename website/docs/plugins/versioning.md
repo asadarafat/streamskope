@@ -1,6 +1,6 @@
 ---
 plugin_compatibility: true
-unreleased: true
+plugin_scope: all
 ---
 
 # Plugin versioning and compatibility
@@ -15,7 +15,11 @@ Final desktop and plugin versions are assigned only when a maintainer starts
 release CI; source versions remain `0.0.0-dev`.
 The published [v0.1.0+build.1 release](../releases/v0.1.0+build.1.md) retains its
 original API 3 packages. Source declarations below do not mean the new packages
-are already published.
+are already published. The **Plugin availability** notice separates this guide's
+source API from the compatible package observed in the official catalog for the
+documented desktop. Its timestamp identifies that observation. A different API
+means the available package does not establish availability of the source-guide
+procedures; even equal APIs do not prove that every source change has shipped.
 
 ## Read the version and requirements
 

@@ -7,6 +7,7 @@ import subprocess
 import time
 import tomllib
 from urllib.request import urlopen
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -20,6 +21,93 @@ def release_version(tag, historical=False):
     suffix = r"(?:\+build\.[1-9][0-9]*)?" if historical else ""
     match = re.fullmatch(r"v(" + SEMVER + r")" + suffix, tag)
     return match.group(1) if match else None
+
+
+def stable_version(tag):
+    version = release_version(tag) if isinstance(tag, str) else None
+    return tuple(map(int, version.split("."))) if version and "-" not in version else None
+
+
+def select_publication(tag, identity, revision, releases, resolve_commit):
+    """Select by stable desktop SemVer, never by publication order or Latest flags."""
+    if not isinstance(releases, list):
+        raise ValueError("Invalid GitHub release list")
+    candidates = {}
+    for release in releases:
+        if not isinstance(release, dict) or not isinstance(release.get("tag_name"), str):
+            raise ValueError("Invalid GitHub release metadata")
+        version = stable_version(release["tag_name"])
+        if version is None:
+            continue
+        if (type(release.get("draft")) is not bool
+                or type(release.get("prerelease")) is not bool):
+            raise ValueError("Invalid desktop release status")
+        if release["draft"] or release["prerelease"]:
+            continue
+        if (not isinstance(release.get("published_at"), str)
+                or not release["published_at"] or type(release.get("id")) is not int):
+            raise ValueError("Invalid published desktop release identity")
+        if version in candidates:
+            raise ValueError("Duplicate desktop release identity")
+        candidates[version] = release
+    latest = candidates[max(candidates)] if candidates else None
+    if latest is None:
+        return {"publish": False, "reason": "No published stable desktop release exists."}
+    if latest["tag_name"] != tag:
+        return {"publish": False, "reason": f"Pages belongs to stable desktop {latest['tag_name']}; this event is skipped."}
+    if latest["id"] != identity:
+        raise ValueError("Publication event differs from the current release identity")
+    if latest.get("immutable") is not True:
+        raise ValueError("Pages requires an immutable published desktop release")
+    commit = resolve_commit(tag)
+    if (not re.fullmatch(r"[a-f0-9]{40}", revision or "")
+            or not isinstance(commit, dict) or commit.get("sha") != revision):
+        raise ValueError("Published desktop tag resolves to a different source commit")
+    return {"publish": True, "reason": f"Verified latest stable desktop {tag} at {revision}."}
+
+
+def guard_publication(root=ROOT, environment=None):
+    """Read-only deployment guard; API errors cannot authorize a stale publication."""
+    environment = os.environ if environment is None else environment
+    if environment.get("GITHUB_EVENT_NAME") != "release":
+        raise ValueError("Pages guard requires a release event")
+    event = json.loads(Path(environment["GITHUB_EVENT_PATH"]).read_text())
+    release = event.get("release") if isinstance(event, dict) else None
+    if not isinstance(release, dict):
+        raise ValueError("Pages guard requires release metadata")
+    tag = release.get("tag_name", "")
+    revision = environment.get("GITHUB_SHA", "")
+    if (event.get("action") != "published" or release.get("draft") is not False
+            or release.get("prerelease") is not False or stable_version(tag) is None
+            or environment.get("GITHUB_REF") != f"refs/tags/{tag}"
+            or type(release.get("id")) is not int):
+        raise ValueError("Pages guard requires the exact published release event")
+    if subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip() != revision:
+        raise ValueError("Pages guard checkout differs from the event commit")
+    repository = environment.get("GITHUB_REPOSITORY", "")
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", repository):
+        raise ValueError("Pages guard requires a GitHub repository")
+
+    def read(path, paginate=False):
+        options = ["--paginate", "--slurp"] if paginate else []
+        return json.loads(subprocess.check_output(
+            ["gh", "api", f"repos/{repository}/{path}", *options],
+            cwd=root, text=True, timeout=45))
+
+    pages = read("releases?per_page=100", paginate=True)
+    if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
+        raise ValueError("Invalid paginated GitHub release response")
+    result = select_publication(tag, release["id"], revision,
+                                [release for page in pages for release in page],
+                                lambda tag: read(f"commits/{quote(tag, safe='')}"))
+    print(result["reason"], flush=True)
+    if environment.get("GITHUB_OUTPUT"):
+        with open(environment["GITHUB_OUTPUT"], "a") as output:
+            output.write(f"publish={str(result['publish']).lower()}\n")
+    if environment.get("GITHUB_STEP_SUMMARY"):
+        with open(environment["GITHUB_STEP_SUMMARY"], "a") as summary:
+            summary.write(result["reason"] + "\n")
+    return result
 
 
 def validate_notes(root, tag, version):
@@ -44,6 +132,30 @@ def validate_unreleased_notes(root):
         raise ValueError("Development source needs unversioned unreleased notes")
 
 
+def inspect_release_content(root=ROOT, published=False):
+    """Reject known ambiguous release labels; preserve explicitly historical evidence."""
+    root = Path(root)
+    scopes = {"plugins/index.md": "all", "plugins/versioning.md": "all",
+              "plugins/eda.md": "eda", "plugins/nsp.md": "nsp"}
+    for file in (root / "website/docs").rglob("*.md"):
+        relative = file.relative_to(root / "website/docs").as_posix()
+        content = file.read_text()
+        metadata = re.match(r"---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)", content)
+        fields = metadata.group(1) if metadata else ""
+        if re.search(r"^unreleased:", fields, re.M) and (
+                published or relative != "releases/unreleased.md"):
+            raise ValueError(f"{relative}: ambiguous unreleased guide; use explicit plugin_scope")
+        if published and relative == "releases/unreleased.md":
+            raise ValueError("Published documentation cannot include the unreleased notes page")
+        scope = re.findall(r"^plugin_scope:\s*([^\r\n]+)$", fields, re.M)
+        if (relative in scopes and scope != [scopes[relative]]) or (scope and relative not in scopes):
+            raise ValueError(f"{relative}: plugin guide requires its explicit plugin_scope")
+        if relative == "guide/qualification.md" and re.search(
+                r"^## Current-source qualification|following checks exercised\s+unreleased source",
+                content, re.M | re.I):
+            raise ValueError("Qualification evidence needs source-bound or historical scope, not current/unreleased claims")
+
+
 def published_release(root=ROOT, environment=None):
     """Require a published desktop event, its exact checkout and stamped version."""
     environment = os.environ if environment is None else environment
@@ -63,6 +175,10 @@ def published_release(root=ROOT, environment=None):
             or environment.get("GITHUB_REF") != f"refs/tags/{tag}"
             or not isinstance(release.get("body"), str) or not release["body"].strip()):
         raise ValueError("Pages requires the exact published desktop release and its notes")
+    if release.get("prerelease") is not False or stable_version(tag) is None:
+        raise ValueError("Public Pages requires a stable desktop release")
+    # The webhook schema does not guarantee an immutable field. The Pages guard
+    # verifies immutability through the REST API before build and deployment.
     if json.loads((Path(root) / "package.json").read_text())["version"] != version:
         raise ValueError("Published desktop tag differs from the stamped application version")
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
@@ -83,8 +199,7 @@ def prepare_publication(root=ROOT, environment=None):
     if count != 1:
         raise ValueError("Pages requires one documented desktop release setting")
     index = root / "website/docs/releases/index.md"
-    status = "Published prerelease" if release.get("prerelease") else "Published release"
-    row = f"| [{tag}]({tag}.md) | {version} | {status}; notes from the publication event |"
+    row = f"| [{tag}]({tag}.md) | {version} | Published release; notes from the publication event |"
     contents, rows = re.subn(r'^\|[^\n]*\(unreleased\.md\)[^\n]*$', row,
                              index.read_text(), flags=re.M)
     if rows != 1 and not (rows == 0 and row in contents):

@@ -34,16 +34,27 @@ not assign a release version or claim that new features exist in older installer
 **Published documentation** is a qualified snapshot of one published desktop
 release: its tagged source, version notice and download links match.
 
-Pages deploys only after a desktop release is published, including prereleases.
+Pages selects the **highest published stable desktop version** for its next deployment.
+Pages checks that release's immutable tag and exact source commit before building
+and again before deployment. An older retry or a prerelease cannot replace the
+stable site through this workflow. GitHub's editable **Latest** label does not choose
+the documented version; stable desktop Semantic Versions do. Prerelease notes and
+installers remain available in GitHub Releases.
 Merging to `main`, creating a tag or draft, and publishing plugins do not replace
 the site. Documentation changes become public with the next desktop release.
-The publication build includes the release event's final notes and checks installer
-availability. It also updates the qualification page to the exact desktop release
+The publication build includes the release event's notes and checks installer
+availability. GitHub locks an immutable release's tag and assets; its title, notes
+and Latest designation can still be edited. Pages retains the publication-time
+notes in that release snapshot. It also updates the qualification page to the exact desktop release
 and links `qualification-vX.Y.Z.json` only when that uploaded asset appears in the
 publication event. Maintainers must attach the source-specific report and include
 it in `SHA256SUMS` before publishing the draft. Without a report, the site explicitly
 leaves live/local qualification unrecorded; publication does not mark it passed.
-Plugin and signed EDA cluster-app publication remain independent.
+Plugin and signed EDA cluster-app publication remain independent. Plugin guides
+show the source API separately from the compatible package found in the official
+catalog when Pages prepared the site. That dated observation may differ from the
+catalog you see later in **Preferences → Plugins**; it does not turn development
+plugin code into a published package.
 
 Maintainers review unversioned notes, then start **Actions → Release → Run workflow**
 from `main`, select **desktop**, **eda** or **nsp** and enter its version. CI collects
@@ -68,8 +79,8 @@ Pages includes the desktop publication event's exact body in its release snapsho
 Archive published bodies, including draft-review edits, under their release tags
 in the repository through a documentation PR for future snapshots. Add page metadata and navigation, retain
 historical notes and reset only that component's shipped unreleased commentary.
-For a desktop release, update the documented downloads and applicable unreleased
-notices in the same PR. That PR qualifies source documentation but does not deploy
+For a desktop release, update the documented downloads. Plugin guide scope and
+package availability remain independent. That PR qualifies source documentation but does not deploy
 the public site. Review the [compatibility matrix](../start/compatibility.md)
 and [qualification record](../guide/qualification.md). Record qualification only
 after inspecting evidence for the exact source and environment; publishing a

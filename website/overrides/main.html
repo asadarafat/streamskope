@@ -25,14 +25,17 @@
   </p>
   {% else %}
   <p>
-    Applies to desktop <strong>{{ config.extra.desktop_release }}</strong>.
-    <a href="{{ 'plugins/' | url }}">Plugin requirements</a> ·
+    {% if page.meta.plugin_scope %}Desktop release:{% else %}Applies to desktop{% endif %}
+    <a href="{{ ('releases/' ~ config.extra.desktop_release ~ '/') | url }}"
+      ><strong>{{ config.extra.desktop_release }}</strong></a
+    >. <a href="{{ 'plugins/' | url }}">Plugin requirements</a> ·
     <a href="{{ 'start/compatibility/' | url }}">Compatibility</a> ·
     <a href="{{ 'releases/' | url }}">Release history</a>.
   </p>
   {% endif %}
 </aside>
-{% set content = super() %} {% if page.meta.desktop_downloads %} {% set downloads %}{% include
+{% if page.meta.plugin_scope %}{% include "partials/plugin-availability.html" %}{% endif %} {% set
+content = super() %} {% if page.meta.desktop_downloads %} {% set downloads %}{% include
 "partials/desktop-downloads.html" %}{% endset %} {{ content | replace("<!-- desktop-downloads -->",
 downloads) }} {% else %}{{ content }}{% endif %} {% if page.meta.plugin_compatibility %} {% include
 "partials/plugin-compatibility.html" %} {% endif %} {% endblock %}
