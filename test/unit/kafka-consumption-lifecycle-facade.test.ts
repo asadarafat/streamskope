@@ -64,7 +64,7 @@ describe("Kafka consumption facade lifecycle", () => {
             connectionName: "Local aio",
             state: cleanupRejects ? "failed" : "stopped",
             request: { topic: "test" },
-            delivery: { receivedMessages: 1, deliveredMessages: 1 },
+            delivery: { receivedMessages: 1, publishedMessages: 1 },
           },
         });
         expect(events.filter((event) => event.event === "consumption.state").at(-1)).toMatchObject({
