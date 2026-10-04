@@ -14,7 +14,7 @@ import {
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
-import { testHostAccepted } from "../support/host-response";
+import { testHostAccepted, testHostResponse } from "../support/host-response";
 
 class StreamMonitorBackend implements StreamSkopeBackend {
   readonly commands: HostCommand[] = [];
@@ -38,6 +38,16 @@ class StreamMonitorBackend implements StreamSkopeBackend {
   ): Promise<HostCommandResponse<Command["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
     this.commands.push(command);
+    if (command.command === "plugins.list")
+      return Promise.resolve(
+        testHostResponse(command, {
+          command: command.command,
+          id: command.id,
+          ok: true,
+          result: { correlationId: command.id, pluginSnapshot: { plugins: [] } },
+          version: HOST_PROTOCOL_VERSION,
+        }),
+      );
     return Promise.resolve(testHostAccepted(command, `monitor-${command.id}`));
   }
 
@@ -115,7 +125,13 @@ test.describe("StreamSkope browser Stream Monitor", () => {
     test.setTimeout(45_000);
     await page.setViewportSize({ height: 650, width: 1000 });
     await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    const eventStreamReady = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/__streamskope_host/events" &&
+        response.status() === 200,
+    );
     await page.goto(activeLaunch().browserUrl);
+    await eventStreamReady;
     await expect(page.getByRole("banner", { name: "StreamSkope application bar" })).toContainText(
       "StreamSkope",
     );
@@ -125,7 +141,7 @@ test.describe("StreamSkope browser Stream Monitor", () => {
         return (
           commands.has("profiles.list") &&
           commands.has("rules.list") &&
-          commands.has("recipes.list")
+          commands.has("preferences.get")
         );
       })
       .toBe(true);
