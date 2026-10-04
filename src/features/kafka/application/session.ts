@@ -827,14 +827,13 @@ export class KafkaApplicationSession {
       }
     } finally {
       this.clearEmptyTimer(consumption);
-      let cleanup: Promise<void> | undefined;
+      const cleanup = this.closeConsumptionStream(consumption);
       try {
-        cleanup = this.closeConsumptionStream(consumption);
         await cleanup;
       } catch (error) {
         if (this.isCurrentConsumption(consumption)) {
           // Automatic completion/failure owns the same cleanup obligation as explicit Stop.
-          this.trackConsumptionStop(cleanup ?? Promise.reject(error), consumption.connection, true);
+          this.trackConsumptionStop(cleanup, consumption.connection, true);
           if (failure === undefined) failure = error;
         }
       }
