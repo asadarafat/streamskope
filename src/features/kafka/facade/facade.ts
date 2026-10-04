@@ -97,6 +97,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private connectionIntent = 0;
   private connectionPluginId: string | undefined;
   private readonly consumption: ConsumptionFacadeController;
+  private consumptionCommandIntent = 0;
   private readonly consumerGroups;
   private readonly createCorrelationId;
   private readonly clusterDiagnostics;
@@ -278,8 +279,13 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     )
       this.authorizationIntent += 1;
     const intent = this.authorizationIntent;
+    if (command.command === "messages.start" || command.command === "messages.stop") {
+      this.consumptionCommandIntent += 1;
+    }
+    const consumptionIntent = this.consumptionCommandIntent;
     return this.protection.execute(command, correlationId, () =>
-      intent === this.authorizationIntent
+      intent === this.authorizationIntent &&
+      (command.command !== "messages.start" || consumptionIntent === this.consumptionCommandIntent)
         ? this.dispatch(command, correlationId)
         : Promise.resolve(
             failureResponse(
@@ -872,6 +878,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   }
 
   private invalidateClusterState(): void {
+    this.consumption.invalidate();
     this.observations.cancel();
     this.relationships.cancel();
     void this.recordReplay.invalidate().catch(() => undefined);

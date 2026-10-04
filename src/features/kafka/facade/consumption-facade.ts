@@ -63,14 +63,31 @@ interface ConsumptionFacadeBindings {
   readonly scheduleMessageFlush?: (flush: () => void, delayMs: number) => (() => void) | void;
 }
 
+interface FacadeConsumption extends ActiveFacadeConsumption {
+  readonly connectionName: string | null;
+}
+
 // Owns consumption presentation, queue flushing and terminal notifications.
 export class ConsumptionFacadeController {
-  private activeConsumption: ActiveFacadeConsumption | undefined;
+  private activeConsumption: FacadeConsumption | undefined;
+  private consumptionIntent = 0;
   private messagePresentationPaused = false;
   private readonly scheduleMessageFlush;
 
   constructor(private readonly bindings: ConsumptionFacadeBindings) {
     this.scheduleMessageFlush = bindings.scheduleMessageFlush ?? defaultScheduleMessageFlush;
+  }
+
+  invalidate(): void {
+    this.consumptionIntent += 1;
+    const consumption = this.activeConsumption;
+    this.activeConsumption = undefined;
+    if (consumption !== undefined) {
+      this.cancelConsumptionFlush(consumption);
+      consumption.messages.length = 0;
+      consumption.queuedBytes = 0;
+    }
+    this.bindings.liveRules.deactivate();
   }
 
   refreshRuleCapability(): void {
@@ -93,7 +110,7 @@ export class ConsumptionFacadeController {
     };
   }
 
-  private enqueueMessage(consumption: ActiveFacadeConsumption, message: KafkaMessage): void {
+  private enqueueMessage(consumption: FacadeConsumption, message: KafkaMessage): void {
     if (this.activeConsumption !== consumption || message.topic !== consumption.request.topic) {
       return;
     }
@@ -123,7 +140,7 @@ export class ConsumptionFacadeController {
     this.scheduleConsumptionFlush(consumption);
   }
 
-  private cancelConsumptionFlush(consumption: ActiveFacadeConsumption): void {
+  private cancelConsumptionFlush(consumption: FacadeConsumption): void {
     consumption.cancelScheduledFlush?.();
     consumption.cancelScheduledFlush = undefined;
     consumption.flushScheduled = false;
@@ -137,7 +154,7 @@ export class ConsumptionFacadeController {
     else if (consumption.messages.length > 0) this.scheduleConsumptionFlush(consumption);
   }
 
-  private scheduleConsumptionFlush(consumption: ActiveFacadeConsumption): void {
+  private scheduleConsumptionFlush(consumption: FacadeConsumption): void {
     if (consumption.flushScheduled || this.messagePresentationPaused) return;
     consumption.flushScheduled = true;
     let invoked = false;
@@ -152,7 +169,7 @@ export class ConsumptionFacadeController {
     }
   }
 
-  private flushMessages(consumption: ActiveFacadeConsumption, drainAll = false): void {
+  private flushMessages(consumption: FacadeConsumption, drainAll = false): void {
     this.cancelConsumptionFlush(consumption);
     if (consumption.messages.length === 0 || (this.messagePresentationPaused && !drainAll)) {
       return;
@@ -171,7 +188,7 @@ export class ConsumptionFacadeController {
   }
 
   private publishStreamMetrics(
-    consumption: ActiveFacadeConsumption,
+    consumption: FacadeConsumption,
     state: ConsumptionState,
     droppedSincePrevious = Math.max(
       0,
@@ -182,7 +199,7 @@ export class ConsumptionFacadeController {
       consumption,
       state,
       {
-        connectionName: this.bindings.session.snapshot().connectionName,
+        connectionName: consumption.connectionName,
         nextSequence: this.bindings.nextSequence,
         publish: this.bindings.publish,
         sampledAt: this.bindings.now().toISOString(),
@@ -192,12 +209,12 @@ export class ConsumptionFacadeController {
   }
 
   private publishConsumption(
-    consumption: ActiveFacadeConsumption,
+    consumption: FacadeConsumption,
     state: ConsumptionState,
     error?: HostError,
   ): void {
     emitConsumptionState(consumption, state, error, this.bindings.liveRules.capability(), {
-      connectionName: this.bindings.session.snapshot().connectionName,
+      connectionName: consumption.connectionName,
       nextSequence: this.bindings.nextSequence,
       publish: this.bindings.publish,
       sampledAt: this.bindings.now().toISOString(),
@@ -208,41 +225,47 @@ export class ConsumptionFacadeController {
     command: Extract<HostCommand, { readonly command: "messages.start" }>,
     correlationId: string,
   ): Promise<HostCommandResponse> {
-    const preferenceSnapshot = await this.bindings.preferences.get();
-    const previous = this.activeConsumption;
-    if (previous !== undefined) {
-      this.cancelConsumptionFlush(previous);
-      previous.messages.length = 0;
-      previous.queuedBytes = 0;
-    }
-    const consumption: ActiveFacadeConsumption = {
-      cancelScheduledFlush: undefined,
-      correlationId,
-      droppedMessages: 0,
-      flushScheduled: false,
-      messages: [],
-      queuedBytes: 0,
-      receivedMessages: 0,
-      request: command.payload,
-      ruleFailureRecorded: false,
-      state: "loading",
-      streamMonitoring: createStreamMonitoring(this.bindings.monotonicNow()),
-      streamTuning: {
-        ...preferenceSnapshot.preferences.stream,
-        source: preferenceSnapshot.store.state === "ready" ? "confirmed" : "factory-fallback",
-      },
-    };
-    this.activeConsumption = consumption;
-    let startAccepted = false;
-    let pendingTerminal: (() => void) | undefined;
-    const runTerminal = (terminal: () => void): void => {
-      if (startAccepted) {
-        terminal();
-      } else {
-        pendingTerminal = terminal;
-      }
-    };
+    const intent = ++this.consumptionIntent;
+    const connectionName = this.bindings.session.snapshot().connectionName;
+    let failedConsumption: FacadeConsumption | undefined;
     try {
+      const preferenceSnapshot = await this.bindings.preferences.get();
+      if (intent !== this.consumptionIntent) throw new ConnectionAttemptSupersededError();
+      const previous = this.activeConsumption;
+      if (previous !== undefined) {
+        this.cancelConsumptionFlush(previous);
+        previous.messages.length = 0;
+        previous.queuedBytes = 0;
+      }
+      const consumption: FacadeConsumption = {
+        cancelScheduledFlush: undefined,
+        connectionName,
+        correlationId,
+        droppedMessages: 0,
+        flushScheduled: false,
+        messages: [],
+        queuedBytes: 0,
+        receivedMessages: 0,
+        request: command.payload,
+        ruleFailureRecorded: false,
+        state: "loading",
+        streamMonitoring: createStreamMonitoring(this.bindings.monotonicNow()),
+        streamTuning: {
+          ...preferenceSnapshot.preferences.stream,
+          source: preferenceSnapshot.store.state === "ready" ? "confirmed" : "factory-fallback",
+        },
+      };
+      this.activeConsumption = consumption;
+      failedConsumption = consumption;
+      let startAccepted = false;
+      let pendingTerminal: (() => void) | undefined;
+      const runTerminal = (terminal: () => void): void => {
+        if (startAccepted) {
+          terminal();
+        } else {
+          pendingTerminal = terminal;
+        }
+      };
       await this.bindings.session.stopConsumption();
       if (this.activeConsumption !== consumption) {
         throw new ConnectionAttemptSupersededError();
@@ -338,17 +361,20 @@ export class ConsumptionFacadeController {
       pendingTerminal?.();
       return successResponse(command, correlationId);
     } catch (error) {
+      const consumption = failedConsumption;
       const operationError =
-        this.activeConsumption !== consumption ||
-        (error instanceof Error && error.name === "AbortError")
-          ? new ConnectionAttemptSupersededError()
-          : error;
+        error instanceof ConnectionAttemptSupersededError && error.cleanupFailure !== undefined
+          ? error.cleanupFailure
+          : intent !== this.consumptionIntent ||
+              (error instanceof Error && error.name === "AbortError")
+            ? new ConnectionAttemptSupersededError()
+            : error;
       const translated = this.bindings.translateFailure(operationError, {
         activeStateChanged: false,
         connection: undefined,
         correlationId,
       });
-      if (this.activeConsumption === consumption) {
+      if (consumption !== undefined && this.activeConsumption === consumption) {
         this.cancelConsumptionFlush(consumption);
         consumption.messages.length = 0;
         consumption.queuedBytes = 0;
@@ -372,15 +398,18 @@ export class ConsumptionFacadeController {
     command: Extract<HostCommand, { readonly command: "messages.stop" }>,
     correlationId: string,
   ): Promise<HostCommandResponse> {
+    const intent = ++this.consumptionIntent;
     const consumption = this.activeConsumption;
+    this.activeConsumption = undefined;
+    if (consumption !== undefined) this.cancelConsumptionFlush(consumption);
     try {
       await this.bindings.session.stopConsumption();
-      if (consumption !== undefined && this.activeConsumption === consumption) {
+      if (consumption !== undefined && intent === this.consumptionIntent) {
         this.flushMessages(consumption, true);
         this.activeConsumption = undefined;
         this.bindings.liveRules.deactivate();
         this.publishConsumption(consumption, "stopped");
-      } else if (consumption === undefined) {
+      } else if (consumption === undefined && intent === this.consumptionIntent) {
         this.bindings.liveRules.deactivate();
         this.bindings.publish({
           event: "consumption.state",
@@ -413,7 +442,7 @@ export class ConsumptionFacadeController {
         connection: undefined,
         correlationId,
       });
-      if (consumption !== undefined && this.activeConsumption === consumption) {
+      if (consumption !== undefined && intent === this.consumptionIntent) {
         this.flushMessages(consumption, true);
         this.publishConsumption(consumption, "failed", translated.error);
       }
