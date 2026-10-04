@@ -58,6 +58,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 2,
       rendererDroppedMessages: 1,
+      rendererWindowEvictions: 0,
       retainedMessages: 100,
       visibleMessages: 40,
     });
@@ -69,6 +70,7 @@ describe("renderer stream-monitor observer", () => {
       filterDurationMs: 3,
       fps: null,
       rendererDroppedMessages: 1,
+      rendererWindowEvictions: 0,
       renderDurationMs: 5,
       retainedMessages: 100,
       sampledAt: "2026-07-26T09:00:01.000Z",
@@ -76,18 +78,19 @@ describe("renderer stream-monitor observer", () => {
       visibleMessages: 40,
     });
     expect(committed.history).toEqual([
-      {
+      expect.objectContaining({
         eventBacklog: 0,
         eventToCommitMs: 8,
         filterDurationMs: 3,
         fps: null,
         rendererDroppedMessages: 1,
+        rendererWindowEvictions: 0,
         renderDurationMs: 5,
         retainedMessages: 100,
         sampledAt: "2026-07-26T09:00:01.000Z",
         samplingState: "unavailable",
         visibleMessages: 40,
-      },
+      }),
     ]);
     expect(listener).toHaveBeenCalledTimes(3);
 
@@ -96,6 +99,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 2,
       rendererDroppedMessages: 1,
+      rendererWindowEvictions: 0,
       retainedMessages: 101,
       visibleMessages: 41,
     });
@@ -120,6 +124,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 1,
       rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
       retainedMessages: 0,
       visibleMessages: 0,
     });
@@ -144,6 +149,7 @@ describe("renderer stream-monitor observer", () => {
       observer.commit({
         lastSequence: sequence,
         rendererDroppedMessages: 0,
+        rendererWindowEvictions: 0,
         retainedMessages: sequence,
         visibleMessages: sequence,
       });
@@ -179,6 +185,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: RENDERER_STREAM_MONITOR_PENDING_EVENT_LIMIT + 1,
       rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
       retainedMessages: 0,
       visibleMessages: 0,
     });
@@ -199,6 +206,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 5,
       rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
       retainedMessages: 0,
       visibleMessages: 0,
     });
@@ -213,6 +221,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 6,
       rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
       retainedMessages: 0,
       visibleMessages: 0,
     });
@@ -239,6 +248,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 1,
       rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
       retainedMessages: 1,
       visibleMessages: 1,
     });
@@ -253,6 +263,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 2,
       rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
       retainedMessages: 2,
       visibleMessages: 2,
     });
@@ -271,6 +282,7 @@ describe("renderer stream-monitor observer", () => {
     observer.commit({
       lastSequence: 3,
       rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
       retainedMessages: 3,
       visibleMessages: 3,
     });
@@ -282,6 +294,128 @@ describe("renderer stream-monitor observer", () => {
     });
     expect(observer.getSnapshot().history).toHaveLength(activeHistory.length + 1);
     expect(observer.getSnapshot().history.at(-1)?.eventToCommitMs).toBe(5);
+    observer.dispose();
+  });
+
+  it("resets measurements for another operation even when the request parameters are identical", () => {
+    const observer = createRendererStreamMonitorObserver();
+    observer.setOperation("first");
+    observer.eventReceived(messageBatchEvent(1));
+    observer.recordRenderDuration(7);
+    observer.commit({
+      lastSequence: 1,
+      rendererDroppedMessages: 2,
+      rendererWindowEvictions: 4,
+      retainedMessages: 20,
+      visibleMessages: 20,
+    });
+    expect(observer.getSnapshot().history).toHaveLength(1);
+    observer.setOperation("second");
+    expect(observer.getSnapshot()).toMatchObject({
+      operationId: "second",
+      history: [],
+      renderDurationMs: null,
+      renderSampledAt: null,
+      rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
+    });
+    observer.dispose();
+  });
+
+  it("ignores a late terminal monitor event owned by the previous operation", () => {
+    const observer = createRendererStreamMonitorObserver();
+    observer.setOperation("old");
+    observer.setOperation("new");
+    observer.eventReceived({
+      event: "streamMetrics.changed",
+      sequence: 9,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        operationId: "old",
+        connectionName: "local",
+        request: { topic: "orders", mode: "tail", maxMessages: 100 },
+        sampledAt: "2026-07-26T12:00:00.000Z",
+        delivery: null,
+        queue: null,
+        state: "stopped",
+        status: "idle",
+      },
+    });
+    expect(observer.getSnapshot()).toMatchObject({
+      operationId: "new",
+      eventBacklog: 0,
+      history: [],
+    });
+    observer.dispose();
+  });
+
+  it("keeps last message-work timestamps while unmounted and makes frame history sparse", () => {
+    let time = 0;
+    let nextFrame: ((timestamp: number) => void) | undefined;
+    const observer = createRendererStreamMonitorObserver({
+      monotonicNow: () => time,
+      wallNow: () => new Date(Date.UTC(2026, 6, 26, 12) + time),
+      requestFrame: (callback) => {
+        nextFrame = callback;
+        return 1;
+      },
+      cancelFrame: () => undefined,
+      isDocumentVisible: () => true,
+    });
+    observer.setOperation("first");
+    observer.subscribe(() => undefined);
+    observer.eventReceived(messageBatchEvent(1));
+    observer.recordFilterDuration(2);
+    observer.recordRenderDuration(3);
+    time = 10;
+    observer.commit({
+      lastSequence: 1,
+      rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
+      retainedMessages: 1,
+      visibleMessages: 1,
+    });
+    observer.setMessagesMounted(false);
+    time = 1000;
+    nextFrame?.(time);
+    expect(observer.getSnapshot()).toMatchObject({
+      messagesMounted: false,
+      renderDurationMs: 3,
+      renderSampledAt: "2026-07-26T12:00:00.010Z",
+      filterSampledAt: "2026-07-26T12:00:00.010Z",
+      eventSampledAt: "2026-07-26T12:00:00.010Z",
+      fpsSampledAt: "2026-07-26T12:00:01.000Z",
+      fpsWindowMs: 1000,
+    });
+    expect(observer.getSnapshot().history.at(-1)).toMatchObject({
+      eventToCommitMs: null,
+      eventSampledAt: null,
+      renderDurationMs: null,
+      renderSampledAt: null,
+      filterDurationMs: null,
+      filterSampledAt: null,
+    });
+    observer.eventReceived(messageBatchEvent(2));
+    observer.recordFilterDuration(80);
+    observer.recordRenderDuration(90);
+    time = 1100;
+    observer.commit({
+      lastSequence: 2,
+      rendererDroppedMessages: 0,
+      rendererWindowEvictions: 0,
+      retainedMessages: 2,
+      visibleMessages: 2,
+    });
+    expect(observer.getSnapshot()).toMatchObject({
+      filterDurationMs: 2,
+      renderDurationMs: 3,
+      renderSampledAt: "2026-07-26T12:00:00.010Z",
+    });
+    expect(observer.getSnapshot().history.at(-1)).toMatchObject({
+      renderDurationMs: null,
+      filterDurationMs: null,
+      fps: null,
+    });
     observer.dispose();
   });
 

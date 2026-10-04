@@ -10,6 +10,9 @@ export interface MetricPlotSeries {
 
 export interface MetricPlotProperties {
   readonly interpolation?: "linear" | "step";
+  readonly height?: number;
+  readonly timeDomain?: readonly [string, string];
+  readonly zeroBaseline?: boolean;
   readonly sampleLabels: readonly string[];
   readonly series: readonly MetricPlotSeries[];
   readonly title: string;
@@ -133,6 +136,9 @@ function latestEvidence(
 
 export function MetricPlot({
   interpolation = "linear",
+  height = 118,
+  timeDomain,
+  zeroBaseline = false,
   sampleLabels,
   series,
   title,
@@ -142,8 +148,8 @@ export function MetricPlot({
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const times = sampleLabels.map((label) => Date.parse(label));
-  const firstTime = times[0] ?? 0;
-  const lastTime = times.at(-1) ?? 0;
+  const firstTime = timeDomain === undefined ? (times[0] ?? 0) : Date.parse(timeDomain[0]);
+  const lastTime = timeDomain === undefined ? (times.at(-1) ?? 0) : Date.parse(timeDomain[1]);
   const chronological = times.every(
     (time, index) => Number.isFinite(time) && (index === 0 || time >= (times[index - 1] ?? time)),
   );
@@ -190,8 +196,8 @@ export function MetricPlot({
     );
   }
 
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
+  const minimum = zeroBaseline ? Math.min(0, ...values) : Math.min(...values);
+  const maximum = zeroBaseline ? Math.max(1, ...values) : Math.max(...values);
   const description = series
     .map((candidate) => {
       const samples = measuredValues([candidate]);
@@ -237,7 +243,7 @@ export function MetricPlot({
       >
         <Stack
           aria-label={`Range ${formatMetric(minimum, unit)} to ${formatMetric(maximum, unit)}`}
-          sx={{ height: 118, justifyContent: "space-between", py: 0.25 }}
+          sx={{ height, justifyContent: "space-between", py: 0.25 }}
         >
           <Typography
             aria-label={`Range maximum ${formatMetric(maximum, unit)}`}
@@ -286,7 +292,7 @@ export function MetricPlot({
           }}
           sx={{
             display: "block",
-            height: 118,
+            height,
             width: "100%",
             "&:focus-visible": {
               outline: "2px solid var(--mui-palette-primary-main)",
@@ -403,13 +409,15 @@ export function MetricPlot({
       </Stack>
       <Stack direction="row" sx={{ justifyContent: "space-between", mt: 0.75 }}>
         <Typography color="text.secondary" noWrap variant="caption">
-          {timeAxis ? formatUtcClockSeconds(sampleLabels[0] ?? "") : "1"}
+          {timeAxis ? formatUtcClockSeconds(timeDomain?.[0] ?? sampleLabels[0] ?? "") : "1"}
         </Typography>
         <Typography color="text.secondary" variant="caption">
           {timeAxis ? "Time (UTC)" : "Sample sequence"}
         </Typography>
         <Typography color="text.secondary" noWrap variant="caption">
-          {timeAxis ? formatUtcClockSeconds(sampleLabels.at(-1) ?? "") : sampleLabels.length}
+          {timeAxis
+            ? formatUtcClockSeconds(timeDomain?.[1] ?? sampleLabels.at(-1) ?? "")
+            : sampleLabels.length}
         </Typography>
       </Stack>
     </Box>

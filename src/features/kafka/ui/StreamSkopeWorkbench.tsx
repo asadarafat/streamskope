@@ -164,7 +164,10 @@ export function StreamSkopeWorkbench({
     lastSequence: state.lastSequence,
     observer: rendererStreamMonitor,
     presentationActive: rendererPresentationActive,
+    messagesMounted: navigation === "topics" && topicWorkspace === "messages",
+    operationId: state.streamMonitor.current.operationId,
     rendererDroppedMessages: state.rendererDroppedMessages,
+    rendererWindowEvictions: state.rendererWindowEvictions,
     retainedMessages: state.messages.length,
     visibleMessages: visibleMessages.length,
   });
@@ -475,6 +478,13 @@ export function StreamSkopeWorkbench({
               consumptionError={state.consumptionError}
               history={state.streamMonitor.history}
               onOpenActivity={openActivity}
+              onOpenObservedHealth={() => selectNavigation("observations")}
+              onStop={() => void stopConsumption()}
+              consumptionActive={
+                isKafkaConsumptionActive(state.consumptionState, state.consumptionRequest) &&
+                state.consumptionRequest?.topic === selectedTopic
+              }
+              consumptionStopping={consumptionStopping}
               rendererObserver={rendererStreamMonitor}
               selectedTopic={selectedTopic}
               snapshot={state.streamMonitor.current}

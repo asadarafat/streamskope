@@ -298,7 +298,9 @@ function sameStreamMonitorOwner(
   right: KafkaStreamMonitorSnapshot,
 ): boolean {
   return (
-    left.connectionName === right.connectionName && sameFetchRequest(left.request, right.request)
+    left.operationId === right.operationId &&
+    left.connectionName === right.connectionName &&
+    sameFetchRequest(left.request, right.request)
   );
 }
 
@@ -309,6 +311,14 @@ function reduceStreamMonitorSnapshot(
   if (snapshot.state === "unavailable") {
     return unavailableStreamMonitor;
   }
+  // Only a new loading event may replace an established operation. A late callback
+  // from the previous request can carry a newer host event sequence.
+  if (
+    current.current.operationId !== null &&
+    snapshot.operationId !== current.current.operationId &&
+    snapshot.state !== "loading"
+  )
+    return current;
   const historyLimit = Math.min(
     snapshot.delivery?.historySamples ?? KAFKA_STREAM_MONITOR_HISTORY_LIMIT,
     KAFKA_STREAM_MONITOR_HISTORY_LIMIT,

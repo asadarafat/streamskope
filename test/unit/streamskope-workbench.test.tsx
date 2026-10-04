@@ -283,12 +283,14 @@ describe("StreamSkope workbench shell", () => {
       expect(commit).toHaveBeenLastCalledWith({
         lastSequence: 4,
         rendererDroppedMessages: 0,
+        rendererWindowEvictions: 0,
         retainedMessages: 1,
         visibleMessages: 1,
       });
       expect(observer.getSnapshot()).toMatchObject({
         eventBacklog: 0,
         rendererDroppedMessages: 0,
+        rendererWindowEvictions: 0,
         retainedMessages: 1,
         visibleMessages: 1,
       });
@@ -350,6 +352,7 @@ describe("StreamSkope workbench shell", () => {
       expect(commit).toHaveBeenLastCalledWith({
         lastSequence: 5,
         rendererDroppedMessages: 0,
+        rendererWindowEvictions: 0,
         retainedMessages: 2,
         visibleMessages: 2,
       });

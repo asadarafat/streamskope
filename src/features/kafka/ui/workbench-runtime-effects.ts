@@ -21,7 +21,10 @@ interface RendererStreamMonitorLifecycleOptions {
   readonly lastSequence: number;
   readonly observer: RendererStreamMonitorObserver;
   readonly presentationActive: boolean;
+  readonly messagesMounted: boolean;
+  readonly operationId: string | null;
   readonly rendererDroppedMessages: number;
+  readonly rendererWindowEvictions: number;
   readonly retainedMessages: number;
   readonly visibleMessages: number;
 }
@@ -103,7 +106,10 @@ export function useRendererStreamMonitorLifecycle({
   lastSequence,
   observer,
   presentationActive,
+  messagesMounted,
+  operationId,
   rendererDroppedMessages,
+  rendererWindowEvictions,
   retainedMessages,
   visibleMessages,
 }: RendererStreamMonitorLifecycleOptions): void {
@@ -113,6 +119,11 @@ export function useRendererStreamMonitorLifecycle({
     presentationActiveRef.current = presentationActive;
     observer.setPresentationActive(presentationActive);
   }, [observer, presentationActive]);
+
+  useLayoutEffect(() => {
+    observer.setOperation(operationId);
+    observer.setMessagesMounted(messagesMounted);
+  }, [messagesMounted, observer, operationId]);
 
   useLayoutEffect(() => {
     if (filterDurationMs !== null) {
@@ -127,6 +138,7 @@ export function useRendererStreamMonitorLifecycle({
     observer.commit({
       lastSequence,
       rendererDroppedMessages,
+      rendererWindowEvictions,
       retainedMessages,
       visibleMessages,
     });
@@ -135,6 +147,7 @@ export function useRendererStreamMonitorLifecycle({
     observer,
     presentationActive,
     rendererDroppedMessages,
+    rendererWindowEvictions,
     retainedMessages,
     visibleMessages,
   ]);
@@ -142,7 +155,7 @@ export function useRendererStreamMonitorLifecycle({
   useEffect(
     () =>
       host.subscribe((event) => {
-        if (presentationActiveRef.current) {
+        if (presentationActiveRef.current || event.event === "streamMetrics.changed") {
           observer.eventReceived(event);
         }
         dispatch({ event, type: "host.event" });

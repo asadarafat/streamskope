@@ -169,4 +169,23 @@ describe("bounded metric plot", () => {
       screen.getByRole("region", { name: /Queue depth trend/u }).querySelector("path"),
     ).toHaveAttribute("d", expect.stringMatching(/H .* V /u));
   });
+  it("shares an explicit time domain and a readable zero range without changing default consumers", () => {
+    render(
+      <MetricPlot
+        height={190}
+        zeroBaseline
+        timeDomain={["2026-08-01T12:00:00.000Z", "2026-08-01T12:01:00.000Z"]}
+        sampleLabels={["2026-08-01T12:00:30.000Z"]}
+        series={[{ label: "Queue", values: [0] }]}
+        title="Shared buffer"
+        unit="messages"
+      />,
+    );
+    const plot = screen.getByRole("group", { name: "Shared buffer plot" });
+    expect(plot.querySelector("circle")).toHaveAttribute("cx", "300");
+    expect(plot.querySelector("circle")).toHaveAttribute("cy", "102");
+    expect(screen.getByLabelText("Range maximum 1 messages")).toBeVisible();
+    expect(screen.getByText("12:00:00")).toBeVisible();
+    expect(screen.getByText("12:01:00")).toBeVisible();
+  });
 });
