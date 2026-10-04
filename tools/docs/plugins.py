@@ -79,7 +79,7 @@ def plugin_context(root, published=False):
             raise ValueError("Published plugin notices require a verified availability snapshot; run docs prepare")
         snapshot = json.loads(path.read_text())
         packages = validate_snapshot(snapshot, publication_identity(root))
-        checked_at = snapshot["checked_at"]
+        checked_at = datetime.fromisoformat(snapshot["checked_at"]).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     rows = []
     for file in sorted((root / "plugins").glob("*/manifest.json")):
         manifest = json.loads(file.read_text())

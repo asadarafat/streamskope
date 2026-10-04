@@ -113,6 +113,8 @@ try {
       await expect(pluginNotice).toBeVisible();
       await expect(pluginNotice).toContainText("Desktop and plugins release independently");
       await expect(pluginNotice).toContainText("This guide describes source plugin behavior");
+      const comparison = pluginNotice.locator("summary");
+      await comparison.click();
       for (const plugin of pluginScope === "all" ? ["eda", "nsp"] : [pluginScope]) {
         const manifest = JSON.parse(await readFile(`plugins/${plugin}/manifest.json`, "utf8"));
         const row = pluginNotice.getByRole("row", { name: new RegExp(manifest.name, "u") });
@@ -124,6 +126,7 @@ try {
         await expect(pluginNotice).toContainText("Catalog checked");
         await expect(pluginNotice).not.toContainText("Availability not checked in this preview");
       }
+      await comparison.click();
     } else {
       await expect(pluginNotice).toHaveCount(0);
     }
@@ -246,6 +249,18 @@ try {
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await accessible();
       await page.screenshot({ path: resolve(evidence, `plugin-${plugin}-${width}.png`) });
+      if (width === 320) {
+        const comparison = page
+          .getByRole("complementary", { name: "Plugin availability" })
+          .locator("summary");
+        await comparison.click();
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        await accessible();
+        await page.screenshot({
+          path: resolve(evidence, `plugin-availability-${plugin}-${width}.png`),
+        });
+        await comparison.click();
+      }
     }
   }
   await page.goto(base + "plugins/");

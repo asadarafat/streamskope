@@ -34,7 +34,7 @@ not assign a release version or claim that new features exist in older installer
 **Published documentation** is a qualified snapshot of one published desktop
 release: its tagged source, version notice and download links match.
 
-The public site describes the **highest published stable desktop version**.
+Pages selects the **highest published stable desktop version** for its next deployment.
 Pages checks that release's immutable tag and exact source commit before building
 and again before deployment. An older retry or a prerelease cannot replace the
 stable site through this workflow. GitHub's editable **Latest** label does not choose

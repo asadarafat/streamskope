@@ -257,11 +257,16 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.md-typeset .sk-plugin-availability .sk-plugin-compatibility {
+  overflow-x: auto;
+}
 .md-typeset .sk-plugin-availability table {
-  min-width: 0;
   font-size: inherit;
 }
 .md-typeset .sk-plugin-availability thead th:first-child {
+  width: 24%;
+}
+.md-typeset .sk-plugin-availability thead th:nth-child(2) {
   width: 24%;
 }
 .sk-header-tools .sk-search-trigger {

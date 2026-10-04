@@ -1,48 +1,58 @@
 <aside class="sk-version sk-plugin-availability" aria-label="Plugin availability">
   <p><strong>Plugin availability</strong> · Desktop and plugins release independently.</p>
-  <div class="sk-plugin-compatibility">
-    <table aria-label="Plugin guide and published packages">
-      <thead>
-        <tr>
-          <th scope="col">Plugin</th>
-          <th scope="col">This guide</th>
-          <th scope="col">Compatible published package</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for plugin in config.extra.source_plugins %} {% if page.meta.plugin_scope == 'all' or
-        page.meta.plugin_scope == plugin.system %}
-        <tr>
-          <th scope="row">{{ plugin.name }}</th>
-          <td>
-            API {{ plugin.api }} source at
-            <code>{{ config.extra.documentation.revision[:7] }}</code>
-          </td>
-          <td>
-            {% if plugin.availability == 'published' %}
-            <code>{{ plugin.published_version }}</code> · API {{ plugin.published_api }}. {% if
-            plugin.published_api != plugin.api %} Guide API differs; these source procedures may not
-            be available in this package. {% else %} Check the package's release notes for shipped
-            features. {% endif %} {% elif plugin.availability == 'unavailable' %} No compatible
-            package found for this desktop when the catalog was checked. {% else %} Availability not
-            checked in this preview. {% endif %}
-          </td>
-        </tr>
-        {% endif %} {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% if config.extra.documentation.status == 'Published documentation' %}
   <p>
-    Catalog checked {{ config.extra.source_plugins[0].checked_at }}.
-    <a href="{{ 'plugin-publications.json' | url }}">Recorded versions and digests</a>. Availability
-    may change after this snapshot.
+    This guide describes source plugin behavior. Compare the available package before following it.
   </p>
-  {% endif %}
-  <p>
-    This guide describes source plugin behavior. Use <strong>Preferences → Plugins</strong> for
-    current installable versions and
-    <a href="{{ 'start/compatibility/' | url }}">check compatibility</a> before following the setup
-    steps.
-  </p>
+  <details>
+    <summary>Compare guide and published packages</summary>
+    <div
+      class="sk-plugin-compatibility"
+      role="region"
+      aria-label="Guide and package comparison"
+      tabindex="0"
+    >
+      <table aria-label="Plugin guide and published packages">
+        <thead>
+          <tr>
+            <th scope="col">Plugin</th>
+            <th scope="col">This guide</th>
+            <th scope="col">Compatible published package</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for plugin in config.extra.source_plugins %} {% if page.meta.plugin_scope == 'all' or
+          page.meta.plugin_scope == plugin.system %}
+          <tr>
+            <th scope="row">{{ plugin.name }}</th>
+            <td>
+              API {{ plugin.api }} source at
+              <code>{{ config.extra.documentation.revision[:7] }}</code>
+            </td>
+            <td>
+              {% if plugin.availability == 'published' %}
+              <code>{{ plugin.published_version }}</code> · API {{ plugin.published_api }}. {% if
+              plugin.published_api != plugin.api %} Guide API differs. {% endif %} {% elif
+              plugin.availability == 'unavailable' %} No compatible package found for this desktop
+              when the catalog was checked. {% else %} Availability not checked in this preview. {%
+              endif %}
+            </td>
+          </tr>
+          {% endif %} {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if config.extra.documentation.status == 'Published documentation' %}
+    <p>
+      Catalog checked {{ config.extra.source_plugins[0].checked_at }}.
+      <a href="{{ 'plugin-publications.json' | url }}">Recorded versions and digests</a>.
+      Availability may change after this snapshot.
+    </p>
+    {% endif %}
+    <p>
+      A matching API does not prove that every source procedure has shipped. Check the package's
+      release notes, use <strong>Preferences → Plugins</strong> for current installable versions,
+      and <a href="{{ 'start/compatibility/' | url }}">check compatibility</a> before following the
+      setup steps.
+    </p>
+  </details>
 </aside>

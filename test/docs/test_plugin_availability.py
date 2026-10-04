@@ -53,7 +53,7 @@ class PluginAvailabilityTests(unittest.TestCase):
     def test_empty_verified_catalog_means_no_compatible_package_at_that_time(self):
         row = self.published({**self.snapshot, "packages": []})
         self.assertEqual(row["availability"], "unavailable")
-        self.assertEqual(row["checked_at"], self.snapshot["checked_at"])
+        self.assertEqual(row["checked_at"], "2026-10-04 12:00 UTC")
 
     def test_missing_stale_or_invalid_snapshot_cannot_claim_availability(self):
         with self.assertRaisesRegex(ValueError, "verified availability"):
