@@ -59,6 +59,57 @@ afterEach(() => {
 });
 
 describe("Kafka application consumption lifecycle", () => {
+  it.each(["reconnect", "disconnect", "shutdown"] as const)(
+    "bounds %s when connection closure awaits a stalled active stream and retains teardown ownership",
+    async (action) => {
+      vi.useFakeTimers();
+      const closing = deferred<void>();
+      const stream = new ControlledMessageStream();
+      const closeStream = vi.spyOn(stream, "close").mockReturnValue(closing.promise);
+      const connection = new RecordingConnection();
+      const closeConnection = vi.spyOn(connection, "close").mockReturnValue(closing.promise);
+      connection.messageStreamOperations.push(() => Promise.resolve(stream));
+      const port = new RecordingConnectionPort();
+      const openConnection = vi.spyOn(port, "openConnection");
+      port.openOperations.push(
+        () => Promise.resolve(connection),
+        () => Promise.resolve(new RecordingConnection()),
+      );
+      const session = new KafkaApplicationSession(port);
+      await session.connect(firstConnection);
+      const observer = {
+        onComplete: vi.fn(),
+        onEmpty: vi.fn(),
+        onFailure: vi.fn(),
+        onMessage: vi.fn(),
+      };
+      await session.startConsumption(tailRequest(), observer);
+      const stopping =
+        action === "reconnect" ? session.connect(secondConnection) : session[action]();
+      const rejected = expect(stopping).rejects.toBeInstanceOf(Error);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await rejected;
+      expect(session.snapshot().state).toBe("failed");
+      expect(closeConnection).toHaveBeenCalledOnce();
+      expect(closeStream).toHaveBeenCalledOnce();
+      expect(openConnection).toHaveBeenCalledOnce();
+      if (action !== "shutdown") {
+        const retry = expect(session.connect(secondConnection)).rejects.toBeInstanceOf(Error);
+        await vi.advanceTimersByTimeAsync(5_000);
+        await retry;
+        expect(closeConnection).toHaveBeenCalledOnce();
+        expect(openConnection).toHaveBeenCalledOnce();
+      }
+      stream.end();
+      closing.resolve();
+      await settleAsyncIteration();
+      if (action !== "shutdown") {
+        await session.connect(secondConnection);
+        expect(openConnection).toHaveBeenCalledTimes(2);
+      }
+    },
+  );
+
   it.each(["stop", "reconnect", "disconnect", "shutdown"] as const)(
     "aborts a pending open on %s and closes its late result before acknowledging cleanup",
     async (action) => {

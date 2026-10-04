@@ -9,7 +9,11 @@ import {
   type SecureConnectionInput,
 } from "../contracts";
 
-import { ConnectionAttemptSupersededError, NoActiveKafkaConnectionError } from "./session-errors";
+import {
+  ConnectionAttemptSupersededError,
+  KafkaCleanupTimeoutError,
+  NoActiveKafkaConnectionError,
+} from "./session-errors";
 import {
   abortSignals,
   cleanupFailures,
@@ -70,6 +74,13 @@ export class KafkaApplicationSession {
   private consumptionStopConnection: KafkaActiveConnection | undefined;
   private consumptionStopSettled = false;
   private readonly closedConnections = new WeakSet<KafkaActiveConnection>();
+  private readonly connectionClosures = new Map<
+    KafkaActiveConnection,
+    {
+      readonly operation: Promise<void>;
+      pending: boolean;
+    }
+  >();
   private pendingConsumption: PendingConsumption | undefined;
   private generation = 0;
   private readonly listeners = new Set<KafkaConnectionSnapshotListener>();
@@ -492,28 +503,29 @@ export class KafkaApplicationSession {
   }
 
   private waitForConsumptionStop(operation: Promise<void> | undefined): Promise<void> {
-    if (operation === undefined) return Promise.resolve();
+    return operation === undefined
+      ? Promise.resolve()
+      : this.waitForCleanup(operation, "consumption");
+  }
+
+  private waitForCleanup<Value>(
+    operation: Promise<Value>,
+    kind: "consumption" | "connection" | "shutdown",
+  ): Promise<Value> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(
-          new Error(
-            "Kafka message stream cleanup did not finish within five seconds. " +
-              "Cleanup continues; retry Stop after it completes.",
-          ),
-        );
+        reject(new KafkaCleanupTimeoutError(kind));
       }, CONSUMPTION_CLEANUP_TIMEOUT_MS);
       timer.unref?.();
       void operation.then(
-        () => {
+        (value) => {
           clearTimeout(timer);
-          resolve();
+          resolve(value);
         },
         (error: unknown) => {
           clearTimeout(timer);
           reject(
-            error instanceof Error
-              ? error
-              : new Error("Kafka message stream cleanup failed.", { cause: error }),
+            error instanceof Error ? error : new Error("Kafka cleanup failed.", { cause: error }),
           );
         },
       );
@@ -599,7 +611,25 @@ export class KafkaApplicationSession {
     throw new ConnectionAttemptSupersededError();
   }
 
-  private async closeConnectionResources(connection: KafkaActiveConnection): Promise<void> {
+  private closeConnectionResources(connection: KafkaActiveConnection): Promise<void> {
+    const existing = this.connectionClosures.get(connection);
+    if (existing?.pending) return existing.operation;
+    const operation = this.finishConnectionClose(connection);
+    const closure = { operation, pending: true };
+    this.connectionClosures.set(connection, closure);
+    void operation.then(
+      () => {
+        if (this.connectionClosures.get(connection) === closure)
+          this.connectionClosures.delete(connection);
+      },
+      () => {
+        closure.pending = false;
+      },
+    );
+    return operation;
+  }
+
+  private async finishConnectionClose(connection: KafkaActiveConnection): Promise<void> {
     await connection.close();
     this.closedConnections.add(connection);
     if (this.consumptionStopConnection === connection && this.consumptionStopSettled) {
@@ -608,24 +638,27 @@ export class KafkaApplicationSession {
     }
   }
 
+  private closeTrackedConnections(connection: KafkaActiveConnection | undefined): Promise<void>[] {
+    const connections = new Set(this.connectionClosures.keys());
+    if (connection !== undefined) connections.add(connection);
+    return [...connections].map((owned) => this.closeConnectionResources(owned));
+  }
+
   private async closeReplacedConnection(
     connection: KafkaActiveConnection | undefined,
     latencyRequests: readonly Promise<KafkaLatencyProbeMeasurement>[],
   ): Promise<void> {
-    const closeOperation =
-      connection === undefined ? undefined : this.closeConnectionResources(connection);
-    const results = await Promise.allSettled([
-      ...(closeOperation === undefined ? [] : [closeOperation]),
-      ...latencyRequests,
-    ]);
-    if (closeOperation !== undefined && results[0]?.status === "rejected") {
-      throw results[0].reason;
-    }
-    const latencyResults = results.slice(closeOperation === undefined ? 0 : 1);
-    const failures = cleanupFailures(latencyResults);
-    if (failures.length > 0) {
-      throw new AggregateError(failures, "The replaced Kafka latency probe did not close cleanly.");
-    }
+    const closes = this.closeTrackedConnections(connection);
+    const results = await Promise.allSettled([...closes, ...latencyRequests]);
+    const failures = [
+      ...results
+        .slice(0, closes.length)
+        .flatMap((result) => (result.status === "rejected" ? [result.reason as unknown] : [])),
+      ...cleanupFailures(results.slice(closes.length)),
+    ];
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "The replaced Kafka resources did not close cleanly.");
   }
 
   private async completeDisconnect(
@@ -638,10 +671,8 @@ export class KafkaApplicationSession {
     configurationRequests: readonly Promise<unknown>[],
     latencyRequests: readonly Promise<KafkaLatencyProbeMeasurement>[],
   ): Promise<void> {
-    const operations: Promise<unknown>[] = [];
-    if (activeConnection !== undefined) {
-      operations.push(this.closeConnectionResources(activeConnection));
-    }
+    const closes = this.closeTrackedConnections(activeConnection);
+    const operations: Promise<unknown>[] = [...closes];
     if (connectionAttempt !== undefined) {
       operations.push(connectionAttempt);
     }
@@ -650,12 +681,17 @@ export class KafkaApplicationSession {
     operations.push(...topicRequests);
     operations.push(...configurationRequests);
     operations.push(...latencyRequests);
-    const results = await Promise.allSettled(operations);
+    let deadlineFailure: unknown;
+    const results = await this.waitForCleanup(Promise.allSettled(operations), "connection").catch(
+      (error: unknown) => {
+        deadlineFailure = error;
+        return [];
+      },
+    );
     const failures = [
+      ...(deadlineFailure === undefined ? [] : [deadlineFailure]),
       ...results.flatMap((result, index) =>
-        index === 0 && activeConnection !== undefined && result.status === "rejected"
-          ? [result.reason as unknown]
-          : [],
+        index < closes.length && result.status === "rejected" ? [result.reason as unknown] : [],
       ),
       ...(consumptionIndex !== undefined && results[consumptionIndex]?.status === "rejected"
         ? [results[consumptionIndex].reason as unknown]
@@ -674,6 +710,8 @@ export class KafkaApplicationSession {
       );
     }
     if (failures.length > 0) {
+      if (failures.length === 1 && failures[0] instanceof KafkaCleanupTimeoutError)
+        throw failures[0];
       throw new AggregateError(failures, "The Kafka connection did not close cleanly.");
     }
   }
@@ -688,37 +726,54 @@ export class KafkaApplicationSession {
     latencyRequests: readonly Promise<KafkaLatencyProbeMeasurement>[],
     temporaryTests: readonly Promise<KafkaConnectionTestResult>[],
   ): Promise<void> {
-    const closeOperation =
-      activeConnection === undefined ? undefined : this.closeConnectionResources(activeConnection);
-    const results = await Promise.allSettled([
-      ...(closeOperation === undefined ? [] : [closeOperation]),
-      ...(connectionAttempt === undefined ? [] : [connectionAttempt]),
-      ...(consumptionStop === undefined ? [] : [consumptionStop]),
-      ...topicRequests,
-      ...configurationRequests,
-      ...latencyRequests,
-      ...temporaryTests,
-    ]);
-    const closeFailure =
-      closeOperation !== undefined && results[0]?.status === "rejected"
-        ? [results[0].reason as unknown]
-        : [];
+    const closes = this.closeTrackedConnections(activeConnection);
+    let deadlineFailure: unknown;
+    const results = await this.waitForCleanup(
+      Promise.allSettled([
+        ...closes,
+        ...(connectionAttempt === undefined ? [] : [connectionAttempt]),
+        ...(consumptionStop === undefined ? [] : [consumptionStop]),
+        ...topicRequests,
+        ...configurationRequests,
+        ...latencyRequests,
+        ...temporaryTests,
+      ]),
+      "shutdown",
+    ).catch((error: unknown) => {
+      deadlineFailure = error;
+      return [];
+    });
+    const closeFailure = results
+      .slice(0, closes.length)
+      .flatMap((result) => (result.status === "rejected" ? [result.reason as unknown] : []));
     const consumptionIndex =
       consumptionStop === undefined
         ? undefined
-        : (closeOperation === undefined ? 0 : 1) + (connectionAttempt === undefined ? 0 : 1);
+        : closes.length + (connectionAttempt === undefined ? 0 : 1);
     const consumptionFailure =
       consumptionIndex !== undefined && results[consumptionIndex]?.status === "rejected"
         ? [results[consumptionIndex].reason as unknown]
         : [];
-    const failures = [...closeFailure, ...consumptionFailure, ...cleanupFailures(results)];
+    const failures = [
+      ...(deadlineFailure === undefined ? [] : [deadlineFailure]),
+      ...closeFailure,
+      ...consumptionFailure,
+      ...cleanupFailures(results),
+    ];
     if (generation === this.generation) {
-      this.publish({
-        connectionName: null,
-        state: "disconnected",
-      });
+      this.publish(
+        failures.length === 0
+          ? { connectionName: null, state: "disconnected" }
+          : {
+              connectionName: this.currentSnapshot.connectionName,
+              state: "failed",
+              failure: failures[0],
+            },
+      );
     }
     if (failures.length > 0) {
+      if (failures.length === 1 && failures[0] instanceof KafkaCleanupTimeoutError)
+        throw failures[0];
       throw new AggregateError(failures, "Kafka resources did not close cleanly during shutdown.");
     }
   }
@@ -783,12 +838,16 @@ export class KafkaApplicationSession {
     try {
       const cleanupOperations = [
         ...(consumptionStop === undefined ? [] : [consumptionStop]),
-        ...(previousConnection === undefined && latencyRequests.length === 0
+        ...(previousConnection === undefined &&
+        latencyRequests.length === 0 &&
+        this.connectionClosures.size === 0
           ? []
           : [this.closeReplacedConnection(previousConnection, latencyRequests)]),
       ];
       const cleanup =
-        cleanupOperations.length === 0 ? [] : await Promise.allSettled(cleanupOperations);
+        cleanupOperations.length === 0
+          ? []
+          : await this.waitForCleanup(Promise.allSettled(cleanupOperations), "connection");
       const failures = cleanup.flatMap((result) =>
         result.status === "rejected" ? [result.reason as unknown] : [],
       );

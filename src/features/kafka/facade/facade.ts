@@ -622,9 +622,9 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private async completeShutdown(): Promise<void> {
     this.connectionIntent += 1;
     this.beginConnectionLifetime();
-    this.invalidateClusterState();
-    this.trustAcquisitions?.clear();
     const finishConsumption = this.consumption.prepareShutdown();
+    this.invalidateClusterState(true);
+    this.trustAcquisitions?.clear();
     let shutdownFailure: unknown;
     try {
       await Promise.all([
@@ -638,7 +638,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     } catch (error) {
       shutdownFailure = error;
     }
-    finishConsumption();
+    finishConsumption(shutdownFailure);
     this.available = false;
     this.publish(
       backendAvailabilityEvent(
@@ -877,8 +877,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.consumerGroups.invalidate();
   }
 
-  private invalidateClusterState(): void {
-    this.consumption.invalidate();
+  private invalidateClusterState(preserveConsumption = false): void {
+    if (!preserveConsumption) this.consumption.invalidate();
     this.observations.cancel();
     this.relationships.cancel();
     void this.recordReplay.invalidate().catch(() => undefined);

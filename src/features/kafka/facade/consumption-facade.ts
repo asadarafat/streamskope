@@ -67,10 +67,17 @@ interface FacadeConsumption extends ActiveFacadeConsumption {
   readonly connectionName: string | null;
 }
 
+interface FacadeStop {
+  readonly consumption: FacadeConsumption | undefined;
+  readonly intent: number;
+  operation: Promise<void> | undefined;
+}
+
 // Owns consumption presentation, queue flushing and terminal notifications.
 export class ConsumptionFacadeController {
   private activeConsumption: FacadeConsumption | undefined;
   private consumptionIntent = 0;
+  private stoppingConsumption: FacadeStop | undefined;
   private messagePresentationPaused = false;
   private readonly scheduleMessageFlush;
 
@@ -78,8 +85,19 @@ export class ConsumptionFacadeController {
     this.scheduleMessageFlush = bindings.scheduleMessageFlush ?? defaultScheduleMessageFlush;
   }
 
+  private discardStoppingConsumption(): void {
+    const consumption = this.stoppingConsumption?.consumption;
+    this.stoppingConsumption = undefined;
+    if (consumption !== undefined) {
+      this.cancelConsumptionFlush(consumption);
+      consumption.messages.length = 0;
+      consumption.queuedBytes = 0;
+    }
+  }
+
   invalidate(): void {
     this.consumptionIntent += 1;
+    this.discardStoppingConsumption();
     const consumption = this.activeConsumption;
     this.activeConsumption = undefined;
     if (consumption !== undefined) {
@@ -96,16 +114,30 @@ export class ConsumptionFacadeController {
     }
   }
 
-  prepareShutdown(): () => void {
-    const consumption = this.activeConsumption;
-    return (): void => {
-      if (consumption !== undefined && this.activeConsumption === consumption) {
+  prepareShutdown(): (error?: unknown) => void {
+    const intent = ++this.consumptionIntent;
+    const consumption = this.activeConsumption ?? this.stoppingConsumption?.consumption;
+    this.activeConsumption = undefined;
+    this.stoppingConsumption = undefined;
+    if (consumption !== undefined) this.cancelConsumptionFlush(consumption);
+    return (error?: unknown): void => {
+      if (intent !== this.consumptionIntent) return;
+      this.bindings.liveRules.deactivate();
+      if (consumption !== undefined) {
         this.flushMessages(consumption, true);
-        this.activeConsumption = undefined;
-        this.bindings.liveRules.deactivate();
-        this.publishConsumption(consumption, "stopped");
-      } else {
-        this.bindings.liveRules.deactivate();
+        const translated =
+          error === undefined
+            ? undefined
+            : this.bindings.translateFailure(error, {
+                activeStateChanged: false,
+                connection: undefined,
+                correlationId: consumption.correlationId,
+              });
+        this.publishConsumption(
+          consumption,
+          error === undefined ? "stopped" : "failed",
+          translated?.error,
+        );
       }
     };
   }
@@ -226,6 +258,7 @@ export class ConsumptionFacadeController {
     correlationId: string,
   ): Promise<HostCommandResponse> {
     const intent = ++this.consumptionIntent;
+    this.discardStoppingConsumption();
     const connectionName = this.bindings.session.snapshot().connectionName;
     let failedConsumption: FacadeConsumption | undefined;
     try {
@@ -398,32 +431,21 @@ export class ConsumptionFacadeController {
     command: Extract<HostCommand, { readonly command: "messages.stop" }>,
     correlationId: string,
   ): Promise<HostCommandResponse> {
-    const intent = ++this.consumptionIntent;
-    const consumption = this.activeConsumption;
-    this.activeConsumption = undefined;
-    if (consumption !== undefined) this.cancelConsumptionFlush(consumption);
+    let stopping = this.stoppingConsumption;
+    if (stopping === undefined || stopping.intent !== this.consumptionIntent) {
+      stopping = {
+        consumption: this.activeConsumption,
+        intent: ++this.consumptionIntent,
+        operation: undefined,
+      };
+      this.activeConsumption = undefined;
+      this.stoppingConsumption = stopping;
+      if (stopping.consumption !== undefined) this.cancelConsumptionFlush(stopping.consumption);
+    }
+    const { consumption } = stopping;
+    stopping.operation ??= this.finishStop(stopping, correlationId);
     try {
-      await this.bindings.session.stopConsumption();
-      if (consumption !== undefined && intent === this.consumptionIntent) {
-        this.flushMessages(consumption, true);
-        this.activeConsumption = undefined;
-        this.bindings.liveRules.deactivate();
-        this.publishConsumption(consumption, "stopped");
-      } else if (consumption === undefined && intent === this.consumptionIntent) {
-        this.bindings.liveRules.deactivate();
-        this.bindings.publish({
-          event: "consumption.state",
-          payload: {
-            droppedMessages: 0,
-            receivedMessages: 0,
-            request: null,
-            ruleEvaluation: this.bindings.liveRules.capability(),
-            state: "stopped",
-          },
-          sequence: this.bindings.nextSequence(),
-          version: HOST_PROTOCOL_VERSION,
-        });
-      }
+      await stopping.operation;
       this.bindings.recordActivity({
         correlationId,
         detail:
@@ -442,10 +464,6 @@ export class ConsumptionFacadeController {
         connection: undefined,
         correlationId,
       });
-      if (consumption !== undefined && intent === this.consumptionIntent) {
-        this.flushMessages(consumption, true);
-        this.publishConsumption(consumption, "failed", translated.error);
-      }
       this.bindings.recordFailureActivity(
         consumption?.request.topic ?? "No active topic",
         "Stop consumption",
@@ -453,6 +471,46 @@ export class ConsumptionFacadeController {
         translated.detail,
       );
       return failureResponse(command, translated.error);
+    }
+  }
+
+  private async finishStop(stopping: FacadeStop, correlationId: string): Promise<void> {
+    const { consumption, intent } = stopping;
+    try {
+      await this.bindings.session.stopConsumption();
+      if (intent !== this.consumptionIntent) return;
+      this.bindings.liveRules.deactivate();
+      if (consumption !== undefined) {
+        this.flushMessages(consumption, true);
+        this.publishConsumption(consumption, "stopped");
+      } else {
+        this.bindings.publish({
+          event: "consumption.state",
+          payload: {
+            droppedMessages: 0,
+            receivedMessages: 0,
+            request: null,
+            ruleEvaluation: this.bindings.liveRules.capability(),
+            state: "stopped",
+          },
+          sequence: this.bindings.nextSequence(),
+          version: HOST_PROTOCOL_VERSION,
+        });
+      }
+      if (this.stoppingConsumption === stopping) this.stoppingConsumption = undefined;
+    } catch (error) {
+      if (consumption !== undefined && intent === this.consumptionIntent) {
+        const translated = this.bindings.translateFailure(error, {
+          activeStateChanged: false,
+          connection: undefined,
+          correlationId,
+        });
+        this.flushMessages(consumption, true);
+        this.publishConsumption(consumption, "failed", translated.error);
+      }
+      throw error;
+    } finally {
+      stopping.operation = undefined;
     }
   }
 }

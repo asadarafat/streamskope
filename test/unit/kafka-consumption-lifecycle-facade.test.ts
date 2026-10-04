@@ -28,6 +28,184 @@ afterEach(() => {
 });
 
 describe("Kafka consumption facade lifecycle", () => {
+  it("coalesces concurrent Stops and publishes one terminal result for the original queue", async () => {
+    const closing = deferred<void>();
+    const stream = new ControlledMessageStream();
+    const close = vi.spyOn(stream, "close").mockReturnValue(closing.promise);
+    const connection = new RecordingActiveConnection();
+    connection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const facade = createFacade(port, () => undefined);
+    const events: HostEvent[] = [];
+    facade.subscribe((event) => {
+      events.push(event);
+    });
+    await facade.execute(command("connection.connect", "connect"));
+    await facade.execute(command("messages.start", "start"));
+    stream.push(message("queued"));
+    await settleAsyncIteration();
+    const firstStop = facade.execute(command("messages.stop", "stop-1"));
+    const secondStop = facade.execute(command("messages.stop", "stop-2"));
+    expect(close).toHaveBeenCalledOnce();
+    stream.end();
+    closing.resolve();
+    expect(await firstStop).toMatchObject({ id: "stop-1", ok: true });
+    expect(await secondStop).toMatchObject({ id: "stop-2", ok: true });
+    const terminal = events.filter(
+      (event) => event.event === "consumption.state" && event.payload.state === "stopped",
+    );
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]).toMatchObject({
+      payload: { receivedMessages: 1, droppedMessages: 0, request: { topic: "test" } },
+    });
+    expect(
+      events
+        .filter((event) => event.event === "messages.batch")
+        .flatMap((event) => event.payload.messages.map((record) => record.id)),
+    ).toEqual(["queued"]);
+  });
+
+  it("retains the stopped operation through a cleanup deadline and publishes its counters on retry", async () => {
+    vi.useFakeTimers();
+    const closing = deferred<void>();
+    const stream = new ControlledMessageStream();
+    vi.spyOn(stream, "close").mockReturnValue(closing.promise);
+    const connection = new RecordingActiveConnection();
+    connection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const facade = createFacade(port, () => undefined);
+    const events: HostEvent[] = [];
+    facade.subscribe((event) => {
+      events.push(event);
+    });
+    await facade.execute(command("connection.connect", "connect"));
+    await facade.execute(command("messages.start", "start"));
+    stream.push(message("queued"));
+    await settleAsyncIteration();
+    const stopping = facade.execute(command("messages.stop", "stop"));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await stopping).toMatchObject({
+      ok: false,
+      error: {
+        code: "TIMEOUT",
+        retryable: true,
+        target: "kafka-consumption-cleanup",
+        summary: "Kafka message stream cleanup did not finish within five seconds.",
+        recovery: "Cleanup continues. Wait for it to finish, then retry Stop.",
+      },
+    });
+    stream.end();
+    closing.resolve();
+    expect(await facade.execute(command("messages.stop", "retry-stop"))).toMatchObject({
+      ok: true,
+    });
+    const terminal = events.filter((event) => event.event === "consumption.state").at(-1);
+    expect(terminal).toMatchObject({
+      payload: {
+        state: "stopped",
+        receivedMessages: 1,
+        droppedMessages: 0,
+        request: { topic: "test" },
+      },
+    });
+    expect(events.filter((event) => event.event === "streamMetrics.changed").at(-1)).toMatchObject({
+      payload: {
+        state: "stopped",
+        delivery: { receivedMessages: 1, deliveredMessages: 1 },
+        request: { topic: "test" },
+      },
+    });
+  });
+
+  it("lets a newer Start supersede the retained Stop queue without publishing old records", async () => {
+    const closing = deferred<void>();
+    const firstStream = new ControlledMessageStream();
+    const nextStream = new ControlledMessageStream();
+    vi.spyOn(firstStream, "close").mockReturnValue(closing.promise);
+    const connection = new RecordingActiveConnection();
+    connection.messageStreamOperations.push(
+      () => Promise.resolve(firstStream),
+      () => Promise.resolve(nextStream),
+    );
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const facade = createFacade(port, () => undefined);
+    const events: HostEvent[] = [];
+    facade.subscribe((event) => {
+      events.push(event);
+    });
+    await facade.execute(command("connection.connect", "connect"));
+    await facade.execute(command("messages.start", "start"));
+    firstStream.push(message("old"));
+    await settleAsyncIteration();
+    const stopping = facade.execute(command("messages.stop", "stop"));
+    const starting = facade.execute(command("messages.start", "replacement"));
+    await settleAsyncIteration();
+    firstStream.end();
+    closing.resolve();
+    expect(await stopping).toMatchObject({ ok: true });
+    expect(await starting).toMatchObject({ ok: true });
+    nextStream.push(message("current"));
+    await settleAsyncIteration();
+    await facade.execute(command("messages.stop", "stop-replacement"));
+    expect(
+      events
+        .filter((event) => event.event === "messages.batch")
+        .flatMap((event) => event.payload.messages.map((record) => record.id)),
+    ).toEqual(["current"]);
+    expect(
+      events.filter(
+        (event) => event.event === "consumption.state" && event.payload.state === "stopped",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("drains the owned queue on shutdown before publishing its terminal evidence", async () => {
+    const stream = new ControlledMessageStream();
+    const connection = new RecordingActiveConnection();
+    connection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const flushes: Array<() => void> = [];
+    const facade = createFacade(port, (flush) => {
+      flushes.push(flush);
+    });
+    const events: HostEvent[] = [];
+    facade.subscribe((event) => {
+      events.push(event);
+    });
+    await facade.execute(command("connection.connect", "connect"));
+    await facade.execute(command("messages.start", "start"));
+    stream.push(message("queued"));
+    await settleAsyncIteration();
+    await facade.shutdown();
+    flushes.forEach((flush) => {
+      flush();
+    });
+    expect(
+      events
+        .filter((event) => event.event === "messages.batch")
+        .flatMap((event) => event.payload.messages.map((record) => record.id)),
+    ).toEqual(["queued"]);
+    expect(events.filter((event) => event.event === "consumption.state").at(-1)).toMatchObject({
+      payload: {
+        state: "stopped",
+        receivedMessages: 1,
+        droppedMessages: 0,
+        request: { topic: "test" },
+      },
+    });
+    expect(events.filter((event) => event.event === "streamMetrics.changed").at(-1)).toMatchObject({
+      payload: {
+        state: "stopped",
+        connectionName: "Local aio",
+        delivery: { receivedMessages: 1, deliveredMessages: 1 },
+      },
+    });
+  });
+
   it.each(["Second cluster", "Local aio"])(
     "invalidates queued records and scheduled callbacks when switching to %s",
     async (connectionName) => {
@@ -219,7 +397,10 @@ describe("Kafka consumption facade lifecycle", () => {
     vi.useFakeTimers();
     const stopping = facade.execute(command("messages.stop", "stop"));
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(await stopping).toMatchObject({ ok: false, error: { code: "INTERNAL" } });
+    expect(await stopping).toMatchObject({
+      ok: false,
+      error: { code: "TIMEOUT", retryable: true, target: "kafka-consumption-cleanup" },
+    });
     expect(events.filter((event) => event.event === "consumption.state").at(-1)).toMatchObject({
       payload: { state: "failed" },
     });
