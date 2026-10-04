@@ -18,11 +18,12 @@ const request = {
 } as const;
 
 const snapshot = {
+  operationId: "monitor-operation",
   connectionName: "local-aio",
   delivery: {
     batchCount: 2,
     batchSize: 50,
-    deliveredMessages: 3,
+    publishedMessages: 3,
     historySamples: 25,
     intervalMs: 100,
     lastBatchMessages: 1,
@@ -31,8 +32,15 @@ const snapshot = {
     queueWaitMs: 1.2,
     receivedMessages: 4,
     tuningSource: "confirmed",
+    rateSampledAt: "2026-07-26T09:00:00.000Z",
+    rateWindowMs: 100,
+    publicationSampledAt: "2026-07-26T09:00:00.000Z",
+    queueWaitSampledAt: "2026-07-26T09:00:00.000Z",
   },
   queue: {
+    oldestMessageAgeMs: null,
+    pressureReasons: ["transport"],
+    dropReasons: { countCapacity: 1, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
     capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
     capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
     currentBytes: 0,
@@ -90,11 +98,13 @@ describe("Kafka stream-monitor contract", () => {
       ...snapshot,
       delivery: {
         ...snapshot.delivery,
-        deliveredMessages: 4,
+        publishedMessages: 4,
         receivedMessages: 4,
       },
       queue: {
         ...snapshot.queue,
+        pressureReasons: [],
+        dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
         droppedMessages: 0,
         droppedPerSecond: 0,
         droppedSincePrevious: 0,
@@ -102,6 +112,58 @@ describe("Kafka stream-monitor contract", () => {
       status: "nominal",
     } as const;
     expect(parseHostEvent(event(nominal))).toEqual(event(nominal));
+  });
+
+  it("accepts pressure recovery with historical omissions and a later quiet interval", () => {
+    const recovered = {
+      ...snapshot,
+      queue: { ...snapshot.queue, pressureReasons: [] },
+      status: "nominal",
+    };
+    expect(parseHostEvent(event(recovered))).toEqual(event(recovered));
+    const quiet = {
+      ...recovered,
+      delivery: { ...snapshot.delivery, messagesPerSecond: 0 },
+      status: "idle",
+    };
+    expect(parseHostEvent(event(quiet))).toEqual(event(quiet));
+  });
+
+  it.each([
+    ["missing operation ownership", { ...snapshot, operationId: null }],
+    [
+      "unaccounted loss reason",
+      {
+        ...snapshot,
+        queue: {
+          ...snapshot.queue,
+          dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
+        },
+      },
+    ],
+    [
+      "duplicate current pressure",
+      { ...snapshot, queue: { ...snapshot.queue, pressureReasons: ["transport", "transport"] } },
+    ],
+    [
+      "unmeasured rate window",
+      { ...snapshot, delivery: { ...snapshot.delivery, rateWindowMs: null } },
+    ],
+    [
+      "zero duration rate window",
+      { ...snapshot, delivery: { ...snapshot.delivery, rateWindowMs: 0 } },
+    ],
+    [
+      "duration without timestamp",
+      { ...snapshot, delivery: { ...snapshot.delivery, publicationSampledAt: null } },
+    ],
+    [
+      "queue age without queued records",
+      { ...snapshot, queue: { ...snapshot.queue, oldestMessageAgeMs: 1 } },
+    ],
+    ["terminal current pressure", { ...snapshot, state: "stopped" }],
+  ])("rejects %s", (_label, value) => {
+    expect(() => parseHostEvent(event(value))).toThrow(HostContractValidationError);
   });
 
   it("rejects undeclared tuning sources and mismatched effective count bounds", () => {
@@ -132,6 +194,7 @@ describe("Kafka stream-monitor contract", () => {
 
   it("preserves unavailable measurements as null and stale evidence as stale", () => {
     const unavailable = {
+      operationId: null,
       connectionName: null,
       delivery: null,
       queue: null,
@@ -165,6 +228,10 @@ describe("Kafka stream-monitor contract", () => {
           ...snapshot,
           delivery: {
             ...snapshot.delivery,
+            rateSampledAt: null,
+            rateWindowMs: null,
+            publicationSampledAt: null,
+            queueWaitSampledAt: null,
             messagesPerSecond: null,
             publicationDurationMs: null,
             queueWaitMs: null,
@@ -268,7 +335,7 @@ describe("Kafka stream-monitor contract", () => {
       },
     ],
     [
-      "nominal status with confirmed drops",
+      "nominal status with current transport pressure",
       {
         ...snapshot,
         status: "nominal",

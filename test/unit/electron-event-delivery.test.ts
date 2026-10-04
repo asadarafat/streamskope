@@ -87,6 +87,39 @@ describe("bounded Electron event delivery", () => {
     delivery.close();
   });
 
+  it("coalesces pending aggregate observations while preserving intervening event order", () => {
+    vi.useFakeTimers();
+    const sent: number[] = [];
+    const failed = vi.fn();
+    const delivery = new ElectronEventDelivery((value) => sent.push(value.sequence), failed);
+    const sample = (sequence: number): HostEvent => ({
+      event: "streamMetrics.changed",
+      sequence,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        operationId: null,
+        connectionName: null,
+        delivery: null,
+        queue: null,
+        request: null,
+        sampledAt: null,
+        state: "unavailable",
+        status: "unavailable",
+      },
+    });
+    delivery.enqueue(event(1));
+    delivery.enqueue(sample(2));
+    delivery.enqueue(event(3));
+    for (let sequence = 4; sequence <= 100; sequence += 1) delivery.enqueue(sample(sequence));
+    expect(failed).not.toHaveBeenCalled();
+    delivery.acknowledge(1);
+    delivery.acknowledge(3);
+    delivery.acknowledge(100);
+    expect(sent).toEqual([1, 3, 100]);
+    expect(vi.getTimerCount()).toBe(0);
+    delivery.close();
+  });
+
   it("fails explicitly once when the event capacity is exhausted", () => {
     vi.useFakeTimers();
     const sent = vi.fn();

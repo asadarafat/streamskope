@@ -1,6 +1,9 @@
-import type { KafkaFetchRequest } from "./types";
+import { KAFKA_MESSAGE_LIMITS, type KafkaFetchRequest } from "./types";
 
 export const KAFKA_STREAM_MONITOR_HISTORY_LIMIT = 400 as const;
+/** One canonical batch or less of remaining retained-byte capacity is current pressure. */
+export const KAFKA_STREAM_QUEUE_BYTE_PRESSURE_THRESHOLD =
+  KAFKA_MESSAGE_LIMITS.queuedBytes - KAFKA_MESSAGE_LIMITS.batchBytes;
 export const KAFKA_STREAM_TUNING_SOURCES = ["confirmed", "factory-fallback"] as const;
 
 export const KAFKA_STREAM_MONITOR_STATES = [
@@ -28,7 +31,25 @@ export type KafkaStreamMonitorState = (typeof KAFKA_STREAM_MONITOR_STATES)[numbe
 export type KafkaStreamMonitorStatus = (typeof KAFKA_STREAM_MONITOR_STATUSES)[number];
 export type KafkaStreamTuningSource = (typeof KAFKA_STREAM_TUNING_SOURCES)[number];
 
+export const KAFKA_STREAM_PRESSURE_REASONS = [
+  "transport",
+  "count-capacity",
+  "byte-capacity",
+] as const;
+export type KafkaStreamPressureReason = (typeof KAFKA_STREAM_PRESSURE_REASONS)[number];
+
+/** Mutually exclusive host display omissions; these are not Kafka record loss. */
+export interface KafkaStreamDropReasons {
+  readonly countCapacity: number;
+  readonly byteCapacity: number;
+  readonly oversized: number;
+  readonly terminalDiscarded: number;
+}
+
 export interface KafkaStreamQueueMetrics {
+  readonly dropReasons: KafkaStreamDropReasons;
+  readonly oldestMessageAgeMs: number | null;
+  readonly pressureReasons: readonly KafkaStreamPressureReason[];
   readonly capacityBytes: number;
   readonly capacityMessages: number;
   readonly currentBytes: number;
@@ -43,7 +64,12 @@ export interface KafkaStreamQueueMetrics {
 export interface KafkaStreamDeliveryMetrics {
   readonly batchCount: number;
   readonly batchSize: number;
-  readonly deliveredMessages: number;
+  /** Published to host event subscribers, without asserting transport or renderer receipt. */
+  readonly publishedMessages: number;
+  readonly rateSampledAt: string | null;
+  readonly rateWindowMs: number | null;
+  readonly publicationSampledAt: string | null;
+  readonly queueWaitSampledAt: string | null;
   readonly historySamples: number;
   readonly intervalMs: number;
   readonly lastBatchMessages: number;
@@ -55,6 +81,8 @@ export interface KafkaStreamDeliveryMetrics {
 }
 
 export interface KafkaStreamMonitorSnapshot {
+  /** The originating messages.start command ID; null only when unavailable. */
+  readonly operationId: string | null;
   readonly connectionName: string | null;
   readonly delivery: KafkaStreamDeliveryMetrics | null;
   readonly queue: KafkaStreamQueueMetrics | null;

@@ -58,6 +58,8 @@ const message: KafkaExploredMessage = Object.freeze({
 });
 
 const queuedMessage: QueuedFacadeMessage = Object.freeze({
+  enqueuedAtMs: 0,
+  serializedBytes: Buffer.byteLength(JSON.stringify(message)) + 1,
   message,
   ruleOutput: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.rules,
 });
@@ -113,6 +115,9 @@ function preferences(bound: "maximum" | "minimum"): KafkaStreamPreferences {
 function consumption(stream: KafkaStreamPreferences): ActiveFacadeConsumption {
   return {
     cancelScheduledFlush: undefined,
+    cancelScheduledSample: undefined,
+    presentationPaused: false,
+    operationId: "performance-operation",
     correlationId: "stream-tuning-performance",
     droppedMessages: 0,
     flushScheduled: false,
@@ -134,6 +139,7 @@ function consumption(stream: KafkaStreamPreferences): ActiveFacadeConsumption {
 function queueCycle(stream: KafkaStreamPreferences): number {
   const active = consumption(stream);
   for (let index = 0; index < stream.queueDepth * 2; index += 1) {
+    active.receivedMessages += 1;
     appendFacadeMessage(active, queuedMessage);
   }
   if (
@@ -153,12 +159,16 @@ function queueCycle(stream: KafkaStreamPreferences): number {
     batches += 1;
     delivered += batch.length;
   }
+  active.streamMonitoring.publishedMessages = delivered;
+  active.streamMonitoring.batchCount = batches;
+  active.streamMonitoring.lastBatchMessages = stream.batchSize;
   const evidence = streamMetricsEvent(
     active,
     "streaming",
     "Performance fixture",
     "2026-07-25T00:00:00.000Z",
     1,
+    0,
   );
   if (
     active.queuedBytes !== 0 ||
@@ -178,12 +188,15 @@ function historyCycle(stream: KafkaStreamPreferences): number {
   let state = initialKafkaUiState;
   for (let sequence = 1; sequence <= stream.historySamples * 2; sequence += 1) {
     active.receivedMessages = sequence;
-    active.streamMonitoring.deliveredMessages = sequence;
+    active.streamMonitoring.publishedMessages = sequence;
+    active.streamMonitoring.batchCount = sequence;
+    active.streamMonitoring.lastBatchMessages = 1;
     const event = streamMetricsEvent(
       active,
       "streaming",
       "Performance fixture",
       "2026-07-25T00:00:00.000Z",
+      sequence,
       sequence,
     );
     if (event === null) {

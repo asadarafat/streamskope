@@ -2,6 +2,8 @@ import { KAFKA_MESSAGE_LIMITS, type KafkaFetchRequest } from "./types";
 import { KAFKA_OPERATIONAL_PREFERENCE_LIMITS } from "./operational-preference-types";
 import {
   KAFKA_STREAM_MONITOR_STATES,
+  KAFKA_STREAM_PRESSURE_REASONS,
+  KAFKA_STREAM_QUEUE_BYTE_PRESSURE_THRESHOLD,
   KAFKA_STREAM_MONITOR_STATUSES,
   KAFKA_STREAM_TUNING_SOURCES,
   type KafkaStreamDeliveryMetrics,
@@ -31,6 +33,37 @@ function nullableNonNegativeFinite(value: unknown, path: string): number | null 
   return value === null ? null : nonNegativeFinite(value, path);
 }
 
+function nullableTimestamp(value: unknown, path: string): string | null {
+  return value === null ? null : canonicalIsoTimestamp(value, path);
+}
+
+function parseDropReasons(value: unknown, path: string): KafkaStreamQueueMetrics["dropReasons"] {
+  const reasons = record(value, path);
+  exactKeys(reasons, ["countCapacity", "byteCapacity", "oversized", "terminalDiscarded"], path);
+  return {
+    countCapacity: nonNegativeInteger(reasons.countCapacity, `${path}.countCapacity`),
+    byteCapacity: nonNegativeInteger(reasons.byteCapacity, `${path}.byteCapacity`),
+    oversized: nonNegativeInteger(reasons.oversized, `${path}.oversized`),
+    terminalDiscarded: nonNegativeInteger(reasons.terminalDiscarded, `${path}.terminalDiscarded`),
+  };
+}
+
+function parsePressureReasons(
+  value: unknown,
+  path: string,
+): KafkaStreamQueueMetrics["pressureReasons"] {
+  if (
+    !Array.isArray(value) ||
+    value.length > KAFKA_STREAM_PRESSURE_REASONS.length ||
+    new Set(value).size !== value.length
+  ) {
+    throw new HostContractValidationError(path, "must contain unique current pressure reasons");
+  }
+  return value.map((reason, index) =>
+    declaredValue(reason, KAFKA_STREAM_PRESSURE_REASONS, `${path}[${index}]`),
+  );
+}
+
 function boundedPreferenceInteger(
   value: unknown,
   path: string,
@@ -51,6 +84,9 @@ function parseQueue(value: unknown, path: string): KafkaStreamQueueMetrics {
   exactKeys(
     queue,
     [
+      "dropReasons",
+      "oldestMessageAgeMs",
+      "pressureReasons",
       "capacityBytes",
       "capacityMessages",
       "currentBytes",
@@ -64,6 +100,12 @@ function parseQueue(value: unknown, path: string): KafkaStreamQueueMetrics {
     path,
   );
   const parsed: KafkaStreamQueueMetrics = {
+    dropReasons: parseDropReasons(queue.dropReasons, `${path}.dropReasons`),
+    oldestMessageAgeMs: nullableNonNegativeFinite(
+      queue.oldestMessageAgeMs,
+      `${path}.oldestMessageAgeMs`,
+    ),
+    pressureReasons: parsePressureReasons(queue.pressureReasons, `${path}.pressureReasons`),
     capacityBytes: nonNegativeInteger(queue.capacityBytes, `${path}.capacityBytes`),
     capacityMessages: nonNegativeInteger(queue.capacityMessages, `${path}.capacityMessages`),
     currentBytes: nonNegativeInteger(queue.currentBytes, `${path}.currentBytes`),
@@ -102,6 +144,35 @@ function parseQueue(value: unknown, path: string): KafkaStreamQueueMetrics {
       "must not exceed cumulative dropped messages",
     );
   }
+  if (
+    parsed.dropReasons.countCapacity +
+      parsed.dropReasons.byteCapacity +
+      parsed.dropReasons.oversized +
+      parsed.dropReasons.terminalDiscarded !==
+    parsed.droppedMessages
+  ) {
+    throw new HostContractValidationError(
+      `${path}.dropReasons`,
+      "must sum to cumulative dropped messages",
+    );
+  }
+  if ((parsed.currentMessages === 0) !== (parsed.oldestMessageAgeMs === null)) {
+    throw new HostContractValidationError(
+      `${path}.oldestMessageAgeMs`,
+      "must describe the oldest currently queued record or be null for an empty queue",
+    );
+  }
+  if (
+    parsed.pressureReasons.includes("count-capacity") !==
+      (parsed.currentMessages === parsed.capacityMessages) ||
+    parsed.pressureReasons.includes("byte-capacity") !==
+      parsed.currentBytes >= KAFKA_STREAM_QUEUE_BYTE_PRESSURE_THRESHOLD
+  ) {
+    throw new HostContractValidationError(
+      `${path}.pressureReasons`,
+      "must match current queue capacity pressure",
+    );
+  }
   return parsed;
 }
 
@@ -110,9 +181,13 @@ function parseDelivery(value: unknown, path: string): KafkaStreamDeliveryMetrics
   exactKeys(
     delivery,
     [
+      "rateSampledAt",
+      "rateWindowMs",
+      "publicationSampledAt",
+      "queueWaitSampledAt",
       "batchCount",
       "batchSize",
-      "deliveredMessages",
+      "publishedMessages",
       "historySamples",
       "intervalMs",
       "lastBatchMessages",
@@ -125,13 +200,23 @@ function parseDelivery(value: unknown, path: string): KafkaStreamDeliveryMetrics
     path,
   );
   const parsed: KafkaStreamDeliveryMetrics = {
+    rateSampledAt: nullableTimestamp(delivery.rateSampledAt, `${path}.rateSampledAt`),
+    rateWindowMs: nullableNonNegativeFinite(delivery.rateWindowMs, `${path}.rateWindowMs`),
+    publicationSampledAt: nullableTimestamp(
+      delivery.publicationSampledAt,
+      `${path}.publicationSampledAt`,
+    ),
+    queueWaitSampledAt: nullableTimestamp(
+      delivery.queueWaitSampledAt,
+      `${path}.queueWaitSampledAt`,
+    ),
     batchCount: nonNegativeInteger(delivery.batchCount, `${path}.batchCount`),
     batchSize: boundedPreferenceInteger(
       delivery.batchSize,
       `${path}.batchSize`,
       KAFKA_OPERATIONAL_PREFERENCE_LIMITS.batchSize,
     ),
-    deliveredMessages: nonNegativeInteger(delivery.deliveredMessages, `${path}.deliveredMessages`),
+    publishedMessages: nonNegativeInteger(delivery.publishedMessages, `${path}.publishedMessages`),
     historySamples: boundedPreferenceInteger(
       delivery.historySamples,
       `${path}.historySamples`,
@@ -162,19 +247,38 @@ function parseDelivery(value: unknown, path: string): KafkaStreamDeliveryMetrics
 
   if (
     parsed.lastBatchMessages > parsed.batchSize ||
-    parsed.lastBatchMessages > parsed.deliveredMessages
+    parsed.lastBatchMessages > parsed.publishedMessages
   ) {
     throw new HostContractValidationError(
       `${path}.lastBatchMessages`,
-      "must fit the canonical batch and delivered count",
+      "must fit the canonical batch and published count",
     );
   }
   if (
     (parsed.batchCount === 0 &&
-      (parsed.deliveredMessages !== 0 || parsed.lastBatchMessages !== 0)) ||
-    (parsed.batchCount > 0 && (parsed.deliveredMessages === 0 || parsed.lastBatchMessages === 0))
+      (parsed.publishedMessages !== 0 || parsed.lastBatchMessages !== 0)) ||
+    (parsed.batchCount > 0 && (parsed.publishedMessages === 0 || parsed.lastBatchMessages === 0))
   ) {
     throw new HostContractValidationError(path, "contains inconsistent batch evidence");
+  }
+  if (
+    (parsed.rateSampledAt === null) !== (parsed.rateWindowMs === null) ||
+    (parsed.rateSampledAt === null) !== (parsed.messagesPerSecond === null) ||
+    parsed.rateWindowMs === 0
+  ) {
+    throw new HostContractValidationError(
+      path,
+      "rates require a timestamp and a positive observation window",
+    );
+  }
+  if (
+    (parsed.publicationSampledAt === null) !== (parsed.publicationDurationMs === null) ||
+    (parsed.queueWaitSampledAt === null) !== (parsed.queueWaitMs === null)
+  ) {
+    throw new HostContractValidationError(
+      path,
+      "measurements require their own observation timestamps",
+    );
   }
   return parsed;
 }
@@ -184,12 +288,14 @@ function requireCurrentEvidence(
   path: string,
 ): asserts snapshot is KafkaStreamMonitorSnapshot & {
   readonly connectionName: string;
+  readonly operationId: string;
   readonly delivery: KafkaStreamDeliveryMetrics;
   readonly queue: KafkaStreamQueueMetrics;
   readonly request: KafkaFetchRequest;
   readonly sampledAt: string;
 } {
   if (
+    snapshot.operationId === null ||
     snapshot.connectionName === null ||
     snapshot.delivery === null ||
     snapshot.queue === null ||
@@ -204,6 +310,7 @@ function validateSnapshotConsistency(snapshot: KafkaStreamMonitorSnapshot, path:
   if (snapshot.state === "unavailable") {
     if (
       snapshot.status !== "unavailable" ||
+      snapshot.operationId !== null ||
       snapshot.connectionName !== null ||
       snapshot.delivery !== null ||
       snapshot.queue !== null ||
@@ -223,16 +330,43 @@ function validateSnapshotConsistency(snapshot: KafkaStreamMonitorSnapshot, path:
     );
   }
   const accountedMessages =
-    snapshot.delivery.deliveredMessages +
+    snapshot.delivery.publishedMessages +
     snapshot.queue.droppedMessages +
     snapshot.queue.currentMessages;
   if (accountedMessages !== snapshot.delivery.receivedMessages) {
     throw new HostContractValidationError(
       path,
-      "received messages must equal delivered, dropped, and currently queued messages",
+      "received messages must equal published, dropped, and currently queued messages",
     );
   }
 
+  if ((snapshot.queue.droppedPerSecond === null) !== (snapshot.delivery.rateSampledAt === null)) {
+    throw new HostContractValidationError(
+      path,
+      "drop and publication rates must share the same observation window",
+    );
+  }
+  for (const observedAt of [
+    snapshot.delivery.rateSampledAt,
+    snapshot.delivery.publicationSampledAt,
+    snapshot.delivery.queueWaitSampledAt,
+  ]) {
+    if (observedAt !== null && observedAt > snapshot.sampledAt) {
+      throw new HostContractValidationError(
+        path,
+        "measurement timestamps must not follow the snapshot timestamp",
+      );
+    }
+  }
+  if (
+    ["complete", "stopped", "failed"].includes(snapshot.state) &&
+    (snapshot.queue.currentMessages !== 0 || snapshot.queue.pressureReasons.length !== 0)
+  ) {
+    throw new HostContractValidationError(
+      path,
+      "terminal evidence must account for the drained or discarded queue",
+    );
+  }
   if (snapshot.state === "stale") {
     if (snapshot.status !== "stale") {
       throw new HostContractValidationError(`${path}.status`, "must be stale");
@@ -252,19 +386,16 @@ function validateSnapshotConsistency(snapshot: KafkaStreamMonitorSnapshot, path:
   ) {
     throw new HostContractValidationError(`${path}.status`, "does not match the current lifecycle");
   }
-  if (snapshot.queue.droppedMessages > 0 && snapshot.status !== "backpressure") {
+  if (snapshot.queue.pressureReasons.length > 0 !== (snapshot.status === "backpressure")) {
     throw new HostContractValidationError(
       `${path}.status`,
-      "must report backpressure when host drops are confirmed",
+      "must describe current pressure independently of historical drops",
     );
   }
-  if (
-    snapshot.status === "nominal" &&
-    (snapshot.delivery.deliveredMessages === 0 || snapshot.queue.droppedMessages > 0)
-  ) {
+  if (snapshot.status === "nominal" && snapshot.delivery.publishedMessages === 0) {
     throw new HostContractValidationError(
       `${path}.status`,
-      "cannot be nominal without current loss-free delivery evidence",
+      "cannot be nominal without host publication evidence",
     );
   }
 }
@@ -277,10 +408,20 @@ export function parseKafkaStreamMonitorSnapshot(
   const snapshot = record(value, path);
   exactKeys(
     snapshot,
-    ["connectionName", "delivery", "queue", "request", "sampledAt", "state", "status"],
+    [
+      "operationId",
+      "connectionName",
+      "delivery",
+      "queue",
+      "request",
+      "sampledAt",
+      "state",
+      "status",
+    ],
     path,
   );
   const parsed: KafkaStreamMonitorSnapshot = {
+    operationId: nullableText(snapshot.operationId, `${path}.operationId`, 128),
     connectionName: nullableText(snapshot.connectionName, `${path}.connectionName`, 256),
     delivery:
       snapshot.delivery === null ? null : parseDelivery(snapshot.delivery, `${path}.delivery`),

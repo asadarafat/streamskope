@@ -6,6 +6,7 @@ import {
   type HostError,
   type HostEvent,
   type KafkaMessage,
+  utf8ByteLength,
 } from "../contracts";
 import {
   ConnectionAttemptSupersededError,
@@ -30,13 +31,13 @@ import {
   unavailableLiveRuleActivity,
 } from "./live-rule-support";
 import { flushFacadeMessages } from "./message-flush";
-import { appendFacadeMessage } from "./message-queue";
+import { appendFacadeMessage, discardFacadeMessages } from "./message-queue";
 import {
   createStreamMonitoring,
   emitConsumptionState,
   emitStreamMetrics,
   recordStreamQueueBounds,
-  recordStreamQueueStart,
+  recordStreamSample,
 } from "./stream-monitor-facade";
 
 interface ConsumptionFacadeBindings {
@@ -90,8 +91,9 @@ export class ConsumptionFacadeController {
     this.stoppingConsumption = undefined;
     if (consumption !== undefined) {
       this.cancelConsumptionFlush(consumption);
-      consumption.messages.length = 0;
-      consumption.queuedBytes = 0;
+      consumption.cancelScheduledSample?.();
+      consumption.cancelScheduledSample = undefined;
+      discardFacadeMessages(consumption);
     }
   }
 
@@ -102,8 +104,9 @@ export class ConsumptionFacadeController {
     this.activeConsumption = undefined;
     if (consumption !== undefined) {
       this.cancelConsumptionFlush(consumption);
-      consumption.messages.length = 0;
-      consumption.queuedBytes = 0;
+      consumption.cancelScheduledSample?.();
+      consumption.cancelScheduledSample = undefined;
+      discardFacadeMessages(consumption);
     }
     this.bindings.liveRules.deactivate();
   }
@@ -119,7 +122,11 @@ export class ConsumptionFacadeController {
     const consumption = this.activeConsumption ?? this.stoppingConsumption?.consumption;
     this.activeConsumption = undefined;
     this.stoppingConsumption = undefined;
-    if (consumption !== undefined) this.cancelConsumptionFlush(consumption);
+    if (consumption !== undefined) {
+      this.cancelConsumptionFlush(consumption);
+      consumption.cancelScheduledSample?.();
+      consumption.cancelScheduledSample = undefined;
+    }
     return (error?: unknown): void => {
       if (intent !== this.consumptionIntent) return;
       this.bindings.liveRules.deactivate();
@@ -157,8 +164,9 @@ export class ConsumptionFacadeController {
       consumption.ruleFailureRecorded = true;
       this.bindings.recordActivity(internalLiveRuleFailureActivity(consumption));
     }
-    recordStreamQueueStart(consumption, this.bindings.monotonicNow);
     appendFacadeMessage(consumption, {
+      enqueuedAtMs: this.bindings.monotonicNow(),
+      serializedBytes: utf8ByteLength(JSON.stringify(exploredMessage)) + 1,
       message: exploredMessage,
       ruleOutput: { ...this.bindings.preferences.currentSnapshot().preferences.rules },
     });
@@ -182,6 +190,7 @@ export class ConsumptionFacadeController {
     this.messagePresentationPaused = paused;
     const consumption = this.activeConsumption;
     if (!consumption) return;
+    consumption.presentationPaused = paused;
     if (paused) this.cancelConsumptionFlush(consumption);
     else if (consumption.messages.length > 0) this.scheduleConsumptionFlush(consumption);
   }
@@ -201,43 +210,60 @@ export class ConsumptionFacadeController {
     }
   }
 
-  private flushMessages(consumption: FacadeConsumption, drainAll = false): void {
+  private flushMessages(consumption: FacadeConsumption, terminal = false): void {
     this.cancelConsumptionFlush(consumption);
-    if (consumption.messages.length === 0 || (this.messagePresentationPaused && !drainAll)) {
-      return;
+    if (terminal) {
+      consumption.cancelScheduledSample?.();
+      consumption.cancelScheduledSample = undefined;
     }
-    const { completedAtMs, droppedSincePrevious } = flushFacadeMessages(consumption, drainAll, {
-      monotonicNow: this.bindings.monotonicNow,
-      nextSequence: this.bindings.nextSequence,
-      publish: this.bindings.publish,
-      recordActivity: this.bindings.recordActivity,
-    });
-    this.publishStreamMetrics(consumption, consumption.state, droppedSincePrevious);
-    if (!drainAll && consumption.messages.length > 0) {
-      consumption.streamMonitoring.queueStartedAtMs = completedAtMs;
-      this.scheduleConsumptionFlush(consumption);
-    }
-  }
-
-  private publishStreamMetrics(
-    consumption: FacadeConsumption,
-    state: ConsumptionState,
-    droppedSincePrevious = Math.max(
-      0,
-      consumption.droppedMessages - consumption.streamMonitoring.lastReportedDroppedMessages,
-    ),
-  ): void {
-    emitStreamMetrics(
-      consumption,
-      state,
-      {
-        connectionName: consumption.connectionName,
+    if (consumption.messages.length > 0 || terminal) {
+      const result = flushFacadeMessages(consumption, terminal, {
+        monotonicNow: this.bindings.monotonicNow,
+        now: this.bindings.now,
+        isPresentationPaused: () => this.messagePresentationPaused,
         nextSequence: this.bindings.nextSequence,
         publish: this.bindings.publish,
-        sampledAt: this.bindings.now().toISOString(),
-      },
-      droppedSincePrevious,
-    );
+        recordActivity: this.bindings.recordActivity,
+      });
+      // First publication is immediately visible; subsequent aggregate samples are capped at 1 Hz.
+      if (
+        !terminal &&
+        (consumption.streamMonitoring.publishedMessages === result.publishedMessages ||
+          result.completedAtMs - consumption.streamMonitoring.lastMeasuredAtMs >= 1_000)
+      ) {
+        this.publishStreamMetrics(consumption, consumption.state);
+      }
+    }
+    if (!terminal && consumption.messages.length > 0) this.scheduleConsumptionFlush(consumption);
+    if (terminal)
+      recordStreamSample(
+        consumption,
+        this.bindings.monotonicNow(),
+        this.bindings.now().toISOString(),
+      );
+  }
+
+  private scheduleStreamSample(consumption: FacadeConsumption): void {
+    consumption.cancelScheduledSample?.();
+    consumption.cancelScheduledSample = defaultScheduleMessageFlush(() => {
+      consumption.cancelScheduledSample = undefined;
+      if (this.activeConsumption !== consumption) return;
+      this.publishStreamMetrics(consumption, consumption.state);
+    }, 1_000);
+  }
+
+  private publishStreamMetrics(consumption: FacadeConsumption, state: ConsumptionState): void {
+    const monotonicNowMs = this.bindings.monotonicNow();
+    const sampledAt = this.bindings.now().toISOString();
+    recordStreamSample(consumption, monotonicNowMs, sampledAt);
+    emitStreamMetrics(consumption, state, {
+      connectionName: consumption.connectionName,
+      nextSequence: this.bindings.nextSequence,
+      publish: this.bindings.publish,
+      sampledAt,
+      monotonicNowMs,
+    });
+    if (this.activeConsumption === consumption) this.scheduleStreamSample(consumption);
   }
 
   private publishConsumption(
@@ -250,6 +276,7 @@ export class ConsumptionFacadeController {
       nextSequence: this.bindings.nextSequence,
       publish: this.bindings.publish,
       sampledAt: this.bindings.now().toISOString(),
+      monotonicNowMs: this.bindings.monotonicNow(),
     });
   }
 
@@ -267,11 +294,14 @@ export class ConsumptionFacadeController {
       const previous = this.activeConsumption;
       if (previous !== undefined) {
         this.cancelConsumptionFlush(previous);
-        previous.messages.length = 0;
-        previous.queuedBytes = 0;
+        previous.cancelScheduledSample?.();
+        discardFacadeMessages(previous);
       }
       const consumption: FacadeConsumption = {
         cancelScheduledFlush: undefined,
+        cancelScheduledSample: undefined,
+        presentationPaused: this.messagePresentationPaused,
+        operationId: command.id,
         connectionName,
         correlationId,
         droppedMessages: 0,
@@ -343,7 +373,7 @@ export class ConsumptionFacadeController {
         },
         onEmpty: (): void => {
           if (this.activeConsumption === consumption) {
-            this.flushMessages(consumption, true);
+            this.flushMessages(consumption);
             this.publishConsumption(consumption, "empty");
           }
         },
@@ -396,6 +426,7 @@ export class ConsumptionFacadeController {
         severity: "info",
       });
       startAccepted = true;
+      this.scheduleStreamSample(consumption);
       pendingTerminal?.();
       return successResponse(command, correlationId);
     } catch (error) {
@@ -414,8 +445,8 @@ export class ConsumptionFacadeController {
       });
       if (consumption !== undefined && this.activeConsumption === consumption) {
         this.cancelConsumptionFlush(consumption);
-        consumption.messages.length = 0;
-        consumption.queuedBytes = 0;
+        consumption.cancelScheduledSample?.();
+        discardFacadeMessages(consumption);
         this.activeConsumption = undefined;
         this.bindings.liveRules.deactivate();
         this.publishConsumption(consumption, "failed", translated.error);
@@ -445,7 +476,11 @@ export class ConsumptionFacadeController {
       };
       this.activeConsumption = undefined;
       this.stoppingConsumption = stopping;
-      if (stopping.consumption !== undefined) this.cancelConsumptionFlush(stopping.consumption);
+      if (stopping.consumption !== undefined) {
+        this.cancelConsumptionFlush(stopping.consumption);
+        stopping.consumption.cancelScheduledSample?.();
+        stopping.consumption.cancelScheduledSample = undefined;
+      }
     }
     const { consumption } = stopping;
     stopping.operation ??= this.finishStop(stopping, correlationId);

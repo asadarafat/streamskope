@@ -505,11 +505,12 @@ describe("browser development host", () => {
     const event: Extract<HostEvent, { readonly event: "streamMetrics.changed" }> = {
       event: "streamMetrics.changed",
       payload: {
+        operationId: "monitor-operation",
         connectionName: "Local aio",
         delivery: {
           batchCount: 1,
           batchSize: 200,
-          deliveredMessages: 1,
+          publishedMessages: 1,
           historySamples: 50,
           intervalMs: 20,
           lastBatchMessages: 1,
@@ -518,8 +519,15 @@ describe("browser development host", () => {
           queueWaitMs: 1,
           receivedMessages: 1,
           tuningSource: "confirmed",
+          rateSampledAt: "2026-07-26T12:00:00.000Z",
+          rateWindowMs: 100,
+          publicationSampledAt: "2026-07-26T12:00:00.000Z",
+          queueWaitSampledAt: "2026-07-26T12:00:00.000Z",
         },
         queue: {
+          oldestMessageAgeMs: null,
+          pressureReasons: [],
+          dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
           capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
           capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
           currentBytes: 0,

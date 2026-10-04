@@ -169,11 +169,12 @@ test.describe("StreamSkope browser Stream Monitor", () => {
       backend.emit({
         event: "streamMetrics.changed",
         payload: {
+          operationId: "monitor-operation",
           connectionName: "Monitor fixture",
           delivery: {
             batchCount: sample + 1,
             batchSize: 200,
-            deliveredMessages: (sample + 1) * 2,
+            publishedMessages: (sample + 1) * 2,
             historySamples: 50,
             intervalMs: 20,
             lastBatchMessages: 2,
@@ -182,8 +183,15 @@ test.describe("StreamSkope browser Stream Monitor", () => {
             queueWaitMs: 0.9 + currentMessages * 0.12,
             receivedMessages: (sample + 1) * 2 + currentMessages,
             tuningSource: "confirmed",
+            rateSampledAt: `2026-07-26T12:00:${String(sample + 1).padStart(2, "0")}.000Z`,
+            rateWindowMs: 1_000,
+            publicationSampledAt: `2026-07-26T12:00:${String(sample + 1).padStart(2, "0")}.000Z`,
+            queueWaitSampledAt: `2026-07-26T12:00:${String(sample + 1).padStart(2, "0")}.000Z`,
           },
           queue: {
+            oldestMessageAgeMs: currentMessages === 0 ? null : 5,
+            pressureReasons: [],
+            dropReasons: { countCapacity: 0, byteCapacity: 0, oversized: 0, terminalDiscarded: 0 },
             capacityBytes: KAFKA_MESSAGE_LIMITS.queuedBytes,
             capacityMessages: KAFKA_MESSAGE_LIMITS.queuedMessages,
             currentBytes: currentMessages * 128,
