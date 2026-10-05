@@ -6,7 +6,10 @@ import { app, shell } from "electron";
 import type { KafkaBackendFacade } from "../../src/features/kafka/facade";
 import { createElectronKafkaBackend } from "../../src/platform/electron/main/electron-kafka-backend";
 import type { ElectronSafeStoragePort } from "../../src/platform/electron/main/electron-profile-protection";
-import { createElectronShell } from "../../src/platform/electron/main/electron-shell";
+import {
+  createElectronShell,
+  type RunningElectronShell,
+} from "../../src/platform/electron/main/electron-shell";
 import {
   installPackagedRendererProtocol,
   PACKAGED_RENDERER_URL,
@@ -39,6 +42,7 @@ class DeterministicSafeStorage implements ElectronSafeStoragePort {
 }
 
 let backend: KafkaBackendFacade | undefined;
+let runningShell: RunningElectronShell | undefined;
 let shuttingDown = false;
 
 registerPackagedRendererScheme();
@@ -48,12 +52,19 @@ async function shutdown(exitCode: number): Promise<void> {
     return;
   }
   shuttingDown = true;
-  try {
-    await backend?.shutdown();
-    app.exit(exitCode);
-  } catch {
-    app.exit(1);
-  }
+  const results = await Promise.allSettled(
+    [
+      (): Promise<void> => runningShell?.close() ?? Promise.resolve(),
+      (): Promise<void> => backend?.shutdown() ?? Promise.resolve(),
+    ].map((run): Promise<void> => {
+      try {
+        return run();
+      } catch (cause) {
+        return Promise.reject(new Error("Electron profile fixture cleanup failed.", { cause }));
+      }
+    }),
+  );
+  app.exit(results.some((result) => result.status === "rejected") ? 1 : exitCode);
 }
 
 async function start(): Promise<void> {
@@ -85,7 +96,7 @@ async function start(): Promise<void> {
     ),
     userDataPath,
   });
-  await createElectronShell({
+  runningShell = await createElectronShell({
     backend,
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl,

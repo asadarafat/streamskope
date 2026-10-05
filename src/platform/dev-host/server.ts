@@ -7,11 +7,10 @@ import { createKafkaProviderEndpoint } from "../node/kafka-provider";
 import {
   ProviderHostRegistry,
   ProviderWireValidationError,
-  type ProviderEventQueue,
   type ProviderWireEndpoint,
 } from "../node/provider-host";
-import type { ProviderWireEvent } from "../providers/host";
 
+import { ProviderSseDelivery, type ProviderSseCloseReport } from "./provider-sse-delivery";
 import {
   developmentOrigin,
   resolveDevelopmentNetwork,
@@ -21,8 +20,11 @@ import {
 const DEFAULT_MAX_COMMAND_BODY_BYTES = 256 * 1_024;
 const DEFAULT_MAX_EVENT_BYTES = 2 * 1_024 * 1_024;
 const DEFAULT_MAX_QUEUED_EVENTS = 32;
+const DEFAULT_MAX_QUEUED_SERIALIZED_BYTES = 8 * 1_024 * 1_024;
+const DEFAULT_EVENT_WRITE_TIMEOUT_MS = 30_000;
 export interface DevelopmentBackend extends StreamSkopeBackend {
   shutdown(): Promise<void>;
+  stopStream?(): Promise<void>;
   pluginAsset?(pathname: string): Promise<PluginRendererAsset | undefined>;
 }
 
@@ -37,6 +39,8 @@ export type DevelopmentHostOptions = DevelopmentNetworkOptions &
     readonly maxQueuedEvents?: number;
     readonly maxQueuedMessageBytes?: number;
     readonly maxQueuedMessages?: number;
+    readonly maxQueuedSerializedBytes?: number;
+    readonly eventWriteTimeoutMs?: number;
     readonly port: number;
     readonly rendererOrigin: string;
     readonly token: string;
@@ -71,27 +75,26 @@ class CommandBodyTooLargeError extends Error {
   }
 }
 
-interface SseClient {
-  blocked: boolean;
-  closed: boolean;
-  readonly queue: ProviderEventQueue;
-  readonly response: ServerResponse;
-}
-
 interface HostRuntime {
+  closing: boolean;
   readonly routes: ReadonlyMap<string, ProviderRouteRuntime>;
   readonly maxCommandBodyBytes: number;
   readonly maxEventBytes: number;
   readonly maxQueuedEvents: number;
   readonly maxQueuedMessageBytes: number;
   readonly maxQueuedMessages: number;
+  readonly maxQueuedSerializedBytes: number;
+  readonly eventWriteTimeoutMs: number;
   readonly rendererOrigin: string;
   readonly token: string;
 }
 
 interface ProviderRouteRuntime {
   readonly endpoint: ProviderWireEndpoint;
-  readonly clients: Set<SseClient>;
+  readonly clients: Set<ProviderSseDelivery>;
+  readonly pendingStops: Set<Promise<void>>;
+  readonly cleanupFailures: unknown[];
+  recovery: { state: "pending" | "failed"; readonly promise: Promise<void> } | undefined;
 }
 
 function positiveInteger(value: number | undefined, fallback: number, name: string): number {
@@ -233,82 +236,85 @@ async function readCommandBody(request: IncomingMessage, maximumBytes: number): 
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function closeSseClient(route: ProviderRouteRuntime, client: SseClient): void {
-  if (client.closed) {
-    return;
-  }
-  client.closed = true;
-  route.clients.delete(client);
-  if (!client.response.writableEnded) {
-    client.response.end();
+function beginRouteRecovery(runtime: HostRuntime, route: ProviderRouteRuntime): void {
+  if (runtime.closing || route.recovery !== undefined) return;
+  let complete = (): void => undefined;
+  let fail = (_error: unknown): void => undefined;
+  const promise = new Promise<void>((resolve, reject) => {
+    complete = resolve;
+    fail = reject;
+  });
+  const attempt = { state: "pending" as "pending" | "failed", promise };
+  route.recovery = attempt;
+  route.pendingStops.add(promise);
+  // Observe now, retain failures for explicit host close, and never renew an old route owner.
+  void promise.then(
+    () => {
+      route.pendingStops.delete(promise);
+      if (route.recovery === attempt) route.recovery = undefined;
+    },
+    (error: unknown) => {
+      route.pendingStops.delete(promise);
+      route.cleanupFailures.push(error);
+      if (route.recovery === attempt) attempt.state = "failed";
+    },
+  );
+  // Admission is already closed; invoke synchronously to revoke pending provider starts.
+  try {
+    void route.endpoint.stopStream().then(complete, fail);
+  } catch (error) {
+    fail(error);
   }
 }
 
-function serializeEvent(event: ProviderWireEvent): string {
-  return `data: ${JSON.stringify(event)}\n\n`;
-}
-
-function flushSseClient(
+function closeRouteClient(
   runtime: HostRuntime,
   route: ProviderRouteRuntime,
-  client: SseClient,
+  client: ProviderSseDelivery,
+  report: ProviderSseCloseReport,
 ): void {
-  if (client.closed) {
-    return;
-  }
-  client.blocked = false;
-  while (client.queue.length > 0) {
-    const next = client.queue.dequeue();
-    if (next === undefined) {
-      return;
-    }
-    const serialized = serializeEvent(next);
-    if (Buffer.byteLength(serialized) > runtime.maxEventBytes) {
-      closeSseClient(route, client);
-      return;
-    }
-    if (!client.response.write(serialized)) {
-      client.blocked = true;
-      return;
-    }
-  }
+  route.cleanupFailures.push(...report.cleanupFailures);
+  if (!route.clients.delete(client)) return;
+  if (route.clients.size === 0) beginRouteRecovery(runtime, route);
 }
 
-function sendSse(route: ProviderRouteRuntime, client: SseClient, event: ProviderWireEvent): void {
-  if (client.closed) {
-    return;
+function rejectAdmission(
+  response: ServerResponse,
+  runtime: HostRuntime,
+  route: ProviderRouteRuntime,
+): boolean {
+  if (runtime.closing) {
+    sendProblem(
+      response,
+      503,
+      "DEVELOPMENT_HOST_CLOSING",
+      "The local application host is closing.",
+      runtime.rendererOrigin,
+    );
+    return true;
   }
-  if (client.blocked) {
-    if (!client.queue.enqueue(event)) {
-      closeSseClient(route, client);
-    }
-    return;
+  if (route.recovery !== undefined) {
+    const failed = route.recovery.state === "failed";
+    sendProblem(
+      response,
+      503,
+      failed ? "PROVIDER_STREAM_CLEANUP_UNCONFIRMED" : "PROVIDER_STREAM_RECOVERING",
+      failed
+        ? "Provider stream cleanup could not be confirmed. Restart the local StreamSkope host before reconnecting."
+        : "The provider stream is stopping after renderer delivery ended. Wait for cleanup, then reconnect.",
+      runtime.rendererOrigin,
+    );
+    return true;
   }
-  const serialized = serializeEvent(event);
-  if (!client.response.write(serialized)) {
-    client.blocked = true;
-  }
+  return false;
 }
 
-function broadcastEvent(runtime: HostRuntime, route: ProviderRouteRuntime, event: unknown): void {
-  let parsed: ProviderWireEvent;
+function broadcastEvent(_runtime: HostRuntime, route: ProviderRouteRuntime, event: unknown): void {
   try {
-    parsed = route.endpoint.parseEvent(event);
-  } catch {
-    for (const client of [...route.clients]) {
-      closeSseClient(route, client);
-    }
-    return;
-  }
-  const serialized = serializeEvent(parsed);
-  if (Buffer.byteLength(serialized) > runtime.maxEventBytes) {
-    for (const client of [...route.clients]) {
-      closeSseClient(route, client);
-    }
-    return;
-  }
-  for (const client of route.clients) {
-    sendSse(route, client, parsed);
+    const parsed = route.endpoint.parseEvent(event);
+    for (const client of [...route.clients]) client.enqueue(parsed);
+  } catch (error) {
+    for (const client of [...route.clients]) client.close(error);
   }
 }
 
@@ -317,6 +323,18 @@ function openEventStream(
   runtime: HostRuntime,
   route: ProviderRouteRuntime,
 ): void {
+  const client = new ProviderSseDelivery({
+    queue: route.endpoint.createEventQueue({
+      maxEvents: runtime.maxQueuedEvents,
+      maxMessageBytes: runtime.maxQueuedMessageBytes,
+      maxMessages: runtime.maxQueuedMessages,
+      maxSerializedBytes: runtime.maxQueuedSerializedBytes,
+    }),
+    response,
+    maxEventBytes: runtime.maxEventBytes,
+    writeTimeoutMs: runtime.eventWriteTimeoutMs,
+    onClose: (report): void => closeRouteClient(runtime, route, client, report),
+  });
   setCors(response, runtime.rendererOrigin);
   response.statusCode = 200;
   response.setHeader("Cache-Control", "no-cache, no-store");
@@ -324,26 +342,13 @@ function openEventStream(
   response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   response.setHeader("X-Accel-Buffering", "no");
   response.setHeader("X-Content-Type-Options", "nosniff");
-  response.flushHeaders();
-
-  const client: SseClient = {
-    blocked: false,
-    closed: false,
-    queue: route.endpoint.createEventQueue({
-      maxEvents: runtime.maxQueuedEvents,
-      maxMessageBytes: runtime.maxQueuedMessageBytes,
-      maxMessages: runtime.maxQueuedMessages,
-    }),
-    response,
-  };
   route.clients.add(client);
-  response.on("close", () => {
-    closeSseClient(route, client);
-  });
-  response.on("drain", () => {
-    flushSseClient(runtime, route, client);
-  });
-  response.write(": streamskope development host ready\n\n");
+  try {
+    response.flushHeaders();
+    client.start();
+  } catch (error) {
+    client.close(error);
+  }
 }
 
 async function executeCommand(
@@ -396,6 +401,8 @@ async function executeCommand(
 
   let hostResponse;
   try {
+    // A final renderer can disappear while this request's body is still being read.
+    if (rejectAdmission(response, runtime, route)) return;
     hostResponse = await route.endpoint.dispatch(wire);
   } catch (error) {
     if (!(error instanceof ProviderWireValidationError)) throw error;
@@ -441,6 +448,7 @@ async function handleRequest(
     return;
   }
   const { action, route } = selected;
+  if (rejectAdmission(response, runtime, route)) return;
   if (request.method === "GET" && action === "health") {
     sendJson(
       response,
@@ -510,26 +518,35 @@ export async function startDevelopmentHost(
   let server: Server | undefined;
   const routes = new Map<string, ProviderRouteRuntime>();
   const subscriptions: (() => void)[] = [];
+  let runtime: HostRuntime | undefined;
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
     if (closePromise !== undefined) return closePromise;
+    if (runtime !== undefined) runtime.closing = true;
+    const pendingStops = [...routes.values()].flatMap((route) => [...route.pendingStops]);
     let providerShutdown = Promise.resolve();
     closePromise = Promise.resolve().then(async (): Promise<void> => {
       const ownedServer = server;
       const operations: (() => void | Promise<void>)[] = [
         ...subscriptions.splice(0),
         ...[...routes.values()].flatMap((route) =>
-          [...route.clients].map((client) => (): void => closeSseClient(route, client)),
+          [...route.clients].map((client) => (): void => client.close()),
         ),
         ...(ownedServer === undefined ? [] : [(): Promise<void> => closeServer(ownedServer)]),
       ];
       const results = await Promise.allSettled([
         ...operations.map((operation) => Promise.resolve().then(operation)),
         providerShutdown,
+        ...pendingStops,
       ]);
-      const failures = results
-        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-        .map((result) => result.reason as unknown);
+      const failures = [
+        ...new Set([
+          ...results
+            .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+            .map((result) => result.reason as unknown),
+          ...[...routes.values()].flatMap((route) => route.cleanupFailures),
+        ]),
+      ];
       if (failures.length > 0) {
         throw new AggregateError(failures, "Development host did not stop cleanly.");
       }
@@ -546,9 +563,16 @@ export async function startDevelopmentHost(
     validateRendererOrigin(options.rendererOrigin, network.publicHostname);
     validateToken(options.token);
     for (const endpoint of providers.endpoints()) {
-      routes.set(endpoint.id, { endpoint, clients: new Set() });
+      routes.set(endpoint.id, {
+        endpoint,
+        clients: new Set(),
+        pendingStops: new Set(),
+        cleanupFailures: [],
+        recovery: undefined,
+      });
     }
-    const runtime: HostRuntime = {
+    const selectedRuntime: HostRuntime = {
+      closing: false,
       routes,
       maxCommandBodyBytes: positiveInteger(
         options.maxCommandBodyBytes,
@@ -575,17 +599,28 @@ export async function startDevelopmentHost(
         KAFKA_MESSAGE_LIMITS.queuedMessages,
         "maxQueuedMessages",
       ),
+      maxQueuedSerializedBytes: positiveInteger(
+        options.maxQueuedSerializedBytes,
+        DEFAULT_MAX_QUEUED_SERIALIZED_BYTES,
+        "maxQueuedSerializedBytes",
+      ),
+      eventWriteTimeoutMs: positiveInteger(
+        options.eventWriteTimeoutMs,
+        DEFAULT_EVENT_WRITE_TIMEOUT_MS,
+        "eventWriteTimeoutMs",
+      ),
       rendererOrigin: options.rendererOrigin,
       token: options.token,
     };
+    runtime = selectedRuntime;
     server = createServer((request, response) => {
-      void handleRequest(request, response, runtime).catch(() => {
+      void handleRequest(request, response, selectedRuntime).catch(() => {
         sendProblem(
           response,
           500,
           "DEVELOPMENT_HOST_FAILURE",
           "The local application host could not complete the request.",
-          runtime.rendererOrigin,
+          selectedRuntime.rendererOrigin,
         );
       });
     });
@@ -594,7 +629,9 @@ export async function startDevelopmentHost(
     });
 
     for (const route of routes.values()) {
-      subscriptions.push(route.endpoint.subscribe((wire) => broadcastEvent(runtime, route, wire)));
+      subscriptions.push(
+        route.endpoint.subscribe((wire) => broadcastEvent(selectedRuntime, route, wire)),
+      );
     }
     listeningEndpoint = `${network.listenHostname}:${String(options.port)}`;
     await listen(server, options.port, network.listenHostname);

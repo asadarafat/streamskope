@@ -1,20 +1,24 @@
 import type { ProviderWireEvent } from "../providers/host";
 
+import {
+  AccountedProviderEventQueue,
+  createControlDeliveryPolicy,
+  type DeliveryFailure,
+  type ProviderDeliveryCosts,
+  type ProviderDeliveryQueue,
+} from "./accounted-provider-event-queue";
+
 export type { ProviderWireEvent } from "../providers/host";
 
 export interface ProviderEventQueueOptions {
   readonly maxEvents: number;
   readonly maxMessageBytes: number;
   readonly maxMessages: number;
+  readonly maxSerializedBytes?: number;
 }
 
-interface TypedEventQueue<Event extends ProviderWireEvent> {
-  readonly length: number;
-  enqueue(event: Event): boolean;
-  dequeue(): Event | undefined;
-}
-
-export type ProviderEventQueue = TypedEventQueue<ProviderWireEvent>;
+type TypedEventQueue<Event extends ProviderWireEvent> = ProviderDeliveryQueue<Event>;
+export type ProviderEventQueue = ProviderDeliveryQueue<ProviderWireEvent>;
 
 /** Sealed host-only serialization boundary; feature UIs use typed provider hosts. */
 export interface ProviderWireEndpoint {
@@ -29,6 +33,8 @@ export interface ProviderWireEndpoint {
     state: "ready" | "unavailable",
     recovery?: string,
   ): ProviderWireEvent;
+  /** Confirm selected-provider pending and active stream cleanup; no disconnect. */
+  stopStream(): Promise<void>;
   shutdown(): Promise<void>;
 }
 
@@ -47,6 +53,7 @@ export interface ProviderEndpointOptions<Command, Response, Event extends Provid
     recovery?: string,
   ) => Event;
   readonly shutdown: () => Promise<void>;
+  readonly stopStream?: () => Promise<void>;
   readonly createEventQueue?: (options: ProviderEventQueueOptions) => TypedEventQueue<Event>;
 }
 
@@ -68,6 +75,15 @@ export class ProviderHostClosedError extends Error {
   }
 }
 
+export class ProviderStreamStopUnavailableError extends Error {
+  constructor() {
+    super(
+      "The provider cannot confirm stream cleanup. Restart StreamSkope before streaming again.",
+    );
+    this.name = "ProviderStreamStopUnavailableError";
+  }
+}
+
 function validateProviderIdentity(id: string, version: number): void {
   if (!/^[a-z][a-z0-9-]{0,31}$/u.test(id)) throw new Error("Invalid provider identifier.");
   if (!Number.isSafeInteger(version) || version <= 0)
@@ -80,37 +96,22 @@ function positiveInteger(value: number): number {
   return value;
 }
 
-/** Control-only fallback; record retention is supplied by the provider's policy. */
-class ControlEventQueue<Event extends ProviderWireEvent> implements TypedEventQueue<Event> {
-  private readonly events: { readonly event: Event; readonly bytes: number }[] = [];
-  private bytes = 0;
-  private readonly maxEvents: number;
-  private readonly maxBytes: number;
-
-  constructor(options: ProviderEventQueueOptions) {
-    this.maxEvents = positiveInteger(options.maxEvents);
-    this.maxBytes = positiveInteger(options.maxMessageBytes);
-    positiveInteger(options.maxMessages);
-  }
-
-  get length(): number {
-    return this.events.length;
-  }
-
-  enqueue(event: Event): boolean {
-    const bytes = Buffer.byteLength(JSON.stringify(event));
-    if (this.events.length >= this.maxEvents || this.bytes + bytes > this.maxBytes) return false;
-    this.events.push({ event, bytes });
-    this.bytes += bytes;
-    return true;
-  }
-
-  dequeue(): Event | undefined {
-    const next = this.events.shift();
-    if (next === undefined) return undefined;
-    this.bytes -= next.bytes;
-    return next.event;
-  }
+/** Preserve the control fallback's legacy byte cap, independently of record budgets. */
+function controlEventQueue<Event extends ProviderWireEvent>(
+  options: ProviderEventQueueOptions,
+): ProviderDeliveryQueue<Event> {
+  return new AccountedProviderEventQueue({
+    policy: createControlDeliveryPolicy<Event>(),
+    overflow: "reject",
+    limits: {
+      maxEvents: positiveInteger(options.maxEvents),
+      maxSerializedBytes: Math.min(
+        positiveInteger(options.maxMessageBytes),
+        positiveInteger(options.maxSerializedBytes ?? 8 * 1024 * 1024),
+      ),
+      maxRecords: positiveInteger(options.maxMessages),
+    },
+  });
 }
 
 export function createProviderEndpoint<Command, Response, Event extends ProviderWireEvent>(
@@ -146,17 +147,37 @@ export function createProviderEndpoint<Command, Response, Event extends Provider
     subscribe: (listener): (() => void) => options.subscribe(listener),
     createEventQueue: (queueOptions): ProviderEventQueue => {
       const queue =
-        options.createEventQueue?.(queueOptions) ?? new ControlEventQueue<Event>(queueOptions);
+        options.createEventQueue?.(queueOptions) ?? controlEventQueue<Event>(queueOptions);
       return {
-        get length(): number {
-          return queue.length;
+        get costs(): ProviderDeliveryCosts {
+          return queue.costs;
         },
-        enqueue: (wire): boolean => queue.enqueue(options.parseEvent(wire)),
-        dequeue: (): Event | undefined => queue.dequeue(),
+        enqueue: (wire): DeliveryFailure | undefined => {
+          try {
+            return queue.enqueue(options.parseEvent(wire));
+          } catch {
+            return "event-validation";
+          }
+        },
+        begin: () => queue.begin(),
+        close: () => queue.close(),
       };
     },
     availability: (sequence, state, recovery): Event =>
       options.availability(sequence, state, recovery),
+    stopStream: (): Promise<void> => {
+      if (options.stopStream === undefined)
+        return Promise.reject(new ProviderStreamStopUnavailableError());
+      try {
+        return options.stopStream();
+      } catch (error) {
+        return Promise.reject(
+          error instanceof Error
+            ? error
+            : new Error("Provider stream cleanup failed.", { cause: error }),
+        );
+      }
+    },
     shutdown: (): Promise<void> => options.shutdown(),
   };
 }
@@ -194,6 +215,8 @@ export class ProviderHostRegistry {
             state: "ready" | "unavailable",
             recovery?: string,
           ): ProviderWireEvent => endpoint.availability(sequence, state, recovery),
+          // Cleanup remains callable after external admission closes, for this owner only.
+          stopStream: (): Promise<void> => endpoint.stopStream(),
           shutdown: (): Promise<void> => this.shutdown(),
         }),
       );

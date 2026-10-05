@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createProviderEndpoint,
   ProviderHostClosedError,
+  ProviderStreamStopUnavailableError,
   ProviderHostRegistry,
   ProviderWireValidationError,
 } from "../../src/platform/node/provider-host";
@@ -160,5 +162,59 @@ describe("registered provider ownership", () => {
     );
     expect(fixture.requests).toHaveLength(0);
     await registry.shutdown();
+  });
+
+  it("stops only the selected provider and preserves a deferred cleanup failure", async () => {
+    const first = createProviderFixture({ id: "first", version: 7 });
+    const second = createProviderFixture({ id: "second", version: 9 });
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((_resolve, fail) => {
+      reject = fail;
+    });
+    first.stopOperation = (): Promise<void> => pending;
+    const registry = new ProviderHostRegistry([first.endpoint, second.endpoint]);
+    const stopping = registry.get("first")!.stopStream();
+    const failure = new Error("Injected selected-provider cleanup failure.");
+    const rejected = expect(stopping).rejects.toBe(failure);
+    expect(first.stopCalls).toBe(1);
+    expect(second.stopCalls).toBe(0);
+    expect(first.shutdownCalls + second.shutdownCalls).toBe(0);
+    reject(failure);
+    await rejected;
+    await registry.shutdown();
+  });
+
+  it("retains selected cleanup access after external registry admission closes", async () => {
+    const fixture = createProviderFixture({ id: "fixture", version: 7 });
+    let release!: () => void;
+    fixture.shutdownOperation = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const registry = new ProviderHostRegistry([fixture.endpoint]);
+    const route = registry.get("fixture")!;
+    const closing = registry.shutdown();
+    await expect(route.dispatch(fixture.command())).rejects.toBeInstanceOf(ProviderHostClosedError);
+    await expect(route.stopStream()).resolves.toBeUndefined();
+    expect(fixture.stopCalls).toBe(1);
+    await Promise.resolve();
+    release();
+    await closing;
+  });
+
+  it("does not claim a stream stopped when its owner supplies no cleanup capability", async () => {
+    const fixture = createProviderFixture({ id: "fixture", version: 7 });
+    const endpoint = createProviderEndpoint({
+      id: "fixture",
+      version: 7,
+      parseCommand: fixture.parseCommand,
+      execute: (command) => Promise.resolve(fixture.response(command)),
+      correlateResponse: fixture.correlateResponse,
+      parseEvent: fixture.codec.parseEvent,
+      subscribe: (): (() => void) => (): void => undefined,
+      availability: fixture.codec.availability,
+      shutdown: () => Promise.resolve(),
+    });
+    await expect(endpoint.stopStream()).rejects.toBeInstanceOf(ProviderStreamStopUnavailableError);
   });
 });

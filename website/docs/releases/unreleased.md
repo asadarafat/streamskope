@@ -28,6 +28,13 @@ switching waits for confirmed stream stop and disconnect, retains the current
 workspace after a cleanup failure, and blocks new commands from retired views
 without discarding already-admitted write responses.
 
+When the final development-browser client leaves, the host stops its active reader
+and waits for confirmed cleanup before accepting more commands. Desktop event
+failure uses the same confirmed-stop rule. The broker connection stays available;
+failed cleanup requires restarting the host. Transport queues account for records
+held by an outstanding write, and HTTP omission counts stay with the read generation
+that lost those records.
+
 Observed health now prioritizes selected-topic findings, measurement coverage and
 investigation actions. Existing resources can be selected from the connected
 profile; collection progress and cooldown are visible. Partition filtering and

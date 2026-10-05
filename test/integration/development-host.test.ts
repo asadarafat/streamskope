@@ -65,6 +65,11 @@ class FakeBackend implements StreamSkopeBackend {
     this.shutdownCalls += 1;
     return Promise.resolve();
   }
+
+  // This event-emitting fixture owns no broker reader or pending stream open.
+  stopStream(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 type AsyncCleanup = () => Promise<void>;

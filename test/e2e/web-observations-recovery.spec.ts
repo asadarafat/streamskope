@@ -78,6 +78,7 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
     }),
     subscribe: (listener) => real.subscribe(listener),
     shutdown: () => real.shutdown(),
+    stopStream: () => real.stopStream(),
   };
   const producer = new Producer({
     bootstrapBrokers: [...fixture.connection.brokers],

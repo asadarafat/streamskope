@@ -109,6 +109,11 @@ class ClusterWorkbenchBackend implements StreamSkopeBackend {
     );
   }
 
+  /** This event-only fixture owns no broker reader. */
+  stopStream(): Promise<void> {
+    return Promise.resolve();
+  }
+
   shutdown(): Promise<void> {
     return Promise.resolve();
   }

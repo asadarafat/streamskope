@@ -51,6 +51,10 @@ export interface ProviderFixture {
   readonly requests: FixtureCommand[];
   readonly subscribeCalls: number;
   readonly shutdownCalls: number;
+  readonly stopCalls: number;
+  readonly unsubscribeCalls: number;
+  unsubscribeFailure: Error | undefined;
+  stopOperation: (() => Promise<void>) | undefined;
   nextResponse: FixtureResponse | undefined;
   subscribeFailure: Error | undefined;
   shutdownOperation: (() => Promise<void>) | undefined;
@@ -96,6 +100,10 @@ export function createProviderFixture(options: {
   let shutdownOperation: (() => Promise<void>) | undefined;
   let subscribeCalls = 0;
   let shutdownCalls = 0;
+  let stopCalls = 0;
+  let unsubscribeCalls = 0;
+  let unsubscribeFailure: Error | undefined;
+  let stopOperation: (() => Promise<void>) | undefined;
 
   const identity = (value: Record<string, unknown>): void => {
     if (value.provider !== id || value.version !== version)
@@ -200,10 +208,16 @@ export function createProviderFixture(options: {
       if (subscribeFailure !== undefined) throw subscribeFailure;
       listeners.add(listener);
       return (): void => {
+        unsubscribeCalls += 1;
         listeners.delete(listener);
+        if (unsubscribeFailure !== undefined) throw unsubscribeFailure;
       };
     },
     availability: codec.availability,
+    stopStream: (): Promise<void> => {
+      stopCalls += 1;
+      return stopOperation?.() ?? Promise.resolve();
+    },
     shutdown: (): Promise<void> => {
       shutdownCalls += 1;
       return shutdownOperation?.() ?? Promise.resolve();
@@ -218,6 +232,24 @@ export function createProviderFixture(options: {
     },
     get shutdownCalls(): number {
       return shutdownCalls;
+    },
+    get stopCalls(): number {
+      return stopCalls;
+    },
+    get unsubscribeCalls(): number {
+      return unsubscribeCalls;
+    },
+    get unsubscribeFailure(): Error | undefined {
+      return unsubscribeFailure;
+    },
+    set unsubscribeFailure(error: Error | undefined) {
+      unsubscribeFailure = error;
+    },
+    get stopOperation(): (() => Promise<void>) | undefined {
+      return stopOperation;
+    },
+    set stopOperation(operation: (() => Promise<void>) | undefined) {
+      stopOperation = operation;
     },
     get nextResponse(): FixtureResponse | undefined {
       return nextResponse;

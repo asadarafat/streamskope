@@ -30,9 +30,10 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/ui/TrustRecipeManager.tsx",
     "src/features/kafka/ui/stream-monitor-observer.ts",
     "src/platform/electron/main/electron-profile-protection.ts",
-    "src/platform/electron/main/electron-event-delivery.ts",
-    // Control-only provider delivery owns a 30-second ACK deadline, cleared on ACK or close.
+    // Shared provider delivery owns a 30-second ACK deadline, cleared on ACK or close.
     "src/platform/electron/main/provider-delivery.ts",
+    // Each SSE client owns one local-write deadline, cleared on completion or retirement.
+    "src/platform/dev-host/provider-sse-delivery.ts",
     "src/platform/electron/main/electron-entry.ts",
     "plugins/eda/backend/eda-api-client.ts",
     "plugins/eda/backend/eda-agent-capture.ts",

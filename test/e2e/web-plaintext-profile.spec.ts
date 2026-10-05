@@ -156,6 +156,11 @@ class PlaintextProfileBackend implements StreamSkopeBackend {
     throw new Error(`Unexpected EDA command ${command.command}`);
   }
 
+  /** This event-only fixture owns no broker reader. */
+  stopStream(): Promise<void> {
+    return Promise.resolve();
+  }
+
   shutdown(): Promise<void> {
     return Promise.resolve();
   }

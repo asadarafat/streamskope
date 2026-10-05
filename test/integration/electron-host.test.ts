@@ -179,6 +179,7 @@ vi.mock("electron", () => ({
 
 class FakeBackend implements StreamSkopeBackend {
   readonly commands: HostCommand[] = [];
+  stopCalls = 0;
   private readonly listeners = new Set<(event: HostEvent) => void>();
 
   execute<Command extends HostCommand>(
@@ -204,6 +205,11 @@ class FakeBackend implements StreamSkopeBackend {
     return (): void => {
       this.listeners.delete(listener);
     };
+  }
+
+  stopStream(): Promise<void> {
+    this.stopCalls += 1;
+    return Promise.resolve();
   }
 }
 
@@ -366,7 +372,7 @@ describe("Electron main boundary", () => {
     window.webContents.emit("will-attach-webview", webview);
     expect(webview.preventDefault).toHaveBeenCalledOnce();
 
-    shell.close();
+    await shell.close();
   });
 
   it("loads one owned packaged origin without granting file or alternate-path navigation", async () => {
@@ -399,7 +405,7 @@ describe("Electron main boundary", () => {
     );
     expect(localFile.preventDefault).toHaveBeenCalledOnce();
 
-    shell.close();
+    await shell.close();
   });
 
   it("replays current readiness to late subscribers without resetting or acknowledging the stream", () => {
@@ -491,7 +497,7 @@ describe("Electron main boundary", () => {
         await expect(rejection).rejects.not.toThrow("private-kubernetes-credentials");
         expect(backend.commands).toEqual([]);
       } finally {
-        shell.close();
+        await shell.close();
       }
     },
   );
@@ -567,7 +573,7 @@ describe("Electron main boundary", () => {
     await subscribe?.({ sender: window.webContents }, HOST_PROTOCOL_VERSION);
     expect(backend.listenerCount()).toBe(1);
 
-    shell.close();
+    await shell.close();
     expect(electronMock.handlers.has(HOST_COMMAND_CHANNEL)).toBe(false);
     expect(electronMock.handlers.has(EXTERNAL_URL_OPEN_CHANNEL)).toBe(false);
     expect(electronMock.handlers.has(HOST_EVENT_ACK_CHANNEL)).toBe(false);
@@ -623,7 +629,7 @@ describe("Electron main boundary", () => {
       "operating system rejected",
     );
     expect(electronMock.externalUrls).toEqual([request.url, request.url]);
-    shell.close();
+    await shell.close();
     expect(electronMock.handlers.has(EXTERNAL_URL_OPEN_CHANNEL)).toBe(false);
   });
 
@@ -694,7 +700,7 @@ describe("Electron main boundary", () => {
       });
       expect(electronMock.saveDialogCalls).toHaveLength(2);
     } finally {
-      shell.close();
+      await shell.close();
       await rm(outputDirectory, { force: true, recursive: true });
     }
     expect(electronMock.handlers.has(DESKTOP_DOCUMENT_SAVE_CHANNEL)).toBe(false);
@@ -773,7 +779,7 @@ describe("Electron preload boundary", () => {
         payload: { state: "unavailable" },
       });
     } finally {
-      shell.close();
+      await shell.close();
       await backend.shutdown();
     }
     expect(electronMock.handlers.has(HOST_SUBSCRIBE_CHANNEL)).toBe(false);
@@ -801,8 +807,8 @@ describe("Electron preload boundary", () => {
           payload: { state: "unavailable" },
         });
       });
-      expect(backend.commands).toHaveLength(1);
-      expect(backend.commands[0]?.command).toBe("messages.stop");
+      expect(backend.commands).toEqual([]);
+      expect(backend.stopCalls).toBe(1);
       expect(backend.listenerCount()).toBe(0);
       expect(electronMock.windows[0]?.webContents.sent).toHaveLength(2);
       expect(electronMock.windows[0]?.webContents.sent.at(-1)?.value).toMatchObject({
@@ -813,7 +819,7 @@ describe("Electron preload boundary", () => {
         "Consumption stopped",
       );
     } finally {
-      shell.close();
+      await shell.close();
     }
   });
 

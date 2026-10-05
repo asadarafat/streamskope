@@ -108,7 +108,8 @@ describe("Electron runtime efficiency policy", () => {
     expect(report.missingOwners).toEqual([]);
     expect(report.ownerFiles).toContain("plugins/eda/backend/eda-agent-capture.ts");
     expect(report.ownerFiles).toContain("src/features/kafka/ui/TrustRecipeManager.tsx");
-    expect(report.ownerFiles).toContain("src/platform/electron/main/electron-event-delivery.ts");
+    expect(report.ownerFiles).toContain("src/platform/electron/main/provider-delivery.ts");
+    expect(report.ownerFiles).toContain("src/platform/dev-host/provider-sse-delivery.ts");
     expect(report.ownerFiles).toContain("plugins/eda/backend/eda-api-client.ts");
     expect(report.ownerFiles).toContain("plugins/nsp/backend/api-client.ts");
     expect(report.ownerFiles).toContain(

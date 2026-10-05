@@ -4,50 +4,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   HOST_PROTOCOL_VERSION,
-  parseHostEvent,
   type HostCommand,
-  type HostEvent,
   type SecureConnectionInput,
 } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { startDevelopmentHost } from "../../src/platform/dev-host";
 import { loadFixtureConfig, loadFixtureConnection } from "../support/kafka-fixture";
+import { readKafkaEventsUntil } from "../support/kafka-sse-events";
 
 const RENDERER_ORIGIN = "http://127.0.0.1:4173";
 const INVOCATION_TOKEN = "0123456789abcdef0123456789abcdef";
-
-async function readEventsUntil(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  predicate: (events: readonly HostEvent[]) => boolean,
-): Promise<readonly HostEvent[]> {
-  const events: HostEvent[] = [];
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const result = await reader.read();
-    if (result.done) {
-      throw new Error("Development-host event stream ended before expected events arrived.");
-    }
-    buffer += decoder.decode(result.value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const block = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const data = block
-        .split("\n")
-        .filter((line) => line.startsWith("data: "))
-        .map((line) => line.slice(6))
-        .join("\n");
-      if (data.length > 0) {
-        events.push(parseHostEvent(JSON.parse(data) as unknown));
-        if (predicate(events)) {
-          return events;
-        }
-      }
-      boundary = buffer.indexOf("\n\n");
-    }
-  }
-}
 
 describe("real browser-development Kafka path", () => {
   it("connects through the authenticated HTTP contract and emits safe operational activity", async () => {
@@ -111,7 +77,7 @@ describe("real browser-development Kafka path", () => {
         id: "real-browser-connect",
         ok: true,
       });
-      const events = await readEventsUntil(
+      const events = await readKafkaEventsUntil(
         reader,
         (received) =>
           received.some(

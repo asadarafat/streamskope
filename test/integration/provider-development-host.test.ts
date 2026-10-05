@@ -1,5 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,8 +10,15 @@ import {
   startDevelopmentHost,
   type RunningDevelopmentHost,
 } from "../../src/platform/dev-host";
-import { ProviderHostRegistry } from "../../src/platform/node/provider-host";
-import { createProviderFixture, type ProviderFixture } from "../support/provider-fixture";
+import {
+  createProviderEndpoint,
+  ProviderHostRegistry,
+} from "../../src/platform/node/provider-host";
+import {
+  createProviderFixture,
+  type ProviderFixture,
+  type FixtureResponse,
+} from "../support/provider-fixture";
 
 const RENDERER_ORIGIN = "http://127.0.0.1:4173";
 const TOKEN = "0123456789abcdef0123456789abcdef";
@@ -186,6 +193,212 @@ describe("named development provider routes", () => {
     );
     expect((await post(host, "beta", beta.command())).status).toBe(200);
     expect(beta.requests).toHaveLength(1);
+  });
+
+  it("stops only the provider that loses its final HTTP renderer before admitting a replacement", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 9 });
+    let finishStop = (): void => undefined;
+    const stopping = new Promise<void>((resolve) => {
+      finishStop = resolve;
+    });
+    alpha.stopOperation = (): Promise<void> => stopping;
+    const host = await hostFor([alpha, beta]);
+    const alphaFirst = await eventStream(host, "alpha");
+    const alphaLast = await eventStream(host, "alpha");
+    const betaReader = await eventStream(host, "beta");
+    try {
+      await alphaFirst.cancel();
+      alpha.emit(alpha.event("remaining-renderer", 20));
+      expect(new TextDecoder().decode((await readChunk(alphaLast)).value)).toContain(
+        "remaining-renderer",
+      );
+      expect(alpha.stopCalls).toBe(0);
+      await alphaLast.cancel();
+      await expect.poll(() => alpha.stopCalls, { timeout: 1_000 }).toBe(1);
+      expect((await post(host, "alpha", alpha.command())).status).toBe(503);
+      expect(
+        (
+          await fetch(`${host.origin}/providers/alpha/events`, {
+            headers: headers(),
+          })
+        ).status,
+      ).toBe(503);
+      expect(alpha.requests).toEqual([]);
+      beta.emit(beta.event("sibling-stays-live", 21));
+      expect(new TextDecoder().decode((await readChunk(betaReader)).value)).toContain(
+        "sibling-stays-live",
+      );
+      expect((await post(host, "beta", beta.command())).status).toBe(200);
+      expect(beta.stopCalls).toBe(0);
+      finishStop();
+      expect((await post(host, "alpha", alpha.command())).status).toBe(200);
+      await eventStream(host, "alpha");
+      expect(alpha.stopCalls).toBe(1);
+    } finally {
+      finishStop();
+    }
+  });
+
+  it("fences a command whose HTTP body finishes after its final renderer is lost", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    let finishStop = (): void => undefined;
+    const stopping = new Promise<void>((resolve) => {
+      finishStop = resolve;
+    });
+    alpha.stopOperation = (): Promise<void> => stopping;
+    const host = await hostFor([alpha]);
+    const reader = await eventStream(host, "alpha");
+    const body = JSON.stringify(alpha.command("set", "new-stream"));
+    let settleResponse = (_status: number): void => undefined;
+    let failResponse = (_error: Error): void => undefined;
+    const result = new Promise<number>((resolve, reject) => {
+      settleResponse = resolve;
+      failResponse = reject;
+    });
+    const outgoing = request(
+      `${host.origin}/providers/alpha/commands`,
+      {
+        method: "POST",
+        headers: { ...headers(), "content-type": "application/json", expect: "100-continue" },
+      },
+      (response): void => {
+        response.resume();
+        response.once("end", (): void => settleResponse(response.statusCode ?? 0));
+      },
+    );
+    outgoing.on("error", failResponse);
+    void result.catch(() => undefined);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        outgoing.once("continue", resolve);
+        outgoing.once("error", reject);
+        outgoing.flushHeaders();
+      });
+      outgoing.write(body.slice(0, 8));
+      await reader.cancel();
+      await expect.poll(() => alpha.stopCalls).toBe(1);
+      outgoing.end(body.slice(8));
+      await expect(result).resolves.toBe(503);
+      expect(alpha.requests).toEqual([]);
+    } finally {
+      finishStop();
+      outgoing.destroy();
+    }
+  });
+
+  it("retains unconfirmed stream cleanup and independently joins every owner when the host closes", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 9 });
+    const stopFailure = new Error("private-stream-stop-sentinel");
+    const unsubscribeFailure = new Error("private-unsubscribe-sentinel");
+    alpha.unsubscribeFailure = unsubscribeFailure;
+    let failStop = (_error: Error): void => undefined;
+    const stopping = new Promise<void>((_resolve, reject) => {
+      failStop = reject;
+    });
+    alpha.stopOperation = (): Promise<void> => stopping;
+    const host = await startDevelopmentHost({
+      providers: new ProviderHostRegistry([alpha.endpoint, beta.endpoint]),
+      port: 0,
+      rendererOrigin: RENDERER_ORIGIN,
+      token: TOKEN,
+    });
+    cleanups.push(() => host.close().catch(() => undefined));
+    const reader = await eventStream(host, "alpha");
+    await eventStream(host, "beta");
+    await reader.cancel();
+    await expect.poll(() => alpha.stopCalls).toBe(1);
+    failStop(stopFailure);
+    await expect
+      .poll(async () => {
+        const result = await fetch(`${host.origin}/providers/alpha/health`, { headers: headers() });
+        return result.text();
+      })
+      .toContain("PROVIDER_STREAM_CLEANUP_UNCONFIRMED");
+    const rejected = await post(host, "alpha", alpha.command());
+    expect(rejected.status).toBe(503);
+    const safeBody = await rejected.text();
+    expect(safeBody).toContain("Restart");
+    expect(safeBody).not.toContain(stopFailure.message);
+    expect((await post(host, "beta", beta.command())).status).toBe(200);
+    const closing = host.close();
+    expect(host.close()).toBe(closing);
+    const failure: unknown = await closing.catch((error: unknown) => error);
+    if (!(failure instanceof AggregateError))
+      throw new Error("Expected retained cleanup failures.");
+    const causes = failure.errors as readonly unknown[];
+    expect(causes).toEqual(expect.arrayContaining([stopFailure, unsubscribeFailure]));
+    expect(alpha.shutdownCalls).toBe(1);
+    expect(beta.shutdownCalls).toBe(1);
+    expect(alpha.unsubscribeCalls).toBe(1);
+    expect(beta.unsubscribeCalls).toBe(1);
+    expect(alpha.listenerCount()).toBe(0);
+    expect(beta.listenerCount()).toBe(0);
+    expect(beta.stopCalls).toBe(0);
+  });
+
+  it("retains an admitted response during recovery and waits for its already-started stop on close", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    let finishStop = (): void => undefined;
+    const stopping = new Promise<void>((resolve) => {
+      finishStop = resolve;
+    });
+    alpha.stopOperation = (): Promise<void> => stopping;
+    let finishResponse = (_response: FixtureResponse): void => undefined;
+    const response = new Promise<FixtureResponse>((resolve) => {
+      finishResponse = resolve;
+    });
+    const endpoint = createProviderEndpoint({
+      id: alpha.endpoint.id,
+      version: alpha.endpoint.version,
+      parseCommand: alpha.parseCommand,
+      execute: (command): Promise<FixtureResponse> => {
+        alpha.requests.push(command);
+        return response;
+      },
+      correlateResponse: alpha.correlateResponse,
+      parseEvent: alpha.codec.parseEvent,
+      subscribe: (listener) => alpha.endpoint.subscribe(listener),
+      availability: alpha.codec.availability,
+      stopStream: () => alpha.endpoint.stopStream(),
+      shutdown: () => alpha.endpoint.shutdown(),
+    });
+    const host = await startDevelopmentHost({
+      providers: new ProviderHostRegistry([endpoint]),
+      port: 0,
+      rendererOrigin: RENDERER_ORIGIN,
+      token: TOKEN,
+    });
+    cleanups.push(() => host.close());
+    const reader = await eventStream(host, "alpha");
+    const command = alpha.command("set", "admitted-write");
+    const requested = post(host, "alpha", command);
+    try {
+      await expect.poll(() => alpha.requests).toEqual([command]);
+      await reader.cancel();
+      await expect.poll(() => alpha.stopCalls).toBe(1);
+      const receipt = alpha.response(command, "confirmed-original-result");
+      finishResponse(receipt);
+      const delivered = await requested;
+      expect(delivered.status).toBe(200);
+      await expect(delivered.json()).resolves.toEqual(receipt);
+      const closing = host.close();
+      let settled = false;
+      const observed = closing.then(() => {
+        settled = true;
+      });
+      await expect.poll(() => alpha.shutdownCalls).toBe(1);
+      expect(settled).toBe(false);
+      finishStop();
+      await observed;
+      expect(settled).toBe(true);
+      expect(alpha.stopCalls).toBe(1);
+      expect(alpha.listenerCount()).toBe(0);
+    } finally {
+      finishStop();
+      finishResponse(alpha.response(command));
+    }
   });
 
   it("cleans up all owners when a later provider fails to subscribe before listening", async () => {

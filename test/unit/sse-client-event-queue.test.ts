@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   HOST_PROTOCOL_VERSION,
@@ -7,6 +7,11 @@ import {
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
 } from "../../src/features/kafka/contracts";
+import {
+  AccountedProviderEventQueue,
+  type ProviderDeliveryQueue,
+} from "../../src/platform/node/accounted-provider-event-queue";
+import { createKafkaIpcDeliveryPolicy } from "../../src/platform/node/kafka-delivery-policy";
 import { SseClientEventQueue } from "../../src/platform/node/kafka-sse-event-queue";
 
 const evaluated: KafkaLiveRuleEvaluation = {
@@ -50,7 +55,10 @@ function message(
   };
 }
 
-function batch(sequence: number, messages: readonly KafkaExploredMessage[]): HostEvent {
+function batch(
+  sequence: number,
+  messages: readonly KafkaExploredMessage[],
+): Extract<HostEvent, { event: "messages.batch" }> {
   return {
     event: "messages.batch",
     payload: {
@@ -63,7 +71,40 @@ function batch(sequence: number, messages: readonly KafkaExploredMessage[]): Hos
   };
 }
 
+function take(queue: ProviderDeliveryQueue<HostEvent>): HostEvent | undefined {
+  const next = queue.begin();
+  if (next.kind === "failure") throw new Error(next.reason);
+  if (next.kind === "empty") return undefined;
+  next.lease.complete();
+  return next.lease.event;
+}
+
 describe("development-host SSE client event queue", () => {
+  it("avoids a second full encoding without transport loss while still validating source counters", () => {
+    const queue = new SseClientEventQueue({ maxEvents: 8, maxMessageBytes: 1_024, maxMessages: 1 });
+    const source = batch(1, [message(1)]);
+    const stringify = vi.spyOn(JSON, "stringify");
+    let inputs: readonly unknown[];
+    try {
+      expect(queue.enqueue(source)).toBeUndefined();
+      expect(take(queue)).toEqual(source);
+      inputs = stringify.mock.calls.map(([value]): unknown => value);
+    } finally {
+      stringify.mockRestore();
+    }
+    expect(inputs).toHaveLength(2);
+    expect(inputs).toEqual([source.payload.messages[0], source]);
+
+    const invalid = {
+      ...source,
+      payload: { ...source.payload, droppedMessages: Number.MAX_SAFE_INTEGER + 1 },
+      sequence: 2,
+    };
+    expect(queue.enqueue(invalid)).toBeUndefined();
+    expect(queue.begin()).toEqual({ kind: "failure", reason: "event-validation" });
+    queue.close();
+  });
+
   it("retains the newest records within the configured count and reports oldest-record loss", () => {
     const queue = new SseClientEventQueue({
       maxEvents: 8,
@@ -71,18 +112,18 @@ describe("development-host SSE client event queue", () => {
       maxMessages: 3,
     });
 
-    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBe(true);
-    expect(queue.enqueue(batch(2, [message(3), message(4)]))).toBe(true);
+    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBeUndefined();
+    expect(queue.enqueue(batch(2, [message(3), message(4)]))).toBeUndefined();
 
-    expect(queue.queuedMessages).toBe(3);
-    expect(queue.dequeue()).toMatchObject({
+    expect(queue.costs.records).toBe(3);
+    expect(take(queue)).toMatchObject({
       event: "messages.batch",
       payload: {
         droppedMessages: 1,
         messages: [{ offset: "2" }],
       },
     });
-    expect(queue.dequeue()).toMatchObject({
+    expect(take(queue)).toMatchObject({
       event: "messages.batch",
       payload: {
         droppedMessages: 1,
@@ -98,10 +139,10 @@ describe("development-host SSE client event queue", () => {
       maxMessages: 8,
     });
 
-    expect(queue.enqueue(batch(1, [message(1, "åå"), message(2, "bbb")]))).toBe(true);
+    expect(queue.enqueue(batch(1, [message(1, "åå"), message(2, "bbb")]))).toBeUndefined();
 
-    expect(queue.queuedMessageBytes).toBe(kafkaMessageRetainedBytes(message(2, "bbb")));
-    expect(queue.dequeue()).toMatchObject({
+    expect(queue.costs.recordBytes).toBe(kafkaMessageRetainedBytes(message(2, "bbb")));
+    expect(take(queue)).toMatchObject({
       payload: {
         droppedMessages: 1,
         messages: [{ offset: "2" }],
@@ -128,9 +169,9 @@ describe("development-host SSE client event queue", () => {
       version: HOST_PROTOCOL_VERSION,
     };
 
-    expect(queue.enqueue(ready)).toBe(true);
-    expect(queue.enqueue(connected)).toBe(false);
-    expect(queue.dequeue()).toEqual(ready);
+    expect(queue.enqueue(ready)).toBeUndefined();
+    expect(queue.enqueue(connected)).toBe("event-limit");
+    expect(take(queue)).toEqual(ready);
   });
 
   it("adds transport loss to a later consumption-state counter", () => {
@@ -156,12 +197,12 @@ describe("development-host SSE client event queue", () => {
       version: HOST_PROTOCOL_VERSION,
     };
 
-    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBe(true);
-    expect(queue.enqueue(state)).toBe(true);
-    expect(queue.dequeue()).toMatchObject({
+    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBeUndefined();
+    expect(queue.enqueue(state)).toBeUndefined();
+    expect(take(queue)).toMatchObject({
       payload: { droppedMessages: 1, messages: [{ offset: "2" }] },
     });
-    expect(queue.dequeue()).toMatchObject({
+    expect(take(queue)).toMatchObject({
       event: "consumption.state",
       payload: { droppedMessages: 5 },
     });
@@ -190,10 +231,46 @@ describe("development-host SSE client event queue", () => {
       version: HOST_PROTOCOL_VERSION,
     };
 
-    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBe(true);
-    expect(queue.enqueue(loading)).toBe(true);
-    expect(queue.dequeue()).toEqual(loading);
-    expect(queue.dequeue()).toBeUndefined();
+    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBeUndefined();
+    expect(queue.enqueue(loading)).toBeUndefined();
+    expect(take(queue)).toEqual(loading);
+    expect(take(queue)).toBeUndefined();
+  });
+
+  it("preserves old terminal loss evidence when loading replaces unsent records", () => {
+    const queue = new SseClientEventQueue({
+      maxEvents: 8,
+      maxMessageBytes: 1_024,
+      maxMessages: 1,
+    });
+    const terminal: HostEvent = {
+      event: "consumption.state",
+      payload: {
+        droppedMessages: 4,
+        receivedMessages: 2,
+        request: { maxMessages: 1_000, mode: "tail", topic: "test" },
+        ruleEvaluation: readyCapability,
+        state: "stopped",
+      },
+      sequence: 2,
+      version: HOST_PROTOCOL_VERSION,
+    };
+    const loading: HostEvent = {
+      ...terminal,
+      payload: { ...terminal.payload, droppedMessages: 0, receivedMessages: 0, state: "loading" },
+      sequence: 3,
+    };
+
+    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBeUndefined();
+    expect(queue.enqueue(terminal)).toBeUndefined();
+    expect(queue.enqueue(loading)).toBeUndefined();
+
+    expect(take(queue)).toMatchObject({
+      event: "consumption.state",
+      payload: { droppedMessages: 6, state: "stopped" },
+    });
+    expect(take(queue)).toEqual(loading);
+    expect(terminal.payload.droppedMessages).toBe(4);
   });
 
   it("counts bounded live-rule evidence when evicting the oldest SSE record", () => {
@@ -211,14 +288,97 @@ describe("development-host SSE client event queue", () => {
       maxMessages: 8,
     });
 
-    expect(queue.enqueue(batch(1, [message(1, "", evidenceHeavy), newest]))).toBe(true);
+    expect(queue.enqueue(batch(1, [message(1, "", evidenceHeavy), newest]))).toBeUndefined();
 
-    expect(queue.queuedMessageBytes).toBe(kafkaMessageRetainedBytes(newest));
-    expect(queue.dequeue()).toMatchObject({
+    expect(queue.costs.recordBytes).toBe(kafkaMessageRetainedBytes(newest));
+    expect(take(queue)).toMatchObject({
       payload: {
         droppedMessages: 1,
         messages: [{ offset: "2" }],
       },
     });
+  });
+
+  it("keeps unsent Kafka records across IPC loading while only IPC replaces observations", () => {
+    const observation = (sequence: number): HostEvent => ({
+      event: "streamMetrics.changed",
+      sequence,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        operationId: "test-operation",
+        connectionName: null,
+        delivery: null,
+        queue: null,
+        request: null,
+        sampledAt: null,
+        state: "unavailable",
+        status: "unavailable",
+      },
+    });
+    const loading: HostEvent = {
+      event: "consumption.state",
+      sequence: 2,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        droppedMessages: 0,
+        receivedMessages: 0,
+        request: { maxMessages: 1_000, mode: "tail", topic: "next" },
+        ruleEvaluation: readyCapability,
+        state: "loading",
+      },
+    };
+    const connected: HostEvent = {
+      event: "connection.state",
+      sequence: 4,
+      version: HOST_PROTOCOL_VERSION,
+      payload: { connectionName: "Local Kafka", state: "connected" },
+    };
+    const ipc = new AccountedProviderEventQueue({
+      limits: { maxEvents: 8, maxSerializedBytes: 8 * 1024 * 1024, maxRecords: 1_000 },
+      overflow: "reject",
+      policy: createKafkaIpcDeliveryPolicy(),
+    });
+    for (const event of [
+      batch(1, [message(1)]),
+      loading,
+      observation(3),
+      connected,
+      observation(5),
+    ])
+      expect(ipc.enqueue(event)).toBeUndefined();
+    expect(ipc.costs.records).toBe(1);
+    expect([
+      take(ipc)?.sequence,
+      take(ipc)?.sequence,
+      take(ipc)?.sequence,
+      take(ipc)?.sequence,
+    ]).toEqual([1, 2, 4, 5]);
+    const sse = new SseClientEventQueue({ maxEvents: 8, maxMessageBytes: 1_024, maxMessages: 1 });
+    expect(sse.enqueue(observation(3))).toBeUndefined();
+    expect(sse.enqueue(observation(5))).toBeUndefined();
+    expect([take(sse)?.sequence, take(sse)?.sequence]).toEqual([3, 5]);
+  });
+
+  it("rejects unsafe Kafka loss evidence before beginning an event write", () => {
+    const queue = new SseClientEventQueue({ maxEvents: 8, maxMessageBytes: 1_024, maxMessages: 1 });
+    const terminal: HostEvent = {
+      event: "consumption.state",
+      sequence: 2,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        droppedMessages: Number.MAX_SAFE_INTEGER,
+        receivedMessages: 2,
+        request: { maxMessages: 1_000, mode: "tail", topic: "test" },
+        ruleEvaluation: readyCapability,
+        state: "stopped",
+      },
+    };
+    expect(queue.enqueue(batch(1, [message(1), message(2)]))).toBeUndefined();
+    expect(queue.enqueue(terminal)).toBeUndefined();
+    take(queue);
+    expect(queue.begin()).toEqual({ kind: "failure", reason: "event-validation" });
+    expect(terminal.payload.droppedMessages).toBe(Number.MAX_SAFE_INTEGER);
+    queue.close();
+    expect(queue.costs.events).toBe(0);
   });
 });

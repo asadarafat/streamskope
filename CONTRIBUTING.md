@@ -170,6 +170,23 @@ options preserve existing protected profile files and connection plugins.
 Kafka remains the available provider at this stage; registration mechanics do
 not establish a working second provider or live-system qualification.
 
+`AccountedProviderEventQueue` owns pending and in-flight event costs. Provider
+policies define record projection, generation changes, omission reporting and
+control replacement; IPC and HTTP drivers own completion and finite deadlines.
+An IPC lease completes only on its matching renderer acknowledgement. An HTTP
+lease completes on the local socket write callback, which does not prove browser
+or broker acknowledgement; socket drain separately grants write capacity. Kafka
+IPC rejects overflow and preserves queued records. Each HTTP client may omit its
+oldest pending records without pausing a healthy sibling client; retained bytes
+and serialized event bytes have separate bounds.
+
+Host-only `stopStream()` revokes pending starts and confirms the selected provider's
+actual reader cleanup without disconnecting, deleting profiles or removing remote
+capture resources. The final HTTP client leaving, or desktop event failure, closes
+new-command admission until that cleanup settles. Failed cleanup requires restarting
+the host; it cannot be reported as a successful stop. Whole-host shutdown joins
+already-started stops and retains their failures independently of registry cleanup.
+
 The renderer's `StreamSkopeProductApp` composes the theme and registered
 workspaces. Shared UI owns the header, resource navigation presentation and
 viewport layout; each feature supplies its actual destinations, availability,
