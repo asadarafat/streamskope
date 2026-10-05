@@ -13,7 +13,6 @@ import Typography from "@mui/material/Typography";
 
 import {
   HOST_PROTOCOL_VERSION,
-  type HostCommand,
   type RedpandaTransformDetailSnapshot,
   type RedpandaTransformInventorySnapshot,
   type RedpandaTransformLogsSnapshot,
@@ -33,6 +32,7 @@ import {
 
 import { ResourcePageHeader } from "./ResourcePageHeader";
 import { WorkbenchIcon } from "./WorkbenchIcons";
+import { useHostCommand } from "./use-host-command";
 
 export function TransformsPage({
   connected,
@@ -49,29 +49,12 @@ export function TransformsPage({
 }): React.JSX.Element {
   const [filter, setFilter] = useState("");
   const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [requestError, setRequestError] = useState<string>();
-  const [busy, setBusy] = useState(false);
+  const { busy, requestError, run } = useHostCommand(
+    host,
+    "The application host did not accept the transform request. Open Activity for diagnostics.",
+  );
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
-  const run = async (command: HostCommand): Promise<boolean> => {
-    setBusy(true);
-    setRequestError(undefined);
-    try {
-      const response = await host.execute(command);
-      if (!response.ok) {
-        setRequestError(`${response.error.summary} ${response.error.recovery}`);
-        return false;
-      }
-      return true;
-    } catch {
-      setRequestError(
-        "The application host did not accept the transform request. Open Activity for diagnostics.",
-      );
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
   const refresh = (): void => {
     void run({
       command: "transforms.list",
