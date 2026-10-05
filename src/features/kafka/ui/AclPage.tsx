@@ -15,7 +15,6 @@ import {
   KAFKA_ACL_PERMISSIONS,
   KAFKA_ACL_RESOURCE_TYPES,
   kafkaAclIdentity,
-  type HostCommand,
   type KafkaAclBinding,
   type KafkaAclSnapshot,
   type StreamSkopeHost,
@@ -37,6 +36,7 @@ import {
 import { ResourcePageHeader, resourcePageGutter } from "./ResourcePageHeader";
 import { AclReviewDialog, type AclReviewSelection } from "./AclReviewDialog";
 import { WorkbenchIcon } from "./WorkbenchIcons";
+import { useHostCommand } from "./use-host-command";
 
 const emptyAcl: KafkaAclBinding = {
   host: "*",
@@ -63,27 +63,10 @@ export function AclPage({
   const [draft, setDraft] = useState<KafkaAclBinding>(emptyAcl);
   const [createOpen, setCreateOpen] = useState(false);
   const [reviewing, setReviewing] = useState<AclReviewSelection | null | undefined>();
-  const [requestError, setRequestError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const run = async (command: HostCommand): Promise<boolean> => {
-    setBusy(true);
-    setRequestError(undefined);
-    try {
-      const response = await host.execute(command);
-      if (!response.ok) {
-        setRequestError(`${response.error.summary} ${response.error.recovery}`);
-        return false;
-      }
-      return true;
-    } catch {
-      setRequestError(
-        "The application host did not accept the ACL request. Open Activity for diagnostics.",
-      );
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, requestError, run } = useHostCommand(
+    host,
+    "The application host did not accept the ACL request. Open Activity for diagnostics.",
+  );
   const refresh = (): void => {
     void run({
       command: "acls.list",

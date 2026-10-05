@@ -36,6 +36,7 @@ import { SchemaSamplesPanel } from "./SchemaSamplesPanel";
 import { SchemaHistoryPanel } from "./SchemaHistoryPanel";
 import { ResourcePageHeader } from "./ResourcePageHeader";
 import { WorkbenchIcon } from "./WorkbenchIcons";
+import { useHostCommand } from "./use-host-command";
 
 interface SchemaRegistryPageProperties {
   readonly compatibility: SchemaCompatibilitySnapshot | null;
@@ -63,34 +64,21 @@ export function SchemaRegistryPage({
   const draftIdentity = JSON.stringify([subject.trim(), schemaType, schema, references]);
   const compatibilityCurrent =
     checkedDraft === draftIdentity && compatibility?.subject === subject.trim();
-  const [requestError, setRequestError] = useState<string>();
-  const [busy, setBusy] = useState(false);
+  const {
+    busy,
+    requestError,
+    setRequestError,
+    run: execute,
+  } = useHostCommand(
+    host,
+    "The application host did not accept the Schema Registry request. Open Activity for diagnostics.",
+  );
   const [deletion, setDeletion] = useState<{
     readonly kind: "subject" | "version";
     readonly version?: number;
   } | null>(null);
   const [confirmation, setConfirmation] = useState("");
   const [deletionMode, setDeletionMode] = useState<"permanent" | "soft">("soft");
-
-  const execute = async (command: HostCommand): Promise<boolean> => {
-    setBusy(true);
-    setRequestError(undefined);
-    try {
-      const response = await host.execute(command);
-      if (!response.ok) {
-        setRequestError(`${response.error.summary} ${response.error.recovery}`);
-        return false;
-      }
-      return true;
-    } catch {
-      setRequestError(
-        "The application host did not accept the Schema Registry request. Open Activity for diagnostics.",
-      );
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const refresh = (): void => {
     void execute({
