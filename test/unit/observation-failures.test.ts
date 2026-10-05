@@ -1,9 +1,7 @@
 import { expect, it, vi } from "vitest";
 
-import type {
-  KafkaApplicationSession,
-  KafkaActiveConnection,
-} from "../../src/features/kafka/application";
+import type { KafkaActiveConnection } from "../../src/features/kafka/application";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import {
   MemoryObservationStore,
   type ObservationStore,
@@ -17,6 +15,7 @@ import {
 } from "../../src/features/kafka/contracts";
 import type { ObservationCommand } from "../../src/features/kafka/contracts/observation-protocol";
 import { KafkaEngineFailure } from "../../src/features/kafka/engine/failure";
+import { RecordingActiveConnection } from "../support/kafka-backend-facade-fixture";
 
 const capture: ObservationCommand = {
   id: "capture",
@@ -39,18 +38,16 @@ function facade(
 ): ObservationFacade {
   const context = observe
     ? {
-        connection: {
+        connection: Object.assign(new RecordingActiveConnection(), {
           observeTopicHealth: observe,
           ...(openMessageStream === undefined ? {} : { openMessageStream }),
-        },
+        }),
         generation: 1,
+        connectionName: "Failure fixture",
       }
     : null;
-  return new ObservationFacade(
-    { writeContext: () => context } as unknown as KafkaApplicationSession,
-    store,
-    vi.fn(),
-  );
+  const scopes = new KafkaConnectionScopes(() => context);
+  return new ObservationFacade({ observationScope: () => scopes.observation() }, store, vi.fn());
 }
 function error(response: HostCommandResponse): Exclude<HostCommandResponse, { ok: true }>["error"] {
   expect(response.ok).toBe(false);

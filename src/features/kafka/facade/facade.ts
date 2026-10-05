@@ -152,7 +152,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       options.replayConnections,
       this.recordActivity.bind(this),
     );
-    this.writes = new KafkaReviewedWriteService(() => session.writeContext());
+    this.writes = new KafkaReviewedWriteService(() => session.reviewedWriteScope());
     this.schemaSamples = new SchemaSamplesFacade(
       session,
       options.recordCodec,

@@ -35,6 +35,11 @@ import type {
 } from "./types";
 import { KafkaSessionRequests } from "./session-requests";
 import type { KafkaLatencyProbeMeasurement } from "./latency-types";
+import {
+  KafkaConnectionScopes,
+  type ObservationScope,
+  type ReviewedWriteScope,
+} from "./connection-scope";
 
 export { ConnectionAttemptSupersededError, NoActiveKafkaConnectionError } from "./session-errors";
 
@@ -93,6 +98,7 @@ export class KafkaApplicationSession {
   };
 
   private readonly requests: KafkaSessionRequests;
+  private readonly scopes = new KafkaConnectionScopes(() => this.writeContext());
 
   constructor(private readonly connectionPort: KafkaConnectionPort) {
     this.requests = new KafkaSessionRequests(connectionPort, () => ({
@@ -117,6 +123,14 @@ export class KafkaApplicationSession {
           connectionName: this.currentSnapshot.connectionName,
         }
       : null;
+  }
+
+  reviewedWriteScope(): ReviewedWriteScope | null {
+    return this.scopes.reviewedWrite();
+  }
+
+  observationScope(): ObservationScope | null {
+    return this.scopes.observation();
   }
 
   activeConnectionContext(): {

@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import type { KafkaActiveConnection } from "../../src/features/kafka/application";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import { ObservationService } from "../../src/features/kafka/application/observation-service";
 import {
   MemoryObservationStore,
@@ -18,6 +19,7 @@ import {
   observationLag,
   type TopicHealth,
   type ObservationInput,
+  type ObservationHistory,
 } from "../../src/features/kafka/contracts/observations";
 
 const input: ObservationInput = {
@@ -92,6 +94,8 @@ function fixture(): {
   service: ObservationService;
   advance(ms?: number): void;
   disconnect(): void;
+  reconnect(): void;
+  replace(): void;
 } {
   const connection = new Connection(),
     store = new MemoryObservationStore();
@@ -101,8 +105,9 @@ function fixture(): {
     generation: 1,
     connectionName: "Fixture",
   };
+  const scopes = new KafkaConnectionScopes(() => context);
   const service = new ObservationService(
-    () => context,
+    () => scopes.observation(),
     store,
     () => now,
   );
@@ -115,6 +120,12 @@ function fixture(): {
     },
     disconnect: (): void => {
       context = null;
+    },
+    reconnect: (): void => {
+      context = { connection, generation: 2, connectionName: "Fixture" };
+    },
+    replace: (): void => {
+      context = { connection: new Connection(), generation: 1, connectionName: "Fixture" };
     },
   };
 }
@@ -161,7 +172,7 @@ it("unavailable, omitted and ahead-of-end offsets are unknown and cannot trigger
   }
 });
 it("coalesces no concurrent collection, discards cancellation and connection changes, and does not retain stale results", async () => {
-  for (const mode of ["cancel", "disconnect"]) {
+  for (const mode of ["cancel", "disconnect", "reconnect", "replace"] as const) {
     const f = fixture();
     let release!: (v: TopicHealth) => void;
     f.connection.observeTopicHealth.mockImplementation(
@@ -175,11 +186,43 @@ it("coalesces no concurrent collection, discards cancellation and connection cha
     await vi.waitFor(() => expect(release).toBeTypeOf("function"));
     await expect(f.service.capture(input)).rejects.toThrow("already running");
     if (mode === "cancel") f.service.cancel();
-    else f.disconnect();
+    else f[mode]();
     release(f.connection.health);
     await rejection;
     expect((await f.service.history()).series).toEqual([]);
   }
+});
+it("refuses to commit a collected observation when its generation changes during the final history load", async () => {
+  const f = fixture();
+  let release!: (history: ObservationHistory) => void;
+  const empty = { schemaVersion: 1 as const, series: [] };
+  const loading = vi
+    .spyOn(f.store, "load")
+    .mockResolvedValueOnce(empty)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+  const commit = vi.spyOn(f.store, "commit");
+  const pending = f.service.capture(input);
+  const rejected = expect(pending).rejects.toMatchObject({ code: "OBSERVATION_DISCONNECTED" });
+  await vi.waitFor(() => expect(loading).toHaveBeenCalledTimes(2));
+  f.reconnect();
+  release(empty);
+  await rejected;
+  expect(commit).not.toHaveBeenCalled();
+  expect((await f.service.history()).series).toEqual([]);
+});
+it("preserves the cooldown across scopes for the same connection and admits a replacement connection", async () => {
+  const f = fixture();
+  await f.service.capture(input);
+  f.advance(1);
+  f.reconnect();
+  await expect(f.service.capture(input)).rejects.toMatchObject({ code: "OBSERVATION_COOLDOWN" });
+  f.replace();
+  expect((await f.service.capture(input)).series.samples).toHaveLength(2);
 });
 it("breaks continuity after failed reads, cancellation and process restart while preserving valid history", async () => {
   const f = fixture();

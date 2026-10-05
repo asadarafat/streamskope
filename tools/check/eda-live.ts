@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { EDA_CAPTURE_DEFAULTS } from "../../plugins/eda/contracts";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import { ObservationService } from "../../src/features/kafka/application/observation-service";
 import { RelationshipService } from "../../src/features/kafka/application/relationship-service";
 import type { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
@@ -143,7 +144,8 @@ async function main(): Promise<void> {
     );
     checks.push("kafka-record-receipt");
     const context = { connection, generation: 0, connectionName: "Local EDA CI capture" };
-    const observation = await new ObservationService(() => context).capture({
+    const scopes = new KafkaConnectionScopes(() => context);
+    const observation = await new ObservationService(() => scopes.observation()).capture({
       topic,
       groupId: null,
       sampleRecords: false,

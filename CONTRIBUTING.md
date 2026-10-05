@@ -145,6 +145,14 @@ owner and waits for all cleanup, even when one owner fails. Consumption retains
 its separate final flush. Command admission closes before cancellation and its
 final drain follows plugin cleanup, which may still use its owned host commands.
 
+Reviewed writes and observations use session-owned connection scopes instead of
+receiving the full active adapter and comparing generation numbers themselves.
+Read scopes fence results against connection changes; write scopes validate
+immediately before one dispatch and retain that attempt's eventual receipt.
+The observation sampler owns its bounded reader cleanup. Other features still
+use their existing context contracts; migrate them only with focused acceptance
+checks for their cancellation and acknowledgement policies.
+
 `src/platform/node` owns shared backend composition, plugin loading, SSH/HTTPS adapters and
 file stores. Browser development and Electron use these same modules. Electron
 windows, IPC, exit prompts and operating-system secret protection stay in

@@ -96,7 +96,7 @@ it("observes real known offsets/lag and replication, retains history across rest
     });
     await session.connect(fixture.connection);
     const store = new AtomicObservationFileStore(join(dir, "history.json"));
-    const service = new ObservationService(() => session.writeContext(), store);
+    const service = new ObservationService(() => session.observationScope(), store);
     const input = { topic, groupId, sampleRecords: true, thresholds: { lag: 15, requestMs: null } };
     const first = (await service.capture(input)).series.samples.at(-1)!;
     expect(observationLag(first)).toBe(20);
@@ -135,7 +135,7 @@ it("observes real known offsets/lag and replication, retains history across rest
     expect(second.alerts).toEqual([]);
     expect(second.observedAt - first.observedAt).toBeGreaterThanOrEqual(10_000);
     const restart = new ObservationService(
-      () => session.writeContext(),
+      () => session.observationScope(),
       new AtomicObservationFileStore(join(dir, "history.json")),
     );
     expect((await restart.history()).series[0]?.samples).toHaveLength(2);
@@ -170,7 +170,7 @@ it("observes real known offsets/lag and replication, retains history across rest
     const busyTopic = "busy-observed-events";
     let clock = Date.now();
     const adaptive = new ObservationService(
-      () => session.writeContext(),
+      () => session.observationScope(),
       undefined,
       () => clock,
     );

@@ -11,11 +11,11 @@ export class ObservationFacade {
   private readonly service: ObservationService;
   private readonly alerts = new Map<string, string>();
   constructor(
-    session: KafkaApplicationSession,
+    session: Pick<KafkaApplicationSession, "observationScope">,
     store: ObservationStore | undefined,
     private readonly activity: (input: ActivityInput) => void,
   ) {
-    this.service = new ObservationService(() => session.writeContext(), store);
+    this.service = new ObservationService(() => session.observationScope(), store);
   }
   cancel(): void {
     this.service.cancel();
