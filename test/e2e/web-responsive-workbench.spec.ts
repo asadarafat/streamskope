@@ -45,6 +45,20 @@ class ResponsiveWorkbenchBackend implements StreamSkopeBackend {
   ): Promise<HostCommandResponse<Command["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
     this.commands.push(command);
+    if (command.command === "plugins.list") {
+      return Promise.resolve(
+        testHostResponse(command, {
+          command: command.command,
+          id: command.id,
+          ok: true,
+          result: {
+            correlationId: `responsive-${command.id}`,
+            pluginSnapshot: { revision: 0, plugins: [] },
+          },
+          version: HOST_PROTOCOL_VERSION,
+        }),
+      );
+    }
     if (command.command === "preferences.get") {
       return Promise.resolve(
         testHostResponse(command, {
