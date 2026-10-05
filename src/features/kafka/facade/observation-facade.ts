@@ -15,7 +15,7 @@ export class ObservationFacade {
     store: ObservationStore | undefined,
     private readonly activity: (input: ActivityInput) => void,
   ) {
-    this.service = new ObservationService(() => session.writeContext(), store);
+    this.service = new ObservationService(() => session.observationScope(), store);
   }
   cancel(): void {
     this.service.cancel();

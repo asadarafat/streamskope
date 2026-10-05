@@ -5,16 +5,11 @@ import {
   type KafkaWriteOutcome,
 } from "../contracts";
 
-import type { KafkaActiveConnection } from "./types";
+import type { ReviewedWriteScope } from "./connection-scope";
 
-interface WriteContext {
-  readonly connection: KafkaActiveConnection;
-  readonly generation: number;
-  readonly connectionName: string;
-}
 interface Plan {
   readonly review: KafkaWriteReview;
-  readonly context: WriteContext;
+  readonly scope: ReviewedWriteScope;
   operation?: Promise<KafkaWriteOutcome>;
 }
 
@@ -22,18 +17,18 @@ interface Plan {
 export class KafkaReviewedWriteService {
   private readonly plans = new Map<string, Plan>();
   constructor(
-    private readonly context: () => WriteContext | null,
+    private readonly scope: () => ReviewedWriteScope | null,
     private readonly now = Date.now,
     private readonly createId = (): string => globalThis.crypto.randomUUID(),
   ) {}
 
   async review(input: KafkaWriteInput): Promise<KafkaWriteReview> {
     const parsed = parseKafkaWriteInput(input);
-    const context = this.context();
-    if (context?.connection.reviewWrite === undefined)
+    const scope = this.scope();
+    if (scope?.reviewWrite === undefined)
       throw new Error("Connect a Kafka adapter that supports reviewed writes.");
-    await context.connection.reviewWrite(parsed);
-    if (!this.current(context))
+    await scope.reviewWrite(parsed);
+    if (!scope.isCurrent())
       throw new Error("The connection changed. Review the destination again.");
     if (this.plans.size >= 32) {
       // Evicted identifiers are rejected, never reconstructed into another write.
@@ -42,11 +37,11 @@ export class KafkaReviewedWriteService {
     }
     const review = {
       planId: this.createId(),
-      connectionName: context.connectionName,
+      connectionName: scope.connectionName,
       expiresAt: new Date(this.now() + 120_000).toISOString(),
       input: parsed,
     };
-    this.plans.set(review.planId, { review: structuredClone(review), context });
+    this.plans.set(review.planId, { review: structuredClone(review), scope });
     return review;
   }
 
@@ -59,24 +54,25 @@ export class KafkaReviewedWriteService {
         ),
       );
     if (plan.operation !== undefined) return plan.operation;
-    if (!this.current(plan.context) || this.now() >= Date.parse(plan.review.expiresAt))
+    if (!plan.scope.isCurrent() || this.now() >= Date.parse(plan.review.expiresAt))
       return Promise.reject(
         new Error("The review expired or its connection changed. Review the destination again."),
       );
-    const connection = plan.context.connection;
-    if (connection.applyWrite === undefined)
+    const scope = plan.scope;
+    if (scope.tryDispatchWrite === undefined)
       return Promise.reject(new Error("The active adapter cannot write."));
     // Install the promise before invoking the port, so duplicate confirmations coalesce.
     plan.operation = Promise.resolve()
       .then(() => {
-        if (!this.current(plan.context))
+        const attempt = scope.tryDispatchWrite!(plan.review.input);
+        if (!attempt.started)
           return {
             state: "rejected",
             detail: "The connection changed before dispatch. Review the destination again.",
             receipt: null,
             verification: "not-applicable",
           } as const;
-        return connection.applyWrite!(plan.review.input);
+        return attempt.result;
       })
       .catch((): KafkaWriteOutcome => ({
         state: "unknown",
@@ -86,12 +82,5 @@ export class KafkaReviewedWriteService {
         verification: "unavailable",
       }));
     return plan.operation;
-  }
-
-  private current(expected: WriteContext): boolean {
-    const current = this.context();
-    return (
-      current?.connection === expected.connection && current.generation === expected.generation
-    );
   }
 }

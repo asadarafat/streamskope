@@ -19,7 +19,7 @@ it("reports actual ISR loss and an offline leader, then clears replication findi
   });
   let clock = Date.now();
   const service = new ObservationService(
-    () => session.writeContext(),
+    () => session.observationScope(),
     undefined,
     () => clock,
   );

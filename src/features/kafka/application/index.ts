@@ -1,4 +1,6 @@
 export { InMemoryKafkaTrustRecipeStore } from "./trust-recipe-store";
+export { KafkaConnectionScopes } from "./connection-scope";
+export type { ObservationScope, ReviewedWriteScope } from "./connection-scope";
 export type { KafkaTrustRecipeStore } from "./trust-recipe-store";
 export { KafkaTrustRecipeLibrary, KafkaTrustRecipeError } from "./trust-recipe-library";
 export type { KafkaTrustRecipeLibraryOptions } from "./trust-recipe-library";

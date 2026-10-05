@@ -9,6 +9,7 @@ import {
   type KafkaWriteOutcome,
 } from "../../src/features/kafka/contracts";
 import { KafkaReviewedWriteService } from "../../src/features/kafka/application/reviewed-write-service";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import { RecordingActiveConnection } from "../support/kafka-backend-facade-fixture";
 
 const topic: KafkaWriteInput = {
@@ -41,8 +42,9 @@ function setup(): {
     generation: number;
   } | null = { connection, connectionName: "Cluster A", generation: 1 };
   let time = 1_000;
+  const scopes = new KafkaConnectionScopes(() => context);
   const service = new KafkaReviewedWriteService(
-    () => context,
+    () => scopes.reviewedWrite(),
     () => time,
   );
   return {
@@ -92,6 +94,60 @@ describe("reviewed Kafka writes", () => {
     const review = await fixture.service.review(topic);
     expect(await fixture.service.apply(review.planId)).toMatchObject({ state: "unknown" });
     expect(await fixture.service.apply(review.planId)).toMatchObject({ state: "unknown" });
+    expect(fixture.applyWrite).toHaveBeenCalledTimes(1);
+  });
+  it("refuses a review that finishes after its connection generation is revoked", async () => {
+    const fixture = setup();
+    let finish!: () => void;
+    fixture.reviewWrite.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = fixture.service.review(topic);
+    const rejected = expect(pending).rejects.toThrow(/connection/u);
+    fixture.reconnect();
+    finish();
+    await rejected;
+    expect(fixture.applyWrite).not.toHaveBeenCalled();
+  });
+  it("does not issue a review when revocation happens between the port result and service continuation", async () => {
+    const fixture = setup();
+    const pending = fixture.service.review(topic);
+    const rejected = expect(pending).rejects.toThrow(/connection/u);
+    await Promise.resolve();
+    fixture.reconnect();
+    await rejected;
+    expect(fixture.applyWrite).not.toHaveBeenCalled();
+  });
+  it("rejects a queued confirmation revoked before dispatch and never retries that plan", async () => {
+    const fixture = setup();
+    const review = await fixture.service.review(topic);
+    const pending = fixture.service.apply(review.planId);
+    fixture.reconnect();
+    const result = await pending;
+    expect(result).toMatchObject({ state: "rejected", verification: "not-applicable" });
+    expect(await fixture.service.apply(review.planId)).toEqual(result);
+    expect(fixture.applyWrite).not.toHaveBeenCalled();
+  });
+  it("keeps a delayed broker acknowledgement across reconnection without another dispatch", async () => {
+    const fixture = setup();
+    let finish!: (value: KafkaWriteOutcome) => void;
+    fixture.applyWrite.mockImplementation(
+      () =>
+        new Promise<KafkaWriteOutcome>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const review = await fixture.service.review(topic);
+    const pending = fixture.service.apply(review.planId);
+    await Promise.resolve();
+    expect(fixture.applyWrite).toHaveBeenCalledTimes(1);
+    fixture.reconnect();
+    finish(acknowledgement);
+    expect(await pending).toEqual(acknowledgement);
+    expect(await fixture.service.apply(review.planId)).toEqual(acknowledgement);
     expect(fixture.applyWrite).toHaveBeenCalledTimes(1);
   });
   it("preserves acknowledgement after connection loss and accepts no replacement input", async () => {

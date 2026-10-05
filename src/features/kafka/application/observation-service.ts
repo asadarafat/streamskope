@@ -20,22 +20,21 @@ import {
   observationAborted,
   observationIssue,
 } from "./observation-errors";
-import type { KafkaApplicationSession } from "./session";
+import type { ObservationScope } from "./connection-scope";
 import {
   MemoryObservationStore,
   retainObservations,
   type ObservationStore,
 } from "./observation-store";
 
-type Context = NonNullable<ReturnType<KafkaApplicationSession["writeContext"]>>;
 export class ObservationService {
   private segmentId = crypto.randomUUID();
   private controller: AbortController | undefined;
   private operation: Promise<ObservationCapture> | undefined;
   private queue: Promise<unknown> = Promise.resolve();
-  private lastAttempt: { context: Context; at: number } | undefined;
+  private lastAttempt: { connectionIdentity: object; at: number } | undefined;
   constructor(
-    private readonly context: () => Context | null,
+    private readonly scope: () => ObservationScope | null,
     private readonly store: ObservationStore = new MemoryObservationStore(),
     private readonly now = Date.now,
   ) {}
@@ -101,9 +100,9 @@ export class ObservationService {
         ),
       );
     }
-    const context = this.context(),
+    const scope = this.scope(),
       startedAt = this.now();
-    if (!context)
+    if (!scope)
       return Promise.reject(
         new ObservationOperationError(
           "OBSERVATION_DISCONNECTED",
@@ -112,7 +111,7 @@ export class ObservationService {
           true,
         ),
       );
-    if (!context.connection.observeTopicHealth)
+    if (!scope.observeTopicHealth)
       return Promise.reject(
         new ObservationOperationError(
           "UNSUPPORTED_OPERATION",
@@ -122,7 +121,7 @@ export class ObservationService {
         ),
       );
     if (
-      this.lastAttempt?.context.connection === context.connection &&
+      this.lastAttempt?.connectionIdentity === scope.connectionIdentity &&
       startedAt - this.lastAttempt.at < limits.intervalMs
     )
       return Promise.reject(
@@ -134,13 +133,13 @@ export class ObservationService {
           { retryAfterMs: Math.ceil(limits.intervalMs - (startedAt - this.lastAttempt.at)) },
         ),
       );
-    this.lastAttempt = { context, at: startedAt };
+    this.lastAttempt = { connectionIdentity: scope.connectionIdentity, at: startedAt };
     this.controller = new AbortController();
     const signal = AbortSignal.any([
       this.controller.signal,
       AbortSignal.timeout(limits.deadlineMs),
     ]);
-    this.operation = this.collect(context, input, startedAt, signal)
+    this.operation = this.collect(scope, input, startedAt, signal)
       .catch((error: unknown) => {
         this.segmentId = crypto.randomUUID();
         if (signal.aborted) throw observationAborted(signal, error);
@@ -152,32 +151,17 @@ export class ObservationService {
       });
     return this.operation;
   }
-  private current(context: Context, signal: AbortSignal): void {
-    if (signal.aborted) throw observationAborted(signal);
-    const current = this.context();
-    if (
-      !current ||
-      current.connection !== context.connection ||
-      current.generation !== context.generation
-    )
-      throw new ObservationOperationError(
-        "OBSERVATION_DISCONNECTED",
-        "The connection changed during observation.",
-        "Capture again using the current connection.",
-        true,
-      );
-  }
   private async collect(
-    context: Context,
+    scope: ObservationScope,
     input: ObservationInput,
     startedAt: number,
     signal: AbortSignal,
   ): Promise<ObservationCapture> {
     // Load first: an unreadable durable store must never be silently replaced.
     const prior = await this.history();
-    this.current(context, signal);
-    const health: TopicHealth = await context.connection.observeTopicHealth!(input.topic, signal);
-    this.current(context, signal);
+    scope.assertCurrent(signal);
+    const health: TopicHealth = await scope.observeTopicHealth!(input.topic, signal);
+    scope.assertCurrent(signal);
     if (health.topic !== input.topic || !health.clusterId || !health.topicId)
       throw new Error("The observation identity is unavailable.");
     const issues: ObservationIssue[] = [...(health.issues ?? [])];
@@ -185,8 +169,8 @@ export class ObservationService {
     let selectedGroup: ObservationGroupHealth | undefined;
     if (input.groupId !== null) {
       try {
-        if (context.connection.observeConsumerGroup) {
-          selectedGroup = await context.connection.observeConsumerGroup(
+        if (scope.observeConsumerGroup) {
+          selectedGroup = await scope.observeConsumerGroup(
             input.groupId,
             input.topic,
             health.partitions.map((p) => p.partition),
@@ -194,14 +178,14 @@ export class ObservationService {
           );
           issues.push(...(selectedGroup.issues ?? []));
         } else {
-          group = await context.connection.describeConsumerGroup?.(input.groupId, signal);
+          group = await scope.describeConsumerGroup?.(input.groupId, signal);
         }
       } catch (error) {
-        this.current(context, signal);
+        scope.assertCurrent(signal);
         issues.push(observationIssue(error, "group-offsets"));
       }
     }
-    this.current(context, signal);
+    scope.assertCurrent(signal);
     const groupCoverage =
       input.groupId === null
         ? "not-selected"
@@ -296,19 +280,14 @@ export class ObservationService {
         : null,
     );
     const records = input.sampleRecords
-      ? await sampleObservationRecords(
-          context.connection,
-          input.topic,
-          this.now(),
-          signal,
-          undefined,
-          {
+      ? await scope.withRecordReader(signal, (reader) =>
+          sampleObservationRecords(reader, input.topic, this.now(), signal, undefined, {
             windowMs,
             expectedPartitions: health.partitions.map((p) => p.partition),
             onIssue: (issue): void => {
               issues.push(issue);
             },
-          },
+          }),
         )
       : null;
     if (records && !records.analysisEligible && !issues.some((i) => i.measurement === "records"))
@@ -330,7 +309,7 @@ export class ObservationService {
           "Use permitted key access or inspect the available aggregate sizes; do not infer key concentration from masked records.",
         retryable: false,
       });
-    this.current(context, signal);
+    scope.assertCurrent(signal);
     const requestMs = this.now() - startedAt;
     let sample: KafkaObservation = parseObservation({
       id: crypto.randomUUID(),
@@ -375,7 +354,7 @@ export class ObservationService {
       ),
     };
     return this.serial(async () => {
-      this.current(context, signal);
+      scope.assertCurrent(signal);
       const history = await this.loadHistory();
       const identity = {
         clusterId: health.clusterId,
@@ -388,7 +367,7 @@ export class ObservationService {
       );
       const next = { ...identity, samples: [...(previous?.samples ?? []), sample] };
       const retained = retainObservations(history, this.now(), next);
-      this.current(context, signal);
+      scope.assertCurrent(signal);
       await this.commit(retained);
       return {
         series: retained.series.find(
