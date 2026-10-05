@@ -23,6 +23,11 @@ event failures mark the affected stream unavailable; replacement subscriptions
 cannot acknowledge events from an earlier subscription. Kafka remains the only
 available messaging provider at this stage.
 
+The product shell now owns shared navigation presentation and layout. Provider
+switching waits for confirmed stream stop and disconnect, retains the current
+workspace after a cleanup failure, and blocks new commands from retired views
+without discarding already-admitted write responses.
+
 Observed health now prioritizes selected-topic findings, measurement coverage and
 investigation actions. Existing resources can be selected from the connected
 profile; collection progress and cooldown are visible. Partition filtering and

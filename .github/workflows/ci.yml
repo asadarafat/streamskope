@@ -46,8 +46,13 @@ jobs:
       - run: npm run check -- --ci
       - name: Verify real observed-health collection and replication recovery
         run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts
-      - name: Verify monitoring browser workflows
-        run: node tools/package/e2e.mjs web test/e2e/web-stream-monitor.spec.ts test/e2e/web-observations-recovery.spec.ts
+      - name: Verify workbench and monitoring browser workflows
+        run: >-
+          node tools/package/e2e.mjs web
+          test/e2e/web-stream-monitor.spec.ts
+          test/e2e/web-observations-recovery.spec.ts
+          test/e2e/web-responsive-workbench.spec.ts
+          --grep 'keyboard-operable|investigates real lag|persistent resource hierarchy|expanded dock in both themes|main resource page primary'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !cancelled() }}
         with:

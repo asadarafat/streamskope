@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import { createRoot } from "react-dom/client";
 
-import { StreamSkopeApp } from "../../../features/kafka/ui/StreamSkopeApp";
 import type { StreamSkopeDesktop } from "../../desktop";
 
 import { installRendererRandomUuid } from "./crypto-compatibility";
 import { resolveStreamSkopeHost } from "./host";
 import { takeInitialQueryImport } from "./query-entry";
+import { StreamSkopeProductApp } from "./StreamSkopeProductApp";
 
 declare global {
   interface Window {
@@ -20,10 +20,8 @@ const initialQueryImport = takeInitialQueryImport(window);
 function StreamSkopeApplication(): React.JSX.Element {
   const host = useMemo(() => resolveStreamSkopeHost(window), []);
   return (
-    <StreamSkopeApp
-      desktop={window.streamSkopeDesktop}
-      host={host}
-      initialQueryImport={initialQueryImport}
+    <StreamSkopeProductApp
+      kafka={{ desktop: window.streamSkopeDesktop, host, initialQueryImport }}
     />
   );
 }

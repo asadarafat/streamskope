@@ -170,6 +170,20 @@ options preserve existing protected profile files and connection plugins.
 Kafka remains the available provider at this stage; registration mechanics do
 not establish a working second provider or live-system qualification.
 
+The renderer's `StreamSkopeProductApp` composes the theme and registered
+workspaces. Shared UI owns the header, resource navigation presentation and
+viewport layout; each feature supplies its actual destinations, availability,
+content, activity and status. Kafka's `KafkaWorkspace` keeps its connection
+plugins and interaction state. `StreamSkopeApp` remains a direct Kafka embedding
+wrapper. Provider selection waits for confirmed stop and disconnect before
+mounting another workspace. Every activation owns command admission: switching
+blocks new calls, failed cleanup restores that activation, and a successful
+switch permanently retires its callbacks. Already-admitted responses, including
+write receipts, remain intact. Existing event listeners continue to observe
+cleanup; inactive views cannot acquire new host listeners. A query import belongs
+to the first Kafka visit, including development effect replay and failed cleanup.
+Selecting a provider does not remove profiles or remote capture resources.
+
 `src/plugins` owns plugin API version 4, independent SemVer, compatibility intervals
 and bounded JSON/manifest validation. API 2 and API 3 remain supported for existing
 installed and published packages.

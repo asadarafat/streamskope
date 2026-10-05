@@ -51,17 +51,21 @@ export function useWorkbenchMessageSelection(
   }, [messageFilters, presentationActive, retainedMessages]);
 }
 
+const alwaysInteractive = (): boolean => true;
+
 export function useDesktopActions(
   desktop: StreamSkopeDesktop | undefined,
   openActivity: () => void,
   setPreferenceDialogMounted: Dispatch<SetStateAction<boolean>>,
   setPreferenceDialogOpen: Dispatch<SetStateAction<boolean>>,
+  isInteractive: () => boolean = alwaysInteractive,
 ): void {
   useEffect(() => {
     if (desktop === undefined) {
       return;
     }
     return desktop.subscribeActions((action) => {
+      if (!isInteractive()) return;
       if (action.action === "activity.open") {
         setPreferenceDialogOpen(false);
         openActivity();
@@ -70,7 +74,7 @@ export function useDesktopActions(
         setPreferenceDialogOpen(true);
       }
     });
-  }, [desktop, openActivity, setPreferenceDialogMounted, setPreferenceDialogOpen]);
+  }, [desktop, openActivity, setPreferenceDialogMounted, setPreferenceDialogOpen, isInteractive]);
 }
 
 export function useAutoOpenActivityOnError(

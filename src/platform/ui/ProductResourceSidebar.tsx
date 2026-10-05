@@ -2,16 +2,21 @@ import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import Typography from "@mui/material/Typography";
 
-import {
-  isNavigationAvailable,
-  WORKBENCH_RESOURCE_GROUPS,
-  type NavigationView,
-} from "./workbench-navigation";
+export interface ProductResourceDestination<Destination extends string> {
+  readonly label: string;
+  readonly value: Destination;
+  readonly available: boolean;
+}
 
-interface WorkbenchSidebarProperties {
-  readonly connected: boolean;
-  readonly navigation: NavigationView;
-  readonly onChange: (navigation: NavigationView) => void;
+export interface ProductResourceGroup<Destination extends string> {
+  readonly items: readonly ProductResourceDestination<Destination>[];
+  readonly label: string;
+}
+
+interface ProductResourceSidebarProperties<Destination extends string> {
+  readonly groups: readonly ProductResourceGroup<Destination>[];
+  readonly navigation: Destination;
+  readonly onChange: (navigation: Destination) => void;
 }
 
 function SidebarButton({
@@ -61,11 +66,11 @@ function SidebarButton({
   );
 }
 
-export function WorkbenchSidebar({
-  connected,
+export function ProductResourceSidebar<Destination extends string>({
+  groups,
   navigation,
   onChange,
-}: WorkbenchSidebarProperties): React.JSX.Element {
+}: ProductResourceSidebarProperties<Destination>): React.JSX.Element {
   return (
     <Box
       aria-label="StreamSkope resources"
@@ -85,7 +90,7 @@ export function WorkbenchSidebar({
       }}
     >
       <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", py: 0.75 }}>
-        {WORKBENCH_RESOURCE_GROUPS.map((group, groupIndex) => (
+        {groups.map((group, groupIndex) => (
           <Box key={group.label} sx={{ mt: groupIndex === 0 ? 0 : 1.5 }}>
             <Typography
               component="h2"
@@ -97,7 +102,7 @@ export function WorkbenchSidebar({
             {group.items.map((item) => (
               <SidebarButton
                 active={navigation === item.value}
-                available={isNavigationAvailable(item.value, connected)}
+                available={item.available}
                 key={item.value}
                 label={item.label}
                 onClick={() => onChange(item.value)}

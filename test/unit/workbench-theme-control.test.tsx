@@ -6,7 +6,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 
-import { WorkbenchApplicationBar } from "../../src/features/kafka/ui/WorkbenchApplicationBar";
+import { ProductApplicationBar } from "../../src/platform/ui/ProductApplicationBar";
 import { StreamSkopeThemeProvider } from "../../src/platform/ui/StreamSkopeThemeProvider";
 
 afterEach(cleanup);
@@ -15,7 +15,8 @@ it("keeps the Material crescent icon while switching theme preferences", async (
   const user = userEvent.setup();
   render(
     <StreamSkopeThemeProvider>
-      <WorkbenchApplicationBar
+      <ProductApplicationBar
+        resourceLabel="Kafka resources"
         navigatorOpen
         navigatorTemporary={false}
         onOpenCommandPalette={() => undefined}

@@ -451,6 +451,20 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
     await openDesktop(page);
     emitProfiles();
 
+    await expect(page.getByRole("banner")).toHaveCount(1);
+    await expect(page.getByRole("contentinfo")).toHaveCount(1);
+    const provider = page.getByRole("combobox", { name: "Messaging provider" });
+    await expect(provider).toContainText("Kafka");
+    await provider.click();
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await page.getByRole("option", { name: "Kafka", exact: true }).click();
+    expect(
+      backend.commands.filter(
+        (command) =>
+          command.command === "messages.stop" || command.command === "connection.disconnect",
+      ),
+    ).toEqual([]);
+
     const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });
     for (const resource of [
       "Overview",
@@ -776,6 +790,9 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
 
     const banner = page.getByRole("banner");
     await expect(banner).toContainText("StreamSkope");
+    await expect(banner.getByRole("combobox", { name: "Messaging provider" })).toContainText(
+      "Kafka",
+    );
     await expect(page.getByRole("main", { name: "Connection profiles page" })).toBeVisible();
     await banner.getByRole("button", { name: "Open Kafka resources" }).click();
     const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });

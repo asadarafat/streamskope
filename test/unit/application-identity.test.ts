@@ -75,11 +75,11 @@ describe("application identity assets", () => {
     );
     expect(presenter).toContain('"./assets/streamskope.svg"');
     const source = await readFile(
-      new URL("src/features/kafka/ui/WorkbenchApplicationBar.tsx", root),
+      new URL("src/platform/ui/ProductApplicationBar.tsx", root),
       "utf8",
     );
     expect(source).toContain("<StreamSkopeAppIcon");
-    expect(source).toContain('name="settings"');
+    expect(source).toContain("<SettingsIcon");
     expect(source).not.toContain('name="preferences"');
     expect(source).toContain('aria-label="Preferences"');
     const packager = await readFile(new URL("tools/package/verify.ts", root), "utf8");

@@ -1,43 +1,48 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import { useColorScheme } from "@mui/material/styles";
 import NightlightRoundIcon from "@mui/icons-material/NightlightRound";
+import SearchIcon from "@mui/icons-material/Search";
+import SettingsIcon from "@mui/icons-material/Settings";
+import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 
-import { streamSkopeGeometry } from "../../../platform/ui/studioTokens";
-import { StreamSkopeAppIcon } from "../../../platform/ui/StreamSkopeAppIcon";
+import { streamSkopeGeometry } from "./studioTokens";
+import { StreamSkopeAppIcon } from "./StreamSkopeAppIcon";
 import {
   StudioButton as Button,
   StudioIconButton as IconButton,
   StudioMenu as Menu,
   StudioMenuItem as MenuItem,
   StudioTooltip as Tooltip,
-} from "../../../platform/ui/controls";
+} from "./controls";
 
-import { WorkbenchIcon } from "./WorkbenchIcons";
-
-export interface WorkbenchApplicationBarProperties {
+export interface ProductApplicationBarProperties {
   readonly navigatorOpen: boolean;
   readonly navigatorTemporary: boolean;
-  readonly onOpenCommandPalette: () => void;
-  readonly onOpenQueries?: () => void;
-  readonly onOpenPreferences: () => void;
+  readonly actions?: ReactNode;
+  readonly providerControl?: ReactNode;
+  readonly resourceLabel: string;
+  readonly onOpenCommandPalette?: (() => void) | undefined;
+  readonly onOpenPreferences?: (() => void) | undefined;
   readonly onToggleNavigator: () => void;
 }
 
-export function WorkbenchApplicationBar({
+export function ProductApplicationBar({
   navigatorOpen,
   navigatorTemporary,
   onOpenCommandPalette,
-  onOpenQueries,
+  actions,
+  providerControl,
+  resourceLabel,
   onOpenPreferences,
   onToggleNavigator,
-}: WorkbenchApplicationBarProperties): React.JSX.Element {
+}: ProductApplicationBarProperties): React.JSX.Element {
   const { mode, setMode } = useColorScheme();
   const [themeAnchor, setThemeAnchor] = useState<HTMLElement | null>(null);
-  const navigatorAction = `${navigatorOpen ? "Close" : "Open"} Kafka resources`;
+  const navigatorAction = `${navigatorOpen ? "Close" : "Open"} ${resourceLabel}`;
 
   return (
     <AppBar
@@ -70,7 +75,7 @@ export function WorkbenchApplicationBar({
               aria-label={navigatorAction}
               onClick={onToggleNavigator}
             >
-              <WorkbenchIcon name="resources" />
+              <ViewSidebarIcon />
             </IconButton>
           </Tooltip>
         ) : null}
@@ -93,24 +98,21 @@ export function WorkbenchApplicationBar({
           </Typography>
         </Box>
 
+        {providerControl}
         <Box sx={{ flex: 1 }} />
-        {onOpenQueries === undefined ? null : (
-          <Button aria-label="Saved queries" onClick={onOpenQueries}>
-            Queries
-          </Button>
-        )}
+        {actions}
 
-        {navigatorTemporary ? (
+        {onOpenCommandPalette === undefined ? null : navigatorTemporary ? (
           <Tooltip title="Search and commands">
             <IconButton aria-label="Search and commands" onClick={onOpenCommandPalette}>
-              <WorkbenchIcon name="search" />
+              <SearchIcon />
             </IconButton>
           </Tooltip>
         ) : (
           <Button
             aria-label="Search and commands"
             onClick={onOpenCommandPalette}
-            startIcon={<WorkbenchIcon name="search" />}
+            startIcon={<SearchIcon />}
             sx={{
               borderColor: "divider",
               color: "text.secondary",
@@ -159,11 +161,13 @@ export function WorkbenchApplicationBar({
           ))}
         </Menu>
 
-        <Tooltip title="Preferences">
-          <IconButton aria-label="Preferences" onClick={onOpenPreferences}>
-            <WorkbenchIcon name="settings" />
-          </IconButton>
-        </Tooltip>
+        {onOpenPreferences === undefined ? null : (
+          <Tooltip title="Preferences">
+            <IconButton aria-label="Preferences" onClick={onOpenPreferences}>
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+        )}
       </Toolbar>
     </AppBar>
   );
