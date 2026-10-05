@@ -185,6 +185,64 @@ describe("registered Electron provider routes", () => {
     }
   });
 
+  it("times out only the provider missing its ACK and clears ACK deadlines on completion and close", async () => {
+    vi.useFakeTimers();
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 11 });
+    const a = providerIpcChannels("alpha"),
+      b = providerIpcChannels("beta");
+    let shell: Awaited<ReturnType<typeof createElectronShell>> | undefined;
+    try {
+      shell = await shellFor([alpha, beta]);
+      alpha.emit(alpha.event("missing-ack", 1));
+      beta.emit(beta.event("acknowledged", 1));
+      expect(vi.getTimerCount()).toBe(2);
+      await invoke(b.acknowledge, window().webContents, 1);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(alpha.listenerCount()).toBe(1);
+      expect(beta.listenerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(alpha.listenerCount()).toBe(0);
+      expect(beta.listenerCount()).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(window().webContents.sent.at(-1)?.channel).toBe(a.event);
+      expect(window().webContents.sent.at(-1)?.value).toMatchObject({
+        provider: "alpha",
+        type: "fixture.availability",
+        state: "unavailable",
+      });
+
+      const command = beta.command("set", "healthy-sibling");
+      await expect(invoke(b.command, window().webContents, command)).resolves.toEqual(
+        beta.response(command, "healthy-sibling"),
+      );
+      beta.emit(beta.event("after-timeout", 2));
+      await invoke(b.acknowledge, window().webContents, 2);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(
+        window()
+          .webContents.sent.filter(({ channel }) => channel === b.event)
+          .map(({ value }) => value),
+      ).toEqual([beta.event("acknowledged", 1), beta.event("after-timeout", 2)]);
+
+      beta.emit(beta.event("pending-at-close", 3));
+      expect(vi.getTimerCount()).toBe(1);
+      shell.close();
+      expect(alpha.listenerCount()).toBe(0);
+      expect(beta.listenerCount()).toBe(0);
+      expect(native.handlers.size).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+      const sentBeforeClose = [...window().webContents.sent];
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(window().webContents.sent).toEqual(sentBeforeClose);
+    } finally {
+      shell?.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("closes only the malformed event route while its sibling keeps receiving and executing", async () => {
     const alpha = createProviderFixture({ id: "alpha", version: 7 });
     const beta = createProviderFixture({ id: "beta", version: 11 });
