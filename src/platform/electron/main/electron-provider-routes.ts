@@ -54,7 +54,7 @@ export async function attachElectronProviders(
       try {
         return owner.close();
       } catch (cause) {
-        return Promise.reject(cause);
+        return Promise.reject(new Error("Desktop provider cleanup failed.", { cause }));
       }
     });
     void Promise.allSettled(attempts).then((results) => {
@@ -185,13 +185,13 @@ export async function attachElectronProviders(
       recoveryState = undefined;
       const failures = release();
       if (failures.length > 0) {
-        startRecovery("event-cleanup", failures);
+        void startRecovery("event-cleanup", failures);
         assertAdmission();
       }
       const current = generation;
       const fail = (reason: string): void => {
         if (closed || generation !== current || recovery !== undefined) return;
-        startRecovery(reason);
+        void startRecovery(reason);
       };
       const currentDelivery =
         binding?.create(send, fail) ?? new ElectronControlEventDelivery(send, fail);
@@ -209,7 +209,7 @@ export async function attachElectronProviders(
           }
         });
       } catch (cause) {
-        startRecovery("event-subscription", [
+        void startRecovery("event-subscription", [
           new Error("Desktop provider subscription failed.", { cause }),
         ]);
         throw new Error("Desktop provider subscription failed.", { cause });
@@ -254,7 +254,9 @@ export async function attachElectronProviders(
     try {
       await close();
     } catch (cleanupCause) {
-      throw new AggregateError([error, cleanupCause], "Desktop provider startup cleanup failed.");
+      throw new AggregateError([error, cleanupCause], "Desktop provider startup cleanup failed.", {
+        cause: cleanupCause,
+      });
     }
     throw error;
   }

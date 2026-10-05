@@ -39,6 +39,7 @@ it("stops a real Kafka reader after the final HTTP client leaves and retains the
   };
   // A failed observation cannot leave a test-owned HTTP reader alive indefinitely.
   const eventDeadline = setTimeout(() => eventController.abort(), 25_000);
+  const failures: unknown[] = [];
   try {
     host = await startDevelopmentHost({ backend, port: 0, rendererOrigin, token });
     await fixture.admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
@@ -115,6 +116,8 @@ it("stops a real Kafka reader after the final HTTP client leaves and retains the
           event.payload.topics.includes(topic),
       ),
     ).toBe(true);
+  } catch (cause) {
+    failures.push(cause);
   } finally {
     clearTimeout(eventDeadline);
     eventController.abort();
@@ -124,10 +127,14 @@ it("stops a real Kafka reader after the final HTTP client leaves and retains the
       producer.close(),
     ]);
     const fixtureCleanup = await Promise.allSettled([fixture.dispose()]);
-    const failures = [...cleanup, ...fixtureCleanup].flatMap((result) =>
-      result.status === "rejected" ? [result.reason as unknown] : [],
+    failures.push(
+      ...[...cleanup, ...fixtureCleanup].flatMap((result) =>
+        result.status === "rejected" ? [result.reason as unknown] : [],
+      ),
     );
-    if (failures.length > 0)
-      throw new AggregateError(failures, "Owned Kafka stop fixture cleanup failed.");
   }
+  if (failures.length > 0)
+    throw new AggregateError(failures, "Owned Kafka stop proof or cleanup failed.", {
+      cause: failures[0],
+    });
 }, 120_000);

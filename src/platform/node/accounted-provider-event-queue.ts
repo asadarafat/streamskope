@@ -34,7 +34,10 @@ export interface ProviderDeliveryQueue<Event extends ProviderWireEvent> {
   close(): void;
 }
 
-/** Replacement changes only this record array; the remaining JSON envelope stays intact. */
+/**
+ * Callbacks never mutate events or records; withRecords changes only the record array.
+ * decorateDrops returns the unchanged admitted event or a new decorated event.
+ */
 export interface ProviderDeliveryPolicy<Event extends ProviderWireEvent, Record> {
   readonly records: (event: Event) => readonly Record[] | undefined;
   readonly retainedRecordBytes: (record: Record) => number;
@@ -86,7 +89,7 @@ function serializedBytes(value: unknown): number {
   return Buffer.byteLength(encoded);
 }
 
-/** Pending and one owned write share budgets; only that write's completion releases its cost. */
+/** Immutable admitted events share pending/write budgets until that write completes. */
 export class AccountedProviderEventQueue<
   Event extends ProviderWireEvent,
   Record,
@@ -167,7 +170,7 @@ export class AccountedProviderEventQueue<
     try {
       event = this.policy.decorateDrops(entry.event, entry.generation.dropped);
       this.assertProjection(event, entry.records);
-      if (serializedBytes(event) > entry.serializedBytes)
+      if (event !== entry.event && serializedBytes(event) > entry.serializedBytes)
         throw new Error("Decoration exceeds its reservation.");
     } catch {
       return { kind: "failure", reason: "event-validation" };
@@ -203,7 +206,8 @@ export class AccountedProviderEventQueue<
     const retained = records === undefined ? event : this.policy.withRecords(event, records);
     this.assertProjection(retained, records);
     const recordCosts = (records ?? []).map((record): RecordCost => ({
-      serialized: serializedBytes(record),
+      // Rejecting delivery never trims a record prefix, so only eviction needs this encoding.
+      serialized: this.overflow === "reject" ? 0 : serializedBytes(record),
       retained: nonNegativeInteger(this.policy.retainedRecordBytes(record)),
     }));
     const replacementKey = this.policy.replacementKey(event);

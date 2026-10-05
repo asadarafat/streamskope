@@ -1,7 +1,9 @@
 import type { ProviderWireEvent } from "../providers/host";
+
 import {
   AccountedProviderEventQueue,
   createControlDeliveryPolicy,
+  type DeliveryFailure,
   type ProviderDeliveryCosts,
   type ProviderDeliveryQueue,
 } from "./accounted-provider-event-queue";
@@ -150,7 +152,7 @@ export function createProviderEndpoint<Command, Response, Event extends Provider
         get costs(): ProviderDeliveryCosts {
           return queue.costs;
         },
-        enqueue: (wire) => {
+        enqueue: (wire): DeliveryFailure | undefined => {
           try {
             return queue.enqueue(options.parseEvent(wire));
           } catch {
@@ -169,7 +171,11 @@ export function createProviderEndpoint<Command, Response, Event extends Provider
       try {
         return options.stopStream();
       } catch (error) {
-        return Promise.reject(error);
+        return Promise.reject(
+          error instanceof Error
+            ? error
+            : new Error("Provider stream cleanup failed.", { cause: error }),
+        );
       }
     },
     shutdown: (): Promise<void> => options.shutdown(),

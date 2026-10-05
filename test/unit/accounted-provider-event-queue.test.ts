@@ -66,6 +66,54 @@ function reserved(value: ProbeEvent): number {
 }
 
 describe("accounted provider event queue", () => {
+  it("encodes an immutable rejecting event once without unused per-record prefix encodings", () => {
+    const bounded = queue(
+      "reject",
+      {},
+      {
+        ...probePolicy(),
+        decorateDrops: (value): ProbeEvent => value,
+      },
+    );
+    const source = event(1, ["first", "second"]);
+    const stringify = vi.spyOn(JSON, "stringify");
+    let inputs: readonly unknown[];
+    let writing: ProviderDeliveryLease<ProbeEvent> | undefined;
+    try {
+      expect(bounded.enqueue(source)).toBeUndefined();
+      writing = lease(bounded);
+      inputs = stringify.mock.calls.map(([value]): unknown => value);
+    } finally {
+      stringify.mockRestore();
+    }
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toEqual(source);
+    expect(writing?.event).toBe(inputs[0]);
+    expect(bounded.costs.records).toBe(2);
+    writing?.complete();
+    expect(bounded.costs.records).toBe(0);
+  });
+
+  it("still validates a changed decoration against its admitted byte reservation", () => {
+    const bounded = queue(
+      "reject",
+      {},
+      {
+        ...probePolicy(),
+        decorateDrops: (value): ProbeEvent => {
+          const decorated = { ...value, marker: "x".repeat(256) };
+          return decorated;
+        },
+      },
+    );
+    expect(bounded.enqueue(event(1, ["unchanged"]))).toBeUndefined();
+    const admitted = bounded.costs;
+    expect(bounded.begin()).toEqual({ kind: "failure", reason: "event-validation" });
+    expect(bounded.costs).toEqual(admitted);
+    bounded.close();
+    expect(bounded.costs.events).toBe(0);
+  });
+
   it("keeps the active write in record, byte and event budgets until its own completion", () => {
     const first = event(1, ["aa", "bbb"]);
     const bounded = queue("reject", {

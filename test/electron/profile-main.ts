@@ -60,7 +60,7 @@ async function shutdown(exitCode: number): Promise<void> {
       try {
         return run();
       } catch (cause) {
-        return Promise.reject(cause);
+        return Promise.reject(new Error("Electron profile fixture cleanup failed.", { cause }));
       }
     }),
   );

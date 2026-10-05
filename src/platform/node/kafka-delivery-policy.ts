@@ -46,6 +46,7 @@ export function createKafkaSseDeliveryPolicy(): KafkaDeliveryPolicy {
       const total = event.payload.droppedMessages + dropped;
       if (!Number.isSafeInteger(total) || total < 0)
         throw new RangeError("Transport omission evidence exceeded the safe counter limit.");
+      if (dropped === 0) return event;
       if (event.event === "messages.batch")
         return { ...event, payload: { ...event.payload, droppedMessages: total } };
       return { ...event, payload: { ...event.payload, droppedMessages: total } };

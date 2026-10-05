@@ -755,7 +755,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         resolved.lifetimeSignal === undefined
           ? lifetime
           : AbortSignal.any([lifetime, resolved.lifetimeSignal]);
-      this.invalidateClusterState();
+      this.lifecycle.invalidate();
       this.clearActiveProfile();
       this.assertConnectionIntent(intent);
       signal.throwIfAborted();
@@ -818,7 +818,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       const connect = async (): Promise<void> => {
         this.assertConnectionIntent(intent);
         const lifetime = this.beginConnectionLifetime(profile?.source?.pluginId);
-        this.invalidateClusterState();
+        this.lifecycle.invalidate();
         this.clearActiveProfile();
         this.assertConnectionIntent(intent);
         lifetime.throwIfAborted();
@@ -877,7 +877,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   ): Promise<HostCommandResponse> {
     this.connectionIntent += 1;
     const lifetime = this.beginConnectionLifetime();
-    this.invalidateClusterState();
+    this.lifecycle.invalidate();
     const connectionName = this.session.snapshot().connectionName ?? "No active connection";
     const operation = this.session.disconnect();
     this.publishConnection(this.session.snapshot());
@@ -950,10 +950,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private invalidateLatency(): void {
     this.publish(invalidateLatencyEvent(this.latencyProbe, this.nextSequence()));
     this.publish(latencyHistoryEvent(this.latencyProbe.historySnapshot(), this.nextSequence()));
-  }
-
-  private invalidateClusterState(): void {
-    this.lifecycle.invalidate();
   }
 
   private publish(event: HostEvent): void {

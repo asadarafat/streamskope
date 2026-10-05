@@ -282,7 +282,7 @@ export async function createElectronShell(
     try {
       detached = detachProviders?.() ?? Promise.resolve();
     } catch (cause) {
-      detached = Promise.reject(cause);
+      detached = Promise.reject(new Error("Desktop provider detach failed.", { cause }));
     }
     void Promise.allSettled([detached]).then(([result]) => {
       if (result?.status === "rejected") failures.push(result.reason as unknown);

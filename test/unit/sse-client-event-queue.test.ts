@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   HOST_PROTOCOL_VERSION,
@@ -55,7 +55,10 @@ function message(
   };
 }
 
-function batch(sequence: number, messages: readonly KafkaExploredMessage[]): HostEvent {
+function batch(
+  sequence: number,
+  messages: readonly KafkaExploredMessage[],
+): Extract<HostEvent, { event: "messages.batch" }> {
   return {
     event: "messages.batch",
     payload: {
@@ -77,6 +80,31 @@ function take(queue: ProviderDeliveryQueue<HostEvent>): HostEvent | undefined {
 }
 
 describe("development-host SSE client event queue", () => {
+  it("avoids a second full encoding without transport loss while still validating source counters", () => {
+    const queue = new SseClientEventQueue({ maxEvents: 8, maxMessageBytes: 1_024, maxMessages: 1 });
+    const source = batch(1, [message(1)]);
+    const stringify = vi.spyOn(JSON, "stringify");
+    let inputs: readonly unknown[];
+    try {
+      expect(queue.enqueue(source)).toBeUndefined();
+      expect(take(queue)).toEqual(source);
+      inputs = stringify.mock.calls.map(([value]): unknown => value);
+    } finally {
+      stringify.mockRestore();
+    }
+    expect(inputs).toHaveLength(2);
+    expect(inputs).toEqual([source.payload.messages[0], source]);
+
+    const invalid = {
+      ...source,
+      payload: { ...source.payload, droppedMessages: Number.MAX_SAFE_INTEGER + 1 },
+      sequence: 2,
+    };
+    expect(queue.enqueue(invalid)).toBeUndefined();
+    expect(queue.begin()).toEqual({ kind: "failure", reason: "event-validation" });
+    queue.close();
+  });
+
   it("retains the newest records within the configured count and reports oldest-record loss", () => {
     const queue = new SseClientEventQueue({
       maxEvents: 8,

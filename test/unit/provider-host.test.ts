@@ -171,7 +171,7 @@ describe("registered provider ownership", () => {
     const pending = new Promise<void>((_resolve, fail) => {
       reject = fail;
     });
-    first.stopOperation = () => pending;
+    first.stopOperation = (): Promise<void> => pending;
     const registry = new ProviderHostRegistry([first.endpoint, second.endpoint]);
     const stopping = registry.get("first")!.stopStream();
     const failure = new Error("Injected selected-provider cleanup failure.");
@@ -187,7 +187,7 @@ describe("registered provider ownership", () => {
   it("retains selected cleanup access after external registry admission closes", async () => {
     const fixture = createProviderFixture({ id: "fixture", version: 7 });
     let release!: () => void;
-    fixture.shutdownOperation = () =>
+    fixture.shutdownOperation = (): Promise<void> =>
       new Promise<void>((resolve) => {
         release = resolve;
       });
@@ -211,7 +211,7 @@ describe("registered provider ownership", () => {
       execute: (command) => Promise.resolve(fixture.response(command)),
       correlateResponse: fixture.correlateResponse,
       parseEvent: fixture.codec.parseEvent,
-      subscribe: () => () => undefined,
+      subscribe: (): (() => void) => (): void => undefined,
       availability: fixture.codec.availability,
       shutdown: () => Promise.resolve(),
     });

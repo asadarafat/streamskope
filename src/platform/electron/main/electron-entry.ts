@@ -73,13 +73,13 @@ function shutdown(exitCode: number): Promise<void> {
   try {
     if (runningShell !== undefined) attempts.push(runningShell.close());
   } catch (cause) {
-    attempts.push(Promise.reject(cause));
+    attempts.push(Promise.reject(new Error("Desktop shell cleanup failed.", { cause })));
   }
   try {
     if (providers !== undefined) attempts.push(providers.shutdown());
     else if (backend !== undefined) attempts.push(backend.shutdown());
   } catch (cause) {
-    attempts.push(Promise.reject(cause));
+    attempts.push(Promise.reject(new Error("Desktop provider shutdown failed.", { cause })));
   }
   void Promise.allSettled(attempts).then((results) => {
     const failed = results.some((result) => result.status === "rejected");

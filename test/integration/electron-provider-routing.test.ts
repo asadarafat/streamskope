@@ -381,9 +381,12 @@ describe("registered Electron provider routes", () => {
       const beta = createProviderFixture({ id: "beta", version: 11 });
       alpha.stopOperation = (): Promise<void> => {
         if (failure === "synchronous") throw new Error("private stream cleanup detail");
-        return Promise.reject(
-          failure === "undefined" ? undefined : new Error("private stream cleanup detail"),
-        );
+        const cause: unknown =
+          failure === "undefined" ? undefined : new Error("private stream cleanup detail");
+        // External provider failures can lack an Error; retain the exact undefined rejection case.
+        return Promise.resolve().then((): never => {
+          throw cause;
+        });
       };
       const shell = await shellFor([alpha, beta]);
       const a = providerIpcChannels("alpha");
@@ -473,7 +476,7 @@ describe("registered Electron provider routes", () => {
     const shell = await shellFor([alpha, beta]);
     const channel = providerIpcChannels("alpha").command;
     const retainedHandler = native.handlers.get(channel);
-    const remove = native.ipcMain.removeHandler;
+    const remove = native.ipcMain.removeHandler.bind(native.ipcMain);
     vi.spyOn(native.ipcMain, "removeHandler").mockImplementation((owned) => {
       if (owned === channel) throw new Error("private handler cleanup detail");
       remove(owned);

@@ -177,11 +177,12 @@ describe("owned HTTP event delivery", () => {
     expect(eventAt(slow.writable, 4)).toMatchObject({ payload: { droppedMessages: 3 } });
     expect(state.payload.droppedMessages).toBe(2);
     slow.writable.complete(4);
-    slow.delivery.enqueue({
+    const loading: Extract<HostEvent, { event: "consumption.state" }> = {
       ...state,
       sequence: 6,
       payload: { ...state.payload, state: "loading", droppedMessages: 0, receivedMessages: 0 },
-    });
+    };
+    slow.delivery.enqueue(loading);
     expect(eventAt(slow.writable, 5)).toMatchObject({ payload: { droppedMessages: 0 } });
     slow.writable.complete(5);
     slow.writable.accept = false;

@@ -35,7 +35,7 @@ async function shutdown(exitCode: number): Promise<void> {
       try {
         return run();
       } catch (cause) {
-        return Promise.reject(cause);
+        return Promise.reject(new Error("Electron plugin fixture cleanup failed.", { cause }));
       }
     }),
   );
