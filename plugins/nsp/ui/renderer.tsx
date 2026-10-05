@@ -70,7 +70,9 @@ const renderer: PluginRenderer = {
     return nsp === undefined ? undefined : `NSP Kafka · ${nsp.apiUrl}`;
   },
   mount: (element, initialContext) => {
-    const root = createRoot(element);
+    const root = createRoot(element, {
+      identifierPrefix: `streamskope-nsp-${globalThis.crypto.randomUUID()}-`,
+    });
     function update(context: PluginViewContext): void {
       root.render(
         <ThemeProvider

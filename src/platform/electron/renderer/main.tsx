@@ -31,4 +31,7 @@ if (rootElement === null) {
   throw new Error("StreamSkope renderer root was not found.");
 }
 
-createRoot(rootElement).render(<StreamSkopeApplication />);
+// Downloaded plugins may bundle their own React runtime and ID counter.
+createRoot(rootElement, { identifierPrefix: "streamskope-core-" }).render(
+  <StreamSkopeApplication />,
+);
