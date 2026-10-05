@@ -35,6 +35,19 @@ const test = base.extend<
   }
 >({
   natsAuthentication: ["token", { option: true }],
+  context: async (
+    { natsBrowser: _natsBrowser, playwright, browserName, launchOptions, contextOptions },
+    use,
+  ): Promise<void> => {
+    // Docker adds/removes host interfaces. Launch each network monitor only after the
+    // owned server and renderer are ready, and close it before their fixture teardown.
+    const browser = await playwright[browserName].launch(launchOptions);
+    try {
+      await use(await browser.newContext(contextOptions));
+    } finally {
+      await boundedCleanup(() => browser.close());
+    }
+  },
   natsArtifactHygiene: [
     async ({ browserName: _browserName }, use): Promise<void> => {
       const policies: NatsArtifactPolicy[] = [];
