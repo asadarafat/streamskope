@@ -46,6 +46,8 @@ jobs:
       - run: npm run check -- --ci
       - name: Verify real Kafka collection, replication recovery and final-client cleanup
         run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts test/kafka/provider-stream-stop-real.test.ts
+      - name: Verify Core NATS token, TLS and subscription lifecycle
+        run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/nats-real.json test/nats/provider-real.test.ts
       - name: Verify workbench and monitoring browser workflows
         run: >-
           node tools/package/e2e.mjs web
@@ -60,6 +62,7 @@ jobs:
           path: |
             .artifacts/ci/vitest.json
             .artifacts/ci/observations-real.json
+            .artifacts/ci/nats-real.json
             .artifacts/website
             test-results/web
           include-hidden-files: true

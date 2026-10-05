@@ -37,7 +37,7 @@ class FakeSafeStorage implements ElectronSafeStoragePort {
   }
 }
 
-describe("Electron Kafka profile protection", () => {
+describe("Electron profile protection", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -156,5 +156,23 @@ describe("Electron Kafka profile protection", () => {
     await expect(result.protector!.unprotect(Buffer.from("secret-ciphertext"))).rejects.not.toThrow(
       /secret-ciphertext/,
     );
+  });
+
+  it("fails closed when the Linux credential backend lookup throws", async () => {
+    const safeStorage = new FakeSafeStorage();
+    safeStorage.getSelectedStorageBackend = (): never => {
+      throw new Error("private credential backend diagnostic");
+    };
+
+    const result = await initializeElectronProfileProtection(safeStorage, "linux");
+
+    expect(result.protector).toBeUndefined();
+    expect(result.capability).toMatchObject({
+      durability: "durable",
+      protection: "unavailable",
+      state: "unavailable",
+    });
+    expect(JSON.stringify(result)).not.toContain("private credential backend diagnostic");
+    expect(safeStorage.encryptedValues).toEqual([]);
   });
 });

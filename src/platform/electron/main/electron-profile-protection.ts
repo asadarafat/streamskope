@@ -1,5 +1,4 @@
-import type { ProfileStoreCapability } from "../../../features/kafka/contracts";
-import type { KafkaProfileProtector } from "../../node/kafka-profile-file-store";
+import type { ProfileProtectionCapability, ProfileProtector } from "../../node/profile-protector";
 
 export type ElectronStorageBackend =
   "basic_text" | "gnome_libsecret" | "kwallet" | "kwallet5" | "kwallet6" | "unknown";
@@ -19,8 +18,8 @@ export interface ElectronSafeStoragePort {
 }
 
 export interface ElectronProfileProtection {
-  readonly capability: ProfileStoreCapability;
-  readonly protector?: KafkaProfileProtector;
+  readonly capability: ProfileProtectionCapability;
+  readonly protector?: ProfileProtector;
 }
 
 export class ElectronProfileProtectionError extends Error {
@@ -30,7 +29,7 @@ export class ElectronProfileProtectionError extends Error {
   }
 }
 
-class SafeStorageProfileProtector implements KafkaProfileProtector {
+class SafeStorageProfileProtector implements ProfileProtector {
   constructor(private readonly safeStorage: ElectronSafeStoragePort) {}
 
   async protect(plaintext: string): Promise<Buffer> {
@@ -56,7 +55,7 @@ class SafeStorageProfileProtector implements KafkaProfileProtector {
   }
 }
 
-const unavailableCapability: ProfileStoreCapability = {
+const unavailableCapability: ProfileProtectionCapability = {
   durability: "durable",
   protection: "unavailable",
   recovery:
@@ -98,8 +97,12 @@ export async function initializeElectronProfileProtection(
     return { capability: unavailableCapability };
   }
   if (platform === "linux") {
-    const backend = safeStorage.getSelectedStorageBackend();
-    if (backend === "basic_text" || backend === "unknown") {
+    try {
+      const backend = safeStorage.getSelectedStorageBackend();
+      if (backend === "basic_text" || backend === "unknown") {
+        return { capability: unavailableCapability };
+      }
+    } catch {
       return { capability: unavailableCapability };
     }
   }

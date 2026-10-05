@@ -21,6 +21,10 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/engine/platformatic-consumer.ts",
     // Each explicit decode owns a worker deadline cleared on every settlement path.
     "src/features/kafka/engine/record-codec.ts",
+    // Core NATS owns finite setup deadlines, cleared on every settlement path.
+    "src/features/nats/engine/operation-wait.ts",
+    // One live-record publication timer, cancelled before stop or replacement.
+    "src/features/nats/application/record-buffer.ts",
     "src/features/kafka/ui/LatencyWorkspace.tsx",
     // Page-scoped opted-in collection and absolute cooldown/freshness deadlines; disposed on unmount.
     "src/features/kafka/ui/use-observed-health.ts",

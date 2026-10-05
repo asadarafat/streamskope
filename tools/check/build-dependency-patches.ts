@@ -5,12 +5,24 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BUILD_DEPENDENCY_PATCHES } from "./build-dependency-patch-data";
+import { RUNTIME_DEPENDENCY_PATCHES } from "./runtime-dependency-patch-data";
 
 export interface VerifiedBuildPatch {
   readonly name: string;
   readonly advisoryUrl: string;
   readonly paths: readonly string[];
 }
+export interface VerifiedRuntimePatch {
+  readonly name: string;
+  readonly rationaleUrl: string;
+  readonly paths: readonly string[];
+}
+interface InspectedPatch {
+  readonly name: string;
+  readonly referenceUrl: string;
+  readonly paths: readonly string[];
+}
+type PatchScope = "build" | "runtime";
 interface PatchFile {
   readonly path: string;
   readonly source: string;
@@ -38,14 +50,19 @@ function safePath(path: string): boolean {
 async function inspect(
   root: string,
   allowOriginal: boolean,
-): Promise<{ verified: VerifiedBuildPatch[]; files: PatchFile[] }> {
+  scope: PatchScope,
+): Promise<{ verified: InspectedPatch[]; files: PatchFile[] }> {
   const directory = await realpath(root);
   const lock = record(JSON.parse(await readFile(join(directory, "package-lock.json"), "utf8")));
   if (lock.lockfileVersion !== 3) throw new Error("Dependency mitigation requires lockfile v3");
   const packages = record(lock.packages);
-  const verified: VerifiedBuildPatch[] = [];
+  const verified: InspectedPatch[] = [];
+  const patches =
+    scope === "build"
+      ? BUILD_DEPENDENCY_PATCHES.map((patch) => ({ ...patch, referenceUrl: patch.advisoryUrl }))
+      : RUNTIME_DEPENDENCY_PATCHES.map((patch) => ({ ...patch, referenceUrl: patch.rationaleUrl }));
   const files: PatchFile[] = [];
-  for (const patch of BUILD_DEPENDENCY_PATCHES) {
+  for (const patch of patches) {
     const paths: string[] = [];
     for (const [path, metadata] of Object.entries(packages)) {
       const entry = record(metadata);
@@ -56,12 +73,12 @@ async function inspect(
       if (!matches) continue;
       if (
         !safePath(path) ||
-        entry.dev !== true ||
+        (scope === "build" ? entry.dev !== true : entry.dev === true) ||
         entry.version !== patch.version ||
         entry.resolved !== patch.registryUrl ||
         entry.integrity !== patch.integrity
       )
-        throw new Error(`Unreviewed build dependency identity or runtime reachability: ${path}`);
+        throw new Error(`Unreviewed dependency identity or runtime reachability: ${path}`);
       const manifestPath = join(directory, path, "package.json");
       await regularFile(manifestPath);
       const installed = record(JSON.parse(await readFile(manifestPath, "utf8")));
@@ -121,7 +138,7 @@ async function inspect(
       ).replaceAll("\\", "/");
       if (!declared.has(found)) throw new Error(`Unlisted dependency resolution: ${found}`);
     }
-    verified.push({ name: patch.name, advisoryUrl: patch.advisoryUrl, paths: paths.sort() });
+    verified.push({ name: patch.name, referenceUrl: patch.referenceUrl, paths: paths.sort() });
   }
   return { verified, files };
 }
@@ -129,12 +146,23 @@ async function inspect(
 export async function verifyBuildDependencyPatches(
   root: string,
 ): Promise<readonly VerifiedBuildPatch[]> {
-  return (await inspect(root, false)).verified;
+  return (await inspect(root, false, "build")).verified.map(({ name, referenceUrl, paths }) => ({
+    name,
+    advisoryUrl: referenceUrl,
+    paths,
+  }));
 }
-export async function applyBuildDependencyPatches(
+export async function verifyRuntimeDependencyPatches(
   root: string,
-): Promise<readonly VerifiedBuildPatch[]> {
-  const result = await inspect(root, true);
+): Promise<readonly VerifiedRuntimePatch[]> {
+  return (await inspect(root, false, "runtime")).verified.map(({ name, referenceUrl, paths }) => ({
+    name,
+    rationaleUrl: referenceUrl,
+    paths,
+  }));
+}
+async function applyPatches(root: string, scope: PatchScope): Promise<void> {
+  const result = await inspect(root, true, scope);
   for (const file of result.files) {
     if ((await readFile(file.path, "utf8")) !== file.source)
       throw new Error(`Dependency changed during mitigation: ${file.path}`);
@@ -146,7 +174,18 @@ export async function applyBuildDependencyPatches(
       await rm(temporary, { force: true });
     }
   }
+}
+export async function applyBuildDependencyPatches(
+  root: string,
+): Promise<readonly VerifiedBuildPatch[]> {
+  await applyPatches(root, "build");
   return verifyBuildDependencyPatches(root);
+}
+export async function applyRuntimeDependencyPatches(
+  root: string,
+): Promise<readonly VerifiedRuntimePatch[]> {
+  await applyPatches(root, "runtime");
+  return verifyRuntimeDependencyPatches(root);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -154,11 +193,15 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
   void (async (): Promise<void> => {
     if ((mode !== "--apply" && mode !== "--verify") || extra.length)
       throw new Error("Use --apply or --verify [root]");
-    const verified = await (mode === "--apply"
+    const build = await (mode === "--apply"
       ? applyBuildDependencyPatches(root)
       : verifyBuildDependencyPatches(root));
+    const runtime = await (mode === "--apply"
+      ? applyRuntimeDependencyPatches(root)
+      : verifyRuntimeDependencyPatches(root));
+    const verified = [...build, ...runtime];
     process.stdout.write(
-      `Verified exact-source build dependency mitigations: ${verified.map((p) => p.name).join(", ")}.\n`,
+      `Verified exact-source dependency mitigations: ${verified.map((p) => p.name).join(", ")}.\n`,
     );
   })().catch((error: unknown) => {
     process.stderr.write(

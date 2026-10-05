@@ -16,6 +16,7 @@ import { AtomicKafkaTopicConfigurationHistoryFileStore } from "../../node/kafka-
 
 import {
   initializeElectronProfileProtection,
+  type ElectronProfileProtection,
   type ElectronSafeStoragePort,
 } from "./electron-profile-protection";
 
@@ -24,15 +25,15 @@ export interface ElectronKafkaBackendOptions {
   readonly safeStorage: ElectronSafeStoragePort;
   readonly userDataPath: string;
   readonly plugins?: PluginRuntime;
+  readonly profileProtection?: ElectronProfileProtection;
 }
 
 export async function createElectronKafkaBackend(
   options: ElectronKafkaBackendOptions,
 ): Promise<KafkaBackendFacade> {
-  const protection = await initializeElectronProfileProtection(
-    options.safeStorage,
-    options.platform,
-  );
+  const protection =
+    options.profileProtection ??
+    (await initializeElectronProfileProtection(options.safeStorage, options.platform));
   const profileStore =
     protection.protector === undefined
       ? new UnavailableKafkaProfileStore(protection.capability)
@@ -73,6 +74,19 @@ export async function createElectronKafkaBackend(
       join(options.userDataPath, "history", "kafka-observations.json"),
     ),
   });
-  await plugins.start();
+  try {
+    await plugins.start();
+  } catch (error) {
+    try {
+      await backend.shutdown();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Desktop Kafka startup failed and provider cleanup did not complete.",
+        { cause: cleanupError },
+      );
+    }
+    throw error;
+  }
   return backend;
 }

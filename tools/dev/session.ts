@@ -11,10 +11,13 @@ import {
 import {
   launchWebDevelopment,
   type DevelopmentBackend,
+  type DevelopmentProviderSource,
   type RunningWebDevelopment,
   type WebDevelopmentLaunchOptions,
 } from "../../src/platform/dev-host";
 import { developmentOrigin, resolveDevelopmentNetwork } from "../../src/platform/dev-host/network";
+import type { ProviderHostRegistry } from "../../src/platform/node/provider-host";
+import type { PluginRendererAsset } from "../../src/platform/node/plugins/runtime";
 
 import { stopWebDevelopmentOwner } from "./stop-owner";
 
@@ -39,13 +42,12 @@ export interface WebDevelopmentSessionIdentity {
   readonly rendererRoot: string;
 }
 
-export interface WebDevelopmentCommandDependencies {
+interface WebDevelopmentCommandBaseDependencies {
   readonly stopOwnedSession?: (
     pid: number,
     identity: WebDevelopmentSessionIdentity,
   ) => Promise<void>;
   readonly prepare?: () => Promise<void>;
-  readonly createBackend: () => DevelopmentBackend | Promise<DevelopmentBackend>;
   readonly isExistingSessionReady?: (
     browserUrl: string,
     identity: WebDevelopmentSessionIdentity,
@@ -55,6 +57,24 @@ export interface WebDevelopmentCommandDependencies {
   readonly openBrowser?: (browserUrl: string) => Promise<void>;
   readonly ownerPid?: number;
 }
+
+export interface WebDevelopmentProviderApplication {
+  readonly providers: ProviderHostRegistry;
+  readonly pluginAsset?: (pathname: string) => Promise<PluginRendererAsset | undefined>;
+}
+
+export type WebDevelopmentCommandDependencies = WebDevelopmentCommandBaseDependencies &
+  (
+    | {
+        readonly createBackend: () => DevelopmentBackend | Promise<DevelopmentBackend>;
+        readonly createProviders?: never;
+      }
+    | {
+        readonly createProviders: () =>
+          WebDevelopmentProviderApplication | Promise<WebDevelopmentProviderApplication>;
+        readonly createBackend?: never;
+      }
+  );
 
 export interface RunningWebDevelopmentCommand {
   readonly browserOpenError: string | null;
@@ -526,12 +546,14 @@ async function existingSessionIsReady(
 
 async function cleanupFailedLaunch(
   launch: RunningWebDevelopment | undefined,
+  application: DevelopmentProviderSource | undefined,
   lease: SessionLease,
   error: unknown,
 ): Promise<never> {
+  const owner = application?.providers ?? application?.backend;
   const cleanups = await Promise.allSettled([
-    ...(launch === undefined ? [] : [launch.close()]),
-    lease.release(),
+    Promise.resolve().then(() => (launch === undefined ? owner?.shutdown() : launch.close())),
+    Promise.resolve().then(() => lease.release()),
   ]);
   const failures = cleanups
     .filter((result): result is PromiseRejectedResult => result.status === "rejected")
@@ -629,10 +651,15 @@ export async function startWebDevelopmentCommand(
   }
 
   let launch: RunningWebDevelopment | undefined;
+  let application: DevelopmentProviderSource | undefined;
   try {
     await dependencies.prepare?.();
+    application =
+      dependencies.createProviders === undefined
+        ? { backend: await dependencies.createBackend() }
+        : await dependencies.createProviders();
     launch = await (dependencies.launch ?? launchWebDevelopment)({
-      backend: await dependencies.createBackend(),
+      ...application,
       hostPort: identity.hostPort,
       publicHostname: identity.publicHostname,
       rendererPort: identity.rendererPort,
@@ -640,7 +667,7 @@ export async function startWebDevelopmentCommand(
     });
     await claim.lease.publish(launch.browserUrl);
   } catch (error) {
-    return cleanupFailedLaunch(launch, claim.lease, error);
+    return cleanupFailedLaunch(launch, application, claim.lease, error);
   }
 
   let closePromise: Promise<void> | undefined;

@@ -8,6 +8,8 @@ const rendererFiles = [
   "plugins/eda/ui/**/*.{ts,tsx}",
   "plugins/nsp/ui/**/*.{ts,tsx}",
   "src/features/kafka/ui/**/*.{ts,tsx}",
+  "src/features/nats/ui/**/*.{ts,tsx}",
+  "src/features/nats/contracts/**/*.ts",
   "src/platform/electron/renderer/**/*.{ts,tsx}",
   "src/platform/ui/**/*.{ts,tsx}",
   "src/platform/providers/**/*.ts",
@@ -67,6 +69,11 @@ export default [
         { pattern: "plugins/nsp/contracts/**", type: "nsp-contracts" },
         { pattern: "plugins/nsp/backend/**", type: "nsp-backend" },
         { pattern: "plugins/nsp/ui/**", type: "nsp-ui" },
+        { pattern: "src/features/nats/contracts/**", type: "nats-contracts" },
+        { pattern: "src/features/nats/application/**", type: "nats-application" },
+        { pattern: "src/features/nats/engine/**", type: "nats-engine" },
+        { pattern: "src/features/nats/facade/**", type: "nats-facade" },
+        { pattern: "src/features/nats/ui/**", type: "nats-renderer" },
         { pattern: "src/features/kafka/contracts/**", type: "kafka-contracts" },
         { pattern: "src/features/kafka/application/**", type: "kafka-application" },
         { pattern: "src/features/kafka/facade/**", type: "kafka-facade" },
@@ -106,6 +113,74 @@ export default [
         {
           default: "disallow",
           policies: [
+            {
+              from: { element: { type: "nats-contracts" } },
+              allow: {
+                to: { element: { types: { anyOf: ["nats-contracts", "platform-providers"] } } },
+              },
+            },
+            {
+              from: { element: { type: "nats-application" } },
+              allow: {
+                to: {
+                  element: {
+                    types: { anyOf: ["nats-application", "nats-contracts", "platform-providers"] },
+                  },
+                },
+              },
+            },
+            {
+              from: { element: { type: "nats-engine" } },
+              allow: {
+                to: {
+                  element: {
+                    types: {
+                      anyOf: [
+                        "nats-engine",
+                        "nats-application",
+                        "nats-contracts",
+                        "platform-providers",
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            {
+              from: { element: { type: "nats-facade" } },
+              allow: {
+                to: {
+                  element: {
+                    types: {
+                      anyOf: [
+                        "nats-facade",
+                        "nats-application",
+                        "nats-contracts",
+                        "platform-providers",
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            {
+              from: { element: { type: "nats-renderer" } },
+              allow: {
+                to: {
+                  element: {
+                    types: {
+                      anyOf: [
+                        "nats-renderer",
+                        "nats-contracts",
+                        "platform-desktop",
+                        "platform-providers",
+                        "ui",
+                      ],
+                    },
+                  },
+                },
+              },
+            },
             {
               from: {
                 element: {
@@ -233,7 +308,13 @@ export default [
             },
             {
               allow: {
-                to: { element: { types: { anyOf: ["kafka-application", "kafka-contracts"] } } },
+                to: {
+                  element: {
+                    types: {
+                      anyOf: ["kafka-application", "kafka-contracts", "platform-providers"],
+                    },
+                  },
+                },
               },
               from: { element: { type: "kafka-application" } },
             },
@@ -242,7 +323,12 @@ export default [
                 to: {
                   element: {
                     types: {
-                      anyOf: ["kafka-application", "kafka-contracts", "kafka-engine"],
+                      anyOf: [
+                        "kafka-application",
+                        "kafka-contracts",
+                        "kafka-engine",
+                        "platform-providers",
+                      ],
                     },
                   },
                 },
@@ -258,6 +344,7 @@ export default [
                         "kafka-application",
                         "kafka-contracts",
                         "kafka-facade",
+                        "platform-providers",
                         "platform-activity",
                       ],
                     },
@@ -294,6 +381,8 @@ export default [
                   element: {
                     types: {
                       anyOf: [
+                        "nats-contracts",
+
                         "kafka-contracts",
                         "kafka-facade",
                         "platform-activity",
@@ -314,6 +403,10 @@ export default [
                   element: {
                     types: {
                       anyOf: [
+                        "nats-contracts",
+                        "nats-application",
+                        "nats-facade",
+
                         "kafka-application",
                         "kafka-contracts",
                         "kafka-engine",
@@ -338,6 +431,11 @@ export default [
                   element: {
                     types: {
                       anyOf: [
+                        "nats-contracts",
+                        "nats-application",
+                        "nats-engine",
+                        "nats-facade",
+
                         "kafka-application",
                         "kafka-contracts",
                         "kafka-engine",
@@ -358,6 +456,8 @@ export default [
                   element: {
                     types: {
                       anyOf: [
+                        "nats-contracts",
+
                         "kafka-contracts",
                         "platform-desktop",
                         "platform-providers",
@@ -375,6 +475,8 @@ export default [
                   element: {
                     types: {
                       anyOf: [
+                        "nats-contracts",
+
                         "kafka-contracts",
                         "kafka-renderer",
                         "platform-desktop",
@@ -388,6 +490,20 @@ export default [
               },
               from: { element: { type: "renderer" } },
             },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/features/nats/{contracts,application,facade}/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [{ name: "electron", message: "NATS domain code must not access Electron." }],
+          patterns: [
+            { group: ["@nats-io/*", "nats"], message: "Only the NATS engine owns SDK access." },
           ],
         },
       ],
@@ -435,6 +551,10 @@ export default [
             },
           ],
           patterns: [
+            {
+              group: ["@nats-io/*", "nats"],
+              message: "Renderer code must use its typed provider host.",
+            },
             {
               group: ["node:*"],
               message: "Renderer code must not access Node.js APIs.",
