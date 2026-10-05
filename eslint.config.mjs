@@ -476,7 +476,7 @@ export default [
                     types: {
                       anyOf: [
                         "nats-contracts",
-
+                        "nats-renderer",
                         "kafka-contracts",
                         "kafka-renderer",
                         "platform-desktop",
@@ -503,7 +503,10 @@ export default [
         {
           paths: [{ name: "electron", message: "NATS domain code must not access Electron." }],
           patterns: [
-            { group: ["@nats-io/*", "nats"], message: "Only the NATS engine owns SDK access." },
+            {
+              regex: "^(?:@nats-io/|nats(?:/|$))",
+              message: "Only the NATS engine owns SDK access.",
+            },
           ],
         },
       ],
@@ -552,7 +555,7 @@ export default [
           ],
           patterns: [
             {
-              group: ["@nats-io/*", "nats"],
+              regex: "^(?:@nats-io/|nats(?:/|$))",
               message: "Renderer code must use its typed provider host.",
             },
             {

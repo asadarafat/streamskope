@@ -1,0 +1,114 @@
+import { useMemo, useState } from "react";
+
+import type {
+  ProviderWorkspaceControls,
+  ProviderWorkspaceRegistration,
+  ProviderDeactivationResult,
+} from "../../../platform/ui/provider-workspaces";
+import {
+  NATS_PROTOCOL_VERSION,
+  type NatsCommand,
+  type NatsCommandResponse,
+  type NatsHost,
+} from "../contracts";
+
+import { NatsWorkspace } from "./NatsWorkspace";
+import type { NatsWorkspaceSource } from "./workspace-types";
+
+/** Revoke new ownership; admitted receipts and listeners still observe original cleanup. */
+export function createInteractiveNatsHost(host: NatsHost, isInteractive: () => boolean): NatsHost {
+  return {
+    execute: async <Command extends NatsCommand>(
+      command: Command,
+    ): Promise<NatsCommandResponse<Command["command"]>> => {
+      if (!isInteractive()) {
+        throw new Error(
+          "This Core NATS workspace is inactive. Finish the provider switch before submitting another request.",
+        );
+      }
+      return host.execute(command);
+    },
+    subscribe: (listener): (() => void) =>
+      isInteractive() ? host.subscribe(listener) : (): void => undefined,
+  };
+}
+
+export interface NatsWorkspaceRegistrationProperties {
+  readonly resolveSource: () => NatsWorkspaceSource;
+}
+
+export function createNatsWorkspaceRegistration({
+  resolveSource,
+}: NatsWorkspaceRegistrationProperties): ProviderWorkspaceRegistration {
+  let resolvedSource: NatsWorkspaceSource | undefined;
+  const source = (): NatsWorkspaceSource => (resolvedSource ??= resolveSource());
+  function RegisteredNatsWorkspace({
+    controls,
+  }: {
+    readonly controls: ProviderWorkspaceControls;
+  }): React.JSX.Element {
+    const [original] = useState(source);
+    const gatedSource = useMemo<NatsWorkspaceSource>(
+      () =>
+        original.state === "ready"
+          ? {
+              state: "ready",
+              host: createInteractiveNatsHost(original.host, controls.isInteractive),
+            }
+          : original,
+      [original, controls.isInteractive],
+    );
+    return (
+      <NatsWorkspace
+        source={gatedSource}
+        providerControl={controls.providerControl}
+        isInteractive={controls.isInteractive}
+      />
+    );
+  }
+  const blocked = (phase: "stop" | "disconnect"): ProviderDeactivationResult =>
+    phase === "stop"
+      ? {
+          state: "blocked",
+          summary: "Core NATS subscription could not be stopped.",
+          recovery:
+            "Keep Core NATS selected, stop the subscription successfully, then retry the provider switch.",
+        }
+      : {
+          state: "blocked",
+          summary: "Core NATS could not be disconnected.",
+          recovery:
+            "Keep Core NATS selected, disconnect successfully, then retry the provider switch.",
+        };
+  return {
+    id: "nats",
+    label: "Core NATS",
+    render: (controls): React.JSX.Element => <RegisteredNatsWorkspace controls={controls} />,
+    deactivate: async (): Promise<ProviderDeactivationResult> => {
+      // A never-rendered or unavailable workspace owns no host resources.
+      if (resolvedSource === undefined || resolvedSource.state === "unavailable")
+        return { state: "ready" };
+      const host = resolvedSource.host;
+      let phase: "stop" | "disconnect" = "stop";
+      try {
+        const stopped = await host.execute({
+          command: "subscription.stop",
+          id: globalThis.crypto.randomUUID(),
+          payload: {},
+          version: NATS_PROTOCOL_VERSION,
+        });
+        if (!stopped.ok) return blocked(phase);
+        phase = "disconnect";
+        const disconnected = await host.execute({
+          command: "connection.disconnect",
+          id: globalThis.crypto.randomUUID(),
+          payload: {},
+          version: NATS_PROTOCOL_VERSION,
+        });
+        return disconnected.ok ? { state: "ready" } : blocked(phase);
+      } catch {
+        return blocked(phase);
+      }
+    },
+  };
+}

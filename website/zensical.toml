@@ -17,6 +17,7 @@ nav = [
   ] },
   { "Everyday tasks" = [
     { "Find and inspect a message" = "guide/messages.md" },
+    { "Core NATS live subscriptions" = "guide/core-nats.md" },
     { "Decode a structured record" = "guide/structured-events.md" },
     { "Check consumer lag" = "guide/operations.md" },
     { "Observe Kafka health" = "guide/observed-health.md" },

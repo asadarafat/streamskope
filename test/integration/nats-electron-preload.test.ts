@@ -35,11 +35,13 @@ function listResponse(): NatsCommandResponse<"profiles.list"> {
     result: {
       correlationId: "nats-list-correlation",
       profiles: {
+        revision: 0,
         capability: { durability: "session", protection: "memory", state: "ready" },
         profiles: [],
       },
-      connection: { state: "disconnected", profile: null },
+      connection: { revision: 0, state: "disconnected", profile: null },
       subscription: {
+        revision: 0,
         state: "idle",
         generation: null,
         subject: null,

@@ -7,6 +7,7 @@ import {
   type NatsSafeFailure,
   type NatsSubscriptionSnapshot,
 } from "../contracts";
+import { natsInteger } from "../contracts/validation-primitives";
 
 import type { NatsEngine } from "./engine-port";
 import type { NatsResolvedProfile } from "./profile-types";
@@ -43,13 +44,20 @@ export type NatsSessionChange =
 export class NatsApplicationSession {
   private readonly work = new ProviderCommandAdmission();
   private readonly listeners = new Set<(change: NatsSessionChange) => void>();
-  private connection: NatsConnectionSnapshot = { state: "disconnected", profile: null };
+  private connection: NatsConnectionSnapshot = {
+    revision: 0,
+    state: "disconnected",
+    profile: null,
+  };
   private subscription: NatsSubscriptionSnapshot = {
+    revision: 0,
     state: "idle",
     generation: null,
     subject: null,
     counters: emptyNatsCounters(),
   };
+  private connectionRevision = 0;
+  private subscriptionRevision = 0;
   private connectionIntent = 0;
   private subscriptionIntent = 0;
   private readonly profileReservations = new Map<number, string>();
@@ -90,7 +98,7 @@ export class NatsApplicationSession {
     const priorReservations = [...this.profileReservations.keys()];
     this.profileReservations.set(intent, profileId);
     this.revokeSubscription();
-    this.connection = { state: "connecting", profile: null };
+    this.changeConnection({ state: "connecting", profile: null });
     const operation = this.work.track(() =>
       Promise.resolve().then(async () => {
         try {
@@ -102,24 +110,23 @@ export class NatsApplicationSession {
           this.emitSubscription(context);
           const profile = await resolve(controller.signal);
           this.assertConnection(intent, controller.signal);
-          this.connection = { state: "connecting", profile: profile.identity };
+          this.changeConnection({ state: "connecting", profile: profile.identity });
           this.emitConnection(context);
           await this.engine.connect(profile.connection, {
             signal: controller.signal,
             onConnectionLoss: (failure) => this.connectionLost(intent, failure, context),
           });
           this.assertConnection(intent, controller.signal);
-          const confirmed: NatsConnectionSnapshot = {
+          const confirmed = this.changeConnection({
             state: "connected",
             profile: profile.identity,
-          };
-          this.connection = confirmed;
-          this.emitConnection(context);
+          });
+          this.emitConnection(context, confirmed);
           return confirmed;
         } catch (error) {
           if (intent === this.connectionIntent && !this.closing) {
             const failure = this.connection.failure ?? safeNatsOperationFailure(error);
-            this.connection = { state: "failed", profile: this.connection.profile, failure };
+            this.changeConnection({ state: "failed", profile: this.connection.profile, failure });
             this.emitConnection(context);
             try {
               await this.engine.disconnect();
@@ -128,11 +135,11 @@ export class NatsApplicationSession {
             } catch (cause) {
               this.cleanupFailed = true;
               if (intent === this.connectionIntent) {
-                this.connection = {
+                this.changeConnection({
                   state: "failed",
                   profile: this.connection.profile,
                   failure: natsCleanupFailure(cause).failure,
-                };
+                });
                 this.emitConnection(context);
               }
               throw natsCleanupFailure(cause);
@@ -144,8 +151,9 @@ export class NatsApplicationSession {
       }),
     );
     this.connectionSetup = operation;
-    this.emitSubscription(context);
-    this.emitConnection(context);
+    const announced = this.snapshot();
+    this.emitSubscription(context, announced.subscription);
+    this.emitConnection(context, announced.connection);
     return operation;
   }
 
@@ -176,7 +184,7 @@ export class NatsApplicationSession {
       (error) => this.subscriptionFailed(intent, connectionIntent, error, context),
     );
     this.records = buffer;
-    this.subscription = { state: "loading", generation, subject, counters: buffer.counters() };
+    this.changeSubscription({ state: "loading", generation, subject, counters: buffer.counters() });
     const operation = this.work.track(() =>
       Promise.resolve().then(async () => {
         try {
@@ -209,14 +217,14 @@ export class NatsApplicationSession {
                 summary: "The NATS subscription failed during setup.",
               },
             );
-          this.subscription = {
+          this.changeSubscription({
             state: "streaming",
             generation,
             subject,
             counters: buffer.counters(),
-          };
+          });
           const confirmed = this.subscriptionSnapshot();
-          this.emitSubscription(context);
+          this.emitSubscription(context, confirmed);
           buffer.startPublishing();
           return confirmed;
         } catch (error) {
@@ -226,13 +234,13 @@ export class NatsApplicationSession {
             const failure =
               incoming.code === "cleanup" ? incoming : (this.subscription.failure ?? incoming);
             this.cleanupFailed ||= failure.code === "cleanup";
-            this.subscription = {
+            this.changeSubscription({
               state: "failed",
               generation,
               subject,
               counters: buffer.counters(),
               failure,
-            };
+            });
             this.emitSubscription(context);
             throw new NatsOperationError(failure, { cause: error });
           }
@@ -255,31 +263,38 @@ export class NatsApplicationSession {
     this.records?.close();
     const pending = this.subscriptionSetup;
     const snapshot = this.subscriptionSnapshot();
-    const stopped: NatsSubscriptionSnapshot = {
+    const terminal: Omit<NatsSubscriptionSnapshot, "revision"> = {
       state: snapshot.generation === null ? "idle" : "stopped",
       generation: snapshot.generation,
       subject: snapshot.subject,
       counters: snapshot.counters,
     };
-    this.subscription = { ...stopped, state: stopped.generation === null ? "idle" : "stopping" };
+    this.changeSubscription({
+      ...terminal,
+      state: terminal.generation === null ? "idle" : "stopping",
+    });
+    // Reserve successful cleanup authority before a replacement can allocate its own state.
+    const stopped: NatsSubscriptionSnapshot = {
+      ...terminal,
+      revision: this.nextSubscriptionRevision(),
+    };
     const operation = this.work.track(() =>
       Promise.resolve().then(async () => {
         try {
           await this.engine.stopSubscription();
           if (pending !== undefined) await Promise.allSettled([pending]);
-          if (intent === this.subscriptionIntent && !this.closing) {
-            this.subscription = stopped;
-            this.emitSubscription(context);
-          }
-          return stopped;
+          if (intent !== this.subscriptionIntent || this.closing) return stopped;
+          const confirmed = this.changeSubscription(stopped, stopped.revision);
+          this.emitSubscription(context, confirmed);
+          return confirmed;
         } catch (error) {
           if (intent === this.subscriptionIntent && !this.closing) {
             this.cleanupFailed = true;
-            this.subscription = {
+            this.changeSubscription({
               ...stopped,
               state: "failed",
               failure: natsCleanupFailure(error).failure,
-            };
+            });
             this.emitSubscription(context);
           }
           throw natsCleanupFailure(error);
@@ -305,41 +320,50 @@ export class NatsApplicationSession {
     const intent = ++this.connectionIntent;
     this.connectionController?.abort();
     this.revokeSubscription();
+    const subscriptionIntent = this.subscriptionIntent;
     const pending = [this.connectionSetup, this.subscriptionSetup].filter(
       (value) => value !== undefined,
     );
     const reservations = [...this.profileReservations.keys()];
     const priorSubscription = this.subscriptionSnapshot();
-    this.connection = { state: "disconnecting", profile: this.connection.profile };
+    this.changeConnection({ state: "disconnecting", profile: this.connection.profile });
+    const subscription: NatsSubscriptionSnapshot = {
+      revision: this.nextSubscriptionRevision(),
+      state: priorSubscription.generation === null ? "idle" : "stopped",
+      generation: priorSubscription.generation,
+      subject: priorSubscription.subject,
+      counters: priorSubscription.counters,
+    };
+    const connection: NatsConnectionSnapshot = {
+      revision: this.nextConnectionRevision(),
+      state: "disconnected",
+      profile: null,
+    };
     const operation = this.work.track(() =>
       Promise.resolve().then(async () => {
         try {
           await this.engine.disconnect();
           await Promise.allSettled(pending);
           for (const reservation of reservations) this.profileReservations.delete(reservation);
-          const subscription: NatsSubscriptionSnapshot = {
-            state: priorSubscription.generation === null ? "idle" : "stopped",
-            generation: priorSubscription.generation,
-            subject: priorSubscription.subject,
-            counters: priorSubscription.counters,
-          };
-          const connection: NatsConnectionSnapshot = { state: "disconnected", profile: null };
           if (intent === this.connectionIntent && !this.closing) {
-            this.subscription = subscription;
-            this.cleanupFailed = false;
-            this.connection = connection;
-            this.emitSubscription(context);
-            this.emitConnection(context);
+            const ownsSubscription = subscriptionIntent === this.subscriptionIntent;
+            if (ownsSubscription) {
+              this.changeSubscription(subscription, subscription.revision);
+              this.cleanupFailed = false;
+            }
+            this.changeConnection(connection, connection.revision);
+            if (ownsSubscription) this.emitSubscription(context, subscription);
+            this.emitConnection(context, connection);
           }
           return { connection, subscription };
         } catch (error) {
           if (intent === this.connectionIntent && !this.closing) {
             this.cleanupFailed = true;
-            this.connection = {
+            this.changeConnection({
               state: "failed",
               profile: this.connection.profile,
               failure: natsCleanupFailure(error).failure,
-            };
+            });
             this.emitConnection(context);
           }
           throw natsCleanupFailure(error);
@@ -353,8 +377,9 @@ export class NatsApplicationSession {
       },
       () => undefined,
     );
-    this.emitSubscription(context);
-    this.emitConnection(context);
+    const announced = this.snapshot();
+    this.emitSubscription(context, announced.subscription);
+    this.emitConnection(context, announced.connection);
     return operation;
   }
   shutdown(): Promise<void> {
@@ -386,23 +411,45 @@ export class NatsApplicationSession {
       counters: this.records?.counters() ?? this.subscription.counters,
     };
   }
+  private nextConnectionRevision(): number {
+    this.connectionRevision = natsInteger(this.connectionRevision + 1);
+    return this.connectionRevision;
+  }
+  private nextSubscriptionRevision(): number {
+    this.subscriptionRevision = natsInteger(this.subscriptionRevision + 1);
+    return this.subscriptionRevision;
+  }
+  private changeConnection(
+    snapshot: Omit<NatsConnectionSnapshot, "revision">,
+    revision = this.nextConnectionRevision(),
+  ): NatsConnectionSnapshot {
+    this.connection = { ...snapshot, revision };
+    return this.connection;
+  }
+  private changeSubscription(
+    snapshot: Omit<NatsSubscriptionSnapshot, "revision">,
+    revision = this.nextSubscriptionRevision(),
+  ): NatsSubscriptionSnapshot {
+    this.subscription = { ...snapshot, revision };
+    return this.subscription;
+  }
   private revokeSubscription(): void {
     this.subscriptionIntent += 1;
     this.subscriptionController?.abort();
     this.records?.close();
     this.stopPromise = undefined;
     if (this.subscription.generation !== null && this.subscription.state !== "stopped")
-      this.subscription = { ...this.subscriptionSnapshot(), state: "stopping" };
+      this.changeSubscription({ ...this.subscriptionSnapshot(), state: "stopping" });
   }
   private finishStoppedSubscription(): void {
     if (this.subscription.state !== "stopping") return;
     const snapshot = this.subscriptionSnapshot();
-    this.subscription = {
+    this.changeSubscription({
       state: "stopped",
       generation: snapshot.generation,
       subject: snapshot.subject,
       counters: snapshot.counters,
-    };
+    });
   }
   private currentSubscription(intent: number, connectionIntent: number): boolean {
     return (
@@ -434,16 +481,17 @@ export class NatsApplicationSession {
     if (this.closing || intent !== this.connectionIntent) return;
     this.connectionController?.abort();
     this.revokeSubscription();
-    this.connection = { state: "failed", profile: this.connection.profile, failure };
+    this.changeConnection({ state: "failed", profile: this.connection.profile, failure });
     if (this.subscription.generation !== null && this.subscription.state !== "stopped")
-      this.subscription = {
+      this.changeSubscription({
         ...this.subscriptionSnapshot(),
         state: "failed",
         failure: this.subscription.failure ?? failure,
-      };
+      });
     const reservations = [...this.profileReservations.keys()];
-    this.emitSubscription(context);
-    this.emitConnection(context);
+    const announced = this.snapshot();
+    this.emitSubscription(context, announced.subscription);
+    this.emitConnection(context, announced.connection);
     void this.work
       .track(() => this.engine.disconnect())
       .then(
@@ -453,11 +501,11 @@ export class NatsApplicationSession {
         (cause: unknown) => {
           this.cleanupFailed = true;
           if (!this.closing && intent === this.connectionIntent) {
-            this.connection = {
+            this.changeConnection({
               state: "failed",
               profile: this.connection.profile,
               failure: natsCleanupFailure(cause).failure,
-            };
+            });
             this.emitConnection(context);
           }
         },
@@ -473,31 +521,34 @@ export class NatsApplicationSession {
       return;
     this.subscriptionController?.abort();
     this.records?.close();
-    this.subscription = {
+    this.changeSubscription({
       ...this.subscriptionSnapshot(),
       state: "failed",
       failure: safeNatsOperationFailure(error),
-    };
+    });
     this.emitSubscription(context);
     void this.work
       .track(() => this.engine.stopSubscription())
       .catch((cause: unknown) => {
         if (this.currentSubscription(intent, connectionIntent)) {
           this.cleanupFailed = true;
-          this.subscription = {
+          this.changeSubscription({
             ...this.subscriptionSnapshot(),
             state: "failed",
             failure: natsCleanupFailure(cause).failure,
-          };
+          });
           this.emitSubscription(context);
         }
       });
   }
-  private emitConnection(context: NatsSessionContext): void {
-    this.emit({ event: "connection.state", payload: this.connection, context });
+  private emitConnection(context: NatsSessionContext, snapshot = this.connection): void {
+    this.emit({ event: "connection.state", payload: snapshot, context });
   }
-  private emitSubscription(context: NatsSessionContext): void {
-    this.emit({ event: "subscription.changed", payload: this.subscriptionSnapshot(), context });
+  private emitSubscription(
+    context: NatsSessionContext,
+    snapshot = this.subscriptionSnapshot(),
+  ): void {
+    this.emit({ event: "subscription.changed", payload: snapshot, context });
   }
   private emit(change: NatsSessionChange): void {
     if (this.closing) return;

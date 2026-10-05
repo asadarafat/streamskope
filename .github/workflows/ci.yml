@@ -19,7 +19,8 @@ jobs:
   checks:
     name: CI
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # PR11 took about 12.5 minutes before the real NATS workspace scenarios.
+    timeout-minutes: 20
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       STREAMSKOPE_DOCS_URL: https://asadarafat.github.io/streamskope/
@@ -55,6 +56,8 @@ jobs:
           test/e2e/web-observations-recovery.spec.ts
           test/e2e/web-responsive-workbench.spec.ts
           --grep 'keyboard-operable|investigates real lag|persistent resource hierarchy|expanded dock in both themes|main resource page primary'
+      - name: Verify Core NATS live workspace and provider switching in Chromium
+        run: node tools/package/e2e.mjs web test/e2e/web-nats-workspace.spec.ts
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !cancelled() }}
         with:

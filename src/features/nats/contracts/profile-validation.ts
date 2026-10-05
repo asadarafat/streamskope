@@ -202,9 +202,13 @@ export function parseNatsProfileSummary(value: unknown): NatsProfileSummary {
 }
 export function parseNatsProfilesSnapshot(value: unknown): NatsProfilesSnapshot {
   const input = natsObject(value);
-  natsExactKeys(input, ["capability", "profiles"]);
+  natsExactKeys(input, ["revision", "capability", "profiles"]);
   const profiles = natsArray(input.profiles, NATS_LIMITS.profiles).map(parseNatsProfileSummary);
   if (new Set(profiles.map((profile) => profile.id)).size !== profiles.length)
     throw new NatsContractValidationError();
-  return { capability: parseNatsProfileStoreCapability(input.capability), profiles };
+  return {
+    revision: natsInteger(input.revision),
+    capability: parseNatsProfileStoreCapability(input.capability),
+    profiles,
+  };
 }

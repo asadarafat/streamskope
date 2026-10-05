@@ -70,6 +70,7 @@ describe("NATS provider-specific loss evidence and shared delivery ownership", (
       sequence: 2,
       event: "subscription.changed",
       payload: {
+        revision: 1,
         state: "loading",
         generation: "generation-2",
         subject: "qualification.>",

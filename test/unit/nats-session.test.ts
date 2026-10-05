@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { NatsApplicationSession } from "../../src/features/nats/application/session";
+import {
+  NatsApplicationSession,
+  type NatsSessionChange,
+} from "../../src/features/nats/application/session";
 import {
   NatsOperationError,
   natsCancelled,
@@ -178,6 +181,7 @@ describe("Core NATS application lifecycle authority", () => {
     const close = natsDeferred<void>();
     engine.disconnectOperation = (): Promise<void> => close.promise;
     const oldDisconnect = session.disconnect(natsContext);
+    const closing = session.snapshot();
     const replacement = session.connect(
       "profile-2",
       () => Promise.resolve(natsProfile("profile-2")),
@@ -186,7 +190,14 @@ describe("Core NATS application lifecycle authority", () => {
     close.resolve();
     await replacement;
     await session.start("qualification.new", natsContext);
-    expect((await oldDisconnect).subscription.generation).toBe(oldGeneration);
+    const confirmedOld = await oldDisconnect;
+    expect(confirmedOld.subscription.generation).toBe(oldGeneration);
+    expect(confirmedOld.connection.revision).toBeGreaterThan(closing.connection.revision);
+    expect(confirmedOld.subscription.revision).toBeGreaterThan(closing.subscription.revision);
+    expect(confirmedOld.connection.revision).toBeLessThan(session.snapshot().connection.revision);
+    expect(confirmedOld.subscription.revision).toBeLessThan(
+      session.snapshot().subscription.revision,
+    );
     expect(session.snapshot().connection.profile?.id).toBe("profile-2");
     expect(session.snapshot().subscription.state).toBe("streaming");
     await session.shutdown();
@@ -208,6 +219,7 @@ describe("Core NATS application lifecycle authority", () => {
     expect(disconnect).toBeDefined();
     await disconnect;
     expect(session.snapshot().connection.state).toBe("disconnected");
+    expect(session.snapshot().connection.revision).toBeGreaterThan(result.revision);
     await session.shutdown();
   });
   it("returns its confirmed generation when an observer starts replacement interest", async () => {
@@ -233,10 +245,142 @@ describe("Core NATS application lifecycle authority", () => {
     expect(replacement).toBeDefined();
     const next = await replacement;
     expect(next?.generation).not.toBe(result.generation);
+    expect(next?.revision).toBeGreaterThan(result.revision);
     expect(session.snapshot().subscription).toMatchObject({
       state: "streaming",
       subject: "qualification.new",
     });
+    await session.shutdown();
+  });
+  it("captures paired disconnect events and receipts before a reentrant replacement changes state", async () => {
+    const { session } = await connected();
+    await session.start("qualification.old", natsContext);
+    const cleanupContext = { ...natsContext, correlationId: "disconnect-owner" };
+    const replacementContext = { ...natsContext, correlationId: "replacement-owner" };
+    const changes: NatsSessionChange[] = [];
+    let replacement:
+      Promise<ReturnType<NatsApplicationSession["snapshot"]>["connection"]> | undefined;
+    session.subscribe((change) => {
+      changes.push(change);
+      if (
+        change.event === "subscription.changed" &&
+        change.payload.state === "stopped" &&
+        change.context.correlationId === cleanupContext.correlationId
+      )
+        replacement = session.connect(
+          "profile-2",
+          () => Promise.resolve(natsProfile("profile-2")),
+          replacementContext,
+        );
+    });
+    const receipt = await session.disconnect(cleanupContext);
+    expect(replacement).toBeDefined();
+    const current = await replacement;
+    const announced = changes.find(
+      (change) =>
+        change.event === "connection.state" &&
+        change.context.correlationId === cleanupContext.correlationId &&
+        change.payload.state === "disconnected",
+    );
+    expect(announced?.payload).toEqual(receipt.connection);
+    expect(current?.revision).toBeGreaterThan(receipt.connection.revision);
+    expect(receipt.subscription.revision).toBeLessThanOrEqual(
+      session.snapshot().subscription.revision,
+    );
+    expect(session.snapshot().connection.profile?.id).toBe("profile-2");
+    await session.shutdown();
+  });
+  it("keeps a confirmed stop receipt older than replacement interest started by its observer", async () => {
+    const { session } = await connected();
+    const original = await session.start("qualification.old", natsContext);
+    let replacement:
+      Promise<ReturnType<NatsApplicationSession["snapshot"]>["subscription"]> | undefined;
+    session.subscribe((change) => {
+      if (
+        change.event === "subscription.changed" &&
+        change.payload.state === "stopped" &&
+        change.payload.generation === original.generation
+      )
+        replacement = session.start("qualification.new", natsContext);
+    });
+    const stopped = await session.stop(natsContext);
+    expect(stopped.generation).toBe(original.generation);
+    expect(stopped.revision).toBeGreaterThan(original.revision);
+    expect(replacement).toBeDefined();
+    const current = await replacement;
+    expect(current?.revision).toBeGreaterThan(stopped.revision);
+    expect(current?.generation).not.toBe(stopped.generation);
+    await session.shutdown();
+  });
+  it("gives superseded stop confirmation distinct authority between stopping and replacement", async () => {
+    const { engine, session } = await connected();
+    const original = await session.start("qualification.old", natsContext);
+    const close = natsDeferred<void>();
+    engine.stopOperation = (): Promise<void> => close.promise;
+    const pending = session.stop(natsContext);
+    const stopping = session.snapshot().subscription;
+    await vi.waitFor(() => expect(engine.stopCalls).toBe(2));
+    engine.stopOperation = (): Promise<void> => Promise.resolve();
+    const replacement = await session.start("qualification.new", natsContext);
+    close.resolve();
+    const confirmed = await pending;
+    expect(confirmed.generation).toBe(original.generation);
+    expect(confirmed.state).toBe("stopped");
+    expect(confirmed.revision).toBeGreaterThan(stopping.revision);
+    expect(confirmed.revision).toBeLessThan(replacement.revision);
+    expect(session.snapshot().subscription).toEqual(replacement);
+    await session.shutdown();
+  });
+  it.each([false, true])(
+    "keeps a later stop's authority when an earlier disconnect confirms (stop failure: %s)",
+    async (failed) => {
+      const { engine, session } = await connected();
+      await session.start("qualification.old", natsContext);
+      const close = natsDeferred<void>();
+      engine.disconnectOperation = (): Promise<void> => close.promise;
+      const disconnect = session.disconnect(natsContext);
+      await vi.waitFor(() => expect(engine.disconnectCalls).toBe(2));
+      engine.stopOperation = failed
+        ? (): Promise<void> => Promise.reject(natsCleanupFailure())
+        : (): Promise<void> => Promise.resolve();
+      const stop = session.stop(natsContext);
+      if (failed) await expect(stop).rejects.toMatchObject({ failure: { code: "cleanup" } });
+      else await stop;
+      const newer = session.snapshot().subscription;
+      close.resolve();
+      const earlier = await disconnect;
+      expect(earlier.subscription.revision).toBeLessThan(newer.revision);
+      expect(session.snapshot().subscription).toEqual(newer);
+      expect(session.snapshot().connection.state).toBe("disconnected");
+      if (failed) {
+        expect(() =>
+          session.connect(
+            "profile-2",
+            () => Promise.resolve(natsProfile("profile-2")),
+            natsContext,
+          ),
+        ).toThrow(NatsOperationError);
+        await session.disconnect(natsContext);
+        await session.connect(
+          "profile-2",
+          () => Promise.resolve(natsProfile("profile-2")),
+          natsContext,
+        );
+      }
+      await session.shutdown();
+    },
+  );
+  it("advances record counters without changing control-state snapshot authority", async () => {
+    vi.useFakeTimers();
+    const { engine, session } = await connected();
+    const started = await session.start("qualification.*", natsContext);
+    engine.subscriptionOptions!.onMessage(copiedNatsReceipt());
+    await vi.advanceTimersByTimeAsync(100);
+    const afterRecord = session.snapshot().subscription;
+    expect(afterRecord.counters.receivedRecords).toBe(1);
+    expect(afterRecord.revision).toBe(started.revision);
+    const stopped = await session.stop(natsContext);
+    expect(stopped.revision).toBeGreaterThan(afterRecord.revision);
     await session.shutdown();
   });
   it("owns shutdown before a reentrant observer tries to admit more work", async () => {

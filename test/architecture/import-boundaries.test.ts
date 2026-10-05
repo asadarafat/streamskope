@@ -123,6 +123,22 @@ describe("messaging provider isolation", () => {
           'import { StreamSkopeNatsEngine } from "../engine/engine"; export const access=StreamSkopeNatsEngine;',
         rule: "boundaries/dependencies",
       },
+      {
+        file: "src/features/nats/ui/NatsWorkspace.tsx",
+        source:
+          'import { KafkaWorkspace } from "../../kafka/ui/StreamSkopeApp"; export const access=KafkaWorkspace;',
+        rule: "boundaries/dependencies",
+      },
+      {
+        file: "src/features/nats/ui/NatsWorkspace.tsx",
+        source: 'import { connect } from "@nats-io/transport-node"; export const access=connect;',
+        rule: "no-restricted-imports",
+      },
+      ...["nats", "nats/lib/nats-base-client"].map((module) => ({
+        file: "src/features/nats/ui/NatsWorkspace.tsx",
+        source: `import * as sdk from "${module}"; export const access=sdk;`,
+        rule: "no-restricted-imports",
+      })),
     ];
     for (const fixture of fixtures) {
       const [result] = await eslint.lintText(fixture.source, { filePath: fixture.file });
@@ -131,6 +147,18 @@ describe("messaging provider isolation", () => {
         fixture.file,
       ).toContain(fixture.rule);
     }
+  }, 60_000);
+
+  it("permits trusted product composition to register the typed NATS workspace", async () => {
+    const eslint = new ESLint({
+      cwd: repositoryRoot,
+      overrideConfig: [tseslint.configs.disableTypeChecked],
+    });
+    const [result] = await eslint.lintText(
+      'import { createNatsWorkspaceRegistration } from "../../../features/nats/ui/provider-workspace"; export const access=createNatsWorkspaceRegistration;',
+      { filePath: "src/platform/electron/renderer/StreamSkopeProductApp.tsx" },
+    );
+    expect(result?.messages).toEqual([]);
   }, 60_000);
 });
 

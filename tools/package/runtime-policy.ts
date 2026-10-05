@@ -25,6 +25,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/nats/engine/operation-wait.ts",
     // One live-record publication timer, cancelled before stop or replacement.
     "src/features/nats/application/record-buffer.ts",
+    // One post-close focus frame, cancelled on replacement or unmount and scoped to its active grid.
+    "src/features/nats/ui/SubscriptionWorkspace.tsx",
     "src/features/kafka/ui/LatencyWorkspace.tsx",
     // Page-scoped opted-in collection and absolute cooldown/freshness deadlines; disposed on unmount.
     "src/features/kafka/ui/use-observed-health.ts",

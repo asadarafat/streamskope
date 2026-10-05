@@ -20,12 +20,18 @@ wins.
 Desktop and development hosts isolate registered provider routes, event streams
 and shutdown ownership while preserving the existing Kafka host API. Desktop
 event failures mark the affected stream unavailable; replacement subscriptions
-cannot acknowledge events from an earlier subscription. Kafka remains the only
-available messaging provider in the UI at this stage. The hosts now include a
-separately typed Core NATS backend with protected native profiles, verified
-token/TLS connections and confirmed live subscription cleanup. Its operator
-workspace is introduced and qualified separately. Core NATS offers live receipt
+cannot acknowledge events from an earlier subscription. The product now exposes
+**Kafka** and **Core NATS** as built-in messaging providers in the same frame.
+The [Core NATS workspace](../guide/core-nats.md) provides native protected or
+development-session profiles, token authentication, verified TLS, wildcard live
+subscriptions, original payload/header inspection and confirmed stop/disconnect.
+Viewer eviction, application omissions and transport omissions are distinct.
+Provider switching waits for subscription stop and disconnect, retaining the
+current workspace when cleanup fails. Missing native NATS support is explicitly
+unavailable. EDA/NSP remain Kafka connection plugins. Core NATS offers live receipt
 only; it does not provide Kafka offsets, subject inventory or historical replay.
+These source changes do not alter published v0.8.0 installers or Pages; publication
+of a later desktop release is required for a new immutable documentation snapshot.
 
 The product shell now owns shared navigation presentation and layout. Provider
 switching waits for confirmed stream stop and disconnect, retains the current

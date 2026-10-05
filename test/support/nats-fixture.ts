@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -35,6 +36,7 @@ export async function startNatsFixture(
   options: {
     readonly certificate?: "dns-and-ip" | "dns-only";
     readonly authentication?: "token" | "anonymous-restricted";
+    readonly network?: "bridge" | "host-loopback";
   } = {},
 ): Promise<NatsFixture> {
   if (process.platform !== "linux" || (process.arch !== "arm64" && process.arch !== "x64"))
@@ -46,6 +48,7 @@ export async function startNatsFixture(
   const directory = await mkdtemp(join(tmpdir(), "streamskope-nats-"));
   const token = randomBytes(32).toString("hex");
   const anonymous = options.authentication === "anonymous-restricted";
+  const hostLoopback = options.network === "host-loopback";
   const clients = new Set<NatsConnection>();
   const openingClients = new Set<Promise<NatsConnection>>();
   let closing = false;
@@ -53,7 +56,19 @@ export async function startNatsFixture(
   let container: string | undefined;
   let creationStarted = false;
   let disposeWork: Promise<void> | undefined;
+  let portLease: Server | undefined;
   let phase = "private certificate preparation";
+
+  const releasePortLease = async (): Promise<void> => {
+    const lease = portLease;
+    if (lease === undefined) return;
+    if (lease.listening) {
+      await new Promise<void>((accept, reject) => {
+        lease.close((error) => (error === undefined ? accept() : reject(error)));
+      });
+    }
+    portLease = undefined;
+  };
 
   const recoverContainer = async (): Promise<void> => {
     if (container !== undefined || !creationStarted) return;
@@ -114,8 +129,9 @@ export async function startNatsFixture(
             await execute("docker", ["rm", "--force", "--volumes", container], { timeout: 30_000 });
           }
         }),
+        Promise.resolve().then(releasePortLease),
       ]);
-      // Removing the private directory still runs after either client/container failure.
+      // Removing the private directory still runs after client, container, or port lease failure.
       const files = await Promise.allSettled([rm(directory, { recursive: true, force: true })]);
       if ([...cleanup, ...files].some((result) => result.status === "rejected"))
         throw new Error("Owned NATS fixture cleanup could not be confirmed.");
@@ -231,12 +247,30 @@ export async function startNatsFixture(
         "ca.srl",
       ].map((file) => chmod(join(directory, file), 0o600)),
     );
+    let configuredPort = 4222;
+    if (hostLoopback) {
+      phase = "owned loopback port reservation";
+      // Reject stray connections without retaining sockets that could delay lease closure.
+      const lease = createServer((socket) => socket.destroy());
+      portLease = lease;
+      await new Promise<void>((accept, reject) => {
+        lease.once("error", reject);
+        lease.listen(0, "127.0.0.1", () => {
+          lease.off("error", reject);
+          accept();
+        });
+      });
+      const address = lease.address();
+      if (address === null || typeof address === "string")
+        throw new Error("The owned NATS loopback port reservation was invalid.");
+      configuredPort = address.port;
+    }
     await writeFile(
       join(directory, "nats.conf"),
       [
         `server_name: "${name}"`,
-        'host: "0.0.0.0"',
-        "port: 4222",
+        `host: "${hostLoopback ? "127.0.0.1" : "0.0.0.0"}"`,
+        `port: ${configuredPort}`,
         "max_payload: 1048576",
         'write_deadline: "2s"',
         "debug: false",
@@ -292,8 +326,7 @@ export async function startNatsFixture(
         "128m",
         "--cpus",
         "0.5",
-        "--publish",
-        "127.0.0.1::4222",
+        ...(hostLoopback ? ["--network", "host"] : ["--publish", "127.0.0.1::4222"]),
         // Copy secrets through Docker instead of assuming the daemon shares the client's /tmp.
         "--volume",
         "/fixture",
@@ -314,17 +347,22 @@ export async function startNatsFixture(
         timeout: 30_000,
       });
     phase = "owned container start";
+    // Keep the host-loopback port reserved through image/container/file preparation.
+    await releasePortLease();
     await execute("docker", ["start", container], { timeout: 30_000 });
-    phase = "loopback port discovery";
-    const { stdout: mapping } = await execute("docker", ["port", container, "4222/tcp"], {
-      timeout: 10_000,
-    });
-    const match = /^127\.0\.0\.1:([0-9]+)\s*$/u.exec(mapping);
-    if (match === null) {
-      phase = "strict loopback port parsing";
-      throw new Error("Owned NATS fixture has no loopback port.");
+    let port = configuredPort;
+    if (!hostLoopback) {
+      phase = "loopback port discovery";
+      const { stdout: mapping } = await execute("docker", ["port", container, "4222/tcp"], {
+        timeout: 10_000,
+      });
+      const match = /^127\.0\.0\.1:([0-9]+)\s*$/u.exec(mapping);
+      if (match === null) {
+        phase = "strict loopback port parsing";
+        throw new Error("Owned NATS fixture has no loopback port.");
+      }
+      port = Number(match[1]);
     }
-    const port = Number(match[1]);
     if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535)
       throw new Error("Owned NATS fixture port is invalid.");
     const server = `nats://localhost:${port}`;

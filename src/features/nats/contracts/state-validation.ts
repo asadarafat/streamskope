@@ -57,7 +57,7 @@ export function parseNatsHostError(value: unknown): NatsHostError {
 }
 export function parseNatsConnectionSnapshot(value: unknown): NatsConnectionSnapshot {
   const input = natsObject(value);
-  natsExactKeys(input, ["state", "profile"], ["failure"]);
+  natsExactKeys(input, ["revision", "state", "profile"], ["failure"]);
   const state = natsEnum(input.state, [
     "disconnected",
     "connecting",
@@ -77,6 +77,7 @@ export function parseNatsConnectionSnapshot(value: unknown): NatsConnectionSnaps
   }
   if (state === "connected" && profile === null) throw new NatsContractValidationError();
   return {
+    revision: natsInteger(input.revision),
     state,
     profile,
     ...(Object.hasOwn(input, "failure") ? { failure: parseNatsSafeFailure(input.failure) } : {}),
@@ -84,7 +85,7 @@ export function parseNatsConnectionSnapshot(value: unknown): NatsConnectionSnaps
 }
 export function parseNatsSubscriptionSnapshot(value: unknown): NatsSubscriptionSnapshot {
   const input = natsObject(value);
-  natsExactKeys(input, ["state", "generation", "subject", "counters"], ["failure"]);
+  natsExactKeys(input, ["revision", "state", "generation", "subject", "counters"], ["failure"]);
   const state = natsEnum(input.state, [
     "idle",
     "loading",
@@ -104,6 +105,7 @@ export function parseNatsSubscriptionSnapshot(value: unknown): NatsSubscriptionS
   )
     throw new NatsContractValidationError();
   return {
+    revision: natsInteger(input.revision),
     state,
     generation,
     subject,

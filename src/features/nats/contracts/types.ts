@@ -1,7 +1,7 @@
 import type { ProviderHostPort } from "../../../platform/providers/host";
 
 export const NATS_PROVIDER_ID = "nats" as const;
-export const NATS_PROTOCOL_VERSION = 1 as const;
+export const NATS_PROTOCOL_VERSION = 2 as const;
 export const NATS_LIMITS = {
   profiles: 100,
   servers: 8,
@@ -107,6 +107,8 @@ export interface NatsProfileSummary {
   readonly updatedAt: string;
 }
 export interface NatsProfilesSnapshot {
+  /** Monotonic control-state authority within this host lifetime. */
+  readonly revision: number;
   readonly capability: NatsProfileStoreCapability;
   readonly profiles: readonly NatsProfileSummary[];
 }
@@ -133,6 +135,8 @@ export interface NatsSubscriptionCounters {
   readonly transportOmittedRecords: number;
 }
 export interface NatsConnectionSnapshot {
+  /** Captured with this state, independent of transport delivery order. */
+  readonly revision: number;
   readonly state: "disconnected" | "connecting" | "connected" | "disconnecting" | "failed";
   readonly profile: {
     readonly id: string;
@@ -142,6 +146,8 @@ export interface NatsConnectionSnapshot {
   readonly failure?: NatsSafeFailure;
 }
 export interface NatsSubscriptionSnapshot {
+  /** Control-state authority; record counters advance independently. */
+  readonly revision: number;
   readonly state: "idle" | "loading" | "streaming" | "stopping" | "stopped" | "failed";
   readonly generation: string | null;
   readonly subject: string | null;
