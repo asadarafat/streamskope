@@ -33,6 +33,7 @@
     "../../plugins/eda/contracts/**/*.ts",
     "../../plugins/eda/backend/**/*.ts",
     "../../plugins/nsp/contracts/**/*.ts",
-    "../../plugins/nsp/backend/**/*.ts"
+    "../../plugins/nsp/backend/**/*.ts",
+    "../../src/platform/providers/**/*.ts"
   ]
 }

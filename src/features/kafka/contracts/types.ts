@@ -1,4 +1,5 @@
 import type { JsonValue, PluginEvent, PluginSnapshot } from "../../../plugins/contracts";
+import type { ProviderHostPort } from "../../../platform/providers/host";
 
 import type { HostError } from "./host-errors";
 import type { KafkaSavedQuery } from "./query-library";
@@ -934,12 +935,11 @@ export type HostEvent =
 
 export type HostEventListener = (event: HostEvent) => void;
 
-export interface StreamSkopeBackend {
-  execute<Command extends HostCommand>(
-    command: Command,
-  ): Promise<HostCommandResponse<Command["command"]>>;
-  subscribe(listener: HostEventListener): () => void;
-}
+export type KafkaHostExecute = <Command extends HostCommand>(
+  command: Command,
+) => Promise<HostCommandResponse<Command["command"]>>;
+
+export type StreamSkopeBackend = ProviderHostPort<KafkaHostExecute, HostEvent>;
 
 export interface StreamSkopeHost extends StreamSkopeBackend {
   openExternalUrl(url: string): Promise<ExternalUrlOpenResult>;

@@ -64,7 +64,7 @@ describe("browser profile host composition", () => {
       await readFile(join(process.cwd(), "node_modules/jks-js/examples/assets/truststore.jks"))
     ).toString("base64");
     const store = createBrowserKafkaProfileStore();
-    const backend = createKafkaBackend(store);
+    const backend = createKafkaBackend({ profileStore: store });
     const events: HostEvent[] = [];
     backend.subscribe((event) => {
       events.push(event);

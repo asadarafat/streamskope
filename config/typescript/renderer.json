@@ -28,6 +28,7 @@
     "../../plugins/eda/ui/**/*.tsx",
     "../../plugins/nsp/contracts/**/*.ts",
     "../../plugins/nsp/ui/**/*.ts",
-    "../../plugins/nsp/ui/**/*.tsx"
+    "../../plugins/nsp/ui/**/*.tsx",
+    "../../src/platform/providers/**/*.ts"
   ]
 }

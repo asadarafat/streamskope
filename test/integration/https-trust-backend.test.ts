@@ -20,7 +20,7 @@ it("runs verified HTTPS through the production composition and redacts failure d
     } else response.end(fixture.caPem);
   });
   const store = createBrowserKafkaProfileStore();
-  const backend = createKafkaBackend(store);
+  const backend = createKafkaBackend({ profileStore: store });
   const events: HostEvent[] = [];
   backend.subscribe((event) => events.push(event));
   try {

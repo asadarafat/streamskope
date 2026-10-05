@@ -158,6 +158,18 @@ file stores. Browser development and Electron use these same modules. Electron
 windows, IPC, exit prompts and operating-system secret protection stay in
 `src/platform/electron`; shared Node modules cannot import Electron code.
 
+Provider transport contracts live in `src/platform/providers`. Feature hosts keep
+their command-specific execute types; raw wire values stay inside HTTP and IPC
+adapters. `ProviderHostRegistry` seals registered routes with the provider's
+command, response and event codecs, closes admission synchronously, and shares
+one shutdown barrier across every provider. Unknown routes never fall back to
+Kafka. Each provider owns its event stream, sequence and delivery queue; a failed
+stream cannot change a sibling's readiness. Kafka's existing host API, gateway
+paths and IPC channels remain compatibility adapters, and its named backend
+options preserve existing protected profile files and connection plugins.
+Kafka remains the available provider at this stage; registration mechanics do
+not establish a working second provider or live-system qualification.
+
 `src/plugins` owns plugin API version 4, independent SemVer, compatibility intervals
 and bounded JSON/manifest validation. API 2 and API 3 remain supported for existing
 installed and published packages.

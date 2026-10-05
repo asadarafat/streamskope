@@ -4,10 +4,13 @@ import { app, dialog, safeStorage } from "electron";
 
 import { PluginRuntime } from "../../node/plugins/runtime";
 import { PluginStore } from "../../node/plugins/store";
+import { ProviderHostRegistry } from "../../node/provider-host";
+import { createKafkaProviderEndpoint } from "../../node/kafka-provider";
 
 import { confirmPluginExit } from "./plugin-exit";
 import { createElectronKafkaBackend } from "./electron-kafka-backend";
 import { createElectronShell } from "./electron-shell";
+import { createKafkaElectronDeliveryBinding } from "./kafka-provider-delivery";
 import {
   installPackagedRendererProtocol,
   PACKAGED_RENDERER_URL,
@@ -15,6 +18,7 @@ import {
 } from "./packaged-renderer-protocol";
 
 let backend: Awaited<ReturnType<typeof createElectronKafkaBackend>> | undefined;
+let providers: ProviderHostRegistry | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let exitPending = false;
 let restartRequested = false;
@@ -56,20 +60,21 @@ async function requestExit(): Promise<void> {
 
 registerPackagedRendererScheme();
 
-async function shutdown(exitCode: number): Promise<void> {
+function shutdown(exitCode: number): Promise<void> {
   if (shutdownPromise !== undefined) {
     return shutdownPromise;
   }
-  shutdownPromise = (async (): Promise<void> => {
+  shutdownPromise = Promise.resolve().then(async (): Promise<void> => {
     let cleanupFailure: unknown;
     try {
-      await backend?.shutdown();
+      if (providers !== undefined) await providers.shutdown();
+      else await backend?.shutdown();
     } catch (error) {
       cleanupFailure = error;
     }
     if (restartRequested && cleanupFailure === undefined) app.relaunch();
     app.exit(cleanupFailure === undefined ? exitCode : 1);
-  })();
+  });
   return shutdownPromise;
 }
 
@@ -98,8 +103,10 @@ async function start(): Promise<void> {
     userDataPath: app.getPath("userData"),
     plugins,
   });
+  providers = new ProviderHostRegistry([createKafkaProviderEndpoint(backend)]);
   const shell = await createElectronShell({
-    backend,
+    registry: providers,
+    deliveryBindings: [createKafkaElectronDeliveryBinding(backend)],
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl: developmentRendererUrl ?? PACKAGED_RENDERER_URL,
   });

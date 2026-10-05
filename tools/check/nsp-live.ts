@@ -85,16 +85,7 @@ async function main(): Promise<void> {
     });
     return {
       runtime,
-      facade: createKafkaBackend(
-        profileStore,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        runtime,
-      ),
+      facade: createKafkaBackend({ profileStore, plugins: runtime }),
     };
   };
   let { runtime, facade } = host();

@@ -56,22 +56,23 @@ export async function createElectronKafkaBackend(
     new PluginRuntime({
       store: new PluginStore(join(options.userDataPath, "plugins")),
     });
-  const backend = createKafkaBackend(
+  const backend = createKafkaBackend({
     profileStore,
     legacySource,
     ruleStore,
     topicConfigurationHistoryStore,
-    undefined,
     preferenceStore,
-    new AtomicKafkaTrustRecipeFileStore(
+    recipeStore: new AtomicKafkaTrustRecipeFileStore(
       join(options.userDataPath, "templates", "trust-acquisition-recipes.json"),
     ),
     plugins,
-    new AtomicKafkaQueryFileStore(join(options.userDataPath, "queries", "kafka-queries.json")),
-    new AtomicObservationFileStore(
+    queryStore: new AtomicKafkaQueryFileStore(
+      join(options.userDataPath, "queries", "kafka-queries.json"),
+    ),
+    observationStore: new AtomicObservationFileStore(
       join(options.userDataPath, "history", "kafka-observations.json"),
     ),
-  );
+  });
   await plugins.start();
   return backend;
 }

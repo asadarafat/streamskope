@@ -19,6 +19,7 @@ import {
   ElectronShellStartupError,
 } from "../../src/platform/electron/main/electron-shell";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
+import { ProviderWireValidationError } from "../../src/platform/node/provider-host";
 import { DESKTOP_PLATFORM_VERSION, DesktopPlatformContractError } from "../../src/platform/desktop";
 import {
   DESKTOP_ACTION_CHANNEL,
@@ -230,6 +231,10 @@ class FakePreloadIpc implements PreloadIpcRenderer {
 
   removeListener(channel: string, listener: UnknownListener): void {
     this.listeners.get(channel)?.delete(listener);
+  }
+
+  listenerCount(channel: string): number {
+    return this.listeners.get(channel)?.size ?? 0;
   }
 }
 
@@ -476,7 +481,13 @@ describe("Electron main boundary", () => {
           { sender: window.webContents },
           { ...value, id: "retired-command" },
         );
-        await expect(rejection).rejects.toBeInstanceOf(HostContractValidationError);
+        await expect(rejection).rejects.toBeInstanceOf(ProviderWireValidationError);
+        await expect(rejection).rejects.toSatisfy(
+          (error: unknown) =>
+            error instanceof ProviderWireValidationError &&
+            error.stage === "command" &&
+            error.cause instanceof HostContractValidationError,
+        );
         await expect(rejection).rejects.not.toThrow("private-kubernetes-credentials");
         expect(backend.commands).toEqual([]);
       } finally {
@@ -505,7 +516,7 @@ describe("Electron main boundary", () => {
       version: HOST_PROTOCOL_VERSION,
     };
     await expect(handler({ sender: window.webContents }, undeclaredCommand)).rejects.toBeInstanceOf(
-      HostContractValidationError,
+      ProviderWireValidationError,
     );
     expect(backend.commands).toEqual([]);
 
@@ -784,7 +795,12 @@ describe("Electron preload boundary", () => {
           version: HOST_PROTOCOL_VERSION,
         });
       }
-      await Promise.resolve();
+      await vi.waitFor(() => {
+        expect(electronMock.windows[0]?.webContents.sent.at(-1)?.value).toMatchObject({
+          event: "backend.availability",
+          payload: { state: "unavailable" },
+        });
+      });
       expect(backend.commands).toHaveLength(1);
       expect(backend.commands[0]?.command).toBe("messages.stop");
       expect(backend.listenerCount()).toBe(0);
@@ -915,6 +931,8 @@ describe("Electron preload boundary", () => {
     if (host === undefined) {
       throw new Error("Expected the StreamSkope preload host.");
     }
+    const named = exposed.get("streamSkopeProviders") as { readonly kafka: StreamSkopeHost };
+    expect(named.kafka).toBe(host);
 
     expect(Object.keys(host).sort()).toEqual(["execute", "openExternalUrl", "subscribe"]);
     await expect(
@@ -983,9 +1001,20 @@ describe("Electron preload boundary", () => {
         sequence: 3,
         version: HOST_PROTOCOL_VERSION,
       }),
-    ).toThrow(HostContractValidationError);
+    ).not.toThrow();
+    const unavailable: HostEvent = {
+      event: "backend.availability",
+      payload: {
+        recovery: "Desktop event validation failed. Reload the workbench to reconnect.",
+        state: "unavailable",
+      },
+      sequence: 4,
+      version: HOST_PROTOCOL_VERSION,
+    };
+    expect(received).toEqual([event, monitorEvent, unavailable]);
+    expect(ipc.listenerCount(HOST_EVENT_CHANNEL)).toBe(0);
     unsubscribe();
     ipc.emit(HOST_EVENT_CHANNEL, event);
-    expect(received).toEqual([event, monitorEvent]);
+    expect(received).toEqual([event, monitorEvent, unavailable]);
   });
 });

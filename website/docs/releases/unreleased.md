@@ -17,6 +17,12 @@ Cancelled Kafka reads and latency probes keep already-started driver promises
 observed through settlement, preventing unhandled rejections when cancellation
 wins.
 
+Desktop and development hosts isolate registered provider routes, event streams
+and shutdown ownership while preserving the existing Kafka host API. Desktop
+event failures mark the affected stream unavailable; replacement subscriptions
+cannot acknowledge events from an earlier subscription. Kafka remains the only
+available messaging provider at this stage.
+
 Observed health now prioritizes selected-topic findings, measurement coverage and
 investigation actions. Existing resources can be selected from the connected
 profile; collection progress and cooldown are visible. Partition filtering and

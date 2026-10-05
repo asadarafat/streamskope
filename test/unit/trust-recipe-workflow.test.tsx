@@ -33,15 +33,7 @@ function setup(
   host: StreamSkopeHost;
   deliverCommitEvents: () => void;
 } {
-  const backend = createKafkaBackend(
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    recipeStore,
-  );
+  const backend = createKafkaBackend(recipeStore === undefined ? {} : { recipeStore });
   backends.push(backend);
   const commands: HostCommand[] = [];
   let closed = 0;

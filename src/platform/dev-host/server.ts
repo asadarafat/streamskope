@@ -1,19 +1,17 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
-import {
-  HOST_PROTOCOL_VERSION,
-  HostContractValidationError,
-  KAFKA_MESSAGE_LIMITS,
-  parseCorrelatedHostResponse,
-  parseHostCommand,
-  parseHostEvent,
-  type HostEvent,
-  type StreamSkopeBackend,
-} from "../../features/kafka/contracts";
+import { KAFKA_MESSAGE_LIMITS, type StreamSkopeBackend } from "../../features/kafka/contracts";
 import type { PluginRendererAsset } from "../node/plugins/runtime";
+import { createKafkaProviderEndpoint } from "../node/kafka-provider";
+import {
+  ProviderHostRegistry,
+  ProviderWireValidationError,
+  type ProviderEventQueue,
+  type ProviderWireEndpoint,
+} from "../node/provider-host";
+import type { ProviderWireEvent } from "../providers/host";
 
-import { SseClientEventQueue } from "./sse-client-event-queue";
 import {
   developmentOrigin,
   resolveDevelopmentNetwork,
@@ -28,16 +26,28 @@ export interface DevelopmentBackend extends StreamSkopeBackend {
   pluginAsset?(pathname: string): Promise<PluginRendererAsset | undefined>;
 }
 
-export interface DevelopmentHostOptions extends DevelopmentNetworkOptions {
-  readonly backend: DevelopmentBackend;
-  readonly maxCommandBodyBytes?: number;
-  readonly maxEventBytes?: number;
-  readonly maxQueuedEvents?: number;
-  readonly maxQueuedMessageBytes?: number;
-  readonly maxQueuedMessages?: number;
-  readonly port: number;
-  readonly rendererOrigin: string;
-  readonly token: string;
+export type DevelopmentProviderSource =
+  | { readonly backend: DevelopmentBackend; readonly providers?: never }
+  | { readonly providers: ProviderHostRegistry; readonly backend?: never };
+
+export type DevelopmentHostOptions = DevelopmentNetworkOptions &
+  DevelopmentProviderSource & {
+    readonly maxCommandBodyBytes?: number;
+    readonly maxEventBytes?: number;
+    readonly maxQueuedEvents?: number;
+    readonly maxQueuedMessageBytes?: number;
+    readonly maxQueuedMessages?: number;
+    readonly port: number;
+    readonly rendererOrigin: string;
+    readonly token: string;
+  };
+
+export function resolveDevelopmentProviders(
+  source: DevelopmentProviderSource,
+): ProviderHostRegistry {
+  return (
+    source.providers ?? new ProviderHostRegistry([createKafkaProviderEndpoint(source.backend)])
+  );
 }
 
 export interface RunningDevelopmentHost {
@@ -64,13 +74,12 @@ class CommandBodyTooLargeError extends Error {
 interface SseClient {
   blocked: boolean;
   closed: boolean;
-  readonly queue: SseClientEventQueue;
+  readonly queue: ProviderEventQueue;
   readonly response: ServerResponse;
 }
 
 interface HostRuntime {
-  readonly backend: DevelopmentBackend;
-  readonly clients: Set<SseClient>;
+  readonly routes: ReadonlyMap<string, ProviderRouteRuntime>;
   readonly maxCommandBodyBytes: number;
   readonly maxEventBytes: number;
   readonly maxQueuedEvents: number;
@@ -78,6 +87,11 @@ interface HostRuntime {
   readonly maxQueuedMessages: number;
   readonly rendererOrigin: string;
   readonly token: string;
+}
+
+interface ProviderRouteRuntime {
+  readonly endpoint: ProviderWireEndpoint;
+  readonly clients: Set<SseClient>;
 }
 
 function positiveInteger(value: number | undefined, fallback: number, name: string): number {
@@ -144,7 +158,7 @@ function setCors(response: ServerResponse, rendererOrigin: string): void {
 function sendJson(
   response: ServerResponse,
   status: number,
-  body: Readonly<Record<string, unknown>>,
+  body: unknown,
   rendererOrigin?: string,
 ): void {
   if (response.destroyed || response.writableEnded) {
@@ -219,22 +233,26 @@ async function readCommandBody(request: IncomingMessage, maximumBytes: number): 
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function closeSseClient(runtime: HostRuntime, client: SseClient): void {
+function closeSseClient(route: ProviderRouteRuntime, client: SseClient): void {
   if (client.closed) {
     return;
   }
   client.closed = true;
-  runtime.clients.delete(client);
+  route.clients.delete(client);
   if (!client.response.writableEnded) {
     client.response.end();
   }
 }
 
-function serializeEvent(event: HostEvent): string {
+function serializeEvent(event: ProviderWireEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-function flushSseClient(runtime: HostRuntime, client: SseClient): void {
+function flushSseClient(
+  runtime: HostRuntime,
+  route: ProviderRouteRuntime,
+  client: SseClient,
+): void {
   if (client.closed) {
     return;
   }
@@ -246,7 +264,7 @@ function flushSseClient(runtime: HostRuntime, client: SseClient): void {
     }
     const serialized = serializeEvent(next);
     if (Buffer.byteLength(serialized) > runtime.maxEventBytes) {
-      closeSseClient(runtime, client);
+      closeSseClient(route, client);
       return;
     }
     if (!client.response.write(serialized)) {
@@ -256,13 +274,13 @@ function flushSseClient(runtime: HostRuntime, client: SseClient): void {
   }
 }
 
-function sendSse(runtime: HostRuntime, client: SseClient, event: HostEvent): void {
+function sendSse(route: ProviderRouteRuntime, client: SseClient, event: ProviderWireEvent): void {
   if (client.closed) {
     return;
   }
   if (client.blocked) {
     if (!client.queue.enqueue(event)) {
-      closeSseClient(runtime, client);
+      closeSseClient(route, client);
     }
     return;
   }
@@ -272,29 +290,33 @@ function sendSse(runtime: HostRuntime, client: SseClient, event: HostEvent): voi
   }
 }
 
-function broadcastEvent(runtime: HostRuntime, event: HostEvent): void {
-  let parsed: HostEvent;
+function broadcastEvent(runtime: HostRuntime, route: ProviderRouteRuntime, event: unknown): void {
+  let parsed: ProviderWireEvent;
   try {
-    parsed = parseHostEvent(event);
+    parsed = route.endpoint.parseEvent(event);
   } catch {
-    for (const client of [...runtime.clients]) {
-      closeSseClient(runtime, client);
+    for (const client of [...route.clients]) {
+      closeSseClient(route, client);
     }
     return;
   }
   const serialized = serializeEvent(parsed);
   if (Buffer.byteLength(serialized) > runtime.maxEventBytes) {
-    for (const client of [...runtime.clients]) {
-      closeSseClient(runtime, client);
+    for (const client of [...route.clients]) {
+      closeSseClient(route, client);
     }
     return;
   }
-  for (const client of runtime.clients) {
-    sendSse(runtime, client, parsed);
+  for (const client of route.clients) {
+    sendSse(route, client, parsed);
   }
 }
 
-function openEventStream(response: ServerResponse, runtime: HostRuntime): void {
+function openEventStream(
+  response: ServerResponse,
+  runtime: HostRuntime,
+  route: ProviderRouteRuntime,
+): void {
   setCors(response, runtime.rendererOrigin);
   response.statusCode = 200;
   response.setHeader("Cache-Control", "no-cache, no-store");
@@ -307,19 +329,19 @@ function openEventStream(response: ServerResponse, runtime: HostRuntime): void {
   const client: SseClient = {
     blocked: false,
     closed: false,
-    queue: new SseClientEventQueue({
+    queue: route.endpoint.createEventQueue({
       maxEvents: runtime.maxQueuedEvents,
       maxMessageBytes: runtime.maxQueuedMessageBytes,
       maxMessages: runtime.maxQueuedMessages,
     }),
     response,
   };
-  runtime.clients.add(client);
+  route.clients.add(client);
   response.on("close", () => {
-    closeSseClient(runtime, client);
+    closeSseClient(route, client);
   });
   response.on("drain", () => {
-    flushSseClient(runtime, client);
+    flushSseClient(runtime, route, client);
   });
   response.write(": streamskope development host ready\n\n");
 }
@@ -328,6 +350,7 @@ async function executeCommand(
   request: IncomingMessage,
   response: ServerResponse,
   runtime: HostRuntime,
+  route: ProviderRouteRuntime,
 ): Promise<void> {
   if (!header(request, "content-type")?.toLowerCase().startsWith("application/json")) {
     sendProblem(
@@ -357,28 +380,33 @@ async function executeCommand(
     throw error;
   }
 
-  let command;
+  let wire: unknown;
   try {
-    command = parseHostCommand(JSON.parse(body) as unknown);
-  } catch (error) {
-    const summary =
-      error instanceof HostContractValidationError
-        ? error.message
-        : "Command body must contain valid JSON.";
-    sendProblem(response, 400, "INVALID_COMMAND", summary, runtime.rendererOrigin);
-    return;
-  }
-
-  const rawResponse = await runtime.backend.execute(command);
-  let hostResponse;
-  try {
-    hostResponse = parseCorrelatedHostResponse(rawResponse, command);
+    wire = JSON.parse(body) as unknown;
   } catch {
     sendProblem(
       response,
-      502,
-      "INVALID_BACKEND_RESPONSE",
-      "Backend response did not correlate to the submitted command.",
+      400,
+      "INVALID_COMMAND",
+      "Command body must contain valid JSON.",
+      runtime.rendererOrigin,
+    );
+    return;
+  }
+
+  let hostResponse;
+  try {
+    hostResponse = await route.endpoint.dispatch(wire);
+  } catch (error) {
+    if (!(error instanceof ProviderWireValidationError)) throw error;
+    const invalidCommand = error.stage === "command";
+    sendProblem(
+      response,
+      invalidCommand ? 400 : 502,
+      invalidCommand ? "INVALID_COMMAND" : "INVALID_BACKEND_RESPONSE",
+      invalidCommand
+        ? error.message
+        : "Backend response did not correlate to the submitted command.",
       runtime.rendererOrigin,
     );
     return;
@@ -407,24 +435,43 @@ async function handleRequest(
   }
 
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
-  if (request.method === "GET" && url.pathname === "/health") {
+  const selected = resolveProviderRoute(url.pathname, runtime);
+  if (selected === undefined) {
+    sendProblem(response, 404, "NOT_FOUND", "Development-host route was not found.");
+    return;
+  }
+  const { action, route } = selected;
+  if (request.method === "GET" && action === "health") {
     sendJson(
       response,
       200,
-      { protocolVersion: HOST_PROTOCOL_VERSION, status: "ready" },
+      { protocolVersion: route.endpoint.version, status: "ready" },
       runtime.rendererOrigin,
     );
     return;
   }
-  if (request.method === "GET" && url.pathname === "/events") {
-    openEventStream(response, runtime);
+  if (request.method === "GET" && action === "events") {
+    openEventStream(response, runtime, route);
     return;
   }
-  if (request.method === "POST" && url.pathname === "/commands") {
-    await executeCommand(request, response, runtime);
+  if (request.method === "POST" && action === "commands") {
+    await executeCommand(request, response, runtime, route);
     return;
   }
   sendProblem(response, 404, "NOT_FOUND", "Development-host route was not found.");
+}
+
+function resolveProviderRoute(
+  pathname: string,
+  runtime: HostRuntime,
+): { readonly action: string; readonly route: ProviderRouteRuntime } | undefined {
+  const legacy = /^\/(commands|events|health)$/u.exec(pathname);
+  const named = /^\/providers\/([a-z][a-z0-9-]{0,31})\/(commands|events|health)$/u.exec(pathname);
+  const providerId = legacy === null ? named?.[1] : "kafka";
+  const action = legacy?.[1] ?? named?.[2];
+  if (providerId === undefined || action === undefined) return undefined;
+  const route = runtime.routes.get(providerId);
+  return route === undefined ? undefined : { action, route };
 }
 
 function listen(server: Server, port: number, hostname: string): Promise<void> {
@@ -459,106 +506,129 @@ function closeServer(server: Server): Promise<void> {
 export async function startDevelopmentHost(
   options: DevelopmentHostOptions,
 ): Promise<RunningDevelopmentHost> {
-  const network = resolveDevelopmentNetwork(options);
-  validatePort(options.port);
-  validateRendererOrigin(options.rendererOrigin, network.publicHostname);
-  validateToken(options.token);
-  const runtime: HostRuntime = {
-    backend: options.backend,
-    clients: new Set(),
-    maxCommandBodyBytes: positiveInteger(
-      options.maxCommandBodyBytes,
-      DEFAULT_MAX_COMMAND_BODY_BYTES,
-      "maxCommandBodyBytes",
-    ),
-    maxEventBytes: positiveInteger(options.maxEventBytes, DEFAULT_MAX_EVENT_BYTES, "maxEventBytes"),
-    maxQueuedEvents: positiveInteger(
-      options.maxQueuedEvents,
-      DEFAULT_MAX_QUEUED_EVENTS,
-      "maxQueuedEvents",
-    ),
-    maxQueuedMessageBytes: positiveInteger(
-      options.maxQueuedMessageBytes,
-      KAFKA_MESSAGE_LIMITS.queuedBytes,
-      "maxQueuedMessageBytes",
-    ),
-    maxQueuedMessages: positiveInteger(
-      options.maxQueuedMessages,
-      KAFKA_MESSAGE_LIMITS.queuedMessages,
-      "maxQueuedMessages",
-    ),
-    rendererOrigin: options.rendererOrigin,
-    token: options.token,
-  };
-  const server = createServer((request, response) => {
-    void handleRequest(request, response, runtime).catch(() => {
-      sendProblem(
-        response,
-        500,
-        "DEVELOPMENT_HOST_FAILURE",
-        "The local application host could not complete the request.",
-        runtime.rendererOrigin,
-      );
-    });
-  });
-  server.on("clientError", (_error, socket) => {
-    socket.destroy();
-  });
-
-  const unsubscribe = runtime.backend.subscribe((event) => {
-    broadcastEvent(runtime, event);
-  });
-  try {
-    await listen(server, options.port, network.listenHostname);
-  } catch (error) {
-    unsubscribe();
-    const cleanup = await Promise.allSettled([closeServer(server), runtime.backend.shutdown()]);
-    const cleanupFailures = cleanup
-      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-      .map((result) => result.reason as unknown);
-    throw new DevelopmentHostStartupError(
-      `Development host endpoint ${network.listenHostname}:${options.port} is unavailable.`,
-      {
-        cause:
-          cleanupFailures.length === 0
-            ? error
-            : new AggregateError(
-                [error, ...cleanupFailures],
-                "Development host startup and cleanup failed.",
-              ),
-      },
-    );
-  }
-
-  const address = server.address();
-  if (address === null || typeof address === "string") {
-    unsubscribe();
-    await closeServer(server);
-    throw new DevelopmentHostStartupError("Development host did not expose a TCP endpoint.");
-  }
-
+  const providers = resolveDevelopmentProviders(options);
+  let server: Server | undefined;
+  const routes = new Map<string, ProviderRouteRuntime>();
+  const subscriptions: (() => void)[] = [];
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
-    closePromise ??= (async (): Promise<void> => {
-      unsubscribe();
-      for (const client of [...runtime.clients]) {
-        closeSseClient(runtime, client);
-      }
-      const results = await Promise.allSettled([closeServer(server), runtime.backend.shutdown()]);
+    if (closePromise !== undefined) return closePromise;
+    let providerShutdown = Promise.resolve();
+    closePromise = Promise.resolve().then(async (): Promise<void> => {
+      const ownedServer = server;
+      const operations: (() => void | Promise<void>)[] = [
+        ...subscriptions.splice(0),
+        ...[...routes.values()].flatMap((route) =>
+          [...route.clients].map((client) => (): void => closeSseClient(route, client)),
+        ),
+        ...(ownedServer === undefined ? [] : [(): Promise<void> => closeServer(ownedServer)]),
+      ];
+      const results = await Promise.allSettled([
+        ...operations.map((operation) => Promise.resolve().then(operation)),
+        providerShutdown,
+      ]);
       const failures = results
         .filter((result): result is PromiseRejectedResult => result.status === "rejected")
         .map((result) => result.reason as unknown);
       if (failures.length > 0) {
         throw new AggregateError(failures, "Development host did not stop cleanly.");
       }
-    })();
+    });
+    // Publish the completion barrier before closing admission for every owned provider.
+    providerShutdown = providers.shutdown();
     return closePromise;
   };
 
-  return {
-    close,
-    hostname: network.publicHostname,
-    origin: developmentOrigin(network.publicHostname, address.port),
-    port: address.port,
-  };
+  let listeningEndpoint: string | undefined;
+  try {
+    const network = resolveDevelopmentNetwork(options);
+    validatePort(options.port);
+    validateRendererOrigin(options.rendererOrigin, network.publicHostname);
+    validateToken(options.token);
+    for (const endpoint of providers.endpoints()) {
+      routes.set(endpoint.id, { endpoint, clients: new Set() });
+    }
+    const runtime: HostRuntime = {
+      routes,
+      maxCommandBodyBytes: positiveInteger(
+        options.maxCommandBodyBytes,
+        DEFAULT_MAX_COMMAND_BODY_BYTES,
+        "maxCommandBodyBytes",
+      ),
+      maxEventBytes: positiveInteger(
+        options.maxEventBytes,
+        DEFAULT_MAX_EVENT_BYTES,
+        "maxEventBytes",
+      ),
+      maxQueuedEvents: positiveInteger(
+        options.maxQueuedEvents,
+        DEFAULT_MAX_QUEUED_EVENTS,
+        "maxQueuedEvents",
+      ),
+      maxQueuedMessageBytes: positiveInteger(
+        options.maxQueuedMessageBytes,
+        KAFKA_MESSAGE_LIMITS.queuedBytes,
+        "maxQueuedMessageBytes",
+      ),
+      maxQueuedMessages: positiveInteger(
+        options.maxQueuedMessages,
+        KAFKA_MESSAGE_LIMITS.queuedMessages,
+        "maxQueuedMessages",
+      ),
+      rendererOrigin: options.rendererOrigin,
+      token: options.token,
+    };
+    server = createServer((request, response) => {
+      void handleRequest(request, response, runtime).catch(() => {
+        sendProblem(
+          response,
+          500,
+          "DEVELOPMENT_HOST_FAILURE",
+          "The local application host could not complete the request.",
+          runtime.rendererOrigin,
+        );
+      });
+    });
+    server.on("clientError", (_error, socket) => {
+      socket.destroy();
+    });
+
+    for (const route of routes.values()) {
+      subscriptions.push(route.endpoint.subscribe((wire) => broadcastEvent(runtime, route, wire)));
+    }
+    listeningEndpoint = `${network.listenHostname}:${String(options.port)}`;
+    await listen(server, options.port, network.listenHostname);
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      throw new DevelopmentHostStartupError("Development host did not expose a TCP endpoint.");
+    }
+    return {
+      close,
+      hostname: network.publicHostname,
+      origin: developmentOrigin(network.publicHostname, address.port),
+      port: address.port,
+    };
+  } catch (error) {
+    let cause: unknown = error;
+    try {
+      await close();
+    } catch (cleanupError) {
+      cause = new AggregateError(
+        [error, cleanupError],
+        "Development host startup and cleanup failed.",
+      );
+    }
+    if (listeningEndpoint !== undefined) {
+      throw new DevelopmentHostStartupError(
+        `Development host endpoint ${listeningEndpoint} is unavailable.`,
+        { cause },
+      );
+    }
+    if (cause !== error) {
+      throw new DevelopmentHostStartupError("Development host startup and cleanup failed.", {
+        cause,
+      });
+    }
+    throw error;
+  }
 }

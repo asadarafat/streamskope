@@ -1,5 +1,4 @@
 import { writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 
 import {
@@ -14,9 +13,6 @@ import {
 import {
   HOST_PROTOCOL_VERSION,
   parseExternalUrlOpenRequest,
-  parseCorrelatedHostResponse,
-  parseHostCommand,
-  parseHostEvent,
   type StreamSkopeBackend,
 } from "../../../features/kafka/contracts";
 import {
@@ -28,23 +24,38 @@ import {
   DESKTOP_ACTION_CHANNEL,
   DESKTOP_DOCUMENT_SAVE_CHANNEL,
   EXTERNAL_URL_OPEN_CHANNEL,
-  HOST_COMMAND_CHANNEL,
-  HOST_EVENT_CHANNEL,
-  HOST_EVENT_ACK_CHANNEL,
-  HOST_SUBSCRIBE_CHANNEL,
 } from "../preload/channels";
+import { ProviderHostRegistry } from "../../node/provider-host";
+import { createKafkaProviderEndpoint } from "../../node/kafka-provider";
 
 import { PACKAGED_RENDERER_HOST, PACKAGED_RENDERER_SCHEME } from "./packaged-renderer-origin";
-import { ElectronEventDelivery } from "./electron-event-delivery";
+import { attachElectronProviders } from "./electron-provider-routes";
+import { createKafkaElectronDeliveryBinding } from "./kafka-provider-delivery";
+import type { ElectronProviderDeliveryBinding } from "./provider-delivery";
 
-export interface ElectronShellOptions {
-  readonly backend: StreamSkopeBackend & {
-    /** Host-only flow control; does not pause Kafka processing. */
-    setMessagePresentationPaused?(paused: boolean): void;
-  };
+interface ElectronShellBaseOptions {
   readonly preloadPath: string;
   readonly rendererUrl: string;
 }
+
+type KafkaDesktopBackend = StreamSkopeBackend & {
+  /** Host-only flow control; does not pause Kafka processing. */
+  setMessagePresentationPaused?(paused: boolean): void;
+};
+
+export type ElectronShellOptions = ElectronShellBaseOptions &
+  (
+    | {
+        readonly registry: ProviderHostRegistry;
+        readonly deliveryBindings?: readonly ElectronProviderDeliveryBinding[];
+        readonly backend?: never;
+      }
+    | {
+        readonly backend: KafkaDesktopBackend;
+        readonly registry?: never;
+        readonly deliveryBindings?: never;
+      }
+  );
 
 export interface RunningElectronShell {
   readonly window: BrowserWindow;
@@ -239,34 +250,21 @@ export async function createElectronShell(
   });
 
   let cleaned = false;
-  let commandHandlerRegistered = false;
   let desktopDocumentHandlerRegistered = false;
   let externalUrlHandlerRegistered = false;
-  let subscribeHandlerRegistered = false;
-  let acknowledgeHandlerRegistered = false;
-  let delivery: ElectronEventDelivery | undefined;
-  let lastEventSequence = 0;
-  let unsubscribe: (() => void) | undefined;
+  let detachProviders: (() => void) | undefined;
   const cleanup = (): void => {
     if (cleaned) {
       return;
     }
     cleaned = true;
-    if (commandHandlerRegistered) {
-      ipcMain.removeHandler(HOST_COMMAND_CHANNEL);
-    }
     if (desktopDocumentHandlerRegistered) {
       ipcMain.removeHandler(DESKTOP_DOCUMENT_SAVE_CHANNEL);
     }
     if (externalUrlHandlerRegistered) {
       ipcMain.removeHandler(EXTERNAL_URL_OPEN_CHANNEL);
     }
-    if (subscribeHandlerRegistered) {
-      ipcMain.removeHandler(HOST_SUBSCRIBE_CHANNEL);
-    }
-    unsubscribe?.();
-    delivery?.close();
-    if (acknowledgeHandlerRegistered) ipcMain.removeHandler(HOST_EVENT_ACK_CHANNEL);
+    detachProviders?.();
   };
   window.once("closed", cleanup);
   window.once("ready-to-show", () => {
@@ -277,13 +275,6 @@ export async function createElectronShell(
 
   try {
     Menu.setApplicationMenu(Menu.buildFromTemplate(createStreamSkopeMenuTemplate(window)));
-    ipcMain.handle(HOST_COMMAND_CHANNEL, async (event, value) => {
-      assertOwnedRendererSender(event, window.webContents);
-      const command = parseHostCommand(value);
-      const response = await options.backend.execute(command);
-      return parseCorrelatedHostResponse(response, command);
-    });
-    commandHandlerRegistered = true;
     ipcMain.handle(DESKTOP_DOCUMENT_SAVE_CHANNEL, async (event, value) => {
       assertOwnedRendererSender(event, window.webContents);
       const document = parseDesktopTextDocument(value);
@@ -321,71 +312,13 @@ export async function createElectronShell(
       };
     });
     externalUrlHandlerRegistered = true;
-    const subscribeToBackend = (): void => {
-      unsubscribe?.();
-      delivery?.close();
-      let failed = false;
-      const currentDelivery = new ElectronEventDelivery(
-        (event) => {
-          if (!window.isDestroyed()) window.webContents.send(HOST_EVENT_CHANNEL, event);
-        },
-        (reason) => {
-          failed = true;
-          unsubscribe?.();
-          const report = (stopped: boolean): void => {
-            if (cleaned || window.isDestroyed() || delivery !== currentDelivery) return;
-            window.webContents.send(HOST_EVENT_CHANNEL, {
-              event: "backend.availability",
-              payload: {
-                state: "unavailable",
-                recovery: stopped
-                  ? `Renderer delivery failed (${reason}). Consumption stopped; records may be missing from this view. Reload the workbench and restart consumption.`
-                  : "Renderer delivery failed and consumption stop could not be confirmed. Restart StreamSkope before consuming again.",
-              },
-              sequence: ++lastEventSequence,
-              version: HOST_PROTOCOL_VERSION,
-            });
-          };
-          void options.backend
-            .execute({
-              command: "messages.stop",
-              id: randomUUID(),
-              payload: {},
-              version: HOST_PROTOCOL_VERSION,
-            })
-            .then(
-              (response) => report(response.ok),
-              () => report(false),
-            );
-        },
-        (paused) => options.backend.setMessagePresentationPaused?.(paused),
-      );
-      delivery = currentDelivery;
-      unsubscribe = options.backend.subscribe((value) => {
-        const event = parseHostEvent(value);
-        lastEventSequence = Math.max(lastEventSequence, event.sequence);
-        delivery?.enqueue(event);
-      });
-      if (failed) unsubscribe();
-    };
-    ipcMain.handle(HOST_EVENT_ACK_CHANNEL, (event, sequence: unknown) => {
-      assertOwnedRendererSender(event, window.webContents);
-      if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 0) {
-        throw new Error("Invalid desktop event acknowledgement.");
-      }
-      delivery?.acknowledge(sequence);
-    });
-    acknowledgeHandlerRegistered = true;
-    ipcMain.handle(HOST_SUBSCRIBE_CHANNEL, (event, version) => {
-      assertOwnedRendererSender(event, window.webContents);
-      if (version !== HOST_PROTOCOL_VERSION) {
-        throw new Error("Unsupported desktop host subscription version.");
-      }
-      subscribeToBackend();
-      return HOST_PROTOCOL_VERSION;
-    });
-    subscribeHandlerRegistered = true;
-    subscribeToBackend();
+    const registry =
+      options.registry ?? new ProviderHostRegistry([createKafkaProviderEndpoint(options.backend)]);
+    const deliveryBindings =
+      options.registry === undefined
+        ? [createKafkaElectronDeliveryBinding(options.backend)]
+        : (options.deliveryBindings ?? []);
+    detachProviders = attachElectronProviders(window, registry, deliveryBindings);
     await window.loadURL(options.rendererUrl);
   } catch (error) {
     cleanup();

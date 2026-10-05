@@ -7,7 +7,7 @@ import {
   type KafkaExploredMessage,
   type KafkaLiveRuleEvaluation,
 } from "../../src/features/kafka/contracts";
-import { SseClientEventQueue } from "../../src/platform/dev-host/sse-client-event-queue";
+import { SseClientEventQueue } from "../../src/platform/node/kafka-sse-event-queue";
 
 const evaluated: KafkaLiveRuleEvaluation = {
   activeMatchCount: 0,

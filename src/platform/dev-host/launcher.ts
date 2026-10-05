@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 
+import type { PluginRendererAsset } from "../node/plugins/runtime";
+
 import {
   developmentOrigin,
   resolveDevelopmentNetwork,
@@ -7,18 +9,20 @@ import {
 } from "./network";
 import {
   startDevelopmentHost,
-  type DevelopmentBackend,
+  resolveDevelopmentProviders,
+  type DevelopmentProviderSource,
   type RunningDevelopmentHost,
 } from "./server";
 import { startViteRenderer } from "./vite-renderer";
 
-export interface WebDevelopmentLaunchOptions extends DevelopmentNetworkOptions {
-  readonly backend: DevelopmentBackend;
-  readonly hostPort: number;
-  readonly rendererPort: number;
-  readonly rendererRoot: string;
-  readonly token?: string;
-}
+export type WebDevelopmentLaunchOptions = DevelopmentNetworkOptions &
+  DevelopmentProviderSource & {
+    readonly hostPort: number;
+    readonly rendererPort: number;
+    readonly rendererRoot: string;
+    readonly token?: string;
+    readonly pluginAsset?: (pathname: string) => Promise<PluginRendererAsset | undefined>;
+  };
 
 export interface RunningWebDevelopment {
   readonly browserUrl: string;
@@ -28,7 +32,9 @@ export interface RunningWebDevelopment {
 }
 
 async function closeAll(services: readonly { close(): Promise<void> }[]): Promise<void> {
-  const results = await Promise.allSettled(services.map((service) => service.close()));
+  const results = await Promise.allSettled(
+    services.map((service) => Promise.resolve().then(() => service.close())),
+  );
   const failures = results
     .filter((result): result is PromiseRejectedResult => result.status === "rejected")
     .map((result) => result.reason as unknown);
@@ -42,6 +48,8 @@ export async function launchWebDevelopment(
 ): Promise<RunningWebDevelopment> {
   const token = options.token ?? randomBytes(32).toString("base64url");
   const gatewayToken = randomBytes(32).toString("base64url");
+  const providers = resolveDevelopmentProviders(options);
+  const pluginAsset = options.pluginAsset ?? options.backend?.pluginAsset?.bind(options.backend);
   let network;
   let renderer;
   try {
@@ -53,13 +61,11 @@ export async function launchWebDevelopment(
       hostToken: token,
       port: options.rendererPort,
       root: options.rendererRoot,
-      ...(options.backend.pluginAsset === undefined
-        ? {}
-        : { pluginAsset: options.backend.pluginAsset.bind(options.backend) }),
+      ...(pluginAsset === undefined ? {} : { pluginAsset }),
     });
   } catch (error) {
     try {
-      await options.backend.shutdown();
+      await providers.shutdown();
     } catch (cleanupError) {
       throw new AggregateError(
         [error, cleanupError],
@@ -73,7 +79,7 @@ export async function launchWebDevelopment(
   let host: RunningDevelopmentHost;
   try {
     host = await startDevelopmentHost({
-      backend: options.backend,
+      providers,
       ...network,
       port: options.hostPort,
       rendererOrigin: renderer.origin,
