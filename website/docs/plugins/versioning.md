@@ -76,6 +76,21 @@ preview desktops can receive them when their declared host requirements match.
 | NSP Capture plugin  | `plugins/nsp/v0.1.0` / `streamskope-nsp-v0.1.0.skope-plugin`                 |
 | NSP helper download | `streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml` in the NSP plugin release |
 
+New plugin release builds additionally provide a publisher-signed portable asset,
+for example `streamskope-nsp-portable-v0.1.0.skope-plugin`. It encloses the exact
+bytes of the primary package and uses the same manifest and plugin version; it is
+not another release or another compatibility declaration. The primary asset stays
+available for desktops using the existing GitHub catalog. Older plugin releases
+are not retroactively signed. Desktop file installation is a separate capability;
+consult the documented desktop's availability notice before using an offline path.
+
+A signature authenticates the publisher and complete package, including bundled
+resources. It does not widen compatibility or prove live target qualification.
+The desktop accepts only its trusted publisher keys and official plugin identities.
+Rewrapping identical code in the signed format does not justify stopping active
+work or replacing an already healthy installation. Different package contents
+under an existing plugin ID and version remain an error.
+
 The tags above are release outputs, not triggers. A maintainer selects **desktop**,
 **eda** or **nsp** and enters its version in **Actions → Release → Run workflow**
 from `main`. Release CI qualifies the exact source, assigns the version in a

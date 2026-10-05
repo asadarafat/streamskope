@@ -656,9 +656,29 @@ a released NSP plugin could provide:
 
 ```text
 streamskope-nsp-v0.1.0.skope-plugin
+streamskope-nsp-portable-v0.1.0.skope-plugin
 streamskope-nsp-v0.1.0-plugin.json
 streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml
 ```
+
+Production plugin packaging requires `STREAMSKOPE_PLUGIN_SIGNING_KEY_B64`, a
+base64-encoded Ed25519 PKCS8 PEM private key matching a public key in
+`src/platform/node/plugins/publishers.ts`. Release CI supplies it only to the
+selected plugin packaging step after qualification. Missing or mismatched keys
+fail packaging. Local development builds remain unsigned and do not need this
+secret. Keep the protected private-key backup outside Git and preserve it across
+repository resets; GitHub cannot return an existing secret's value.
+
+The signed portable envelope covers a domain-separated publisher identity and the
+exact primary-package bytes. Release assembly verifies its signature, primary
+payload equality and shared manifest before drafting a release. Do not publish
+another manifest for the portable asset. The host bounds the portable envelope
+at 48 MiB and its enclosed original package at 32 MiB, retains the original archive
+and verifies it again before loading. Tests inject ephemeral public-only trust
+registries at the host composition boundary; no renderer or environment input can
+replace production publisher trust. Key rotation requires a desktop containing
+the new public key before signing packages with it. Desktop plugin signing and EDA
+cluster-app signing are separate trust domains.
 
 The NSP bundle contains `nsp-capture.workflow.yaml` as a declared SHA256-verified
 resource; the separate YAML download contains identical bytes. Maintain that
@@ -694,8 +714,8 @@ Failed backend or renderer activation restores the previous verified version whe
 available; a stopped capture must be resumed explicitly. Unrelated Kafka sessions
 remain available. API 2 introduced these lifecycle hooks; API 3 added explicit
 compatibility identities and resources. API 4 uses independent SemVer and an
-inclusive minimum/exclusive maximum desktop interval. Host protocol 28 carries
-activation identities and versioned snapshots. Existing API 2 and API 3 packages
+inclusive minimum/exclusive maximum desktop interval. Host protocol 28 introduced
+activation identities and versioned snapshots; the current paired host protocol is 50. Existing API 2 and API 3 packages
 retain their legacy versions and asset names and remain loadable on the new host.
 A compatible API 4 package supersedes either legacy generation; within API 4,
 updates follow SemVer precedence. Earlier unreleased API 1 packages
@@ -720,7 +740,7 @@ run for a plugin release. A desktop release is not required for a plugin fix
 supported by the current host API.
 
 The development source implements plugin API **4**. EDA/NSP plugins each declare
-host compatibility **>=0.2.0, <0.3.0**; these bounds do not assign the desktop's
+host compatibility **>=0.4.0, <0.8.0**; these bounds do not assign the desktop's
 next version. Publish a compatible supporting desktop before announcing API 4
 plugins as usable. The original **v0.1.0+build.1** and its API **3** assets remain
 published and immutable. Keep source-only changes marked unreleased until their
@@ -746,7 +766,7 @@ artifact; repackage to obtain a new development identity, then install it.
 Released packages require a matching release desktop for qualification.
 
 For source plugin QA, run `npm run package -- plugin` to build both plugins, then
-`npm run dev`. Open **Preferences → Plugins → Refresh plugins** and choose **Install**
+`npm run dev`. Open **Preferences → Plugins → Check for updates** and choose **Install**
 or **Update to** the new development version. The browser development host reads
 `dist/plugin-package/` again on refresh; startup neither builds plugins nor downloads
 published packages. Rebuild after source changes, then refresh and update normally.

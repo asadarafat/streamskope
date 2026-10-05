@@ -7,7 +7,17 @@ import { promisify } from "node:util";
 
 import { afterEach, expect, it } from "vitest";
 
-import { preparePluginReleaseNotes, readReleaseChangelog } from "../../tools/package/release";
+import {
+  preparePluginReleaseNotes,
+  readReleaseChangelog,
+  validatePluginReleaseAssets,
+} from "../../tools/package/release";
+import { parsePluginManifest } from "../../src/plugins/validation";
+import { OFFICIAL_PLUGINS, officialPluginAssets } from "../../src/platform/node/plugins/official";
+import { encodePluginPackage, parsePluginPackage } from "../../src/platform/node/plugins/package";
+import type { TrustedPluginPublisher } from "../../src/platform/node/plugins/publishers";
+import { createPortablePluginRelease } from "../../tools/package/plugin";
+import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
 const execute = promisify(execFile);
 const directories: string[] = [];
@@ -28,6 +38,8 @@ async function fixture(component: "desktop" | "eda" | "nsp" = "eda"): Promise<{
   output: string;
   tag: string;
   evidence: Record<string, unknown>;
+  publishers: readonly TrustedPluginPublisher[];
+  encodedKey: string;
 }> {
   const root = await mkdtemp(join(tmpdir(), "streamskope-release-notes-"));
   directories.push(root);
@@ -37,6 +49,7 @@ async function fixture(component: "desktop" | "eda" | "nsp" = "eda"): Promise<{
   const reviewed = join(root, "reviewed.md");
   const output = join(root, "notes.md");
   const tag = component === "desktop" ? "v0.2.0" : `plugins/${component}/v0.2.0`;
+  const publisher = pluginPublisherFixture();
   const evidence = {
     schemaVersion: 1,
     repository: "example/project",
@@ -54,19 +67,39 @@ async function fixture(component: "desktop" | "eda" | "nsp" = "eda"): Promise<{
     "## Upgrade\n\nBack up saved profiles.\n\n## Known limitations\n\nLive tests are unverified.\n",
   );
   if (component !== "desktop") {
-    const source = JSON.parse(
-      await readFile(`plugins/${component}/manifest.json`, "utf8"),
-    ) as Record<string, unknown>;
+    const source = parsePluginManifest({
+      ...(JSON.parse(await readFile(`plugins/${component}/manifest.json`, "utf8")) as Record<
+        string,
+        unknown
+      >),
+      version: "0.2.0",
+    });
+    const assets = officialPluginAssets(
+      OFFICIAL_PLUGINS.find((entry) => entry.directory === component)!,
+      source.version,
+    );
+    const contents = new Map<string, Uint8Array>([
+      ["backend.cjs", Buffer.from("exports.activate = () => ({});")],
+      ["renderer.js", Buffer.from("export default {};")],
+    ]);
+    for (const resource of source.resources ?? []) {
+      const bytes = await readFile(`plugins/${component}/resources/${resource.path}`);
+      contents.set(resource.path, bytes);
+      await writeFile(join(directory, `${assets.prefix}-${resource.path}`), bytes);
+    }
+    const primary = encodePluginPackage(source, contents);
+    await writeFile(join(directory, assets.manifestAsset), JSON.stringify(source));
+    await writeFile(join(directory, assets.packageAsset), primary);
     await writeFile(
-      join(directory, "capture-plugin.json"),
-      JSON.stringify({ ...source, version: "0.2.0" }),
+      join(directory, assets.portablePackageAsset),
+      createPortablePluginRelease(primary, publisher.encodedKey, publisher.publishers),
     );
   }
-  return { root, directory, changelog, reviewed, output, tag, evidence };
+  return { root, directory, changelog, reviewed, output, tag, evidence, ...publisher };
 }
 
 it.each(["eda", "nsp"] as const)(
-  "assembles %s reviewed guidance, artifact compatibility and generated changes through the package command",
+  "assembles %s guidance and compatibility only after verifying matching primary and signed portable artifacts",
   async (component) => {
     const files = await fixture(component);
     const args = [
@@ -83,8 +116,15 @@ it.each(["eda", "nsp"] as const)(
       files.changelog,
       files.output,
     ];
-    await execute(process.execPath, args, { timeout: 15000 });
-    const notes = await readFile(files.output, "utf8");
+    const notes = await preparePluginReleaseNotes(
+      files.directory,
+      component,
+      "0.2.0",
+      commit,
+      files.reviewed,
+      files.changelog,
+      files.publishers,
+    );
     expect(notes).toContain(`# ${component.toUpperCase()} Capture 0.2.0`);
     expect(notes).toContain("Back up saved profiles.");
     expect(notes).toContain("Live tests are unverified.");
@@ -94,12 +134,14 @@ it.each(["eda", "nsp"] as const)(
     );
     expect(notes).toContain(changes.trim());
     expect(notes).toContain(`Source commit: ${commit} (tag ${files.tag}).`);
+    expect(notes).toContain("portable download is publisher-signed");
     if (component === "nsp")
       expect(notes).toContain("Included resource: nsp-capture.workflow.yaml (SHA256");
-    await expect(execute(process.execPath, args, { timeout: 15000 })).rejects.toMatchObject({
-      code: 1,
-    });
-    expect(await readFile(files.output, "utf8")).toBe(notes);
+    // The CLI has no environment mechanism to trust an ephemeral fixture signer.
+    await expect(execute(process.execPath, args, { timeout: 15000 })).rejects.toThrow(
+      /publisher|signature/u,
+    );
+    await expect(readFile(files.output)).rejects.toMatchObject({ code: "ENOENT" });
   },
 );
 
@@ -194,6 +236,7 @@ it("refuses a wrong plugin artifact, ambiguous manifests, missing evidence and e
       commit,
       files.reviewed,
       files.changelog,
+      files.publishers,
     ),
   ).rejects.toThrow("Packaged plugin");
   await writeFile(join(files.directory, "extra-plugin.json"), "{}");
@@ -205,6 +248,7 @@ it("refuses a wrong plugin artifact, ambiguous manifests, missing evidence and e
       commit,
       files.reviewed,
       files.changelog,
+      files.publishers,
     ),
   ).rejects.toThrow("exactly one");
   await rm(join(files.directory, "extra-plugin.json"));
@@ -217,10 +261,83 @@ it("refuses a wrong plugin artifact, ambiguous manifests, missing evidence and e
       commit,
       files.reviewed,
       files.changelog,
+      files.publishers,
     ),
   ).rejects.toThrow("reviewed upgrade");
   await rm(`${files.changelog}.json`);
   await expect(readReleaseChangelog(files.changelog, "eda", "0.2.0", commit)).rejects.toMatchObject(
     { code: "ENOENT" },
   );
+});
+
+it.each(["primary", "portable"] as const)(
+  "refuses plugin notes when the %s package is missing",
+  async (missing) => {
+    const files = await fixture();
+    const assets = officialPluginAssets(OFFICIAL_PLUGINS[0], "0.2.0");
+    await rm(
+      join(
+        files.directory,
+        missing === "primary" ? assets.packageAsset : assets.portablePackageAsset,
+      ),
+    );
+    await expect(
+      validatePluginReleaseAssets(files.directory, "eda", "0.2.0", files.publishers),
+    ).rejects.toThrow("primary, signed portable");
+  },
+);
+
+it("refuses unsigned portable packages and different code even when signed by the trusted fixture publisher", async () => {
+  const files = await fixture();
+  const assets = officialPluginAssets(OFFICIAL_PLUGINS[0], "0.2.0");
+  const primary = await readFile(join(files.directory, assets.packageAsset));
+  await writeFile(join(files.directory, assets.portablePackageAsset), primary);
+  await expect(
+    validatePluginReleaseAssets(files.directory, "eda", "0.2.0", files.publishers),
+  ).rejects.toThrow(/signed|portable|format/u);
+  const parsed = parsePluginPackage(primary);
+  const changed = new Map(parsed.files);
+  changed.set("backend.cjs", Buffer.from("exports.activate = () => ({ changed: true });"));
+  const other = encodePluginPackage(parsed.manifest, changed);
+  await writeFile(
+    join(files.directory, assets.portablePackageAsset),
+    createPortablePluginRelease(other, files.encodedKey, files.publishers),
+  );
+  await expect(
+    validatePluginReleaseAssets(files.directory, "eda", "0.2.0", files.publishers),
+  ).rejects.toThrow("identical shared release manifest and payload");
+});
+
+it("refuses an altered shared manifest and a second portable manifest", async () => {
+  const files = await fixture();
+  const assets = officialPluginAssets(OFFICIAL_PLUGINS[0], "0.2.0");
+  const source = JSON.parse(
+    await readFile(join(files.directory, assets.manifestAsset), "utf8"),
+  ) as Record<string, unknown>;
+  await writeFile(
+    join(files.directory, assets.manifestAsset),
+    JSON.stringify({ ...source, description: "An unverified artifact description" }),
+  );
+  await expect(
+    validatePluginReleaseAssets(files.directory, "eda", "0.2.0", files.publishers),
+  ).rejects.toThrow("identical shared release manifest and payload");
+  await writeFile(
+    join(files.directory, "streamskope-eda-portable-v0.2.0-plugin.json"),
+    JSON.stringify(source),
+  );
+  await expect(
+    validatePluginReleaseAssets(files.directory, "eda", "0.2.0", files.publishers),
+  ).rejects.toThrow("exactly one");
+});
+
+it("refuses an exported NSP workflow whose bytes differ from the signed bundled workflow", async () => {
+  const files = await fixture("nsp");
+  const assets = officialPluginAssets(OFFICIAL_PLUGINS[1], "0.2.0");
+  await writeFile(
+    join(files.directory, `${assets.prefix}-nsp-capture.workflow.yaml`),
+    "changed workflow",
+  );
+  await expect(
+    validatePluginReleaseAssets(files.directory, "nsp", "0.2.0", files.publishers),
+  ).rejects.toThrow("exported plugin resource");
 });

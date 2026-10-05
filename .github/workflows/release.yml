@@ -175,7 +175,10 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
-      - run: npm run package -- plugin "$RELEASE_COMPONENT"
+      - name: Package the compatible plugin and signed portable download
+        run: npm run package -- plugin "$RELEASE_COMPONENT"
+        env:
+          STREAMSKOPE_PLUGIN_SIGNING_KEY_B64: ${{ secrets.STREAMSKOPE_PLUGIN_SIGNING_KEY_B64 }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: desktop-plugins

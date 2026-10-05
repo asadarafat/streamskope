@@ -15,6 +15,13 @@ Local retry verifies bytes and compatibility and retains recoverable state after
 an activation failure. Cached catalog metadata alone cannot install a new package
 offline.
 
+Plugin release tooling now produces a publisher-signed portable package alongside
+the existing catalog package. Host verification authenticates its complete payload
+against shipped Ed25519 public keys before parsing or execution; primary downloads
+and existing installations keep their original format. Identical payloads across
+formats retain the same immutable plugin identity. This prepares portable delivery;
+it does not make older downloads signed or publish a file-installing desktop.
+
 Application shutdown rejects new requests immediately and waits for every owned
 cleanup to finish, including environment comparisons that open a separate saved
 destination. A failed cleanup cannot make shutdown finish while another cleanup

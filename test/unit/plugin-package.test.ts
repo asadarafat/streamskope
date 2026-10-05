@@ -1,12 +1,21 @@
+import { generateKeyPairSync } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import type { PluginManifest } from "../../src/plugins/contracts";
 import {
   encodePluginPackage,
   MAX_PLUGIN_RESOURCE_BYTES,
+  MAX_PLUGIN_ARCHIVE_BYTES,
+  MAX_PLUGIN_PACKAGE_BYTES,
   parsePluginPackage,
+  parsePortablePluginPackage,
+  pluginPackagePayloadBytes,
   pluginPackageSha256,
+  signPortablePluginPackage,
 } from "../../src/platform/node/plugins/package";
+import { TRUSTED_PLUGIN_PUBLISHERS } from "../../src/platform/node/plugins/publishers";
+import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
 const manifest: PluginManifest = {
   id: "streamskope.eda",
@@ -57,6 +66,154 @@ function resourceEnvelope(): ReturnType<typeof envelope> {
 }
 
 describe("desktop plugin packages", () => {
+  it("verifies portable Ed25519 provenance without changing its exact primary content identity", () => {
+    const fixture = pluginPublisherFixture();
+    const primary = Buffer.from(JSON.stringify(envelope()));
+    const keyId = fixture.publishers[0]!.keyId;
+    const portable = signPortablePluginPackage(
+      primary,
+      keyId,
+      Buffer.from(fixture.encodedKey, "base64").toString(),
+    );
+    const parsed = parsePortablePluginPackage(
+      portable,
+      pluginPackageSha256(portable),
+      fixture.publishers,
+    );
+    expect(parsed.manifest).toEqual(manifest);
+    expect(parsed.publisher).toEqual({ keyId, name: "Test release publisher" });
+    expect(parsed.sha256).toBe(pluginPackageSha256(portable));
+    expect(parsed.contentSha256).toBe(pluginPackageSha256(primary));
+    expect(parsed.sha256).not.toBe(parsed.contentSha256);
+    expect(parsePluginPackage(primary).contentSha256).toBe(parsed.contentSha256);
+    expect(parsePluginPackage(primary).publisher).toBeUndefined();
+    expect(pluginPackagePayloadBytes(portable, fixture.publishers)).toEqual(primary);
+    expect(pluginPackagePayloadBytes(primary)).toEqual(primary);
+    expect(() => parsePortablePluginPackage(primary, undefined, fixture.publishers)).toThrow(
+      /signed portable/u,
+    );
+    expect(() => parsePortablePluginPackage(portable)).toThrow(/not trusted/u);
+  });
+
+  it("binds key identity and exact payload bytes, including when another trusted ID uses the same public key", () => {
+    const fixture = pluginPublisherFixture();
+    const primary = Buffer.from(JSON.stringify(envelope()));
+    const portable = signPortablePluginPackage(
+      primary,
+      fixture.publishers[0]!.keyId,
+      Buffer.from(fixture.encodedKey, "base64").toString(),
+    );
+    const outer = JSON.parse(Buffer.from(portable).toString()) as Record<string, unknown>;
+    const aliases = [
+      ...fixture.publishers,
+      { ...fixture.publishers[0]!, keyId: "same-public-key-alias" },
+    ];
+    expect(() =>
+      parsePortablePluginPackage(
+        Buffer.from(JSON.stringify({ ...outer, keyId: "same-public-key-alias" })),
+        undefined,
+        aliases,
+      ),
+    ).toThrow(/signature/u);
+    const changed = {
+      ...outer,
+      payload: Buffer.from("not JSON executable content").toString("base64"),
+    };
+    expect(() =>
+      parsePortablePluginPackage(
+        Buffer.from(JSON.stringify(changed)),
+        undefined,
+        fixture.publishers,
+      ),
+    ).toThrow(/signature/u);
+    const reserializedPrimary = Buffer.from(JSON.stringify(envelope(), null, 2));
+    const wrapped = signPortablePluginPackage(
+      reserializedPrimary,
+      fixture.publishers[0]!.keyId,
+      Buffer.from(fixture.encodedKey, "base64").toString(),
+    );
+    expect(
+      parsePortablePluginPackage(wrapped, undefined, fixture.publishers).contentSha256,
+    ).not.toBe(parsePluginPackage(primary).contentSha256);
+  });
+
+  it("restricts publisher permissions to trusted host IDs and never trusts package-supplied public keys", () => {
+    const fixture = pluginPublisherFixture(["streamskope.nsp"]);
+    const portable = signPortablePluginPackage(
+      Buffer.from(JSON.stringify(envelope())),
+      fixture.publishers[0]!.keyId,
+      Buffer.from(fixture.encodedKey, "base64").toString(),
+    );
+    expect(() => parsePortablePluginPackage(portable, undefined, fixture.publishers)).toThrow(
+      /not authorized/u,
+    );
+    const outer = JSON.parse(Buffer.from(portable).toString()) as Record<string, unknown>;
+    expect(() =>
+      parsePortablePluginPackage(
+        Buffer.from(JSON.stringify({ ...outer, publicKey: fixture.publishers[0]!.publicKey })),
+        undefined,
+        fixture.publishers,
+      ),
+    ).toThrow(/fields/u);
+    expect(Object.isFrozen(TRUSTED_PLUGIN_PUBLISHERS)).toBe(true);
+    expect(
+      TRUSTED_PLUGIN_PUBLISHERS.every(
+        (publisher) => Object.isFrozen(publisher) && Object.isFrozen(publisher.pluginIds),
+      ),
+    ).toBe(true);
+    expect(TRUSTED_PLUGIN_PUBLISHERS[0]?.pluginIds).toEqual(["streamskope.eda", "streamskope.nsp"]);
+  });
+
+  it("rejects malformed portable envelopes, noncanonical data, invalid keys and oversized archives", () => {
+    const fixture = pluginPublisherFixture();
+    const primary = Buffer.from(JSON.stringify(envelope()));
+    const privateKey = Buffer.from(fixture.encodedKey, "base64").toString();
+    const portable = signPortablePluginPackage(primary, fixture.publishers[0]!.keyId, privateKey);
+    const outer = JSON.parse(Buffer.from(portable).toString()) as Record<string, unknown>;
+    for (const overrides of [
+      { payload: "" },
+      { payload: "Y Q==" },
+      { signature: "Y Q==" },
+      { signature: Buffer.alloc(63).toString("base64") },
+      { keyId: "../publisher" },
+      { keyId: "unknown-publisher" },
+      { formatVersion: 99 },
+    ])
+      expect(() =>
+        parsePortablePluginPackage(
+          Buffer.from(JSON.stringify({ ...outer, ...overrides })),
+          undefined,
+          fixture.publishers,
+        ),
+      ).toThrow();
+    expect(() => parsePortablePluginPackage(portable, "0".repeat(64), fixture.publishers)).toThrow(
+      /SHA256/u,
+    );
+    expect(() =>
+      signPortablePluginPackage(portable, fixture.publishers[0]!.keyId, privateKey),
+    ).toThrow();
+    const rsa = generateKeyPairSync("rsa", { modulusLength: 1024 });
+    expect(() =>
+      signPortablePluginPackage(primary, fixture.publishers[0]!.keyId, rsa.privateKey),
+    ).toThrow(/Ed25519/u);
+    expect(() =>
+      parsePortablePluginPackage(portable, undefined, [
+        {
+          ...fixture.publishers[0]!,
+          publicKey: rsa.publicKey.export({ type: "spki", format: "pem" }).toString(),
+        },
+      ]),
+    ).toThrow(/Ed25519/u);
+    expect(() => parsePluginPackage(Buffer.alloc(MAX_PLUGIN_ARCHIVE_BYTES + 1))).toThrow(/size/u);
+    expect(() =>
+      signPortablePluginPackage(
+        Buffer.alloc(MAX_PLUGIN_PACKAGE_BYTES + 1),
+        fixture.publishers[0]!.keyId,
+        privateKey,
+      ),
+    ).toThrow(/size/u);
+  });
+
   it("verifies declared resource bytes while retaining format 1 legacy packages", () => {
     const source = resourceEnvelope();
     const parsed = parsePluginPackage(Buffer.from(JSON.stringify(source)));

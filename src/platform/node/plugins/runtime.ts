@@ -38,7 +38,6 @@ import { readBoundedFile } from "../bounded-file";
 
 import { OfficialPluginCatalog } from "./catalog";
 import { PluginCatalogDiscovery } from "./catalog-discovery";
-import { parsePluginPackage } from "./package";
 import { PluginStore, type ActivePlugin } from "./store";
 
 interface LoadedPlugin {
@@ -725,7 +724,8 @@ export class PluginRuntime implements PluginRuntimePort {
     // Downloads do not hold the lifecycle queue or delay shutdown.
     const download = await this.catalogSource.download(pluginId);
     assertCurrent();
-    const manifest = parsePluginPackage(download.bytes, download.sha256).manifest;
+    const verified = this.options.store.verifyPackage(download.bytes, download.sha256);
+    const manifest = verified.manifest;
     this.assertCompatible(manifest);
     if (manifest.id !== pluginId)
       throw problem("The downloaded plugin identity does not match the selection.");
@@ -739,7 +739,7 @@ export class PluginRuntime implements PluginRuntimePort {
           manifest.apiVersion >= 3 &&
           previous !== undefined &&
           comparePluginManifests(previous.installation.manifest, manifest) === 0 &&
-          previous.installation.sha256 !== download.sha256
+          previous.installation.contentSha256 !== verified.contentSha256
         )
           throw problem(
             "This plugin version has different content from the installed package.",
@@ -753,10 +753,21 @@ export class PluginRuntime implements PluginRuntimePort {
               "Refresh the plugin catalog and wait for a compatible update.",
             );
         }
+        assertCurrent();
+        installation = await this.options.store.prepareInstall(download.bytes, download.sha256);
+        assertCurrent();
+        if (
+          previous !== undefined &&
+          !this.errors.has(pluginId) &&
+          installation.sha256 === previous.installation.sha256 &&
+          installation.contentSha256 === previous.installation.contentSha256
+        ) {
+          this.changing.delete(pluginId);
+          return this.snapshot();
+        }
         if (previous !== undefined) await Promise.allSettled([...previous.connections]);
         await this.confirmChange(pluginId, "install", previous, confirmationToken);
         assertCurrent();
-        installation = await this.options.store.prepareInstall(download.bytes, download.sha256);
         await this.replaceInstalled(installation, previous, assertCurrent);
         this.changing.delete(pluginId);
         return await this.changed();

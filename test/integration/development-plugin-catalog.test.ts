@@ -6,10 +6,16 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import type { PluginManifest } from "../../src/plugins/contracts";
 import { OFFICIAL_PLUGINS, officialPluginAssets } from "../../src/platform/node/plugins/official";
-import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
+import {
+  encodePluginPackage,
+  parsePluginPackage,
+  pluginPackageSha256,
+} from "../../src/platform/node/plugins/package";
 import { DevelopmentPluginCatalog } from "../../tools/dev/plugin-catalog";
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
+import { createPortablePluginRelease } from "../../tools/package/plugin";
+import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
 const directories: string[] = [];
 const manifest: PluginManifest = {
@@ -104,6 +110,22 @@ it("refreshes verified package bytes and hashes from local output without networ
     sha256: pluginPackageSha256(second.bytes),
   });
   expect(network).not.toHaveBeenCalled();
+});
+
+it("offers one development package when a signed portable delivery artifact is also present", async () => {
+  const root = await directory();
+  const primary = await writePackage(root);
+  const publisher = pluginPublisherFixture();
+  const parsed = parsePluginPackage(primary.bytes);
+  const release = encodePluginPackage({ ...parsed.manifest, version: "0.2.0" }, parsed.files);
+  const portable = createPortablePluginRelease(release, publisher.encodedKey, publisher.publishers);
+  await writeFile(
+    join(root, officialPluginAssets(OFFICIAL_PLUGINS[0], "0.2.0").portablePackageAsset),
+    portable,
+  );
+  const catalog = new DevelopmentPluginCatalog(root);
+  expect(await catalog.list()).toHaveLength(1);
+  expect((await catalog.download(manifest.id)).bytes).toEqual(Buffer.from(primary.bytes));
 });
 
 it.each([
