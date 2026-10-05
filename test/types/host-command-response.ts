@@ -1,8 +1,12 @@
 import {
   HOST_PROTOCOL_VERSION,
   type HostCommandResponse,
+  type HostEvent,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
+import type { ProviderHostPort } from "../../src/platform/providers/host";
+import type { createBrowserDevelopmentHost } from "../../src/platform/electron/renderer/host";
+import type { createStreamSkopePreloadHost } from "../../src/platform/electron/preload/host-bridge";
 
 // This fixture is compiled by the test TypeScript project; it is never executed.
 export const missingEditor: HostCommandResponse<"trustAcquisition.editor.open"> = {
@@ -57,4 +61,12 @@ export function assertDiscriminatedResponse(response: HostCommandResponse): void
     // @ts-expect-error Command narrowing excludes the export document result.
     void response.result.document;
   }
+}
+
+export async function assertConcreteAdapterInference(
+  browser: ReturnType<typeof createBrowserDevelopmentHost>,
+  preload: ReturnType<typeof createStreamSkopePreloadHost>,
+  structural: ProviderHostPort<StreamSkopeBackend["execute"], HostEvent>,
+): Promise<void> {
+  for (const backend of [browser, preload, structural]) await assertExecuteInference(backend);
 }

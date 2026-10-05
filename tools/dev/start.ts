@@ -64,16 +64,7 @@ async function start(): Promise<void> {
             }
           : {}),
       });
-      const backend = createKafkaBackend(
-        profileStore,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        plugins,
-      );
+      const backend = createKafkaBackend({ profileStore, plugins });
       await plugins.start();
       return Object.assign(backend, { pluginAsset: plugins.rendererAsset.bind(plugins) });
     },

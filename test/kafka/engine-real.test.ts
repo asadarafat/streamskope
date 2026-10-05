@@ -221,14 +221,7 @@ describe("real StreamSkope Kafka engine", () => {
         },
       },
     );
-    const backend = createKafkaBackend(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      preferences,
-    );
+    const backend = createKafkaBackend({ preferenceStore: preferences });
     const records: KafkaMessage[] = [];
     backend.subscribe((event) => {
       const parsed = parseHostEvent(event);

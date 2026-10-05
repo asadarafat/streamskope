@@ -25,6 +25,7 @@ import {
   type KafkaTopicConfigurationHistoryStore,
 } from "../../features/kafka/application";
 import type { KafkaMessage } from "../../features/kafka/contracts";
+import type { ObservationStore } from "../../features/kafka/application/observation-store";
 import { protectKafkaRecord } from "../../features/kafka/application/record-protection";
 import { KafkaBackendFacade } from "../../features/kafka/facade";
 import {
@@ -73,22 +74,34 @@ export function createBrowserKafkaProfileStore(
   return new InMemoryKafkaProfileStore(browserProfileCapability, initialRecords);
 }
 
-export function createKafkaBackend(
-  profileStore: KafkaProfileStore = createBrowserKafkaProfileStore(),
-  legacySource?: KafkaLegacyTemplateSource,
-  ruleStore: KafkaRuleStore = new InMemoryKafkaRuleStore(browserRuleCapability),
-  topicConfigurationHistoryStore: KafkaTopicConfigurationHistoryStore = new InMemoryKafkaTopicConfigurationHistoryStore(
-    browserTopicConfigurationHistoryCapability,
-  ),
-  remoteTrust: KafkaRemoteTrustPort = new Ssh2KafkaRemoteTrustAdapter(),
-  preferenceStore: KafkaOperationalPreferenceStore = new InMemoryKafkaOperationalPreferenceStore(
-    browserPreferenceCapability,
-  ),
-  recipeStore: KafkaTrustRecipeStore = new InMemoryKafkaTrustRecipeStore(browserRecipeCapability),
-  plugins?: PluginRuntimePort,
-  queryStore?: KafkaQueryStore,
-  observationStore?: import("../../features/kafka/application/observation-store").ObservationStore,
-): KafkaBackendFacade {
+export interface KafkaBackendOptions {
+  readonly profileStore?: KafkaProfileStore;
+  readonly legacySource?: KafkaLegacyTemplateSource;
+  readonly ruleStore?: KafkaRuleStore;
+  readonly topicConfigurationHistoryStore?: KafkaTopicConfigurationHistoryStore;
+  readonly remoteTrust?: KafkaRemoteTrustPort;
+  readonly preferenceStore?: KafkaOperationalPreferenceStore;
+  readonly recipeStore?: KafkaTrustRecipeStore;
+  readonly plugins?: PluginRuntimePort;
+  readonly queryStore?: KafkaQueryStore;
+  readonly observationStore?: ObservationStore;
+}
+
+export function createKafkaBackend(options: KafkaBackendOptions = {}): KafkaBackendFacade {
+  const {
+    profileStore = createBrowserKafkaProfileStore(),
+    legacySource,
+    ruleStore = new InMemoryKafkaRuleStore(browserRuleCapability),
+    topicConfigurationHistoryStore = new InMemoryKafkaTopicConfigurationHistoryStore(
+      browserTopicConfigurationHistoryCapability,
+    ),
+    remoteTrust = new Ssh2KafkaRemoteTrustAdapter(),
+    preferenceStore = new InMemoryKafkaOperationalPreferenceStore(browserPreferenceCapability),
+    recipeStore = new InMemoryKafkaTrustRecipeStore(browserRecipeCapability),
+    plugins,
+    queryStore,
+    observationStore,
+  } = options;
   const evaluator = new StreamSkopeKafkaRuleEvaluator();
   const rules = new KafkaRuleService(ruleStore, evaluator);
   const preferences = new KafkaOperationalPreferenceService(preferenceStore);

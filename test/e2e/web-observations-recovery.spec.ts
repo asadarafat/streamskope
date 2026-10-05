@@ -50,18 +50,7 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
   test.setTimeout(240_000);
   const fixture = await startAuthorizationFixture();
   const store = new RecoverableHistoryStore();
-  const real = createKafkaBackend(
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    store,
-  );
+  const real = createKafkaBackend({ observationStore: store });
   const commands: HostCommand[] = [];
   let failNextCapture = false;
   const backend: DevelopmentBackend = {

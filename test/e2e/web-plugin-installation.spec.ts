@@ -79,16 +79,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
         restarts += 1;
       },
     });
-    const backend = createKafkaBackend(
-      profiles,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      plugins,
-    );
+    const backend = createKafkaBackend({ profileStore: profiles, plugins });
     await plugins.start();
     launch = await launchWebDevelopment({
       backend: Object.assign(backend, { pluginAsset: plugins.rendererAsset.bind(plugins) }),

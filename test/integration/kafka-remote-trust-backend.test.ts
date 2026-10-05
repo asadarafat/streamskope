@@ -81,7 +81,7 @@ describe("Kafka remote-trust backend composition", () => {
           markEntered();
         }),
     );
-    const backend = createKafkaBackend(undefined, undefined, undefined, undefined, remote);
+    const backend = createKafkaBackend({ remoteTrust: remote });
     const events: HostEvent[] = [];
     backend.subscribe((event) => events.push(event));
     try {
@@ -137,15 +137,7 @@ describe("Kafka remote-trust backend composition", () => {
         ],
       },
     );
-    const backend = createKafkaBackend(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      remote,
-      undefined,
-      recipeStore,
-    );
+    const backend = createKafkaBackend({ remoteTrust: remote, recipeStore });
     const editor = await openEditor(backend);
     const events: HostEvent[] = [];
     backend.subscribe((event) => {

@@ -56,16 +56,7 @@ async function interruptedHost(root: string): Promise<void> {
     }
   };
   const runtime = new PluginRuntime({ store });
-  const facade = createKafkaBackend(
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    runtime,
-  );
+  const facade = createKafkaBackend({ plugins: runtime });
   try {
     const active = (await runtime.list()).plugins.find((plugin) => plugin.id === NSP_PLUGIN_ID);
     assert(active?.activationId, "The recovery fixture requires an installed package.");

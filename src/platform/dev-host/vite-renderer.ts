@@ -7,7 +7,7 @@ import { createServer, type Plugin } from "vite";
 import {
   BROWSER_DEVELOPMENT_GATEWAY_PATH,
   browserDevelopmentSessionCookie,
-} from "../../features/kafka/contracts";
+} from "../providers/browser-development";
 import type { PluginRendererAsset } from "../node/plugins/runtime";
 
 import {

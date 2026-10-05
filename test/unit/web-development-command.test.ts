@@ -88,12 +88,14 @@ function commandFixture({
       isExistingSessionReady,
       isProcessAlive,
       launch: (options): Promise<RunningWebDevelopment> => {
+        const backend = options.backend;
+        if (backend === undefined) throw new Error("Expected the command's Kafka backend.");
         launchCalls.push(options.hostPort);
         let closePromise: Promise<void> | undefined;
         return Promise.resolve({
           browserUrl: BROWSER_URL,
           close: (): Promise<void> => {
-            closePromise ??= options.backend.shutdown();
+            closePromise ??= backend.shutdown();
             return closePromise;
           },
           host: {
@@ -130,11 +132,13 @@ describe("web-development command session", () => {
       },
       isProcessAlive: (pid) => pid === 101,
       launch: (launchOptions): Promise<RunningWebDevelopment> => {
+        const backend = launchOptions.backend;
+        if (backend === undefined) throw new Error("Expected the command's Kafka backend.");
         expect(preparation).toBe("complete");
-        launchedBackend = launchOptions.backend;
+        launchedBackend = backend;
         return Promise.resolve({
           browserUrl: BROWSER_URL,
-          close: () => launchOptions.backend.shutdown(),
+          close: () => backend.shutdown(),
           host: {
             close: () => Promise.resolve(),
             hostname: "clab.orb.local",

@@ -1,4 +1,5 @@
 export { isHostAcknowledgementCommand } from "./host-command-results";
+export { KAFKA_PROVIDER_EVENT_CODEC } from "./provider-host";
 export {
   parseKafkaWriteInput,
   parseKafkaWriteReview,

@@ -127,10 +127,14 @@ it("acquires a generic JKS recipe, explicitly applies it and saves its protected
   const material = vi.fn(() => Promise.resolve(bytes));
   let fingerprint = `SHA256:${"A".repeat(43)}`;
   const store = createBrowserKafkaProfileStore();
-  const backend = createKafkaBackend(store, undefined, undefined, undefined, {
-    discoverHostKey: () => Promise.resolve(fingerprint),
-    fetchMaterial: material,
-    fetchPassword: () => Promise.reject(new Error("Supplied password must not execute a command")),
+  const backend = createKafkaBackend({
+    profileStore: store,
+    remoteTrust: {
+      discoverHostKey: () => Promise.resolve(fingerprint),
+      fetchMaterial: material,
+      fetchPassword: () =>
+        Promise.reject(new Error("Supplied password must not execute a command")),
+    },
   });
   let saved: readonly ProfileSummary[] = [];
   backend.subscribe((event) => {

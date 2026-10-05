@@ -10,6 +10,7 @@ const rendererFiles = [
   "src/features/kafka/ui/**/*.{ts,tsx}",
   "src/platform/electron/renderer/**/*.{ts,tsx}",
   "src/platform/ui/**/*.{ts,tsx}",
+  "src/platform/providers/**/*.ts",
   "test/architecture/fixtures/renderer/**/*.{ts,tsx}",
 ];
 
@@ -71,6 +72,7 @@ export default [
         { pattern: "src/features/kafka/facade/**", type: "kafka-facade" },
         { pattern: "src/features/kafka/engine/**", type: "kafka-engine" },
         { pattern: "src/features/kafka/ui/**", type: "kafka-renderer" },
+        { pattern: "src/platform/providers/**", type: "platform-providers" },
         { pattern: "src/platform/desktop/**", type: "platform-desktop" },
         { pattern: "src/platform/activity/**", type: "platform-activity" },
         { pattern: "src/platform/dev-host/**", type: "platform-dev-host" },
@@ -214,10 +216,16 @@ export default [
             {
               allow: {
                 to: {
-                  element: { types: { anyOf: ["kafka-contracts", "platform-desktop"] } },
+                  element: {
+                    types: { anyOf: ["kafka-contracts", "platform-desktop", "platform-providers"] },
+                  },
                 },
               },
               from: { element: { type: "kafka-contracts" } },
+            },
+            {
+              allow: { to: { element: { type: "platform-providers" } } },
+              from: { element: { type: "platform-providers" } },
             },
             {
               allow: { to: { element: { type: "platform-desktop" } } },
@@ -290,6 +298,7 @@ export default [
                         "kafka-facade",
                         "platform-activity",
                         "platform-desktop",
+                        "platform-providers",
                         "platform-dev-host",
                         "platform-node",
                       ],
@@ -311,6 +320,7 @@ export default [
                         "kafka-facade",
                         "main",
                         "platform-desktop",
+                        "platform-providers",
                         "platform-node",
                         "platform-activity",
                         "platform-dev-host",
@@ -334,6 +344,7 @@ export default [
                         "kafka-facade",
                         "platform-activity",
                         "platform-node",
+                        "platform-providers",
                       ],
                     },
                   },
@@ -345,7 +356,14 @@ export default [
               allow: {
                 to: {
                   element: {
-                    types: { anyOf: ["kafka-contracts", "platform-desktop", "preload"] },
+                    types: {
+                      anyOf: [
+                        "kafka-contracts",
+                        "platform-desktop",
+                        "platform-providers",
+                        "preload",
+                      ],
+                    },
                   },
                 },
               },
@@ -360,6 +378,7 @@ export default [
                         "kafka-contracts",
                         "kafka-renderer",
                         "platform-desktop",
+                        "platform-providers",
                         "renderer",
                         "ui",
                       ],
@@ -434,9 +453,9 @@ export default [
               message: "Renderer code must depend only on renderer modules and contracts.",
             },
             {
-              regex: "(^|/)platform/(?!desktop(?:/|$)|ui(?:/|$))",
+              regex: "(^|/)platform/(?!desktop(?:/|$)|ui(?:/|$)|providers(?:/|$))",
               message:
-                "Renderer code may use only declared desktop and shared UI platform contracts.",
+                "Renderer code may use only declared desktop, provider and shared UI platform contracts.",
             },
           ],
         },
