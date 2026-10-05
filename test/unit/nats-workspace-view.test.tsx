@@ -81,7 +81,7 @@ describe("NATS workspace effect and failure presentation", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Reconnect the profile before subscribing.",
     );
-    expect(screen.queryByRole("button", { name: "Dismiss", exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
     await act(() => {
       f.emit({
         event: "backend.availability",

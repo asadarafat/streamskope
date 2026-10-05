@@ -40,7 +40,7 @@ function properties(overrides: Partial<ProfileEditorProperties> = {}): ProfileEd
 async function choose(label: string, option: string): Promise<void> {
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: label }));
-  await user.click(screen.getByRole("option", { name: option, exact: true }));
+  await user.click(screen.getByRole("option", { name: option }));
 }
 
 function fillCreate(): void {

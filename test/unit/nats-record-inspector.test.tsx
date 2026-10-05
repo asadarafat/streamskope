@@ -23,14 +23,14 @@ describe("NATS record inspector optional presentation", () => {
     expect(screen.getByLabelText("Original payload").textContent).toBe(source);
     expect(screen.getByRole("button", { name: "Close record inspector" })).toHaveFocus();
     expect(parse).not.toHaveBeenCalledWith(source);
-    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON" }));
     expect(parse).toHaveBeenCalledWith(source);
     expect(screen.getByLabelText("Pretty JSON payload").textContent).toBe(
       '{\n  "value": "雪 🙂",\n  "items": [\n    1,\n    2\n  ]\n}',
     );
-    fireEvent.click(screen.getByRole("button", { name: "Original", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Original" }));
     expect(screen.getByLabelText("Original payload").textContent).toBe(source);
-    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON" }));
     expect(parse.mock.calls.filter(([input]): boolean => input === source)).toHaveLength(1);
   });
 
@@ -41,7 +41,7 @@ describe("NATS record inspector optional presentation", () => {
       <RecordInspector record={uiNatsRecord("deep", "generation", source)} onClose={vi.fn()} />,
     );
     expect(screen.getByLabelText("Original payload").textContent).toBe(source);
-    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON" }));
     expect(parse).not.toHaveBeenCalledWith(source);
     expect(screen.queryByLabelText("Pretty JSON payload")).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("32-level or 1 MiB presentation limit");
@@ -52,7 +52,7 @@ describe("NATS record inspector optional presentation", () => {
     const source = '{"sensitive-value": invalid}';
     const props = { record: uiNatsRecord("invalid", "generation", source), onClose: vi.fn() };
     const view = render(<RecordInspector {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON" }));
     expect(screen.getByRole("alert")).toHaveTextContent("payload is not valid JSON");
     expect(screen.getByRole("alert")).not.toHaveTextContent("sensitive-value");
     expect(screen.getByLabelText("Original payload").textContent).toBe(source);
@@ -61,7 +61,7 @@ describe("NATS record inspector optional presentation", () => {
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Original payload").textContent).toBe('{"next":true}');
-    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Pretty JSON" }));
     expect(screen.getByLabelText("Pretty JSON payload").textContent).toBe('{\n  "next": true\n}');
   });
 
@@ -74,9 +74,7 @@ describe("NATS record inspector optional presentation", () => {
     };
     const view = render(<RecordInspector record={binary} onClose={onClose} />);
     expect(screen.getByLabelText("Original payload").textContent).toBe("AP+AAQ==");
-    expect(
-      screen.queryByRole("button", { name: "Pretty JSON", exact: true }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pretty JSON" })).not.toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("button", { name: "Close record inspector" }), {
       key: "Escape",
     });
@@ -86,9 +84,7 @@ describe("NATS record inspector optional presentation", () => {
     );
     expect(screen.getByLabelText("Original payload").textContent).toBe("");
     expect(screen.getByText("Empty payload (0 bytes); the payload is present.")).toBeVisible();
-    expect(
-      screen.queryByRole("button", { name: "Pretty JSON", exact: true }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pretty JSON" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Close record inspector" }));
     expect(onClose).toHaveBeenCalledTimes(2);
   });

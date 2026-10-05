@@ -81,7 +81,8 @@ describe("Core NATS renderer host", () => {
       await expect(host.execute(command)).rejects.toThrow();
     }
     const beforeInvalidCommand = fetchMock.mock.calls.length;
-    await expect(host.execute({ ...command, payload: { unexpected: true } })).rejects.toThrow();
+    const malformedWireCommand: unknown = { ...command, payload: { unexpected: true } };
+    await expect(host.execute(malformedWireCommand as typeof command)).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(beforeInvalidCommand);
   });
 

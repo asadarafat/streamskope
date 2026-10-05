@@ -71,7 +71,12 @@ const test = base.extend<
 });
 
 // Credential-bearing editors are exercised here; evidence is only captured explicitly after dismissal.
-test.use({ trace: "off", video: "off", screenshot: "off", reducedMotion: "reduce" });
+test.use({
+  trace: "off",
+  video: "off",
+  screenshot: "off",
+  contextOptions: { reducedMotion: "reduce" },
+});
 test.beforeAll((): void => {
   // Playwright otherwise captures an automatic aria snapshot on failure, independently of trace.
   // afterAll itself has an artifact recorder. Keep the flag through this isolated file's worker
