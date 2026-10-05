@@ -22,6 +22,7 @@ import {
   KafkaProfileRevisionError,
 } from "./profile-errors";
 import { KafkaProfileDraftResolver } from "./profile-draft-resolver";
+import { SerialMutationQueue } from "./serial-mutation-queue";
 import {
   assertProfileRevision,
   createIssues,
@@ -51,7 +52,7 @@ export class KafkaProfileService {
   private activeProfileId: string | undefined;
   private readonly createId;
   private loadPromise: Promise<void> | undefined;
-  private mutationTail: Promise<void> = Promise.resolve();
+  private readonly mutations = new SerialMutationQueue();
   private readonly now;
   private profileDataUnavailable = false;
   private records: readonly KafkaProfileRecord[] = [];
@@ -70,7 +71,7 @@ export class KafkaProfileService {
   }
 
   create(input: ProfileCreateInput, signal?: AbortSignal): Promise<KafkaProfileSnapshot> {
-    return this.mutate(() => this.completeCreate(input, signal), signal);
+    return this.mutations.enqueue(() => this.completeCreate(input, signal), signal);
   }
 
   clearActive(): KafkaProfileSnapshot {
@@ -83,7 +84,7 @@ export class KafkaProfileService {
   }
 
   delete(profileId: string, signal?: AbortSignal): Promise<KafkaProfileSnapshot> {
-    return this.mutate(() => this.completeDelete(profileId, signal), signal);
+    return this.mutations.enqueue(() => this.completeDelete(profileId, signal), signal);
   }
 
   async list(signal?: AbortSignal): Promise<KafkaProfileSnapshot> {
@@ -112,7 +113,7 @@ export class KafkaProfileService {
     work: () => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    return this.mutate(async () => {
+    return this.mutations.enqueue(async () => {
       const actual = (await this.recipeUsage(recipeId, signal)).map((profile) => profile.id).sort();
       if (JSON.stringify(actual) !== JSON.stringify([...confirmedProfileIds].sort()))
         throw new KafkaProfileValidationError([
@@ -173,11 +174,11 @@ export class KafkaProfileService {
     input: ProfileUpdateInput,
     signal?: AbortSignal,
   ): Promise<KafkaProfileSnapshot> {
-    return this.mutate(() => this.completeUpdate(profileId, input, signal), signal);
+    return this.mutations.enqueue(() => this.completeUpdate(profileId, input, signal), signal);
   }
 
   markActive(profileId: string, signal?: AbortSignal): Promise<KafkaProfileSnapshot> {
-    return this.mutate(() => this.completeMarkActive(profileId, signal), signal);
+    return this.mutations.enqueue(() => this.completeMarkActive(profileId, signal), signal);
   }
 
   async resolveConnection(profileId: string, signal?: AbortSignal): Promise<SecureConnectionInput> {
@@ -391,18 +392,6 @@ export class KafkaProfileService {
       this.records = [];
       throw error;
     }
-  }
-
-  private mutate<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const result = this.mutationTail.then(async () => {
-      signal?.throwIfAborted();
-      return operation();
-    });
-    this.mutationTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
   }
 
   private snapshot(): KafkaProfileSnapshot {

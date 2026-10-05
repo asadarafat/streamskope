@@ -15,6 +15,7 @@ import {
   KafkaOperationalPreferenceValidationError,
 } from "./operational-preference-errors";
 import { cloneKafkaOperationalPreferences } from "./in-memory-operational-preference-store";
+import { SerialMutationQueue } from "./serial-mutation-queue";
 import type {
   KafkaOperationalPreferenceStore,
   KafkaOperationalPreferenceStructuredError,
@@ -76,7 +77,7 @@ function mergePreferences(
 export class KafkaOperationalPreferenceService {
   private loadPromise: Promise<void> | undefined;
   private loaded = false;
-  private mutationTail: Promise<void> = Promise.resolve();
+  private readonly mutations = new SerialMutationQueue();
   private preferences = cloneKafkaOperationalPreferences(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS);
   private unavailableRecovery: string | undefined;
 
@@ -92,14 +93,14 @@ export class KafkaOperationalPreferenceService {
   }
 
   reset(signal?: AbortSignal): Promise<KafkaOperationalPreferenceSnapshot> {
-    return this.mutate(() => this.completeReset(signal), signal);
+    return this.mutations.enqueue(() => this.completeReset(signal), signal);
   }
 
   update(
     input: KafkaOperationalPreferencePatch,
     signal?: AbortSignal,
   ): Promise<KafkaOperationalPreferenceSnapshot> {
-    return this.mutate(() => this.completeUpdate(input, signal), signal);
+    return this.mutations.enqueue(() => this.completeUpdate(input, signal), signal);
   }
 
   private capability(): KafkaOperationalPreferenceStoreCapability {
@@ -215,17 +216,5 @@ export class KafkaOperationalPreferenceService {
           : new KafkaOperationalPreferenceStoreUnavailableError().recovery;
     }
     this.loaded = true;
-  }
-
-  private mutate<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const result = this.mutationTail.then(() => {
-      signal?.throwIfAborted();
-      return operation();
-    });
-    this.mutationTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
   }
 }
