@@ -132,6 +132,154 @@ afterEach(async () => {
 });
 
 describe("optional installed plugin runtime", () => {
+  it("keeps development discovery in memory without writing local build metadata into the official cache", async () => {
+    const store = new PluginStore(await directory());
+    const host = new PluginRuntime({
+      store,
+      hostRelease: "v0.2.0",
+      persistCatalog: false,
+      catalog: {
+        list: () =>
+          Promise.resolve([{ manifest, sha256: "a".repeat(64), downloadUrl: "development" }]),
+        download: () => Promise.reject(new Error("Unused")),
+      },
+    });
+    runtimes.push(host);
+    expect((await host.catalog()).error).toBeUndefined();
+    expect((await host.catalog(false)).plugins).toEqual([manifest]);
+    expect(await store.catalogCache.read()).toBeUndefined();
+  });
+
+  it("returns the last successful catalog across reopening when GitHub is unavailable", async () => {
+    const store = new PluginStore(await directory());
+    const official: PluginManifest = { ...manifest, id: "streamskope.eda" };
+    const entry = {
+      manifest: official,
+      sha256: "a".repeat(64),
+      downloadUrl: "https://api.github.com/repos/asadarafat/streamskope/releases/assets/42",
+    };
+    let online = true;
+    const catalog = {
+      list: vi.fn(() =>
+        online
+          ? Promise.resolve([entry])
+          : Promise.reject(new Error("GitHub could not be reached")),
+      ),
+      download: vi.fn(() => Promise.reject(new Error("Unused download"))),
+    };
+    const initial = new PluginRuntime({ store, catalog, hostRelease: "v0.2.0" });
+    runtimes.push(initial);
+    expect(await initial.catalog(false)).toEqual({ plugins: [], source: "unavailable" });
+    expect(catalog.list).not.toHaveBeenCalled();
+    const live = await initial.catalog();
+    expect(live).toMatchObject({
+      plugins: [official],
+      source: "live",
+      checkedAt: expect.any(String) as unknown,
+    });
+    await initial.close();
+    online = false;
+    const reopened = new PluginRuntime({ store, catalog, hostRelease: "v0.2.0" });
+    runtimes.push(reopened);
+    expect(await reopened.catalog(false)).toEqual({
+      plugins: [official],
+      source: "cache",
+      checkedAt: live.checkedAt,
+    });
+    expect(catalog.list).toHaveBeenCalledTimes(1);
+    expect(await reopened.catalog()).toEqual({
+      plugins: [official],
+      source: "cache",
+      checkedAt: live.checkedAt,
+      error: "GitHub could not be reached",
+    });
+    expect((await reopened.catalog(false)).checkedAt).toBe(live.checkedAt);
+    expect(catalog.download).not.toHaveBeenCalled();
+  });
+
+  it("does not hold the local lifecycle queue while catalog refresh waits for the network", async () => {
+    const store = new PluginStore(await directory());
+    const packaged = packageBytes();
+    await store.install(packaged, pluginPackageSha256(packaged));
+    let finish!: () => void;
+    const waiting = new Promise<[]>((resolve) => {
+      finish = () => resolve([]);
+    });
+    const list = vi.fn(() => waiting);
+    const host = new PluginRuntime({
+      store,
+      hostRelease: "v0.2.0",
+      catalog: { list, download: () => Promise.reject(new Error("No download")) },
+    });
+    host.bindHost(bindings());
+    runtimes.push(host);
+    const first = host.catalog();
+    const second = host.catalog();
+    expect((await host.list()).plugins[0]?.active).toEqual(manifest);
+    expect(await host.catalog(false)).toEqual({ plugins: [], source: "unavailable" });
+    expect((await host.remove(manifest.id)).plugins).toEqual([]);
+    expect(list).toHaveBeenCalledTimes(1);
+    finish();
+    expect(await first).toEqual(await second);
+    expect((await host.catalog(false)).source).toBe("cache");
+  });
+
+  it("filters a saved catalog against the current host compatibility and release channel", async () => {
+    const store = new PluginStore(await directory());
+    const official: PluginManifest = {
+      ...manifest,
+      id: "streamskope.eda",
+      apiVersion: 4,
+      version: "0.1.0-beta.1",
+      compatibility: {
+        streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+      },
+    };
+    await store.catalogCache.save({
+      checkedAt: "2026-10-06T12:00:00.000Z",
+      entries: [
+        {
+          manifest: official,
+          sha256: "a".repeat(64),
+          downloadUrl: "https://api.github.com/repos/asadarafat/streamskope/releases/assets/42",
+        },
+      ],
+    });
+    const stable = new PluginRuntime({ store, hostRelease: "v0.2.0" });
+    const older = new PluginRuntime({ store, hostRelease: "v0.1.0-beta.1" });
+    const prerelease = new PluginRuntime({ store, hostRelease: "v0.2.1-beta.1" });
+    runtimes.push(stable, older, prerelease);
+    expect((await stable.catalog(false)).plugins).toEqual([]);
+    expect((await older.catalog(false)).plugins).toEqual([]);
+    expect((await prerelease.catalog(false)).plugins).toEqual([official]);
+  });
+
+  it("reports unavailable metadata when both network and saved catalog fail, without stopping installed plugins", async () => {
+    const path = await directory();
+    const store = new PluginStore(path);
+    const packaged = packageBytes();
+    await store.install(packaged, pluginPackageSha256(packaged));
+    await writeFile(join(path, "catalog.json"), "corrupt saved metadata");
+    const host = new PluginRuntime({
+      store,
+      hostRelease: "v0.2.0",
+      catalog: {
+        list: () => Promise.reject(new Error("Network timeout")),
+        download: () => Promise.reject(new Error("Unused")),
+      },
+    });
+    host.bindHost(bindings());
+    runtimes.push(host);
+    expect(await host.catalog()).toEqual({
+      plugins: [],
+      source: "unavailable",
+      error: "Network timeout",
+    });
+    expect((await host.catalog(false)).error).toEqual(expect.any(String));
+    expect((await host.list()).plugins[0]?.active).toEqual(manifest);
+  });
+
   it("rejects a future host requirement before installation or loading code on startup", async () => {
     const compatibility = {
       streamskope: { minimum: "v0.1.0+build.10" },
@@ -182,6 +330,10 @@ describe("optional installed plugin runtime", () => {
     );
     expect(loadModule).not.toHaveBeenCalled();
     expect((await store.list())[0]?.installed?.version).toBe(future.version);
+    await expect(older.retryActivation(manifest.id)).rejects.toThrow(
+      "requires StreamSkope v0.1.0+build.10",
+    );
+    expect(loadModule).not.toHaveBeenCalled();
     await older.close();
     const upgraded = new PluginRuntime({ store, hostRelease: "v0.1.0+build.10" });
     upgraded.bindHost(bindings());

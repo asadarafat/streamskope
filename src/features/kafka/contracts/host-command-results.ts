@@ -147,6 +147,7 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
   };
   readonly "plugins.renderer.failed": SpecificCommandResults["plugins.list"];
   readonly "plugins.install": SpecificCommandResults["plugins.list"];
+  readonly "plugins.retry": SpecificCommandResults["plugins.list"];
   readonly "plugins.remove": SpecificCommandResults["plugins.list"];
   readonly "plugins.exit.prepare": {
     readonly correlationId: string;
@@ -203,6 +204,7 @@ const structuredResults = {
   "plugins.change.prepare": true,
   "plugins.renderer.failed": true,
   "plugins.install": true,
+  "plugins.retry": true,
   "plugins.remove": true,
   "plugins.exit.prepare": true,
   "plugins.exit.resolve": true,

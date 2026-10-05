@@ -80,12 +80,13 @@ export interface PluginRuntimePort {
   subscribe(listener: (event: PluginEvent) => void): () => void;
   subscribeChanges(listener: (snapshot: PluginSnapshot) => void): () => void;
   list(): Promise<PluginSnapshot>;
-  catalog(): Promise<PluginCatalogSnapshot>;
+  catalog(refresh?: boolean): Promise<PluginCatalogSnapshot>;
   prepareChange(
     pluginId: string,
     operation: PluginChangeOperation,
   ): Promise<PluginChangePrompt | null>;
   install(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot>;
+  retryActivation(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot>;
   remove(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot>;
   rendererFailed(pluginId: string, activationId: string, error: string): Promise<PluginSnapshot>;
   restart(): Promise<void>;

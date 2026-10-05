@@ -7,6 +7,14 @@ unreleased: true
 
 ## Desktop
 
+Plugin management applies installed state independently of catalog discovery.
+Removing an installed plugin or retrying inactive retained bytes stays available
+while GitHub is unreachable. A successful catalog check is cached with its date;
+failed refresh shows that dated catalog without claiming current availability.
+Local retry verifies bytes and compatibility and retains recoverable state after
+an activation failure. Cached catalog metadata alone cannot install a new package
+offline.
+
 Application shutdown rejects new requests immediately and waits for every owned
 cleanup to finish, including environment comparisons that open a separate saved
 destination. A failed cleanup cannot make shutdown finish while another cleanup
@@ -57,8 +65,9 @@ independent of unrelated group-member/assignment omissions. Record sampling uses
 bounded adaptive windows; incomplete coverage does not qualify key or size
 inference. Existing schema-1 history remains readable.
 
-The desktop host protocol advances to 49 for explicit observation coverage and
-recovery errors. Development renderer and host builds must be updated together;
+The desktop host protocol advances to 50 for explicit observation coverage,
+recovery errors, cache-only plugin catalog reads and local activation retry.
+Development renderer and host builds must be updated together;
 the desktop installer includes both. This does not change the plugin API.
 
 Focused operator recovery and isolated multi-broker outage/recovery checks cover

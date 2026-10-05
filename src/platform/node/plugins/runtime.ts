@@ -17,6 +17,7 @@ import type {
 import type {
   JsonValue,
   PluginCatalogSnapshot,
+  PluginChangeOperation,
   PluginChangePrompt,
   PluginEvent,
   PluginExitPrompt,
@@ -29,6 +30,7 @@ import type {
 import {
   comparePluginManifests,
   isPluginCompatibleWithHost,
+  isPrereleaseVersion,
   parsePluginId,
   parsePluginJson,
 } from "../../../plugins/validation";
@@ -36,6 +38,7 @@ import { STREAMSKOPE_RELEASE } from "../../../plugins/host-release";
 import { readBoundedFile } from "../bounded-file";
 
 import { OfficialPluginCatalog } from "./catalog";
+import type { StoredPluginCatalog } from "./catalog-cache";
 import { parsePluginPackage } from "./package";
 import { PluginStore, type ActivePlugin } from "./store";
 
@@ -50,7 +53,7 @@ interface LoadedPlugin {
 
 interface ChangeConfirmation {
   readonly pluginId: string;
-  readonly operation: "install" | "remove";
+  readonly operation: PluginChangeOperation;
   readonly activationId: string;
   readonly fingerprint: string;
   readonly expires: number;
@@ -63,6 +66,8 @@ export interface PluginRuntimeOptions {
   readonly probeTopics?: PluginBackendHost["probeTopics"];
   readonly restart?: () => void | Promise<void>;
   readonly hostRelease?: string;
+  /** Development catalog URLs have no official release provenance and stay in memory only. */
+  readonly persistCatalog?: boolean;
 }
 
 export interface PluginRendererAsset {
@@ -157,6 +162,8 @@ export class PluginRuntime implements PluginRuntimePort {
   private starting: Promise<void> | undefined;
   private closing: Promise<void> | undefined;
   private startupError: string | undefined;
+  private catalogRefresh: Promise<PluginCatalogSnapshot> | undefined;
+  private memoryCatalog: StoredPluginCatalog | undefined;
 
   constructor(private readonly options: PluginRuntimeOptions) {
     this.catalogSource =
@@ -546,17 +553,80 @@ export class PluginRuntime implements PluginRuntimePort {
     }
   }
 
-  async catalog(): Promise<PluginCatalogSnapshot> {
+  private catalogSnapshot(
+    catalog: StoredPluginCatalog,
+    source: "live" | "cache",
+  ): PluginCatalogSnapshot {
+    const hostRelease = this.options.hostRelease ?? STREAMSKOPE_RELEASE;
+    return {
+      plugins: catalog.entries
+        .map((entry) => entry.manifest)
+        .filter(
+          (manifest) =>
+            isPluginCompatibleWithHost(manifest, hostRelease) &&
+            !(
+              manifest.apiVersion === 4 &&
+              isPrereleaseVersion(manifest.version) &&
+              !isPrereleaseVersion(hostRelease.replace(/^v/u, ""))
+            ),
+        ),
+      source,
+      checkedAt: catalog.checkedAt,
+    };
+  }
+
+  private async cachedCatalog(): Promise<PluginCatalogSnapshot> {
     try {
-      return { plugins: (await this.catalogSource.list()).map((entry) => entry.manifest) };
+      if (this.memoryCatalog !== undefined)
+        return this.catalogSnapshot(this.memoryCatalog, "cache");
+      if (this.options.persistCatalog === false) return { plugins: [], source: "unavailable" };
+      const cached = await this.options.store.catalogCache.read();
+      return cached === undefined
+        ? { plugins: [], source: "unavailable" }
+        : this.catalogSnapshot(cached, "cache");
     } catch (error) {
-      return { plugins: [], error: summary(error) };
+      return { plugins: [], source: "unavailable", error: summary(error) };
+    }
+  }
+
+  async catalog(refresh = true): Promise<PluginCatalogSnapshot> {
+    this.assertOpen();
+    if (!refresh) return this.cachedCatalog();
+    if (this.catalogRefresh !== undefined) return this.catalogRefresh;
+    const current = this.refreshCatalog();
+    this.catalogRefresh = current;
+    try {
+      return await current;
+    } finally {
+      if (this.catalogRefresh === current) this.catalogRefresh = undefined;
+    }
+  }
+
+  private async refreshCatalog(): Promise<PluginCatalogSnapshot> {
+    try {
+      const entries = await this.catalogSource.list();
+      this.assertOpen();
+      const catalog = { entries, checkedAt: new Date().toISOString() };
+      const snapshot = this.catalogSnapshot(catalog, "live");
+      this.memoryCatalog = catalog;
+      if (this.options.persistCatalog === false) return snapshot;
+      try {
+        await this.options.store.catalogCache.save(catalog);
+        return snapshot;
+      } catch (error) {
+        return {
+          ...snapshot,
+          error: `Plugin catalog was refreshed but could not be saved. ${summary(error)}`,
+        };
+      }
+    } catch (error) {
+      return { ...(await this.cachedCatalog()), error: summary(error) };
     }
   }
 
   async prepareChange(
     pluginId: string,
-    operation: "install" | "remove",
+    operation: PluginChangeOperation,
   ): Promise<PluginChangePrompt | null> {
     parsePluginId(pluginId);
     await this.start();
@@ -582,18 +652,27 @@ export class PluginRuntime implements PluginRuntimePort {
       return {
         pluginId,
         token,
-        title: operation === "install" ? "Update plugin?" : "Remove plugin?",
+        title:
+          operation === "install"
+            ? "Update plugin?"
+            : operation === "retry"
+              ? "Retry plugin?"
+              : "Remove plugin?",
         message: warning.message,
         detail: warning.detail,
         confirmLabel:
-          operation === "install" ? "Stop capture and update" : "Stop capture and remove",
+          operation === "install"
+            ? "Stop capture and update"
+            : operation === "retry"
+              ? "Stop capture and retry"
+              : "Stop capture and remove",
       };
     });
   }
 
   private async confirmChange(
     pluginId: string,
-    operation: "install" | "remove",
+    operation: PluginChangeOperation,
     loaded: LoadedPlugin | undefined,
     token?: string,
   ): Promise<void> {
@@ -624,6 +703,76 @@ export class PluginRuntime implements PluginRuntimePort {
     );
   }
 
+  async retryActivation(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot> {
+    parsePluginId(pluginId);
+    return this.withMutationIntent(pluginId, async (assertCurrent) => {
+      await this.start();
+      return this.serial(async () => {
+        assertCurrent();
+        const previous = this.modules.get(pluginId);
+        // Healthy retries are idempotent; a rejected renderer needs a fresh activation authority.
+        if (previous !== undefined && !this.errors.has(pluginId)) return this.snapshot();
+        this.changing.add(pluginId);
+        try {
+          const installation = await this.options.store.getInstalled(pluginId);
+          if (installation === undefined)
+            throw problem(
+              "There is no verified installed plugin to retry.",
+              "Install or repair the plugin in Preferences > Plugins.",
+            );
+          this.assertCompatible(installation.manifest);
+          if (previous !== undefined) await Promise.allSettled([...previous.connections]);
+          await this.confirmChange(pluginId, "retry", previous, confirmationToken);
+          assertCurrent();
+          await this.replaceInstalled(installation, previous, assertCurrent);
+          this.changing.delete(pluginId);
+          return await this.changed();
+        } catch (error) {
+          this.errors.set(pluginId, summary(error));
+          throw error;
+        } finally {
+          this.changing.delete(pluginId);
+        }
+      });
+    });
+  }
+
+  /** Installation and local recovery use the same candidate activation, cleanup and commit boundary. */
+  private async replaceInstalled(
+    installation: ActivePlugin,
+    previous: LoadedPlugin | undefined,
+    assertCurrent: () => void,
+  ): Promise<void> {
+    const pluginId = installation.manifest.id;
+    let candidate: LoadedPlugin | undefined;
+    try {
+      candidate = await this.load(installation);
+      assertCurrent();
+      if (previous !== undefined) {
+        await previous.backend.prepareUnload("update");
+        await Promise.allSettled([...previous.requests]);
+      }
+      assertCurrent();
+      const cleanupError = await this.options.store.commitInstall(pluginId, installation.sha256);
+      this.errors.delete(pluginId);
+      if (cleanupError !== undefined) this.errors.set(pluginId, cleanupError);
+      if (previous !== undefined) {
+        try {
+          await this.retire(previous);
+        } catch (error) {
+          this.errors.set(
+            pluginId,
+            `The update is active, but previous-instance cleanup failed: ${summary(error)}`,
+          );
+        }
+      }
+      this.activate(candidate);
+      candidate = undefined;
+    } finally {
+      if (candidate !== undefined) await this.retire(candidate).catch(() => undefined);
+    }
+  }
+
   private async installCurrent(
     pluginId: string,
     confirmationToken: string | undefined,
@@ -643,7 +792,6 @@ export class PluginRuntime implements PluginRuntimePort {
       this.changing.add(pluginId);
       const previous = this.modules.get(pluginId);
       let installation: ActivePlugin | undefined;
-      let candidate: LoadedPlugin | undefined;
       try {
         if (
           manifest.apiVersion >= 3 &&
@@ -667,32 +815,10 @@ export class PluginRuntime implements PluginRuntimePort {
         await this.confirmChange(pluginId, "install", previous, confirmationToken);
         assertCurrent();
         installation = await this.options.store.prepareInstall(download.bytes, download.sha256);
-        candidate = await this.load(installation);
-        assertCurrent();
-        if (previous !== undefined) {
-          await previous.backend.prepareUnload("update");
-          await Promise.allSettled([...previous.requests]);
-        }
-        assertCurrent();
-        const cleanupError = await this.options.store.commitInstall(pluginId, installation.sha256);
-        this.errors.delete(pluginId);
-        if (cleanupError !== undefined) this.errors.set(pluginId, cleanupError);
-        if (previous !== undefined) {
-          try {
-            await this.retire(previous);
-          } catch (error) {
-            this.errors.set(
-              pluginId,
-              `The update is active, but previous-instance cleanup failed: ${summary(error)}`,
-            );
-          }
-        }
-        this.activate(candidate);
-        candidate = undefined;
+        await this.replaceInstalled(installation, previous, assertCurrent);
         this.changing.delete(pluginId);
         return await this.changed();
       } catch (error) {
-        if (candidate !== undefined) await this.retire(candidate).catch(() => undefined);
         if (installation !== undefined)
           await this.options.store
             .discardInstall(pluginId, installation.sha256)
@@ -788,7 +914,7 @@ export class PluginRuntime implements PluginRuntimePort {
         }
         this.errors.set(
           pluginId,
-          `Plugin UI could not load.${rollbackError ? ` Recovery failed: ${rollbackError}.` : previous ? " The previous version was restored." : " Reinstall the plugin to retry."} ${error.slice(0, 1024)}`,
+          `Plugin UI could not load.${rollbackError ? ` Recovery failed: ${rollbackError}.` : previous ? " The previous version was restored." : " Retry activation in Preferences > Plugins."} ${error.slice(0, 1024)}`,
         );
         this.changing.delete(pluginId);
         return await this.changed();

@@ -466,6 +466,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "plugins.change.prepare":
       case "plugins.renderer.failed":
       case "plugins.install":
+      case "plugins.retry":
       case "plugins.remove":
       case "plugins.restart":
       case "plugins.exit.prepare":

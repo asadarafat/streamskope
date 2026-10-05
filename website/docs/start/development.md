@@ -94,7 +94,7 @@ development packages; test published plugins with a compatible released desktop.
     ```
 
 2. Start or return to the workbench launched by `npm run dev`.
-3. Open **Preferences → Plugins** and select **Refresh plugins**.
+3. Open **Preferences → Plugins** and select **Check for updates**.
 4. Choose **Install**, or **Update to** the new development version.
 
 **You should see:** the plugin's connection action becomes available without a

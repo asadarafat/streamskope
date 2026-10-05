@@ -43,7 +43,7 @@ const zeroRuleEvaluation = {
 
 describe("Kafka host contract", () => {
   it("declares the complete current command and event vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(49);
+    expect(HOST_PROTOCOL_VERSION).toBe(50);
     expect(HOST_COMMANDS).toEqual([
       "relationships.capture",
       "relationships.cancel",
@@ -151,6 +151,7 @@ describe("Kafka host contract", () => {
       "plugins.change.prepare",
       "plugins.renderer.failed",
       "plugins.install",
+      "plugins.retry",
       "plugins.remove",
       "plugins.restart",
       "plugins.exit.prepare",
@@ -197,7 +198,7 @@ describe("Kafka host contract", () => {
       payload: {},
       version: 48,
     };
-    expect(() => parseHostCommand(command)).toThrow("command.version: must equal 49");
+    expect(() => parseHostCommand(command)).toThrow("command.version: must equal 50");
     expect(() =>
       parseHostCommandResponse({
         command: command.command,
@@ -206,7 +207,7 @@ describe("Kafka host contract", () => {
         result: { correlationId: "previous-renderer" },
         version: 48,
       }),
-    ).toThrow("response.version: must equal 49");
+    ).toThrow("response.version: must equal 50");
     expect(() =>
       parseHostEvent({
         event: "connection.state",
@@ -214,7 +215,7 @@ describe("Kafka host contract", () => {
         sequence: 1,
         version: 48,
       }),
-    ).toThrow("event.version: must equal 49");
+    ).toThrow("event.version: must equal 50");
   });
 
   it("keeps unimplemented integration names outside the public host vocabulary", () => {

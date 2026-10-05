@@ -54,6 +54,7 @@ function pluginRuntime(close: (host: PluginHostBindings) => Promise<void>): Plug
     catalog: () => Promise.resolve({ plugins: [] }),
     prepareChange: () => Promise.resolve(null),
     install: () => Promise.resolve({ revision: 0, plugins: [] }),
+    retryActivation: () => Promise.resolve({ revision: 0, plugins: [] }),
     remove: () => Promise.resolve({ revision: 0, plugins: [] }),
     rendererFailed: () => Promise.resolve({ revision: 0, plugins: [] }),
     restart: () => Promise.resolve(),

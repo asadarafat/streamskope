@@ -67,7 +67,7 @@ export interface PluginSnapshot {
   readonly error?: string;
 }
 
-export type PluginChangeOperation = "install" | "remove";
+export type PluginChangeOperation = "install" | "remove" | "retry";
 
 export interface PluginChangeWarning {
   readonly message: string;
@@ -84,6 +84,9 @@ export interface PluginChangePrompt extends PluginChangeWarning {
 
 export interface PluginCatalogSnapshot {
   readonly plugins: readonly PluginManifest[];
+  readonly source?: "live" | "cache" | "unavailable";
+  /** Last successful remote check; cached entries never imply current availability. */
+  readonly checkedAt?: string;
   readonly error?: string;
 }
 

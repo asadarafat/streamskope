@@ -58,6 +58,8 @@ jobs:
           --grep 'keyboard-operable|investigates real lag|persistent resource hierarchy|expanded dock in both themes|main resource page primary'
       - name: Verify Core NATS live workspace and provider switching in Chromium
         run: node tools/package/e2e.mjs web test/e2e/web-nats-workspace.spec.ts
+      - name: Verify hot plugin lifecycle and local management during catalog failure
+        run: node tools/package/e2e.mjs web test/e2e/web-plugin-installation.spec.ts
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !cancelled() }}
         with:

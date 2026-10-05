@@ -8,6 +8,8 @@ import type { PluginManifest } from "../../src/plugins/contracts";
 import { OFFICIAL_PLUGINS, officialPluginAssets } from "../../src/platform/node/plugins/official";
 import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
 import { DevelopmentPluginCatalog } from "../../tools/dev/plugin-catalog";
+import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
+import { PluginStore } from "../../src/platform/node/plugins/store";
 
 const directories: string[] = [];
 const manifest: PluginManifest = {
@@ -59,6 +61,26 @@ it("allows startup without build output and explains how to build a missing plug
   const catalog = new DevelopmentPluginCatalog(join(await directory(), "missing"));
   await expect(catalog.list()).resolves.toEqual([]);
   await expect(catalog.download(manifest.id)).rejects.toThrow("npm run package -- plugin");
+});
+
+it("keeps local development discovery separate from the persisted official catalog", async () => {
+  const root = await directory();
+  await writePackage(root);
+  const store = new PluginStore(await directory());
+  const runtime = new PluginRuntime({
+    store,
+    catalog: new DevelopmentPluginCatalog(root),
+    persistCatalog: false,
+  });
+  try {
+    const refreshed = await runtime.catalog();
+    expect(refreshed).toMatchObject({ source: "live", plugins: [manifest] });
+    expect(refreshed.error).toBeUndefined();
+    expect(await store.catalogCache.read()).toBeUndefined();
+    expect(await runtime.catalog(false)).toEqual({ ...refreshed, source: "cache" });
+  } finally {
+    await runtime.close();
+  }
 });
 
 it("refreshes verified package bytes and hashes from local output without network access", async () => {

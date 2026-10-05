@@ -53,6 +53,7 @@ const writes = [
   "trustAcquisition.https.fetch",
   "plugin.execute",
   "plugins.install",
+  "plugins.retry",
   "plugins.remove",
   "plugins.restart",
   "plugins.exit.resolve",

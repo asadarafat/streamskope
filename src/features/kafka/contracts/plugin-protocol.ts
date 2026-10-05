@@ -117,13 +117,32 @@ function changePrompt(value: unknown): PluginChangePrompt | null {
 }
 function catalog(value: unknown): PluginCatalogSnapshot {
   const input = record(value, "pluginCatalog");
-  exactKeys(input, ["plugins", "error"], "pluginCatalog");
+  exactKeys(input, ["plugins", "error", "source", "checkedAt"], "pluginCatalog");
   const error = optionalText(input, "error", "pluginCatalog", 4096);
+  const checkedAt = optionalText(input, "checkedAt", "pluginCatalog", 32);
+  if (
+    checkedAt !== undefined &&
+    (!Number.isFinite(Date.parse(checkedAt)) || new Date(checkedAt).toISOString() !== checkedAt)
+  )
+    throw new HostContractValidationError(
+      "pluginCatalog.checkedAt",
+      "must be an ISO UTC timestamp",
+    );
   return {
     plugins: list(input.plugins, "pluginCatalog.plugins", (entry) =>
       pluginValue(() => parsePluginManifest(entry), "pluginCatalog.plugins"),
     ),
     ...(error === undefined ? {} : { error }),
+    ...(checkedAt === undefined ? {} : { checkedAt }),
+    ...(input.source === undefined
+      ? {}
+      : {
+          source: declaredValue(
+            input.source,
+            ["live", "cache", "unavailable"] as const,
+            "pluginCatalog.source",
+          ),
+        }),
   };
 }
 function exitPrompt(value: unknown): PluginExitPrompt | null {
@@ -160,12 +179,24 @@ export function parsePluginHostCommand(
   const payload = record(value, "command.payload");
   switch (command) {
     case "plugins.list":
-    case "plugins.catalog":
     case "plugins.restart":
     case "plugins.exit.prepare":
       exactKeys(payload, [], "command.payload");
       return { command, id: requestId, version, payload: {} };
+    case "plugins.catalog":
+      exactKeys(payload, ["refresh"], "command.payload");
+      return {
+        command,
+        id: requestId,
+        version,
+        payload: {
+          ...(payload.refresh === undefined
+            ? {}
+            : { refresh: truth(payload.refresh, "command.payload.refresh") }),
+        },
+      };
     case "plugins.install":
+    case "plugins.retry":
     case "plugins.remove":
       exactKeys(payload, ["pluginId", "confirmationToken"], "command.payload");
       return {
@@ -195,7 +226,7 @@ export function parsePluginHostCommand(
           pluginId: id(payload.pluginId, "command.payload.pluginId"),
           operation: declaredValue(
             payload.operation,
-            ["install", "remove"] as const,
+            ["install", "remove", "retry"] as const,
             "command.payload.operation",
           ),
         },
@@ -258,6 +289,7 @@ export function parsePluginHostResponse(
   switch (command) {
     case "plugins.list":
     case "plugins.install":
+    case "plugins.retry":
     case "plugins.remove":
     case "plugins.renderer.failed":
       exactKeys(result, ["correlationId", "pluginSnapshot"], "response.result");

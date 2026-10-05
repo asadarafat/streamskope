@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Stack, Typography } from "@mui/material";
 
 import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
@@ -21,16 +21,24 @@ import {
 import { usePlugins } from "./PluginsProvider";
 
 type PluginActionTarget = Pick<PluginManifest, "id" | "name"> & { readonly version?: string };
+type PluginChangeCommand = "plugins.install" | "plugins.retry" | "plugins.remove";
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The plugin operation could not be completed.";
 }
 
 export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): React.JSX.Element {
-  const { errors: rendererErrors, refresh: refreshRenderers } = usePlugins();
+  const {
+    errors: rendererErrors,
+    loading: renderersLoading,
+    refresh: refreshRenderers,
+  } = usePlugins();
   const [snapshot, setSnapshot] = useState<PluginSnapshot>({ revision: 0, plugins: [] });
   const [catalog, setCatalog] = useState<PluginCatalogSnapshot>({ plugins: [] });
-  const [loading, setLoading] = useState(true);
+  const [installedLoading, setInstalledLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const installedRequest = useRef(0);
+  const catalogRequest = useRef(0);
   const [failure, setFailure] = useState<string>();
   const [pending, setPending] = useState<string>();
   const [status, setStatus] = useState("");
@@ -39,47 +47,67 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
     readonly version?: string;
   }>();
   const [confirmation, setConfirmation] = useState<{
-    readonly command: "plugins.install" | "plugins.remove";
+    readonly command: PluginChangeCommand;
     readonly plugin: PluginActionTarget;
     readonly prompt: PluginChangePrompt | null;
   }>();
 
-  const refresh = useCallback(async (): Promise<void> => {
-    setLoading(true);
-    const [installed, available] = await Promise.allSettled([
-      host.execute({
+  const refreshInstalled = useCallback(async (): Promise<void> => {
+    const request = ++installedRequest.current;
+    setInstalledLoading(true);
+    try {
+      const response = await host.execute({
         command: "plugins.list",
         id: globalThis.crypto.randomUUID(),
         payload: {},
         version: HOST_PROTOCOL_VERSION,
-      }),
-      host.execute({
-        command: "plugins.catalog",
-        id: globalThis.crypto.randomUUID(),
-        payload: {},
-        version: HOST_PROTOCOL_VERSION,
-      }),
-    ]);
-    if (installed.status === "rejected") {
-      setSnapshot((current) => ({ ...current, error: failureMessage(installed.reason) }));
-    } else if (!installed.value.ok) {
-      const error = `${installed.value.error.summary} ${installed.value.error.recovery}`;
-      setSnapshot((current) => ({ ...current, error }));
-    } else {
-      const next = installed.value.result.pluginSnapshot;
-      setSnapshot((current) => (next.revision >= current.revision ? next : current));
-    }
-    if (available.status === "rejected") {
-      setCatalog({ plugins: [], error: failureMessage(available.reason) });
-    } else if (!available.value.ok) {
-      setCatalog({
-        plugins: [],
-        error: `${available.value.error.summary} ${available.value.error.recovery}`,
       });
-    } else {
-      setCatalog(available.value.result.pluginCatalog);
+      if (request !== installedRequest.current) return;
+      if (!response.ok) throw new Error(`${response.error.summary} ${response.error.recovery}`);
+      const next = response.result.pluginSnapshot;
+      setSnapshot((current) => (next.revision >= current.revision ? next : current));
+    } catch (error) {
+      if (request === installedRequest.current)
+        setSnapshot((current) => ({ ...current, error: failureMessage(error) }));
+    } finally {
+      if (request === installedRequest.current) setInstalledLoading(false);
     }
-    setLoading(false);
+  }, [host]);
+
+  const refreshCatalog = useCallback(async (): Promise<void> => {
+    const request = ++catalogRequest.current;
+    setCatalogLoading(true);
+    // Show verified local discovery before waiting for the optional network refresh.
+    for (const refresh of [false, true]) {
+      try {
+        const response = await host.execute({
+          command: "plugins.catalog",
+          id: globalThis.crypto.randomUUID(),
+          payload: { refresh },
+          version: HOST_PROTOCOL_VERSION,
+        });
+        if (request !== catalogRequest.current) return;
+        if (!response.ok) throw new Error(`${response.error.summary} ${response.error.recovery}`);
+        const next = response.result.pluginCatalog;
+        setCatalog((current) =>
+          next.error !== undefined &&
+          next.source !== "live" &&
+          next.plugins.length === 0 &&
+          current.plugins.length > 0
+            ? { ...current, source: "cache", error: next.error }
+            : next,
+        );
+      } catch (error) {
+        if (request !== catalogRequest.current) return;
+        if (refresh)
+          setCatalog((current) => ({
+            ...current,
+            source: current.checkedAt === undefined ? "unavailable" : "cache",
+            error: failureMessage(error),
+          }));
+      }
+    }
+    if (request === catalogRequest.current) setCatalogLoading(false);
   }, [host]);
 
   useEffect(() => {
@@ -90,12 +118,17 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
         );
       }
     });
-    void refresh();
-    return unsubscribe;
-  }, [host, refresh]);
+    void refreshInstalled();
+    void refreshCatalog();
+    return () => {
+      unsubscribe();
+      installedRequest.current++;
+      catalogRequest.current++;
+    };
+  }, [host, refreshInstalled, refreshCatalog]);
 
   async function change(
-    command: "plugins.install" | "plugins.remove",
+    command: PluginChangeCommand,
     plugin: PluginActionTarget,
     confirmationToken?: string,
   ): Promise<void> {
@@ -105,7 +138,9 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
     setStatus(
       command === "plugins.install"
         ? `Downloading and verifying ${plugin.name}…`
-        : `Removing ${plugin.name}…`,
+        : command === "plugins.retry"
+          ? `Verifying the installed ${plugin.name} package and reloading…`
+          : `Removing ${plugin.name}…`,
     );
     try {
       const response = await host.execute({
@@ -124,7 +159,8 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
           : current,
       );
       setConfirmation(undefined);
-      if (command === "plugins.install")
+      if (command === "plugins.retry") await refreshRenderers();
+      if (command !== "plugins.remove")
         setCompletedInstallation({
           id: plugin.id,
           ...(plugin.version === undefined ? {} : { version: plugin.version }),
@@ -132,20 +168,22 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
       setStatus(
         command === "plugins.install"
           ? `${plugin.name} ${plugin.version ?? ""} is installed.`
-          : `${plugin.name} has been removed. Saved connection settings are retained.`,
+          : command === "plugins.retry"
+            ? `${plugin.name} ${plugin.version ?? ""} is active.`
+            : `${plugin.name} has been removed. Saved connection settings are retained.`,
       );
     } catch (error) {
       setConfirmation(undefined);
       setFailure(failureMessage(error));
       setStatus("");
-      await refresh();
+      await refreshInstalled();
     } finally {
       setPending(undefined);
     }
   }
 
   async function prepareChange(
-    command: "plugins.install" | "plugins.remove",
+    command: PluginChangeCommand,
     plugin: PluginActionTarget,
   ): Promise<void> {
     setPending(plugin.id);
@@ -158,7 +196,12 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
         id: globalThis.crypto.randomUUID(),
         payload: {
           pluginId: plugin.id,
-          operation: command === "plugins.install" ? "install" : "remove",
+          operation:
+            command === "plugins.install"
+              ? "install"
+              : command === "plugins.retry"
+                ? "retry"
+                : "remove",
         },
         version: HOST_PROTOCOL_VERSION,
       });
@@ -178,24 +221,26 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
     }
   }
 
+  const disabled = installedLoading || pending !== undefined;
   const manifests = new Map<string, PluginManifest>();
   for (const entry of snapshot.plugins) {
-    const manifest = entry.installed ?? entry.active ?? entry.previous;
+    const manifest =
+      entry.installed ??
+      entry.active ??
+      entry.previous ??
+      catalog.plugins.find((candidate) => candidate.id === entry.id);
     if (manifest !== undefined) manifests.set(entry.id, manifest);
   }
-  for (const manifest of catalog.plugins) {
-    const current = manifests.get(manifest.id);
-    if (current === undefined || comparePluginManifests(manifest, current) > 0) {
-      manifests.set(manifest.id, manifest);
-    }
-  }
-  const disabled = loading || pending !== undefined;
+  for (const manifest of catalog.plugins)
+    if (!manifests.has(manifest.id)) manifests.set(manifest.id, manifest);
   const completedEntry = snapshot.plugins.find((entry) => entry.id === completedInstallation?.id);
   const showStatus =
     status.length > 0 &&
     (completedInstallation === undefined ||
       (completedEntry?.installed?.version === completedInstallation.version &&
+        completedEntry?.active?.version === completedInstallation.version &&
         completedEntry?.error === undefined &&
+        !renderersLoading &&
         rendererErrors[completedInstallation.id] === undefined));
 
   return (
@@ -215,13 +260,13 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
           </Typography>
         </Box>
         <Button
-          disabled={disabled}
+          disabled={catalogLoading || pending !== undefined}
           onClick={() => {
-            void Promise.all([refresh(), refreshRenderers()]);
+            void Promise.all([refreshInstalled(), refreshCatalog(), refreshRenderers()]);
           }}
           variant="text"
         >
-          Refresh plugins
+          Check for updates
         </Button>
       </Stack>
       {snapshot.error === undefined ? null : (
@@ -229,21 +274,36 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
       )}
       {catalog.error === undefined ? null : (
         <Alert severity="warning">
-          The plugin catalog is unavailable. Installed plugins remain available. {catalog.error}
+          {catalog.source === "live"
+            ? "The plugin catalog was refreshed, but its local copy could not be saved. "
+            : "The plugin catalog is unavailable. Installed plugins remain available. "}
+          {catalog.error}
         </Alert>
       )}
       {failure === undefined ? null : <Alert severity="error">{failure}</Alert>}
-      {loading ? (
+      {installedLoading ? (
         <Typography role="status" variant="body2">
-          Loading plugins…
+          Loading installed plugins…
         </Typography>
       ) : null}
+      {catalogLoading ? (
+        <Typography role="status" variant="body2">
+          Checking for plugin updates…
+        </Typography>
+      ) : null}
+      {catalog.checkedAt === undefined ? null : (
+        <Typography color="text.secondary" variant="body2">
+          {catalog.source === "cache" ? "Cached catalog · Last checked " : "Catalog checked "}
+          {new Date(catalog.checkedAt).toLocaleString()}
+        </Typography>
+      )}
       {!showStatus ? null : (
         <Typography role="status" aria-live="polite" variant="body2">
           {status}
         </Typography>
       )}
-      {!loading &&
+      {!installedLoading &&
+      !catalogLoading &&
       manifests.size === 0 &&
       snapshot.plugins.length === 0 &&
       catalog.error === undefined ? (
@@ -251,145 +311,174 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
           No compatible plugins are available for this StreamSkope release.
         </Typography>
       ) : null}
-      {[...manifests.values()].map((manifest) => {
-        const installation = snapshot.plugins.find((entry) => entry.id === manifest.id);
-        const available = catalog.plugins.find((entry) => entry.id === manifest.id);
-        const installed = installation?.installed;
-        const currentManifest = [installed, installation?.active]
-          .filter((entry): entry is PluginManifest => entry !== undefined)
-          .sort(comparePluginManifests)
-          .at(-1);
-        const catalogIsOlder =
-          available !== undefined &&
-          currentManifest !== undefined &&
-          comparePluginManifests(available, currentManifest) < 0;
-        const updateAvailable =
-          installed !== undefined &&
-          available !== undefined &&
-          comparePluginManifests(available, installed) > 0;
-        const error = installation?.error ?? rendererErrors[manifest.id];
-        return (
-          <Box
-            component="section"
-            aria-label={manifest.name}
-            key={manifest.id}
-            sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1 }}
-          >
-            <Stack spacing={1}>
-              <Typography component="h4" variant="subtitle1">
-                {manifest.name}
-              </Typography>
-              {manifest.description === undefined ? null : (
-                <Typography variant="body2">{manifest.description}</Typography>
-              )}
-              <Typography color="text.secondary" variant="body2">
-                {installed === undefined
-                  ? `Available version ${manifest.version}`
-                  : `Installed version ${installed.version}`}
-                {manifest.targetEdaVersion === undefined
-                  ? ""
-                  : ` · Target EDA ${manifest.targetEdaVersion}`}
-              </Typography>
-              {manifest.compatibility === undefined ? null : (
-                <Typography variant="body2">
-                  {installed !== undefined && installed.version !== manifest.version
-                    ? "Available update: "
-                    : ""}
-                  Requires StreamSkope {manifest.compatibility.streamskope.minimum}
-                  {manifest.compatibility.streamskope.maximumExclusive === undefined
-                    ? " or later"
-                    : ` up to, but excluding, ${manifest.compatibility.streamskope.maximumExclusive}`}
-                  {" · "}
-                  Supports {manifest.compatibility.target.system.toUpperCase()}{" "}
-                  {manifest.compatibility.target.minimum}–{manifest.compatibility.target.maximum}
-                  {" (inclusive) · Plugin API "}
-                  {manifest.apiVersion}
-                </Typography>
-              )}
-              <Typography variant="body2">
-                {installation?.active !== undefined
-                  ? `Active version ${installation.active.version}`
-                  : installed === undefined
-                    ? "Not installed"
-                    : "Installed, but not active"}
-              </Typography>
-              {error === undefined ? null : <Alert severity="error">{error}</Alert>}
-              {error === undefined || !catalogIsOlder ? null : (
-                <Alert severity="warning">
-                  The catalog offers older version {available?.version}. Retry requires version{" "}
-                  {currentManifest?.version} or newer. Refresh plugins when that version is
-                  available.
-                </Alert>
-              )}
-              <Stack direction="row" spacing={1}>
-                {available === undefined ||
-                catalogIsOlder ||
-                (installed !== undefined &&
-                  installation?.active !== undefined &&
-                  !updateAvailable &&
-                  error === undefined) ? null : (
-                  <Button
-                    disabled={disabled || snapshot.error !== undefined}
-                    variant="contained"
-                    onClick={() => {
-                      void prepareChange("plugins.install", available);
-                    }}
-                  >
-                    {pending === manifest.id
-                      ? "Downloading and verifying…"
-                      : updateAvailable
-                        ? `Update to ${available.version}`
+      {(["Installed", "Available"] as const).map((section) => (
+        <Stack component="section" aria-label={`${section} plugins`} spacing={2} key={section}>
+          <Typography component="h4" variant="subtitle1">
+            {section}
+          </Typography>
+          {section === "Installed" && !installedLoading && snapshot.plugins.length === 0 ? (
+            <Typography color="text.secondary" variant="body2">
+              No plugins are installed.
+            </Typography>
+          ) : null}
+          {[...manifests.values()]
+            .filter((manifest) =>
+              section === "Installed"
+                ? snapshot.plugins.some((entry) => entry.id === manifest.id)
+                : !snapshot.plugins.some((entry) => entry.id === manifest.id),
+            )
+            .map((manifest) => {
+              const installation = snapshot.plugins.find((entry) => entry.id === manifest.id);
+              const available = catalog.plugins.find((entry) => entry.id === manifest.id);
+              const installed = installation?.installed;
+              const currentManifest = [installed, installation?.active]
+                .filter((entry): entry is PluginManifest => entry !== undefined)
+                .sort(comparePluginManifests)
+                .at(-1);
+              const catalogIsOlder =
+                available !== undefined &&
+                currentManifest !== undefined &&
+                comparePluginManifests(available, currentManifest) < 0;
+              const updateAvailable =
+                installed !== undefined &&
+                available !== undefined &&
+                comparePluginManifests(available, installed) > 0;
+              const presented = updateAvailable && available !== undefined ? available : manifest;
+              const error = installation?.error ?? rendererErrors[manifest.id];
+              return (
+                <Box
+                  component="section"
+                  aria-label={manifest.name}
+                  key={manifest.id}
+                  sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1 }}
+                >
+                  <Stack spacing={1}>
+                    <Typography component="h5" variant="subtitle1">
+                      {manifest.name}
+                    </Typography>
+                    {manifest.description === undefined ? null : (
+                      <Typography variant="body2">{manifest.description}</Typography>
+                    )}
+                    <Typography color="text.secondary" variant="body2">
+                      {installed === undefined
+                        ? `Available version ${manifest.version}`
+                        : `Installed version ${installed.version}`}
+                      {manifest.targetEdaVersion === undefined
+                        ? ""
+                        : ` · Target EDA ${manifest.targetEdaVersion}`}
+                    </Typography>
+                    {presented.compatibility === undefined ? null : (
+                      <Typography variant="body2">
+                        {updateAvailable ? "Available update: " : ""}
+                        Requires StreamSkope {presented.compatibility.streamskope.minimum}
+                        {presented.compatibility.streamskope.maximumExclusive === undefined
+                          ? " or later"
+                          : ` up to, but excluding, ${presented.compatibility.streamskope.maximumExclusive}`}
+                        {" · "}
+                        Supports {presented.compatibility.target.system.toUpperCase()}{" "}
+                        {presented.compatibility.target.minimum}–
+                        {presented.compatibility.target.maximum}
+                        {" (inclusive) · Plugin API "}
+                        {presented.apiVersion}
+                      </Typography>
+                    )}
+                    <Typography variant="body2">
+                      {installation?.active !== undefined
+                        ? `Active version ${installation.active.version}`
                         : installed === undefined
-                          ? "Install"
-                          : "Retry activation"}
-                  </Button>
-                )}
-                {installation === undefined ? null : (
-                  <Button
-                    disabled={disabled || snapshot.error !== undefined}
-                    color="error"
-                    variant="text"
-                    onClick={() => {
-                      void prepareChange("plugins.remove", installed ?? manifest);
-                    }}
+                          ? "Not installed"
+                          : "Installed, but not active"}
+                    </Typography>
+                    {error === undefined ? null : <Alert severity="error">{error}</Alert>}
+                    {error === undefined || !catalogIsOlder ? null : (
+                      <Alert severity="warning">
+                        The catalog offers older version {available?.version}. Installed version{" "}
+                        {currentManifest?.version} is newer; this older package cannot be used as an
+                        update.
+                      </Alert>
+                    )}
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                      {available === undefined ||
+                      catalogIsOlder ||
+                      (installation !== undefined && !updateAvailable) ? null : (
+                        <Button
+                          disabled={disabled || snapshot.error !== undefined}
+                          variant="contained"
+                          onClick={() => {
+                            void prepareChange("plugins.install", available);
+                          }}
+                        >
+                          {pending === manifest.id
+                            ? "Downloading and verifying…"
+                            : updateAvailable
+                              ? `Update to ${available.version}`
+                              : "Install"}
+                        </Button>
+                      )}
+                      {installed === undefined ||
+                      (installation?.active !== undefined && error === undefined) ? null : (
+                        <Button
+                          disabled={disabled || snapshot.error !== undefined}
+                          variant="contained"
+                          onClick={() => {
+                            void prepareChange("plugins.retry", installed);
+                          }}
+                        >
+                          Retry activation
+                        </Button>
+                      )}
+                      {installation === undefined ? null : (
+                        <Button
+                          disabled={disabled || snapshot.error !== undefined}
+                          color="error"
+                          variant="text"
+                          onClick={() => {
+                            void prepareChange("plugins.remove", installed ?? manifest);
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </Stack>
+                  </Stack>
+                </Box>
+              );
+            })}
+          {section !== "Installed"
+            ? null
+            : snapshot.plugins
+                .filter((entry) => !manifests.has(entry.id))
+                .map((entry) => (
+                  <Box
+                    component="section"
+                    aria-label={entry.id}
+                    key={entry.id}
+                    sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1 }}
                   >
-                    Remove
-                  </Button>
-                )}
-              </Stack>
-            </Stack>
-          </Box>
-        );
-      })}
-      {snapshot.plugins
-        .filter((entry) => !manifests.has(entry.id))
-        .map((entry) => (
-          <Box
-            component="section"
-            aria-label={entry.id}
-            key={entry.id}
-            sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1 }}
-          >
-            <Stack spacing={1}>
-              <Typography component="h4" variant="subtitle1">
-                {entry.id}
-              </Typography>
-              <Alert severity="error">
-                {entry.error ?? rendererErrors[entry.id] ?? "This plugin could not be activated."}
-              </Alert>
-              <Button
-                disabled={disabled || snapshot.error !== undefined}
-                color="error"
-                variant="text"
-                onClick={() => {
-                  void prepareChange("plugins.remove", { id: entry.id, name: entry.id });
-                }}
-              >
-                Remove
-              </Button>
-            </Stack>
-          </Box>
-        ))}
+                    <Stack spacing={1}>
+                      <Typography component="h5" variant="subtitle1">
+                        {entry.id}
+                      </Typography>
+                      <Alert severity="error">
+                        {entry.error ??
+                          rendererErrors[entry.id] ??
+                          "This plugin could not be activated."}
+                      </Alert>
+                      <Button
+                        disabled={disabled || snapshot.error !== undefined}
+                        color="error"
+                        variant="text"
+                        onClick={() => {
+                          void prepareChange("plugins.remove", { id: entry.id, name: entry.id });
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </Stack>
+                  </Box>
+                ))}
+        </Stack>
+      ))}
       <Dialog
         open={confirmation !== undefined}
         onClose={pending === undefined ? (): void => setConfirmation(undefined) : undefined}
@@ -409,7 +498,9 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
             <Typography variant="body2">
               {confirmation?.command === "plugins.remove"
                 ? "Saved connection settings are retained. Its connections will require reinstalling the plugin."
-                : "Your saved connection settings are retained. The new version becomes available immediately."}
+                : confirmation?.command === "plugins.retry"
+                  ? "The verified installed package is reloaded locally. Your saved connection settings are retained."
+                  : "Your saved connection settings are retained. The new version becomes available immediately."}
             </Typography>
             {failure === undefined ? null : <Alert severity="error">{failure}</Alert>}
           </Stack>
