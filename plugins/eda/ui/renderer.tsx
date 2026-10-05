@@ -73,7 +73,9 @@ const renderer: PluginRenderer = {
     return capture === undefined ? undefined : `EDA API capture · ${capture.source.name}`;
   },
   mount: (element, initialContext) => {
-    const root = createRoot(element);
+    const root = createRoot(element, {
+      identifierPrefix: `streamskope-eda-${globalThis.crypto.randomUUID()}-`,
+    });
     function update(context: PluginViewContext): void {
       root.render(
         <ThemeProvider

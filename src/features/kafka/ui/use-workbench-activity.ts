@@ -6,6 +6,8 @@ import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 import type { KafkaUiState } from "./state";
 import { useAutoOpenActivityOnError, useDesktopActions } from "./workbench-runtime-effects";
 
+const alwaysInteractive = (): boolean => true;
+
 interface WorkbenchActivityController {
   readonly activityOpen: boolean;
   readonly activityHeight: number;
@@ -25,6 +27,7 @@ interface WorkbenchActivityController {
 export function useWorkbenchActivity(
   desktop: StreamSkopeDesktop | undefined,
   activities: KafkaUiState["activities"],
+  isInteractive: () => boolean = alwaysInteractive,
 ): WorkbenchActivityController {
   const [activityOpen, setActivityOpen] = useState(false);
   const [activityHeight, setActivityHeight] = useState<number>(streamSkopeLayout.activityHeight);
@@ -51,10 +54,17 @@ export function useWorkbenchActivity(
     setActivityOpen(false);
   }, []);
 
-  useDesktopActions(desktop, openActivity, setPreferenceDialogMounted, setPreferenceDialogOpen);
+  useDesktopActions(
+    desktop,
+    openActivity,
+    setPreferenceDialogMounted,
+    setPreferenceDialogOpen,
+    isInteractive,
+  );
 
   useEffect(() => {
     const openCommands = (event: KeyboardEvent): void => {
+      if (!isInteractive()) return;
       if (
         !event.repeat &&
         !event.isComposing &&
@@ -74,7 +84,7 @@ export function useWorkbenchActivity(
     };
     globalThis.addEventListener("keydown", openCommands);
     return (): void => globalThis.removeEventListener("keydown", openCommands);
-  }, []);
+  }, [isInteractive]);
 
   useEffect(() => {
     if (!activityOpen && restoreActivityFocusRef.current) {

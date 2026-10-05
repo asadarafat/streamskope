@@ -45,6 +45,20 @@ class ResponsiveWorkbenchBackend implements StreamSkopeBackend {
   ): Promise<HostCommandResponse<Command["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
     this.commands.push(command);
+    if (command.command === "plugins.list") {
+      return Promise.resolve(
+        testHostResponse(command, {
+          command: command.command,
+          id: command.id,
+          ok: true,
+          result: {
+            correlationId: `responsive-${command.id}`,
+            pluginSnapshot: { revision: 0, plugins: [] },
+          },
+          version: HOST_PROTOCOL_VERSION,
+        }),
+      );
+    }
     if (command.command === "preferences.get") {
       return Promise.resolve(
         testHostResponse(command, {
@@ -451,20 +465,32 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
     await openDesktop(page);
     emitProfiles();
 
+    await expect(page.getByRole("banner")).toHaveCount(1);
+    await expect(page.getByRole("contentinfo")).toHaveCount(1);
+    const provider = page.getByRole("combobox", { name: "Messaging provider" });
+    await expect(provider).toContainText("Kafka");
+    await provider.click();
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await page.getByRole("option", { name: "Kafka", exact: true }).click();
+    expect(
+      backend.commands.filter(
+        (command) =>
+          command.command === "messages.stop" || command.command === "connection.disconnect",
+      ),
+    ).toEqual([]);
+
     const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });
     for (const resource of [
       "Overview",
       "Topics",
       "Consumer Groups",
       "Schema Registry",
+      "Kafka Connect",
       "Access Control Lists",
       "Transforms",
       "Connection Profiles",
     ]) {
       await expect(navigation.getByRole("button", { name: resource })).toBeVisible();
-    }
-    for (const unsupported of ["Kafka Connect"]) {
-      await expect(navigation.getByRole("button", { name: unsupported })).toHaveCount(0);
     }
     await expect(
       navigation.getByRole("button", { name: "Connection Profiles" }),
@@ -474,6 +500,7 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
       "Topics",
       "Consumer Groups",
       "Schema Registry",
+      "Kafka Connect",
       "Access Control Lists",
       "Transforms",
     ]) {
@@ -776,6 +803,9 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
 
     const banner = page.getByRole("banner");
     await expect(banner).toContainText("StreamSkope");
+    await expect(banner.getByRole("combobox", { name: "Messaging provider" })).toContainText(
+      "Kafka",
+    );
     await expect(page.getByRole("main", { name: "Connection profiles page" })).toBeVisible();
     await banner.getByRole("button", { name: "Open Kafka resources" }).click();
     const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });

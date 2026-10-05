@@ -18,6 +18,11 @@ const sharedUiOwners = [
   "src/platform/ui/StudioPropertyRow.tsx",
   "src/platform/ui/studioTokens.ts",
   "src/platform/ui/typographyContract.ts",
+  "src/platform/ui/ProviderWorkbenchShell.tsx",
+  "src/platform/ui/ProductApplicationBar.tsx",
+  "src/platform/ui/ProductResourceSidebar.tsx",
+  "src/platform/ui/ProviderApplication.tsx",
+  "src/platform/ui/use-product-navigator.ts",
 ] as const;
 
 const interactiveMaterialOwners = new Set([
@@ -84,20 +89,37 @@ function directInteractiveMaterialImports(source: string): readonly string[] {
   return imports;
 }
 
-describe("TopoViewer Studio frontend ownership", () => {
-  it("keeps application composition inside the Kafka feature and shared UI in platform", async () => {
+describe("StreamSkope frontend ownership", () => {
+  it("keeps product composition in platform and workspace behavior in its feature", async () => {
     const applicationSource = await readFile(`${applicationRoot}/StreamSkopeApp.tsx`, "utf8");
     const workbenchSource = await readFile(`${rendererUiRoot}/StreamSkopeWorkbench.tsx`, "utf8");
     const rendererEntrySource = await readFile(
       `${repositoryRoot}/src/platform/electron/renderer/main.tsx`,
       "utf8",
     );
+    const productSource = await readFile(
+      `${repositoryRoot}/src/platform/electron/renderer/StreamSkopeProductApp.tsx`,
+      "utf8",
+    );
 
     expect(applicationSource).toContain("./StreamSkopeWorkbench");
     expect(applicationSource).toContain("../../../platform/ui/StreamSkopeThemeProvider");
+    expect(applicationSource).toContain("export function KafkaWorkspace");
+    expect(applicationSource).toContain("<PluginsProvider");
     expect(workbenchSource).not.toContain("StreamSkopeThemeProvider");
-    expect(rendererEntrySource).toContain("../../../features/kafka/ui/StreamSkopeApp");
-    expect(rendererEntrySource).not.toContain("../../../features/kafka/ui/StreamSkopeWorkbench");
+    expect(rendererEntrySource).toContain('"./StreamSkopeProductApp"');
+    expect(rendererEntrySource).not.toContain("/features/kafka/ui/");
+    expect(productSource).toContain("<StreamSkopeThemeProvider>");
+    expect(productSource).toContain("<ProviderApplication");
+    expect(productSource).not.toContain("PluginsProvider");
+    for (const owner of [
+      "ProviderWorkbenchShell",
+      "ProductApplicationBar",
+      "ProductResourceSidebar",
+    ]) {
+      const source = await readFile(`${repositoryRoot}/src/platform/ui/${owner}.tsx`, "utf8");
+      expect(source).not.toContain("/features/");
+    }
   });
 
   it("keeps shared presentation knowledge in src/platform/ui instead of the Kafka feature", async () => {

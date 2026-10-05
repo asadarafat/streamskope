@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
 import {
@@ -36,6 +36,24 @@ async function openPlugins(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Preferences", exact: true }).click();
   await page.getByRole("tab", { name: "Plugins", exact: true }).click();
   await expect(page.getByRole("region", { name: "EDA Capture", exact: true })).toBeVisible();
+}
+
+async function expectDialogControlOwnership(dialog: Locator): Promise<void> {
+  await expect(dialog).toBeVisible();
+  const ownership = await dialog.evaluate((element) =>
+    Array.from(element.querySelectorAll<HTMLLabelElement>("label[for]"), (label) => ({
+      label: label.textContent,
+      targetId: label.htmlFor,
+      matches: Array.from(element.ownerDocument.querySelectorAll("[id]")).filter(
+        (candidate) => candidate.id === label.htmlFor,
+      ).length,
+      belongsToDialog: label.control !== null && element.contains(label.control),
+    })),
+  );
+  expect(ownership.length).toBeGreaterThan(0);
+  for (const control of ownership) {
+    expect(control).toMatchObject({ matches: 1, belongsToDialog: true });
+  }
 }
 
 test("installs, updates, rolls back, removes and reinstalls EDA in the same workbench", async ({
@@ -116,6 +134,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
     const capture = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+    await expectDialogControlOwnership(capture);
     await expect(capture.getByLabel("EDA API URL")).toBeVisible();
     await expect(capture.getByLabel("EDA username")).toBeVisible();
     await page.screenshot({ path: info.outputPath("installed-eda-capture.png") });
@@ -167,6 +186,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
+    await expectDialogControlOwnership(capture);
     await expect(capture.getByLabel("EDA API URL")).toBeVisible();
     await page.keyboard.press("Escape");
     expect(

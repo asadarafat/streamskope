@@ -8,11 +8,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { Box, Drawer, Stack, Typography, useMediaQuery } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 
 import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
+import { ProviderWorkbenchShell } from "../../../platform/ui/ProviderWorkbenchShell";
+import { useProductNavigator } from "../../../platform/ui/use-product-navigator";
+import { StudioButton } from "../../../platform/ui/controls";
 
 import { RelationshipsPage } from "./RelationshipsPage";
 import { ObservedHealthPage } from "./ObservedHealthPage";
@@ -49,12 +52,10 @@ import {
   isKafkaConsumptionActive,
   kafkaConsumptionStopLabel,
 } from "./workbench-status";
-import { WorkbenchApplicationBar } from "./WorkbenchApplicationBar";
 import { WorkbenchCommandPalette } from "./WorkbenchCommandPalette";
 import { investigationCommands } from "./workbench-query-commands";
 import { WorkbenchBreadcrumbs } from "./WorkbenchBreadcrumbs";
 import type { TopicWorkspaceView } from "./WorkbenchContextBar";
-import { WorkbenchSidebar } from "./WorkbenchSidebar";
 import { useRendererStreamMonitorLifecycle } from "./workbench-runtime-effects";
 import { useWorkbenchActivity } from "./use-workbench-activity";
 import { useWorkbenchProfiles } from "./use-workbench-profiles";
@@ -62,7 +63,7 @@ import { useWorkbenchTopics } from "./use-workbench-topics";
 import { WorkbenchStatusBar } from "./WorkbenchStatusBar";
 import { useConsumerGroupWorkbench } from "./use-consumer-group-workbench";
 import type { NavigationView } from "./workbench-navigation";
-import { isNavigationAvailable } from "./workbench-navigation";
+import { isNavigationAvailable, WORKBENCH_RESOURCE_GROUPS } from "./workbench-navigation";
 import {
   LazyLatencyWorkspace,
   LazyOperationalPreferencesDialog,
@@ -73,6 +74,8 @@ import {
 export interface StreamSkopeWorkbenchProperties {
   readonly desktop?: StreamSkopeDesktop | undefined;
   readonly host: StreamSkopeHost;
+  readonly providerControl?: React.ReactNode;
+  readonly isInteractive?: (() => boolean) | undefined;
   readonly initialQueryImport?: string | undefined;
   readonly streamMonitorObserver?: RendererStreamMonitorObserver;
 }
@@ -82,6 +85,8 @@ export function StreamSkopeWorkbench({
   host,
   streamMonitorObserver,
   initialQueryImport,
+  providerControl,
+  isInteractive,
 }: StreamSkopeWorkbenchProperties): React.JSX.Element {
   const [queriesOpen, setQueriesOpen] = useState(initialQueryImport !== undefined);
   const [queryImport, setQueryImport] = useState(initialQueryImport);
@@ -90,11 +95,8 @@ export function StreamSkopeWorkbench({
     () => streamMonitorObserver ?? createRendererStreamMonitorObserver(),
   );
   const [navigation, setNavigation] = useState<NavigationView>("profiles");
-  const compactDesktop = useMediaQuery(
-    `(max-width:${String(streamSkopeLayout.fullDesktopMinimumWidth - 0.05)}px)`,
-  );
+  const navigator = useProductNavigator();
   const [profileRequestError, setProfileRequestError] = useState<string>();
-  const [resourcePaneOpen, setResourcePaneOpen] = useState(false);
   const [preferenceRequestError, setPreferenceRequestError] = useState<string>();
   const [preferenceSection, setPreferenceSection] = useState<"workbench" | "plugins">("workbench");
   const [ruleEditorMode, setRuleEditorMode] = useState<KafkaRuleEditorMode>(null);
@@ -116,7 +118,7 @@ export function StreamSkopeWorkbench({
     setActivityHeight,
     setCommandPaletteOpen,
     setPreferenceDialogOpen,
-  } = useWorkbenchActivity(desktop, state.activities);
+  } = useWorkbenchActivity(desktop, state.activities, isInteractive);
   const {
     profileConnectionError,
     profileConnectionOperation,
@@ -287,9 +289,9 @@ export function StreamSkopeWorkbench({
         setSelectedTopic(null);
         setTopicWorkspace("messages");
       }
-      setResourcePaneOpen(false);
+      navigator.close();
     },
-    [connected],
+    [connected, navigator.close],
   );
   const {
     filter: consumerGroupFilter,
@@ -328,7 +330,6 @@ export function StreamSkopeWorkbench({
   const selectedMessage = selectKafkaMessageById(visibleMessages, selectedMessageId);
   const selectedProfile =
     state.profiles.find((profile) => profile.id === selectedProfileId) ?? null;
-  const contextPaneTemporary = compactDesktop;
   const operationStatus =
     state.consumptionState === "unavailable"
       ? "Idle"
@@ -754,98 +755,42 @@ export function StreamSkopeWorkbench({
       </TopicDetailPage>
     );
 
-  const sidebar = (
-    <WorkbenchSidebar connected={connected} navigation={navigation} onChange={selectNavigation} />
-  );
+  const resources = WORKBENCH_RESOURCE_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      available: isNavigationAvailable(item.value, connected),
+    })),
+  }));
 
   return (
-    <Box
-      sx={{
-        bgcolor: "background.default",
-        color: "text.primary",
-        display: "grid",
-        gridTemplateAreas: contextPaneTemporary
-          ? '"application" "workspace" "status"'
-          : '"application application" "sidebar workspace" "status status"',
-        gridTemplateColumns: contextPaneTemporary
-          ? "minmax(0, 1fr)"
-          : `${String(streamSkopeLayout.resourceDefaultWidth)}px minmax(0, 1fr)`,
-        gridTemplateRows: `${String(streamSkopeLayout.headerHeight)}px minmax(0, 1fr) ${String(
-          streamSkopeLayout.statusBarHeight,
-        )}px`,
-        height: "100dvh",
-        minHeight: 480,
-        minWidth: 0,
-        overflow: "clip",
+    <ProviderWorkbenchShell
+      navigator={navigator}
+      resources={resources}
+      navigation={navigation}
+      resourceLabel="Kafka resources"
+      onNavigate={selectNavigation}
+      providerControl={providerControl}
+      headerActions={
+        <StudioButton aria-label="Saved queries" onClick={() => setQueriesOpen(true)}>
+          Queries
+        </StudioButton>
+      }
+      onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      onOpenPreferences={() => {
+        setPreferenceSection("workbench");
+        openPreferences();
       }}
-    >
-      <Box sx={{ gridArea: "application", minWidth: 0 }}>
-        <WorkbenchApplicationBar
-          onOpenQueries={() => setQueriesOpen(true)}
-          navigatorOpen={resourcePaneOpen}
-          navigatorTemporary={contextPaneTemporary}
-          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-          onOpenPreferences={() => {
-            setPreferenceSection("workbench");
-            openPreferences();
-          }}
-          onToggleNavigator={() => setResourcePaneOpen((open) => !open)}
-        />
-      </Box>
-
-      {contextPaneTemporary ? (
-        <Drawer
-          anchor="left"
-          onClose={() => setResourcePaneOpen(false)}
-          open={resourcePaneOpen}
-          slotProps={{
-            paper: {
-              "aria-label": "StreamSkope resources drawer",
-              sx: {
-                bottom: `${String(streamSkopeLayout.statusBarHeight)}px`,
-                height: "auto",
-                maxWidth: "88vw",
-                top: `${String(streamSkopeLayout.headerHeight)}px`,
-                width: streamSkopeLayout.resourceDefaultWidth,
-              },
-            },
-          }}
-          variant="temporary"
-        >
-          {sidebar}
-        </Drawer>
-      ) : (
-        <Box component="aside" sx={{ gridArea: "sidebar", minHeight: 0 }}>
-          {sidebar}
-        </Box>
-      )}
-
-      <Box
-        sx={{
-          display: "grid",
-          gridArea: "workspace",
-          gridTemplateRows: `${String(
-            streamSkopeLayout.breadcrumbBarHeight,
-          )}px minmax(0, 1fr) ${String(
-            activityOpen ? activityHeight : streamSkopeLayout.activityCollapsedHeight,
-          )}px`,
-          minHeight: 0,
-          minWidth: 0,
-          overflow: "hidden",
-        }}
-      >
+      breadcrumbs={
         <WorkbenchBreadcrumbs
           navigation={navigation}
           onNavigate={selectNavigation}
           selectedConsumerGroupId={selectedConsumerGroupId}
           selectedTopic={selectedTopic}
         />
-        <Box
-          id="streamskope-active-page"
-          sx={{ display: "grid", minHeight: 0, minWidth: 0, overflow: "hidden" }}
-        >
-          {page}
-        </Box>
+      }
+      activityHeight={activityOpen ? activityHeight : streamSkopeLayout.activityCollapsedHeight}
+      activity={
         <ActivityLogDrawer
           initialQuery={activityQuery}
           entries={state.activities}
@@ -855,9 +800,8 @@ export function StreamSkopeWorkbench({
           open={activityOpen}
           transfer={textDocumentTransfer}
         />
-      </Box>
-
-      <Box sx={{ gridArea: "status", minWidth: 0 }}>
+      }
+      status={
         <WorkbenchStatusBar
           activeConnectionName={state.connectionName}
           backend={state.backend}
@@ -869,96 +813,104 @@ export function StreamSkopeWorkbench({
           resourceStatus={resourceStatus}
           protection={state.preferenceSnapshot}
         />
-      </Box>
-
-      {queriesOpen ? (
-        <SavedQueriesDialog
-          host={host}
-          transfer={textDocumentTransfer}
-          initialImport={queryImport}
-          profiles={state.profiles}
-          currentTopic={selectedTopic}
-          readActive={
-            ["loading", "fetching", "streaming"].includes(state.consumptionState) ||
-            (state.consumptionState === "empty" && state.consumptionRequest?.mode === "tail")
-          }
-          captureCurrent={captureQuery}
-          onClose={() => {
-            setQueriesOpen(false);
-            setQueryImport(undefined);
-          }}
-          onRestore={(query, profileId) => {
-            const profile = state.profiles.find((entry) => entry.id === profileId);
-            const needsConnection =
-              !connected || (profile !== undefined && profile.name !== state.connectionName);
-            restoreQuery(query, needsConnection);
-            dispatch({
-              type: "query.restored",
-              filters: query.filters ?? query.request.search ?? initialKafkaMessageFilters,
-            });
-            if (profile !== undefined) setSelectedProfileId(profile.id);
-            setNavigation(needsConnection ? "profiles" : "topics");
-            setQueriesOpen(false);
-            setQueryImport(undefined);
-          }}
-        />
-      ) : null}
-      <WorkbenchCommandPalette
-        actions={investigationCommands({
-          connected,
-          selectedTopic,
-          selectedProfile,
-          profileBusy: profileConnectionOperation !== null,
-          readActive: isKafkaConsumptionActive(state.consumptionState, state.consumptionRequest),
-          stopping: consumptionStopping,
-          mode: fetchMode,
-          timeError: timeWindow.error,
-          filters: state.messageFilters,
-          openQueries: () => setQueriesOpen(true),
-          toggleProfile: toggleProfileConnection,
-          startRead: startConsumption,
-          stopRead: stopConsumption,
-        })}
-        connected={connected}
-        onClose={() => setCommandPaletteOpen(false)}
-        onOpenResource={selectNavigation}
-        onOpenTopic={activateTopic}
-        onSelectProfile={(profileId) => {
-          setSelectedProfileId(profileId);
-          setProfileFilter("");
-          selectNavigation("profiles");
-        }}
-        open={commandPaletteOpen}
-        profiles={state.profiles}
-        topics={state.topics}
-      />
-
-      <RuleMatchNotification
-        notification={ruleNotification}
-        onDismiss={(sequence) => dispatch({ sequence, type: "rules.notification.dismissed" })}
-      />
-
-      {preferenceDialogMounted ? (
-        <Suspense fallback={null}>
-          <LazyOperationalPreferencesDialog
-            host={host}
-            disconnected={["disconnected", "failed"].includes(state.connectionState)}
-            initialSection={preferenceSection}
-            onClose={() => {
-              setPreferenceDialogOpen(false);
+      }
+      overlays={
+        <>
+          {queriesOpen ? (
+            <SavedQueriesDialog
+              host={host}
+              transfer={textDocumentTransfer}
+              initialImport={queryImport}
+              profiles={state.profiles}
+              currentTopic={selectedTopic}
+              readActive={
+                ["loading", "fetching", "streaming"].includes(state.consumptionState) ||
+                (state.consumptionState === "empty" && state.consumptionRequest?.mode === "tail")
+              }
+              captureCurrent={captureQuery}
+              onClose={() => {
+                setQueriesOpen(false);
+                setQueryImport(undefined);
+              }}
+              onRestore={(query, profileId) => {
+                const profile = state.profiles.find((entry) => entry.id === profileId);
+                const needsConnection =
+                  !connected || (profile !== undefined && profile.name !== state.connectionName);
+                restoreQuery(query, needsConnection);
+                dispatch({
+                  type: "query.restored",
+                  filters: query.filters ?? query.request.search ?? initialKafkaMessageFilters,
+                });
+                if (profile !== undefined) setSelectedProfileId(profile.id);
+                setNavigation(needsConnection ? "profiles" : "topics");
+                setQueriesOpen(false);
+                setQueryImport(undefined);
+              }}
+            />
+          ) : null}
+          <WorkbenchCommandPalette
+            actions={investigationCommands({
+              connected,
+              selectedTopic,
+              selectedProfile,
+              profileBusy: profileConnectionOperation !== null,
+              readActive: isKafkaConsumptionActive(
+                state.consumptionState,
+                state.consumptionRequest,
+              ),
+              stopping: consumptionStopping,
+              mode: fetchMode,
+              timeError: timeWindow.error,
+              filters: state.messageFilters,
+              openQueries: () => setQueriesOpen(true),
+              toggleProfile: toggleProfileConnection,
+              startRead: startConsumption,
+              stopRead: stopConsumption,
+            })}
+            connected={connected}
+            onClose={() => setCommandPaletteOpen(false)}
+            onOpenResource={selectNavigation}
+            onOpenTopic={activateTopic}
+            onSelectProfile={(profileId) => {
+              setSelectedProfileId(profileId);
+              setProfileFilter("");
+              selectNavigation("profiles");
             }}
-            onOpenActivity={() => {
-              setPreferenceDialogOpen(false);
-              openActivity();
-            }}
-            open={preferenceDialogOpen}
-            snapshot={state.preferenceSnapshot}
-            {...(preferenceRequestError === undefined || state.preferenceSnapshot !== null
-              ? {}
-              : { loadError: preferenceRequestError })}
+            open={commandPaletteOpen}
+            profiles={state.profiles}
+            topics={state.topics}
           />
-        </Suspense>
-      ) : null}
-    </Box>
+
+          <RuleMatchNotification
+            notification={ruleNotification}
+            onDismiss={(sequence) => dispatch({ sequence, type: "rules.notification.dismissed" })}
+          />
+
+          {preferenceDialogMounted ? (
+            <Suspense fallback={null}>
+              <LazyOperationalPreferencesDialog
+                host={host}
+                disconnected={["disconnected", "failed"].includes(state.connectionState)}
+                initialSection={preferenceSection}
+                onClose={() => {
+                  setPreferenceDialogOpen(false);
+                }}
+                onOpenActivity={() => {
+                  setPreferenceDialogOpen(false);
+                  openActivity();
+                }}
+                open={preferenceDialogOpen}
+                snapshot={state.preferenceSnapshot}
+                {...(preferenceRequestError === undefined || state.preferenceSnapshot !== null
+                  ? {}
+                  : { loadError: preferenceRequestError })}
+              />
+            </Suspense>
+          ) : null}
+        </>
+      }
+    >
+      {page}
+    </ProviderWorkbenchShell>
   );
 }

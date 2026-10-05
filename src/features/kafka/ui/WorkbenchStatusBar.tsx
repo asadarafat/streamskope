@@ -1,4 +1,3 @@
-import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
 import type {
@@ -6,10 +5,6 @@ import type {
   ConnectionState,
   KafkaOperationalPreferenceSnapshot,
 } from "../contracts";
-import {
-  streamSkopeGeometry,
-  streamSkopeSpacing,
-} from "../../../platform/ui/createStreamSkopeTheme";
 import { StudioButton as Button } from "../../../platform/ui/controls";
 
 import { connectionStateLabel } from "./state";
@@ -50,21 +45,7 @@ export function WorkbenchStatusBar({
     connectionSemanticColor === "default" ? "neutral" : connectionSemanticColor;
 
   return (
-    <Box
-      component="footer"
-      sx={{
-        alignItems: "center",
-        bgcolor: "background.paper",
-        borderTop: 1,
-        borderColor: "divider",
-        display: "flex",
-        gap: `${String(streamSkopeSpacing.scale.space12)}px`,
-        height: streamSkopeGeometry.statusBarHeight,
-        minWidth: 0,
-        overflow: "hidden",
-        px: `${String(streamSkopeSpacing.scale.space12)}px`,
-      }}
-    >
+    <>
       <StatusIndicator
         ariaLabel="Backend status"
         label={backendLabel}
@@ -110,6 +91,6 @@ export function WorkbenchStatusBar({
           Reload workbench
         </Button>
       ) : null}
-    </Box>
+    </>
   );
 }
