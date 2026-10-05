@@ -900,13 +900,13 @@ describe("hot plugin lifecycle", () => {
     expect(updated.plugins.find((entry) => entry.id === "example.other")?.active).toBeUndefined();
   });
 
-  it("gives the same package a new activation on reinstall and removes all stored versions", async () => {
+  it("keeps the same package activation on healthy install and removes all stored versions", async () => {
     const { runtime, store } = await hotSetup(backend(), backend());
     const first = (await runtime.install(manifest.id)).plugins[0]!;
     const second = (await runtime.install(manifest.id)).plugins[0]!;
-    expect(second.activationId).not.toBe(first.activationId);
-    expect(second.rendererUrl).not.toBe(first.rendererUrl);
-    expect(await runtime.rendererAsset(first.rendererUrl!)).toBeUndefined();
+    expect(second.activationId).toBe(first.activationId);
+    expect(second.rendererUrl).toBe(first.rendererUrl);
+    expect(await runtime.rendererAsset(first.rendererUrl!)).toBeDefined();
     const installation = (await store.getActive(manifest.id))!;
     await runtime.remove(manifest.id);
     await expect(

@@ -1,3 +1,4 @@
+import { createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -6,17 +7,79 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { EDA_TARGET_VERSION } from "../../plugins/eda/contracts/eda-capture-types";
 import { PLUGIN_API_VERSION } from "../../src/plugins/contracts";
 import { parsePluginManifest } from "../../src/plugins/validation";
-import { DEVELOPMENT_VERSION } from "../../src/plugins/compatibility";
+import { DEVELOPMENT_VERSION, isDevelopmentPluginVersion } from "../../src/plugins/compatibility";
 import {
   OFFICIAL_PLUGINS,
   officialPluginAssets,
   type OfficialPlugin,
 } from "../../src/platform/node/plugins/official";
-import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
+import {
+  encodePluginPackage,
+  parsePluginPackage,
+  parsePortablePluginPackage,
+  pluginPackagePayloadBytes,
+  pluginPackageSha256,
+  signPortablePluginPackage,
+} from "../../src/platform/node/plugins/package";
+import {
+  TRUSTED_PLUGIN_PUBLISHERS,
+  type TrustedPluginPublisher,
+} from "../../src/platform/node/plugins/publishers";
 import { PluginStore } from "../../src/platform/node/plugins/store";
 import { buildPlugin } from "../build/plugin.js";
 
 let lastDevelopmentBuild = 0;
+
+function signingKey(
+  encodedKey: string | undefined,
+  pluginId: string,
+  publishers: readonly TrustedPluginPublisher[],
+): { key: KeyObject; publisher: TrustedPluginPublisher } {
+  if (encodedKey === undefined || encodedKey.length === 0)
+    throw new Error("Production plugin packaging requires STREAMSKOPE_PLUGIN_SIGNING_KEY_B64.");
+  if (encodedKey.length > 16_384)
+    throw new Error("The plugin signing key must be a bounded canonical base64 PKCS8 PEM.");
+  const bytes = Buffer.from(encodedKey, "base64");
+  if (bytes.toString("base64") !== encodedKey)
+    throw new Error("The plugin signing key must be a bounded canonical base64 PKCS8 PEM.");
+  let key: KeyObject;
+  try {
+    key = createPrivateKey({ key: bytes, format: "pem", type: "pkcs8" });
+  } catch {
+    throw new Error("The plugin signing key must be a valid unencrypted Ed25519 PKCS8 PEM.");
+  }
+  if (key.asymmetricKeyType !== "ed25519")
+    throw new Error("The plugin signing key must be a valid unencrypted Ed25519 PKCS8 PEM.");
+  const publicKey = createPublicKey(key).export({ format: "der", type: "spki" });
+  const publisher = publishers.find(
+    (candidate) =>
+      candidate.pluginIds.includes(pluginId) &&
+      createPublicKey(candidate.publicKey)
+        .export({ format: "der", type: "spki" })
+        .equals(publicKey),
+  );
+  if (publisher === undefined)
+    throw new Error("The plugin signing key does not match a trusted publisher for this plugin.");
+  return { key, publisher };
+}
+
+/** Test trust is explicit caller injection; production callers use only the shipped registry. */
+export function createPortablePluginRelease(
+  primary: Uint8Array,
+  encodedKey: string | undefined,
+  publishers: readonly TrustedPluginPublisher[] = TRUSTED_PLUGIN_PUBLISHERS,
+): Uint8Array {
+  const manifest = parsePluginPackage(primary).manifest;
+  const { key, publisher } = signingKey(encodedKey, manifest.id, publishers);
+  const portable = signPortablePluginPackage(primary, publisher.keyId, key);
+  const verified = parsePortablePluginPackage(portable, undefined, publishers);
+  if (
+    verified.manifest.id !== manifest.id ||
+    !Buffer.from(pluginPackagePayloadBytes(portable, publishers)).equals(Buffer.from(primary))
+  )
+    throw new Error("The signed portable plugin does not match its primary release package.");
+  return portable;
+}
 
 async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<void> {
   const manifest = parsePluginManifest(
@@ -37,6 +100,12 @@ async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<vo
   ) {
     throw new Error("The desktop plugin manifest must target the exact supported EDA version.");
   }
+  if (!isDevelopmentPluginVersion(manifest.version))
+    signingKey(
+      process.env.STREAMSKOPE_PLUGIN_SIGNING_KEY_B64,
+      manifest.id,
+      TRUSTED_PLUGIN_PUBLISHERS,
+    );
   await buildPlugin(plugin);
   const directory = resolve("dist/plugins", plugin.directory);
   const files = new Map<string, Uint8Array>();
@@ -55,6 +124,9 @@ async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<vo
   });
   const bytes = encodePluginPackage(publishedManifest, files);
   const assets = officialPluginAssets(plugin, publishedManifest.version);
+  const portable = isDevelopmentPluginVersion(publishedManifest.version)
+    ? undefined
+    : createPortablePluginRelease(bytes, process.env.STREAMSKOPE_PLUGIN_SIGNING_KEY_B64);
   const temporary = await mkdtemp(join(tmpdir(), "streamskope-plugin-package-"));
   try {
     const store = new PluginStore(temporary);
@@ -74,6 +146,7 @@ async function packagePlugin(plugin: OfficialPlugin, output: string): Promise<vo
     await rm(temporary, { recursive: true, force: true });
   }
   await writeFile(join(output, assets.packageAsset), bytes);
+  if (portable !== undefined) await writeFile(join(output, assets.portablePackageAsset), portable);
   await writeFile(
     join(output, assets.manifestAsset),
     `${JSON.stringify(publishedManifest, null, 2)}\n`,

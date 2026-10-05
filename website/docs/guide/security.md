@@ -66,7 +66,15 @@ bytes, not a publisher signature.
 The plugin catalog accepts published packages from `asadarafat/streamskope`, checks
 GitHub's asset SHA256 digests and validates the package manifest/API version. This
 is repository provenance and integrity verification, not independent cryptographic
-publisher signing. The plugin backend runs as trusted code inside the desktop host
+publisher signing. New plugin release packaging also produces a portable
+`.skope-plugin` signed with a dedicated Ed25519 publisher key. The host verifies
+that signature against a shipped public-key allowlist before parsing or loading
+the enclosed package; an embedded key or an adjacent checksum cannot establish
+that trust. Older repository-delivered packages remain supported through their
+existing integrity checks. Portable download publication and desktop file-install
+support must both be available before treating this as an offline setup procedure.
+
+The plugin backend runs as trusted code inside the desktop host
 with that process's permissions. It is not a sandbox for arbitrary extensions.
 Plugin UI runs through the host bridge without direct Node access.
 

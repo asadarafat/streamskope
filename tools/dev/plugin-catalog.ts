@@ -33,7 +33,15 @@ export class DevelopmentPluginCatalog implements Pick<OfficialPluginCatalog, "li
     }
     const packages: LocalPackage[] = [];
     const identities = new Set<string>();
-    for (const name of names.filter((entry) => entry.endsWith(".skope-plugin")).sort()) {
+    for (const name of names
+      .filter(
+        (entry) =>
+          entry.endsWith(".skope-plugin") &&
+          !OFFICIAL_PLUGINS.some((plugin) =>
+            entry.startsWith(`streamskope-${plugin.directory}-portable-`),
+          ),
+      )
+      .sort()) {
       const path = join(this.directory, name);
       const bytes = await readBoundedFile(path, MAX_PLUGIN_PACKAGE_BYTES, { rejectSymlinks: true });
       const { manifest, sha256 } = parsePluginPackage(bytes);

@@ -3,8 +3,22 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PLUGIN_API_VERSION } from "../../src/plugins/contracts";
+import { PLUGIN_API_VERSION, type PluginManifest } from "../../src/plugins/contracts";
 import { parsePluginManifest } from "../../src/plugins/validation";
+import { readBoundedFile } from "../../src/platform/node/bounded-file";
+import { OFFICIAL_PLUGINS, officialPluginAssets } from "../../src/platform/node/plugins/official";
+import {
+  MAX_PLUGIN_ARCHIVE_BYTES,
+  MAX_PLUGIN_PACKAGE_BYTES,
+  MAX_PLUGIN_RESOURCE_BYTES,
+  parsePluginPackage,
+  parsePortablePluginPackage,
+  pluginPackagePayloadBytes,
+} from "../../src/platform/node/plugins/package";
+import {
+  TRUSTED_PLUGIN_PUBLISHERS,
+  type TrustedPluginPublisher,
+} from "../../src/platform/node/plugins/publishers";
 
 import { prepareUnsignedRelease, releaseNotesBody } from "./release-policy";
 import { releaseIdentity, type ReleaseComponent } from "./release-version";
@@ -40,21 +54,22 @@ export async function readReleaseChangelog(
   return markdown;
 }
 
-export async function preparePluginReleaseNotes(
+/** Signed portable delivery and the old-client package must describe identical code. */
+export async function validatePluginReleaseAssets(
   directory: string,
   component: string,
   version: string,
-  commit: string,
-  reviewedPath: string,
-  changelogPath: string,
-): Promise<string> {
-  const identity = releaseIdentity(component, version);
-  if (identity.component === "desktop" || !/^[a-f0-9]{40}$/u.test(commit))
-    throw new Error("Plugin notes require a plugin component and exact source commit.");
-  const manifests = (await readdir(directory)).filter((name) => name.endsWith("-plugin.json"));
+  publishers: readonly TrustedPluginPublisher[] = TRUSTED_PLUGIN_PUBLISHERS,
+): Promise<PluginManifest> {
+  const names = await readdir(directory);
+  const manifests = names.filter((name) => name.endsWith("-plugin.json"));
   if (manifests.length !== 1) throw new Error("A plugin release must contain exactly one plugin.");
   const manifest = parsePluginManifest(
-    JSON.parse(await readFile(join(directory, manifests[0]!), "utf8")),
+    JSON.parse(
+      (
+        await readBoundedFile(join(directory, manifests[0]!), 64 * 1024, { rejectSymlinks: true })
+      ).toString("utf8"),
+    ),
   );
   if (
     manifest.id !== `streamskope.${component}` ||
@@ -63,17 +78,80 @@ export async function preparePluginReleaseNotes(
     manifest.compatibility?.target.system !== component
   )
     throw new Error("Packaged plugin does not match the requested release.");
+  const plugin = OFFICIAL_PLUGINS.find((entry) => entry.directory === component);
+  if (plugin === undefined)
+    throw new Error("Packaged plugin does not match the requested release.");
+  const assets = officialPluginAssets(plugin, version);
+  if (manifests[0] !== assets.manifestAsset)
+    throw new Error("Packaged plugin manifest filename does not match the requested release.");
+  const allowed = new Set([
+    assets.packageAsset,
+    assets.portablePackageAsset,
+    assets.manifestAsset,
+    ...(manifest.resources ?? []).map((resource) => `${assets.prefix}-${resource.path}`),
+  ]);
+  if (names.some((name) => !allowed.has(name)) || names.length !== allowed.size)
+    throw new Error(
+      "Plugin release must include exactly its primary, signed portable, shared manifest and declared resources.",
+    );
+  const primaryBytes = await readBoundedFile(
+    join(directory, assets.packageAsset),
+    MAX_PLUGIN_PACKAGE_BYTES,
+    { rejectSymlinks: true },
+  );
+  const portableBytes = await readBoundedFile(
+    join(directory, assets.portablePackageAsset),
+    MAX_PLUGIN_ARCHIVE_BYTES,
+    { rejectSymlinks: true },
+  );
+  const primary = parsePluginPackage(primaryBytes, undefined, publishers);
+  const portable = parsePortablePluginPackage(portableBytes, undefined, publishers);
+  if (
+    JSON.stringify(primary.manifest) !== JSON.stringify(manifest) ||
+    JSON.stringify(portable.manifest) !== JSON.stringify(manifest) ||
+    primary.contentSha256 !== portable.contentSha256 ||
+    !Buffer.from(pluginPackagePayloadBytes(portableBytes, publishers)).equals(primaryBytes)
+  )
+    throw new Error(
+      "Primary and signed portable packages must contain the identical shared release manifest and payload.",
+    );
+  for (const resource of manifest.resources ?? []) {
+    const exported = await readBoundedFile(
+      join(directory, `${assets.prefix}-${resource.path}`),
+      MAX_PLUGIN_RESOURCE_BYTES,
+      { rejectSymlinks: true },
+    );
+    if (!exported.equals(Buffer.from(primary.files.get(resource.path)!)))
+      throw new Error("An exported plugin resource does not match the signed package payload.");
+  }
+  return manifest;
+}
+
+export async function preparePluginReleaseNotes(
+  directory: string,
+  component: string,
+  version: string,
+  commit: string,
+  reviewedPath: string,
+  changelogPath: string,
+  publishers: readonly TrustedPluginPublisher[] = TRUSTED_PLUGIN_PUBLISHERS,
+): Promise<string> {
+  const identity = releaseIdentity(component, version);
+  if (identity.component === "desktop" || !/^[a-f0-9]{40}$/u.test(commit))
+    throw new Error("Plugin notes require a plugin component and exact source commit.");
+  const manifest = await validatePluginReleaseAssets(directory, component, version, publishers);
   const reviewed = await readFile(reviewedPath, "utf8");
   if (!reviewed.trim() || !/^##\s+\S/mu.test(reviewed))
     throw new Error("Plugin release needs reviewed upgrade and limitation notes.");
   const changelog = await readReleaseChangelog(changelogPath, identity.component, version, commit);
-  const compatibility = manifest.compatibility;
+  const compatibility = manifest.compatibility!;
   return (
     [
       `# ${manifest.name} ${version}`,
       reviewed.trim(),
       "## Installation and compatibility",
       `Install from StreamSkope Preferences > Plugins; activation is immediate. Requires plugin API ${manifest.apiVersion}.`,
+      `The primary package remains compatible with existing clients. The separate portable download is publisher-signed and requires a StreamSkope build with signed portable package support; it contains the identical plugin code and resources.`,
       `Requires StreamSkope >=${compatibility.streamskope.minimum} and <${compatibility.streamskope.maximumExclusive}.`,
       `Supports ${compatibility.target.system.toUpperCase()} ${compatibility.target.minimum} through ${compatibility.target.maximum} (inclusive).`,
       ...(component === "eda"

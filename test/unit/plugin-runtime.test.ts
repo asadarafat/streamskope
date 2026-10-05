@@ -7,12 +7,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HOST_PROTOCOL_VERSION, type HostCommand } from "../../src/features/kafka/contracts";
 import type { PluginHostBindings } from "../../src/plugins/api";
 import type { JsonValue, PluginEvent, PluginManifest } from "../../src/plugins/contracts";
-import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
+import {
+  encodePluginPackage,
+  pluginPackageSha256,
+  signPortablePluginPackage,
+} from "../../src/platform/node/plugins/package";
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
 import type { OfficialPluginEntry } from "../../src/platform/node/plugins/catalog";
 import { testHostExecute } from "../support/host-response";
 import { formatPluginVersion } from "../../src/plugins/validation";
+import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
 const manifest: PluginManifest = {
   id: "example.capture",
@@ -133,6 +138,106 @@ afterEach(async () => {
 });
 
 describe("optional installed plugin runtime", () => {
+  it.each(["unsigned", "signed"] as const)(
+    "keeps healthy %s activation and capture work when reinstalling identical content through another delivery format",
+    async (first) => {
+      const fixture = pluginPublisherFixture([manifest.id]);
+      const store = new PluginStore(await directory(), { trustedPublishers: fixture.publishers });
+      const primary = packageBytes();
+      const portable = signPortablePluginPackage(
+        primary,
+        fixture.publishers[0]!.keyId,
+        Buffer.from(fixture.encodedKey, "base64").toString(),
+      );
+      const original = first === "unsigned" ? primary : portable;
+      const other = first === "unsigned" ? portable : primary;
+      await store.install(original, pluginPackageSha256(original));
+      const host = runtime(store, bindings(), other);
+      await execute(host, "start");
+      const before = await host.list();
+      const changed = vi.fn();
+      host.subscribeChanges(changed);
+      const snapshot = await host.install(manifest.id);
+      expect(snapshot).toEqual(before);
+      expect(changed).not.toHaveBeenCalled();
+      expect(await host.prepareExit()).toMatchObject({
+        pluginId: manifest.id,
+        title: "Pending work",
+      });
+      const retained = await store.getActive(manifest.id);
+      expect(retained?.sha256).toBe(pluginPackageSha256(original));
+      expect(retained?.contentSha256).toBe(pluginPackageSha256(primary));
+      expect(retained?.publisher).toEqual(
+        first === "unsigned"
+          ? undefined
+          : { keyId: fixture.publishers[0]!.keyId, name: fixture.publishers[0]!.name },
+      );
+      await expect(execute(host, "echo", "same active backend")).resolves.toBe(
+        "same active backend",
+      );
+    },
+  );
+
+  it("does not stop healthy active capture on an exact-archive idempotent install", async () => {
+    const store = new PluginStore(await directory());
+    const primary = packageBytes();
+    await store.install(primary, pluginPackageSha256(primary));
+    const host = runtime(store, bindings(), primary);
+    await execute(host, "start");
+    const before = await host.list();
+    expect(await host.install(manifest.id)).toEqual(before);
+    expect(await host.prepareExit()).toMatchObject({ title: "Pending work" });
+  });
+
+  it("verifies signed download trust before changing a healthy running backend", async () => {
+    const fixture = pluginPublisherFixture([manifest.id]);
+    const store = new PluginStore(await directory());
+    const primary = packageBytes();
+    await store.install(primary, pluginPackageSha256(primary));
+    const portable = signPortablePluginPackage(
+      primary,
+      fixture.publishers[0]!.keyId,
+      Buffer.from(fixture.encodedKey, "base64").toString(),
+    );
+    const host = runtime(store, bindings(), portable);
+    const before = await host.list();
+    await expect(host.install(manifest.id)).rejects.toThrow(/not trusted/u);
+    expect(await host.list()).toEqual(before);
+    await expect(execute(host, "echo", "original backend")).resolves.toBe("original backend");
+  });
+
+  it("commits a verified equivalent portable archive when retained original archive bytes are damaged", async () => {
+    const fixture = pluginPublisherFixture([manifest.id]);
+    const path = await directory();
+    const store = new PluginStore(path, { trustedPublishers: fixture.publishers });
+    const primary = packageBytes();
+    await store.install(primary, pluginPackageSha256(primary));
+    const portable = signPortablePluginPackage(
+      primary,
+      fixture.publishers[0]!.keyId,
+      Buffer.from(fixture.encodedKey, "base64").toString(),
+    );
+    const host = runtime(store, bindings(), portable);
+    const before = (await host.list()).plugins[0]!;
+    await writeFile(
+      join(path, manifest.id, pluginPackageSha256(primary), "package.skope-plugin"),
+      "damaged original archive",
+    );
+    const repaired = (await host.install(manifest.id)).plugins[0]!;
+    expect(repaired.activationId).not.toBe(before.activationId);
+    expect(repaired.error).toBeUndefined();
+    expect((await store.getActive(manifest.id))?.sha256).toBe(pluginPackageSha256(portable));
+    expect((await store.getActive(manifest.id))?.publisher?.keyId).toBe(
+      fixture.publishers[0]!.keyId,
+    );
+    await host.close();
+    const reopened = runtime(new PluginStore(path, { trustedPublishers: fixture.publishers }));
+    expect((await reopened.list()).plugins[0]?.active).toEqual(manifest);
+    await expect(execute(reopened, "echo", "verified after reopening")).resolves.toBe(
+      "verified after reopening",
+    );
+  });
+
   it("keeps development discovery in memory without writing local build metadata into the official cache", async () => {
     const store = new PluginStore(await directory());
     const host = new PluginRuntime({

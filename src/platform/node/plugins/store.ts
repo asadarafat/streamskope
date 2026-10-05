@@ -10,15 +10,23 @@ import {
 import { readBoundedFile } from "../bounded-file";
 
 import {
-  MAX_PLUGIN_PACKAGE_BYTES,
+  MAX_PLUGIN_ARCHIVE_BYTES,
   parsePluginPackage,
   type VerifiedPluginPackage,
 } from "./package";
 import { PluginCatalogCache } from "./catalog-cache";
+import { TRUSTED_PLUGIN_PUBLISHERS, type TrustedPluginPublisher } from "./publishers";
+
+export interface PluginStoreOptions {
+  /** Host composition only; package files and renderer requests cannot grant publisher trust. */
+  readonly trustedPublishers?: readonly TrustedPluginPublisher[];
+}
 
 export interface ActivePlugin {
   readonly manifest: PluginManifest;
   readonly sha256: string;
+  readonly contentSha256: string;
+  readonly publisher?: VerifiedPluginPackage["publisher"];
   readonly directory: string;
   readonly backendPath: string;
   readonly rendererPath: string;
@@ -111,11 +119,22 @@ function parseState(bytes: Uint8Array): StoreState {
 export class PluginStore {
   readonly #root: string;
   readonly catalogCache: PluginCatalogCache;
+  readonly #trustedPublishers: readonly TrustedPluginPublisher[];
   #queue: Promise<unknown> = Promise.resolve();
 
-  constructor(rootDirectory: string) {
+  constructor(rootDirectory: string, options: PluginStoreOptions = {}) {
     this.#root = resolve(rootDirectory);
     this.catalogCache = new PluginCatalogCache(this.#root);
+    this.#trustedPublishers = Object.freeze(
+      (options.trustedPublishers ?? TRUSTED_PLUGIN_PUBLISHERS).map((publisher) =>
+        Object.freeze({ ...publisher, pluginIds: Object.freeze([...publisher.pluginIds]) }),
+      ),
+    );
+  }
+
+  /** One sealed host verification authority is shared by downloads, storage and lifecycle changes. */
+  verifyPackage(bytes: Uint8Array, expectedSha256?: string): VerifiedPluginPackage {
+    return parsePluginPackage(bytes, expectedSha256, this.#trustedPublishers);
   }
 
   /** Recovery survives package replacement/removal; the plugin clears it after remote cleanup. */
@@ -200,8 +219,8 @@ export class PluginStore {
     const parent = join(this.#root, id);
     const path = join(parent, digest);
     for (const item of [this.#root, parent, path]) await directory(item, false);
-    const plugin = parsePluginPackage(
-      await readBoundedFile(join(path, "package.skope-plugin"), MAX_PLUGIN_PACKAGE_BYTES, {
+    const plugin = this.verifyPackage(
+      await readBoundedFile(join(path, "package.skope-plugin"), MAX_PLUGIN_ARCHIVE_BYTES, {
         rejectSymlinks: true,
       }),
       digest,
@@ -218,6 +237,8 @@ export class PluginStore {
     return {
       manifest: plugin.manifest,
       sha256: digest,
+      contentSha256: plugin.contentSha256,
+      ...(plugin.publisher === undefined ? {} : { publisher: plugin.publisher }),
       directory: path,
       backendPath: join(path, plugin.manifest.backend),
       rendererPath: join(path, plugin.manifest.renderer),
@@ -315,18 +336,24 @@ export class PluginStore {
 
   install(bytes: Uint8Array, expectedSha256: string): Promise<PluginInstallation> {
     return this.#serial(async () => {
-      const plugin = parsePluginPackage(bytes, expectedSha256);
+      const plugin = this.verifyPackage(bytes, expectedSha256);
       validId(plugin.manifest.id);
       const state = await this.#state();
-      await this.#assertUnchangedVersion(plugin, state.plugins[plugin.manifest.id]);
+      const existing = await this.#assertUnchangedVersion(
+        plugin,
+        state.plugins[plugin.manifest.id],
+      );
       if (
         !Object.hasOwn(state.plugins, plugin.manifest.id) &&
         Object.keys(state.plugins).length >= 32
       )
         throw new Error("At most 32 plugin installations can be retained.");
-      await this.#stage(plugin, bytes);
+      const retained = existing ?? { plugin, bytes };
+      await this.#stage(retained.plugin, retained.bytes);
       const entry = state.plugins[plugin.manifest.id] ?? {};
-      entry.pending = plugin.sha256;
+      if (entry.active === retained.plugin.sha256 && entry.pending === undefined)
+        return this.#describe(plugin.manifest.id, entry);
+      entry.pending = retained.plugin.sha256;
       delete entry.error;
       state.plugins[plugin.manifest.id] = entry;
       await this.#save(state);
@@ -337,17 +364,21 @@ export class PluginStore {
   /** Prepare code without making it active, including after a host crash or restart. */
   prepareInstall(bytes: Uint8Array, expectedSha256: string): Promise<ActivePlugin> {
     return this.#serial(async () => {
-      const plugin = parsePluginPackage(bytes, expectedSha256);
+      const plugin = this.verifyPackage(bytes, expectedSha256);
       validId(plugin.manifest.id);
       const state = await this.#state();
-      await this.#assertUnchangedVersion(plugin, state.plugins[plugin.manifest.id]);
+      const existing = await this.#assertUnchangedVersion(
+        plugin,
+        state.plugins[plugin.manifest.id],
+      );
       if (
         !Object.hasOwn(state.plugins, plugin.manifest.id) &&
         Object.keys(state.plugins).length >= 32
       )
         throw new Error("At most 32 plugin installations can be retained.");
-      await this.#stage(plugin, bytes);
-      return this.#verified(plugin.manifest.id, plugin.sha256);
+      const retained = existing ?? { plugin, bytes };
+      await this.#stage(retained.plugin, retained.bytes);
+      return this.#verified(plugin.manifest.id, retained.plugin.sha256);
     });
   }
 
@@ -355,32 +386,41 @@ export class PluginStore {
   async #assertUnchangedVersion(
     plugin: VerifiedPluginPackage,
     entry: InstallationState | undefined,
-  ): Promise<void> {
-    if (plugin.manifest.apiVersion < 3 || entry === undefined) return;
+  ): Promise<{ readonly plugin: VerifiedPluginPackage; readonly bytes: Uint8Array } | undefined> {
+    if (entry === undefined) return undefined;
+    let equivalent:
+      { readonly plugin: VerifiedPluginPackage; readonly bytes: Uint8Array } | undefined;
     for (const digest of new Set([entry.active, entry.inactive, entry.previous, entry.pending])) {
-      if (!digest || digest === plugin.sha256) continue;
+      if (!digest) continue;
       let retained: VerifiedPluginPackage;
+      let bytes: Uint8Array;
       try {
         const parent = join(this.#root, plugin.manifest.id);
         const path = join(parent, digest);
         for (const item of [this.#root, parent, path]) await directory(item, false);
-        retained = parsePluginPackage(
-          await readBoundedFile(join(path, "package.skope-plugin"), MAX_PLUGIN_PACKAGE_BYTES, {
+        bytes = await readBoundedFile(
+          join(path, "package.skope-plugin"),
+          MAX_PLUGIN_ARCHIVE_BYTES,
+          {
             rejectSymlinks: true,
-          }),
-          digest,
+          },
         );
+        retained = this.verifyPackage(bytes, digest);
       } catch {
         // Corrupt or missing cache bytes cannot establish a trusted version claim.
         // A verified catalog download may repair them; never execute the old bytes.
         continue;
       }
       if (comparePluginManifests(plugin.manifest, retained.manifest) === 0) {
-        throw new Error(
-          "This plugin version has different content from a retained package. Publish a new plugin version.",
-        );
+        if (plugin.contentSha256 === retained.contentSha256)
+          equivalent ??= { plugin: retained, bytes };
+        else if (plugin.manifest.apiVersion >= 3)
+          throw new Error(
+            "This plugin version has different content from a retained package. Publish a new plugin version.",
+          );
       }
     }
+    return equivalent;
   }
 
   /** Publish only this installation after activation and previous-backend cleanup succeed. */

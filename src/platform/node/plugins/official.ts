@@ -20,11 +20,17 @@ export type OfficialPlugin = (typeof OFFICIAL_PLUGINS)[number];
 export function officialPluginAssets(
   plugin: OfficialPlugin,
   version: string,
-): { readonly packageAsset: string; readonly manifestAsset: string; readonly prefix: string } {
+): {
+  readonly packageAsset: string;
+  readonly portablePackageAsset: string;
+  readonly manifestAsset: string;
+  readonly prefix: string;
+} {
   const prefix = `streamskope-${plugin.directory}-${version.startsWith("v") ? version : `v${version}`}`;
   return {
     prefix,
     packageAsset: `${prefix}.skope-plugin`,
+    portablePackageAsset: `streamskope-${plugin.directory}-portable-${version.startsWith("v") ? version : `v${version}`}.skope-plugin`,
     manifestAsset: `${prefix}-plugin.json`,
   };
 }

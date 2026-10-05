@@ -5,8 +5,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PluginManifest } from "../../src/plugins/contracts";
-import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
-import { PluginStore } from "../../src/platform/node/plugins/store";
+import {
+  encodePluginPackage,
+  pluginPackageSha256,
+  signPortablePluginPackage,
+} from "../../src/platform/node/plugins/package";
+import { PluginStore, type PluginStoreOptions } from "../../src/platform/node/plugins/store";
+import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs/promises")>();
@@ -28,10 +33,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-async function setup(): Promise<{ root: string; store: PluginStore }> {
+async function setup(
+  options: PluginStoreOptions = {},
+): Promise<{ root: string; store: PluginStore }> {
   const root = await mkdtemp(join(tmpdir(), "streamskope-plugins-"));
   roots.push(root);
-  return { root, store: new PluginStore(root) };
+  return { root, store: new PluginStore(root, options) };
 }
 
 function bundle(version = "26.8.2", id = manifest.id): Uint8Array {
@@ -49,6 +56,109 @@ async function install(store: PluginStore, bytes = bundle()): Promise<void> {
 }
 
 describe("plugin installation storage", () => {
+  it.each(["unsigned", "signed"] as const)(
+    "retains %s archive authority and publisher provenance across equivalent portable delivery",
+    async (first) => {
+      const fixture = pluginPublisherFixture();
+      const { root, store } = await setup({ trustedPublishers: fixture.publishers });
+      const primary = bundle();
+      const portable = signPortablePluginPackage(
+        primary,
+        fixture.publishers[0]!.keyId,
+        Buffer.from(fixture.encodedKey, "base64").toString(),
+      );
+      const original = first === "unsigned" ? primary : portable;
+      const other = first === "unsigned" ? portable : primary;
+      await install(store, original);
+      const [active] = await store.activatePending();
+      const before = await readFile(join(root, "state.json"), "utf8");
+      const prepared = await store.prepareInstall(other, pluginPackageSha256(other));
+      expect(prepared.sha256).toBe(pluginPackageSha256(original));
+      expect(prepared.contentSha256).toBe(pluginPackageSha256(primary));
+      expect(prepared.publisher).toEqual(
+        first === "unsigned"
+          ? undefined
+          : { keyId: fixture.publishers[0]!.keyId, name: fixture.publishers[0]!.name },
+      );
+      expect((await store.install(other, pluginPackageSha256(other))).pending).toBeNull();
+      expect(await readFile(join(root, "state.json"), "utf8")).toBe(before);
+      expect(await readdir(join(root, manifest.id))).toEqual([active!.sha256]);
+      const reopened = new PluginStore(root, { trustedPublishers: fixture.publishers });
+      expect((await reopened.activatePending())[0]?.sha256).toBe(active!.sha256);
+      expect((await reopened.getActive(manifest.id))?.publisher).toEqual(prepared.publisher);
+    },
+  );
+
+  it("re-verifies retained signatures even when an altered envelope has a matching archive digest and state pointer", async () => {
+    const fixture = pluginPublisherFixture();
+    const { root, store } = await setup({ trustedPublishers: fixture.publishers });
+    const portable = signPortablePluginPackage(
+      bundle(),
+      fixture.publishers[0]!.keyId,
+      Buffer.from(fixture.encodedKey, "base64").toString(),
+    );
+    await install(store, portable);
+    const [active] = await store.activatePending();
+    const outer = JSON.parse(Buffer.from(portable).toString()) as Record<string, unknown>;
+    const altered = Buffer.from(
+      JSON.stringify({ ...outer, signature: Buffer.alloc(64).toString("base64") }),
+    );
+    const changedDigest = pluginPackageSha256(altered);
+    await rename(active!.directory, join(root, manifest.id, changedDigest));
+    await writeFile(join(root, manifest.id, changedDigest, "package.skope-plugin"), altered);
+    await writeFile(
+      join(root, "state.json"),
+      JSON.stringify({ formatVersion: 1, plugins: { [manifest.id]: { active: changedDigest } } }),
+    );
+    await expect(
+      new PluginStore(root, { trustedPublishers: fixture.publishers }).getActive(manifest.id),
+    ).rejects.toThrow(/signature/u);
+  });
+
+  it("does not stage untrusted portable code and protects an API4 version against changed exact primary bytes", async () => {
+    const fixture = pluginPublisherFixture();
+    const { root, store } = await setup({ trustedPublishers: fixture.publishers });
+    const modern: PluginManifest = {
+      id: manifest.id,
+      name: manifest.name,
+      backend: "backend.cjs",
+      renderer: "renderer.js",
+      apiVersion: 4,
+      version: "0.1.0",
+      compatibility: {
+        streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
+      },
+    };
+    const primary = encodePluginPackage(
+      modern,
+      new Map([
+        ["backend.cjs", Buffer.from("original code")],
+        ["renderer.js", Buffer.from("export default {};")],
+      ]),
+    );
+    const key = Buffer.from(fixture.encodedKey, "base64").toString();
+    const portable = signPortablePluginPackage(primary, fixture.publishers[0]!.keyId, key);
+    await expect(
+      new PluginStore(root).install(portable, pluginPackageSha256(portable)),
+    ).rejects.toThrow(/not trusted/u);
+    expect(await readdir(root)).toEqual([]);
+    await install(store, primary);
+    await store.activatePending();
+    const differentSerialization = Buffer.from(
+      JSON.stringify(JSON.parse(Buffer.from(primary).toString()), null, 2),
+    );
+    const changed = signPortablePluginPackage(
+      differentSerialization,
+      fixture.publishers[0]!.keyId,
+      key,
+    );
+    await expect(store.prepareInstall(changed, pluginPackageSha256(changed))).rejects.toThrow(
+      /different content/u,
+    );
+    expect((await store.getActive(manifest.id))?.sha256).toBe(pluginPackageSha256(primary));
+  });
+
   it("protects inactive retained API 4 versions from changed content, including when extracted code is damaged", async () => {
     const { store, root } = await setup();
     const descriptor: PluginManifest = {
