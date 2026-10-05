@@ -14,6 +14,12 @@ export class EnvironmentFacade {
   ) {
     this.service = new EnvironmentService(() => session.writeContext(), destinations);
   }
+  cancel(): void {
+    this.service.cancel();
+  }
+  idle(): Promise<void> {
+    return this.service.idle();
+  }
   async execute(
     command: EnvironmentHostCommand,
     correlationId: string,

@@ -28,7 +28,13 @@ export class SavedReplayDestinations implements ReplayDestinationPort {
     signal.throwIfAborted();
     const connection = await this.connections.openConnection(input, signal);
     if (!current() || signal.aborted) {
-      await connection.close();
+      try {
+        await connection.close();
+      } catch (cleanupCause) {
+        throw Object.assign(new Error("Cancelled destination cleanup could not be confirmed."), {
+          cleanupCause,
+        });
+      }
       throw new Error("Destination profile changed while opening.");
     }
     return { connection, name: input.name, current, close: () => connection.close() };

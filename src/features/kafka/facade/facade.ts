@@ -41,6 +41,7 @@ import { SchemaInspectionFacade } from "./schema-inspection-facade";
 import { executeWriteCommand } from "./write-facade";
 import { RecordCodecFacade } from "./record-codec-facade";
 import { KafkaCommandProtection } from "./command-protection";
+import { KafkaCommandAdmission } from "./command-admission";
 import { executeQueryCommand } from "./query-facade";
 import { ConsumptionFacadeController } from "./consumption-facade";
 import type { KafkaBackendFacadeOptions } from "./types";
@@ -93,6 +94,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly activity = new ActivityHistory();
   private activitySequence = 0;
   private available = true;
+  private readonly commandAdmission = new KafkaCommandAdmission();
   private connectionLifetime = new AbortController();
   private connectionIntent = 0;
   private connectionPluginId: string | undefined;
@@ -233,7 +235,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       profiles,
       publish,
       nextSequence,
-      execute: this.execute.bind(this),
+      execute: this.executeInternal.bind(this),
       disconnectPluginConnection: this.disconnectPluginConnection.bind(this),
       assertRemoteWriteAllowed: (): void => {
         if (this.preferences.currentSnapshot().preferences.protection.readOnly)
@@ -272,8 +274,24 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   execute<Command extends HostCommand>(
     command: Command,
   ): Promise<HostCommandResponse<Command["command"]>>;
-  async execute(command: HostCommand): Promise<HostCommandResponse> {
+  execute(command: HostCommand): Promise<HostCommandResponse> {
+    return this.commandAdmission.track(() => this.executeCommand(command, false));
+  }
+
+  private executeInternal<Command extends HostCommand>(
+    command: Command,
+  ): Promise<HostCommandResponse<Command["command"]>>;
+  private executeInternal(command: HostCommand): Promise<HostCommandResponse> {
+    return this.commandAdmission.track(() => this.executeCommand(command, true));
+  }
+
+  private async executeCommand(
+    command: HostCommand,
+    internal: boolean,
+  ): Promise<HostCommandResponse> {
     const correlationId = this.createCorrelationId();
+    if (!this.commandAdmission.accepts(internal))
+      return this.unavailableResponse(command, correlationId);
     if (
       ["connection.connect", "profiles.connect", "connection.disconnect"].includes(command.command)
     )
@@ -283,9 +301,12 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       this.consumptionCommandIntent += 1;
     }
     const consumptionIntent = this.consumptionCommandIntent;
-    return this.protection.execute(command, correlationId, () =>
-      intent === this.authorizationIntent &&
-      (command.command !== "messages.start" || consumptionIntent === this.consumptionCommandIntent)
+    return this.protection.execute(command, correlationId, () => {
+      if (!this.commandAdmission.accepts(internal))
+        return Promise.resolve(this.unavailableResponse(command, correlationId));
+      return intent === this.authorizationIntent &&
+        (command.command !== "messages.start" ||
+          consumptionIntent === this.consumptionCommandIntent)
         ? this.dispatch(command, correlationId)
         : Promise.resolve(
             failureResponse(
@@ -296,7 +317,22 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
                 correlationId,
               }).error,
             ),
-          ),
+          );
+    });
+  }
+
+  private unavailableResponse(command: HostCommand, correlationId: string): HostCommandResponse {
+    return failureResponse(
+      command,
+      translateFacadeFailure(
+        new Error("Kafka application session is unavailable."),
+        {
+          activeStateChanged: false,
+          connection: connectionFromCommand(command),
+          correlationId,
+        },
+        false,
+      ).error,
     );
   }
 
@@ -305,14 +341,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     correlationId: string,
   ): Promise<HostCommandResponse> {
     if (!this.available) {
-      return failureResponse(
-        command,
-        this.translateFailure(new Error("Kafka application session is unavailable."), {
-          activeStateChanged: false,
-          connection: connectionFromCommand(command),
-          correlationId,
-        }).error,
-      );
+      return this.unavailableResponse(command, correlationId);
     }
 
     const recipeBindings = {
@@ -509,7 +538,16 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   }
 
   shutdown(): Promise<void> {
-    this.shutdownPromise ??= this.completeShutdown();
+    if (this.shutdownPromise === undefined) {
+      this.commandAdmission.close();
+      let resolve!: () => void;
+      let reject!: (reason: unknown) => void;
+      this.shutdownPromise = new Promise<void>((complete, fail) => {
+        resolve = complete;
+        reject = fail;
+      });
+      this.completeShutdown().then(resolve, reject);
+    }
     return this.shutdownPromise;
   }
 
@@ -623,21 +661,47 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.connectionIntent += 1;
     this.beginConnectionLifetime();
     const finishConsumption = this.consumption.prepareShutdown();
-    this.invalidateClusterState(true);
-    this.trustAcquisitions?.clear();
-    let shutdownFailure: unknown;
-    try {
-      await Promise.all([
-        this.recordReplay.invalidate(),
-        this.session.shutdown(),
-        this.plugins.close(),
-        this.queries.idle(),
-        this.observations.idle(),
-        this.relationships.idle(),
-      ]);
-    } catch (error) {
-      shutdownFailure = error;
-    }
+    const cleanups = [
+      { owner: "Observations", run: (): void => this.observations.cancel() },
+      { owner: "Relationships", run: (): void => this.relationships.cancel() },
+      { owner: "Environments", run: (): void => this.environments.cancel() },
+      { owner: "Correlation trace", run: (): void => this.correlationTrace.invalidate() },
+      { owner: "Record codecs", run: (): void => this.recordCodecs.invalidate() },
+      { owner: "Schema inspection", run: (): void => this.schemaInspection.invalidate() },
+      { owner: "Schema samples", run: (): void => this.schemaSamples.invalidate() },
+      { owner: "Cluster diagnostics", run: (): void => this.clusterDiagnostics.clear() },
+      { owner: "Latency", run: (): void => this.invalidateLatency() },
+      { owner: "Consumer groups", run: (): void => this.consumerGroups.invalidate() },
+      { owner: "Cluster services", run: (): void => this.clusterServices.invalidate() },
+      { owner: "Trust acquisition", run: (): void => this.trustAcquisitions?.clear() },
+      { owner: "Record replay", run: (): Promise<void> => this.recordReplay.invalidate() },
+      { owner: "Kafka session", run: (): Promise<void> => this.session.shutdown() },
+      { owner: "Plugins", run: (): Promise<void> => this.plugins.close() },
+      { owner: "Queries", run: (): Promise<void> => this.queries.idle() },
+      { owner: "Observations", run: (): Promise<void> => this.observations.idle() },
+      { owner: "Relationships", run: (): Promise<void> => this.relationships.idle() },
+      { owner: "Environments", run: (): Promise<void> => this.environments.idle() },
+    ];
+    const results = await Promise.allSettled(
+      cleanups.map(({ run }) => {
+        try {
+          return Promise.resolve(run());
+        } catch {
+          return Promise.reject(new Error("Application cleanup invocation failed."));
+        }
+      }),
+    );
+    // Plugin cleanup may admit owned commands while its close hook is running.
+    await this.commandAdmission.idle();
+    const failures = results.flatMap((result, index) =>
+      result.status === "rejected"
+        ? [new Error(`${cleanups[index]?.owner ?? "Application"} cleanup failed.`)]
+        : [],
+    );
+    const shutdownFailure =
+      failures.length === 0
+        ? undefined
+        : new AggregateError(failures, "Kafka application resources did not close cleanly.");
     finishConsumption(shutdownFailure);
     this.available = false;
     this.publish(
@@ -649,13 +713,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         this.nextSequence(),
       ),
     );
-    if (shutdownFailure !== undefined) {
-      throw shutdownFailure instanceof Error
-        ? shutdownFailure
-        : new Error("Kafka application shutdown rejected with a non-error value.", {
-            cause: shutdownFailure,
-          });
-    }
+    if (shutdownFailure !== undefined) throw shutdownFailure;
   }
 
   private async connect(
@@ -854,7 +912,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     )
       return;
     // Ownership is checked and disconnection begins in one synchronous turn.
-    const response = await this.execute({
+    const response = await this.executeInternal({
       command: "connection.disconnect",
       id: crypto.randomUUID(),
       payload: {},
@@ -873,14 +931,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.publish(latencyHistoryEvent(this.latencyProbe.historySnapshot(), this.nextSequence()));
   }
 
-  private invalidateConsumerGroups(): void {
-    this.consumerGroups.invalidate();
-  }
-
   private invalidateClusterState(preserveConsumption = false): void {
     if (!preserveConsumption) this.consumption.invalidate();
     this.observations.cancel();
     this.relationships.cancel();
+    this.environments.cancel();
     void this.recordReplay.invalidate().catch(() => undefined);
     this.correlationTrace.invalidate();
     this.recordCodecs.invalidate();
@@ -888,7 +943,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.schemaSamples.invalidate();
     this.clusterDiagnostics.clear();
     this.invalidateLatency();
-    this.invalidateConsumerGroups();
+    this.consumerGroups.invalidate();
     this.clusterServices.invalidate();
   }
 
