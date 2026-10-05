@@ -12,7 +12,7 @@ import {
   type KafkaRuleStructuredError,
 } from "../../features/kafka/application";
 
-import { readBoundedFile } from "./bounded-file";
+import { readOptionalBoundedJsonFile } from "./bounded-json-file";
 import {
   createAtomicPrivateFileTempId,
   writeAtomicPrivateTextFile,
@@ -100,10 +100,6 @@ function parseDocument(value: unknown): KafkaRuleDocument {
   }
 }
 
-function isMissingFile(error: unknown): boolean {
-  return error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT";
-}
-
 function isAbort(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
@@ -157,23 +153,13 @@ export class AtomicKafkaRuleFileStore implements KafkaRuleStore {
   }
 
   async load(signal?: AbortSignal): Promise<KafkaRuleDocument | undefined> {
-    let contents: Buffer;
     try {
-      signal?.throwIfAborted();
-      contents = await readBoundedFile(this.path, this.maximumFileBytes, { signal });
-    } catch (error) {
-      if (isMissingFile(error)) {
-        return undefined;
-      }
-      if (isAbort(error)) {
-        throw error;
-      }
-      this.markUnavailable();
-      throw error instanceof KafkaRuleFileCorruptError ? error : new KafkaRuleFileCorruptError();
-    }
-
-    try {
-      return parseDocument(JSON.parse(contents.toString("utf8")) as unknown);
+      return await readOptionalBoundedJsonFile(
+        this.path,
+        this.maximumFileBytes,
+        parseDocument,
+        signal,
+      );
     } catch (error) {
       if (isAbort(error)) {
         throw error;
