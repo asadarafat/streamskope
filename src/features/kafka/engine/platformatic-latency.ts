@@ -11,6 +11,7 @@ import {
 import type { KafkaLatencyProbeMeasurement } from "../application";
 
 import { KafkaEngineFailure, mapKafkaAdminFailure, normalizeKafkaError } from "./failure";
+import { abortableOperation } from "./abortable-operation";
 import { probeKafkaNetwork, type KafkaLatencyNetworkResult } from "./latency-network";
 import { PlatformaticConsumerFactory } from "./platformatic-consumer";
 import { platformaticClientOptions } from "./platformatic-options";
@@ -60,32 +61,6 @@ function header(message: KafkaRawMessage, name: string): string | undefined {
     }
   }
   return undefined;
-}
-
-function abortable<Value>(
-  operation: Promise<Value>,
-  signal: AbortSignal,
-  timedOut: () => boolean,
-): Promise<Value> {
-  if (signal.aborted) {
-    return Promise.reject(new ProbeAborted(timedOut()));
-  }
-  return new Promise<Value>((resolve, reject) => {
-    const onAbort = (): void => {
-      reject(new ProbeAborted(timedOut()));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    operation.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(normalizeKafkaError(error));
-      },
-    );
-  });
 }
 
 function settleBeforeAbort(operation: Promise<unknown>, signal: AbortSignal): Promise<void> {
@@ -320,7 +295,7 @@ export class PlatformaticLatencyProbe implements KafkaLatencyProbePort {
           [Buffer.from(SOURCE_HEADER, "utf8"), Buffer.from("StreamSkope", "utf8")],
         ]);
         try {
-          await abortable(
+          await abortableOperation(
             producer.send({
               acks: request.acknowledgements,
               messages: [
@@ -334,7 +309,7 @@ export class PlatformaticLatencyProbe implements KafkaLatencyProbePort {
               ],
             }),
             signal,
-            timedOut,
+            () => new ProbeAborted(timedOut()),
           );
           producerDurationsMs.push(this.monotonicNow() - sent);
         } catch (error) {
@@ -346,7 +321,7 @@ export class PlatformaticLatencyProbe implements KafkaLatencyProbePort {
       }
 
       if (observedSampleIds.length < request.messageCount) {
-        await abortable(allObserved, signal, timedOut);
+        await abortableOperation(allObserved, signal, () => new ProbeAborted(timedOut()));
       }
       if (observationFailure !== undefined) {
         throw mapKafkaAdminFailure(observationFailure, target);

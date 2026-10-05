@@ -13,6 +13,10 @@ destination. A failed cleanup cannot make shutdown finish while another cleanup
 is still running. Cancellation preserves acknowledged or uncertain write outcomes;
 it does not automatically retry a promotion.
 
+Cancelled Kafka reads and latency probes keep already-started driver promises
+observed through settlement, preventing unhandled rejections when cancellation
+wins.
+
 Observed health now prioritizes selected-topic findings, measurement coverage and
 investigation actions. Existing resources can be selected from the connected
 profile; collection progress and cooldown are visible. Partition filtering and

@@ -33,8 +33,8 @@ import {
   mapKafkaAdminFailure,
   mapKafkaConsumerGroupFailure,
   mapKafkaTopicConfigurationFailure,
-  normalizeKafkaError,
 } from "./failure";
+import { abortableOperation } from "./abortable-operation";
 import { OAuthEndpointResponseError, requestOAuthToken } from "./oauth";
 import { PlatformaticAdminFactory } from "./platformatic-admin";
 import { PlatformaticConsumerFactory } from "./platformatic-consumer";
@@ -60,28 +60,6 @@ class OperationAborted extends Error {
     super("Kafka engine operation was aborted.");
     this.name = "OperationAborted";
   }
-}
-
-function boundedOperation<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(new OperationAborted());
-  }
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => {
-      reject(new OperationAborted());
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    operation.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(normalizeKafkaError(error));
-      },
-    );
-  });
 }
 
 function cancelledFailure(stage: HostErrorStage, target: string): KafkaEngineFailure {
@@ -467,7 +445,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       signal,
     });
     try {
-      const rawStream = await boundedOperation(operation, signal);
+      const rawStream = await abortableOperation(operation, signal, () => new OperationAborted());
       const translated = new TranslatedKafkaMessageStream(
         rawStream,
         parsedRequest.topic,
@@ -587,7 +565,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
 
     try {
       const operation = Promise.resolve().then(() => start(signal));
-      return await boundedOperation(operation, signal);
+      return await abortableOperation(operation, signal, () => new OperationAborted());
     } catch (error) {
       if (error instanceof OperationAborted) {
         throw cancellationSignal?.aborted === true || this.lifecycleController.signal.aborted
@@ -677,7 +655,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
   ): Promise<OAuthToken> {
     const target = connection.oauth.tokenEndpoint;
     try {
-      return await boundedOperation(
+      return await abortableOperation(
         this.tokenRequester({
           ...(connection.tls.enabled === true ? { caPem: connection.tls.caPem } : {}),
           clientId: connection.oauth.clientId,
@@ -687,6 +665,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
           tokenEndpoint: target,
         }),
         signal,
+        () => new OperationAborted(),
       );
     } catch (error) {
       if (error instanceof OperationAborted) {
