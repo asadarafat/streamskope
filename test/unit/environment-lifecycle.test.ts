@@ -91,7 +91,7 @@ function connection(): EnvironmentConnection {
         return Promise.resolve();
       },
     ),
-  } satisfies KafkaActiveConnection;
+  };
 }
 
 async function fixture(): Promise<{
