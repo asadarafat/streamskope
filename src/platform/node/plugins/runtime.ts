@@ -633,6 +633,8 @@ export class PluginRuntime implements PluginRuntimePort {
     return this.serial(async () => {
       const loaded = this.modules.get(pluginId);
       if (loaded === undefined) return null;
+      // A healthy backend only needs a renderer retry; it will not stop active work.
+      if (operation === "retry" && !this.errors.has(pluginId)) return null;
       const warning = await loaded.backend.beforeChange();
       if (warning === undefined) return null;
       const now = Date.now();
@@ -721,6 +723,8 @@ export class PluginRuntime implements PluginRuntimePort {
               "Install or repair the plugin in Preferences > Plugins.",
             );
           this.assertCompatible(installation.manifest);
+          if (previous !== undefined && installation.sha256 !== previous.installation.sha256)
+            throw problem("The stored plugin changed. Review its installation before retrying.");
           if (previous !== undefined) await Promise.allSettled([...previous.connections]);
           await this.confirmChange(pluginId, "retry", previous, confirmationToken);
           assertCurrent();

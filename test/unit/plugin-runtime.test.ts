@@ -232,7 +232,7 @@ describe("optional installed plugin runtime", () => {
       apiVersion: 4,
       version: "0.1.0-beta.1",
       compatibility: {
-        streamskope: { minimum: "0.2.0", maximumExclusive: "0.3.0" },
+        streamskope: { minimum: "0.2.1-beta.1", maximumExclusive: "0.3.0" },
         target: { system: "eda", minimum: "26.8.2", maximum: "26.8.2" },
       },
     };
@@ -246,7 +246,7 @@ describe("optional installed plugin runtime", () => {
         },
       ],
     });
-    const stable = new PluginRuntime({ store, hostRelease: "v0.2.0" });
+    const stable = new PluginRuntime({ store, hostRelease: "v0.2.1" });
     const older = new PluginRuntime({ store, hostRelease: "v0.1.0-beta.1" });
     const prerelease = new PluginRuntime({ store, hostRelease: "v0.2.1-beta.1" });
     runtimes.push(stable, older, prerelease);

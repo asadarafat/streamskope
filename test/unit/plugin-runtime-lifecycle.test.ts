@@ -113,6 +113,25 @@ afterEach(async () => {
 });
 
 describe("plugin shutdown and profile boundaries", () => {
+  it("does not ask to stop healthy active work for an idempotent renderer retry", async () => {
+    const stop = vi.fn(() => Promise.resolve());
+    const { runtime } = await setup({
+      loadModule: () =>
+        Promise.resolve({
+          activate: () => ({
+            ...backend(),
+            beforeChange: () => Promise.resolve({ message: "Capture active", detail: "Session A" }),
+            prepareUnload: stop,
+          }),
+        }),
+    });
+    const before = (await runtime.list()).plugins[0]!;
+    expect(await runtime.prepareChange(manifest.id, "retry")).toBeNull();
+    expect((await runtime.retryActivation(manifest.id)).plugins[0]?.activationId).toBe(
+      before.activationId,
+    );
+    expect(stop).not.toHaveBeenCalled();
+  });
   it("retries retained installed bytes without GitHub after a failed first activation and remains idempotent", async () => {
     const activate = vi
       .fn()
