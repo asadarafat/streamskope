@@ -21,6 +21,9 @@ export type PluginHostCommand = Extract<
   HostCommand,
   { readonly command: `plugins.${string}` | "plugin.execute" }
 >;
+export function isPluginHostCommand(command: HostCommand): command is PluginHostCommand {
+  return command.command === "plugin.execute" || command.command.startsWith("plugins.");
+}
 interface Bindings {
   readonly runtime?: PluginRuntimePort;
   readonly session: KafkaApplicationSession;
@@ -109,8 +112,9 @@ export class PluginFacadeController {
           command: command.command,
           result: {
             correlationId,
-            pluginCatalog: (await runtime?.catalog()) ?? {
+            pluginCatalog: (await runtime?.catalog(command.payload.refresh)) ?? {
               plugins: [],
+              source: "unavailable",
               error: "Plugins are unavailable on this host.",
             },
           },
@@ -139,6 +143,7 @@ export class PluginFacadeController {
             },
           };
         case "plugins.install":
+        case "plugins.retry":
         case "plugins.remove":
           return {
             ...base,
@@ -147,7 +152,12 @@ export class PluginFacadeController {
               correlationId,
               pluginSnapshot: await (command.command === "plugins.install"
                 ? runtime.install(command.payload.pluginId, command.payload.confirmationToken)
-                : runtime.remove(command.payload.pluginId, command.payload.confirmationToken)),
+                : command.command === "plugins.retry"
+                  ? runtime.retryActivation(
+                      command.payload.pluginId,
+                      command.payload.confirmationToken,
+                    )
+                  : runtime.remove(command.payload.pluginId, command.payload.confirmationToken)),
             },
           };
         case "plugins.change.prepare":

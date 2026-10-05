@@ -33,6 +33,66 @@ const event = {
 };
 
 describe("generic plugin host protocol", () => {
+  it("validates cache-only requests, local retry and dated catalog provenance", () => {
+    const cached = {
+      ...command,
+      command: "plugins.catalog",
+      payload: { refresh: false },
+    };
+    expect(parseHostCommand(cached)).toEqual(cached);
+    expect(() => parseHostCommand({ ...cached, payload: { refresh: "false" } })).toThrow(
+      HostContractValidationError,
+    );
+    const retry = {
+      ...command,
+      command: "plugins.retry",
+      payload: { pluginId: "example.capture" },
+    };
+    expect(parseHostCommand(retry)).toEqual(retry);
+    const prepare = {
+      ...retry,
+      command: "plugins.change.prepare",
+      payload: { ...retry.payload, operation: "retry" },
+    };
+    expect(parseHostCommand(prepare)).toEqual(prepare);
+    const dated = {
+      ...response,
+      command: "plugins.catalog",
+      result: {
+        correlationId: "cached",
+        pluginCatalog: {
+          plugins: [],
+          source: "cache",
+          checkedAt: "2026-10-06T10:00:00.000Z",
+          error: "Catalog unavailable.",
+        },
+      },
+    };
+    expect(parseHostCommandResponse(dated)).toEqual(dated);
+    for (const checkedAt of ["yesterday", "2026-10-06", "2026-02-31T10:00:00.000Z", 123]) {
+      expect(() =>
+        parseHostCommandResponse({
+          ...dated,
+          result: { ...dated.result, pluginCatalog: { ...dated.result.pluginCatalog, checkedAt } },
+        }),
+      ).toThrow(HostContractValidationError);
+    }
+    expect(() =>
+      parseHostCommandResponse({
+        ...dated,
+        result: {
+          ...dated.result,
+          pluginCatalog: { ...dated.result.pluginCatalog, source: "official" },
+        },
+      }),
+    ).toThrow(HostContractValidationError);
+    const retried = {
+      ...response,
+      command: "plugins.retry",
+      result: { correlationId: "retry", pluginSnapshot: { revision: 1, plugins: [] } },
+    };
+    expect(parseHostCommandResponse(retried)).toEqual(retried);
+  });
   it("carries lifecycle consent and activation identity, and rejects malformed change snapshots", () => {
     const prepare = {
       ...command,

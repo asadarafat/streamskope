@@ -89,7 +89,7 @@ import { executeOperationalPreferenceCommand } from "./operational-preference-fa
 import { executeTrustRecipeCommand, isTrustRecipeCommand } from "./trust-recipe-facade";
 import { executeTopicListCommand } from "./topic-list-facade";
 import { ClusterServiceFacadeController } from "./cluster-service-facades";
-import { PluginFacadeController } from "./plugin-facade";
+import { isPluginHostCommand, PluginFacadeController } from "./plugin-facade";
 
 export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly activity = new ActivityHistory();
@@ -386,6 +386,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     if (!this.available) {
       return this.unavailableResponse(command, correlationId);
     }
+    if (isPluginHostCommand(command)) return this.plugins.execute(command, correlationId);
 
     const recipeBindings = {
       available: (): boolean => this.available,
@@ -460,17 +461,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "queries.put":
       case "queries.delete":
         return executeQueryCommand(command, correlationId, this.queries);
-      case "plugin.execute":
-      case "plugins.list":
-      case "plugins.catalog":
-      case "plugins.change.prepare":
-      case "plugins.renderer.failed":
-      case "plugins.install":
-      case "plugins.remove":
-      case "plugins.restart":
-      case "plugins.exit.prepare":
-      case "plugins.exit.resolve":
-        return this.plugins.execute(command, correlationId);
       case "connection.connect":
         return this.connect(command, correlationId);
       case "connection.disconnect":

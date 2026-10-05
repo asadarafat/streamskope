@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -113,6 +113,103 @@ afterEach(async () => {
 });
 
 describe("plugin shutdown and profile boundaries", () => {
+  it("does not ask to stop healthy active work for an idempotent renderer retry", async () => {
+    const stop = vi.fn(() => Promise.resolve());
+    const { runtime } = await setup({
+      loadModule: () =>
+        Promise.resolve({
+          activate: (): PluginBackend => ({
+            ...backend(),
+            beforeChange: () => Promise.resolve({ message: "Capture active", detail: "Session A" }),
+            prepareUnload: stop,
+          }),
+        }),
+    });
+    const before = (await runtime.list()).plugins[0]!;
+    expect(await runtime.prepareChange(manifest.id, "retry")).toBeNull();
+    expect((await runtime.retryActivation(manifest.id)).plugins[0]?.activationId).toBe(
+      before.activationId,
+    );
+    expect(stop).not.toHaveBeenCalled();
+  });
+  it("retries retained installed bytes without GitHub after a failed first activation and remains idempotent", async () => {
+    const activate = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("Temporary activation failure");
+      })
+      .mockImplementation(backend);
+    const list = vi.fn(() => Promise.reject(new Error("No internet")));
+    const download = vi.fn(() => Promise.reject(new Error("No internet")));
+    const { runtime, store } = await setup({
+      loadModule: () => Promise.resolve({ activate }),
+      catalog: { list, download },
+    });
+    expect((await runtime.list()).plugins[0]).toMatchObject({
+      installed: manifest,
+      error: "Temporary activation failure",
+    });
+    expect((await runtime.list()).plugins[0]?.active).toBeUndefined();
+    expect(await store.getActive(manifest.id)).toBeUndefined();
+    const recovered = (await runtime.retryActivation(manifest.id)).plugins[0]!;
+    expect(recovered).toMatchObject({
+      installed: manifest,
+      active: manifest,
+      pending: null,
+      restartRequired: false,
+    });
+    expect(recovered.error).toBeUndefined();
+    expect((await runtime.retryActivation(manifest.id)).plugins[0]?.activationId).toBe(
+      recovered.activationId,
+    );
+    expect(activate).toHaveBeenCalledTimes(2);
+    expect(list).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("rejects tampered retained bytes before retry activation and still allows offline removal", async () => {
+    const activate = vi.fn(() => {
+      throw new Error("Activation failure");
+    });
+    const download = vi.fn(() => Promise.reject(new Error("No internet")));
+    const { runtime, store } = await setup({
+      loadModule: () => Promise.resolve({ activate }),
+      catalog: { list: () => Promise.reject(new Error("No internet")), download },
+    });
+    await runtime.start();
+    const retained = await store.getInstalled(manifest.id);
+    await writeFile(retained!.backendPath, "tampered backend code");
+    await expect(runtime.retryActivation(manifest.id)).rejects.toThrow(/verified package/u);
+    expect(activate).toHaveBeenCalledTimes(1);
+    expect((await runtime.list()).plugins[0]?.active).toBeUndefined();
+    expect((await runtime.remove(manifest.id)).plugins).toEqual([]);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("keeps a retryable installed package across host reopening after repeated activation failures", async () => {
+    const activate = vi.fn(() => {
+      throw new Error("Still unavailable");
+    });
+    const { runtime, store } = await setup({ loadModule: () => Promise.resolve({ activate }) });
+    await runtime.start();
+    await expect(runtime.retryActivation(manifest.id)).rejects.toThrow("Still unavailable");
+    expect((await runtime.list()).plugins[0]).toMatchObject({
+      installed: manifest,
+      error: "Still unavailable",
+    });
+    await runtime.close();
+    const reopened = new PluginRuntime({
+      store,
+      hostRelease: "v0.2.0",
+      loadModule: (): Promise<PluginBackendModule> => Promise.resolve({ activate: backend }),
+    });
+    reopened.bindHost(bindings());
+    runtimes.push(reopened);
+    expect((await reopened.list()).plugins[0]?.installed).toEqual(manifest);
+    expect((await reopened.list()).plugins[0]?.active).toBeUndefined();
+    expect((await reopened.retryActivation(manifest.id)).plugins[0]?.active).toEqual(manifest);
+  });
+
   it("asks again about earlier plugin work after another plugin prevents exit", async () => {
     let activations = 0;
     const prompt = {
@@ -412,6 +509,97 @@ async function hotSetup(
 }
 
 describe("hot plugin lifecycle", () => {
+  it("confirms retained active work before retrying rejected UI from verified local bytes with a fresh activation", async () => {
+    const close = vi.fn(() => Promise.resolve());
+    const prepareUnload = vi.fn(() => Promise.resolve());
+    const original: PluginBackend = {
+      ...backend(),
+      close,
+      prepareUnload,
+      beforeChange: () => Promise.resolve({ message: "Capture active", detail: "Session A" }),
+    };
+    let activations = 0;
+    const list = vi.fn(() => Promise.reject(new Error("Offline")));
+    const download = vi.fn(() => Promise.reject(new Error("Offline")));
+    const { runtime, store } = await setup({
+      catalog: { list, download },
+      loadModule: () =>
+        Promise.resolve({
+          activate: () => {
+            activations += 1;
+            return activations === 1 ? original : backend();
+          },
+        }),
+    });
+    const before = (await runtime.list()).plugins[0]!;
+    await runtime.rendererFailed(manifest.id, before.activationId!, "Renderer rejected");
+    await expect(runtime.retryActivation(manifest.id)).rejects.toThrow(/confirmation/u);
+    expect(activations).toBe(1);
+    expect(prepareUnload).not.toHaveBeenCalled();
+    expect((await runtime.list()).plugins[0]?.activationId).toBe(before.activationId);
+    const confirmation = await runtime.prepareChange(manifest.id, "retry");
+    const recovered = (await runtime.retryActivation(manifest.id, confirmation!.token)).plugins[0]!;
+    expect(recovered.active).toEqual(manifest);
+    expect(recovered.activationId).not.toBe(before.activationId);
+    expect(recovered.error).toBeUndefined();
+    expect((await store.getActive(manifest.id))?.sha256).toBe(sha256);
+    expect(prepareUnload).toHaveBeenCalledWith("update");
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(await runtime.rendererAsset(before.rendererUrl!)).toBeUndefined();
+    expect(await runtime.rendererAsset(recovered.rendererUrl!)).toBeDefined();
+    await expect(runtime.execute(request(before.activationId!))).rejects.toThrow(
+      /no longer active/u,
+    );
+    expect((await runtime.retryActivation(manifest.id)).plugins[0]?.activationId).toBe(
+      recovered.activationId,
+    );
+    expect(activations).toBe(2);
+    expect(list).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it.each(["verification", "activation", "cleanup"] as const)(
+    "retains the original active instance when local retry fails during %s",
+    async (failure) => {
+      const originalClose = vi.fn(() => Promise.resolve());
+      const candidateClose = vi.fn(() => Promise.resolve());
+      const original: PluginBackend = {
+        ...backend(),
+        close: originalClose,
+        beforeChange: () => Promise.resolve({ message: "Capture active", detail: "Session A" }),
+        prepareUnload: () =>
+          failure === "cleanup"
+            ? Promise.reject(new Error("Remote cleanup failed"))
+            : Promise.resolve(),
+      };
+      let activations = 0;
+      const { runtime, store } = await setup({
+        loadModule: () =>
+          Promise.resolve({
+            activate: () => {
+              activations += 1;
+              if (activations === 1) return original;
+              if (failure === "activation") throw new Error("Candidate activation failed");
+              return { ...backend(), close: candidateClose };
+            },
+          }),
+      });
+      const before = (await runtime.list()).plugins[0]!;
+      await runtime.rendererFailed(manifest.id, before.activationId!, "Renderer rejected");
+      if (failure === "verification") {
+        const installation = await store.getInstalled(manifest.id);
+        await writeFile(installation!.backendPath, "tampered code");
+      }
+      const prompt = await runtime.prepareChange(manifest.id, "retry");
+      await expect(runtime.retryActivation(manifest.id, prompt!.token)).rejects.toThrow();
+      expect((await runtime.list()).plugins[0]?.activationId).toBe(before.activationId);
+      await expect(runtime.execute(request(before.activationId!))).resolves.toBeNull();
+      expect(originalClose).not.toHaveBeenCalled();
+      expect(activations).toBe(failure === "verification" ? 1 : 2);
+      expect(candidateClose).toHaveBeenCalledTimes(failure === "cleanup" ? 1 : 0);
+    },
+  );
+
   it("replaces one backend, invalidates old requests/assets/capabilities and publishes its new activation", async () => {
     const close = vi.fn(() => Promise.resolve());
     const prepareUnload = vi.fn(() => Promise.resolve());

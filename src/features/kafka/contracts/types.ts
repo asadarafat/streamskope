@@ -76,7 +76,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 49 as const;
+export const HOST_PROTOCOL_VERSION = 50 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -185,6 +185,7 @@ export const HOST_COMMANDS = [
   "plugins.change.prepare",
   "plugins.renderer.failed",
   "plugins.install",
+  "plugins.retry",
   "plugins.remove",
   "plugins.restart",
   "plugins.exit.prepare",
@@ -394,17 +395,23 @@ type HostCommandDefinition =
       readonly payload: { readonly id: string };
     })
   | (HostCommandBase & {
-      readonly command:
-        "plugins.list" | "plugins.catalog" | "plugins.restart" | "plugins.exit.prepare";
+      readonly command: "plugins.list" | "plugins.restart" | "plugins.exit.prepare";
       readonly payload: Record<string, never>;
     })
   | (HostCommandBase & {
-      readonly command: "plugins.install" | "plugins.remove";
+      readonly command: "plugins.catalog";
+      readonly payload: { readonly refresh?: boolean };
+    })
+  | (HostCommandBase & {
+      readonly command: "plugins.install" | "plugins.remove" | "plugins.retry";
       readonly payload: { readonly pluginId: string; readonly confirmationToken?: string };
     })
   | (HostCommandBase & {
       readonly command: "plugins.change.prepare";
-      readonly payload: { readonly pluginId: string; readonly operation: "install" | "remove" };
+      readonly payload: {
+        readonly pluginId: string;
+        readonly operation: import("../../../plugins/contracts").PluginChangeOperation;
+      };
     })
   | (HostCommandBase & {
       readonly command: "plugins.renderer.failed";

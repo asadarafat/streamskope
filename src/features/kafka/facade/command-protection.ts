@@ -114,6 +114,7 @@ export const KAFKA_COMMAND_ACCESS = {
   "plugins.change.prepare": "remote-write",
   "plugins.renderer.failed": "local",
   "plugins.install": "remote-write",
+  "plugins.retry": "remote-write",
   "plugins.remove": "remote-write",
   "plugins.restart": "remote-write",
   "plugins.exit.prepare": "local",

@@ -14,6 +14,7 @@ import {
   parsePluginPackage,
   type VerifiedPluginPackage,
 } from "./package";
+import { PluginCatalogCache } from "./catalog-cache";
 
 export interface ActivePlugin {
   readonly manifest: PluginManifest;
@@ -26,6 +27,7 @@ export interface ActivePlugin {
 
 interface InstallationState {
   active?: string;
+  inactive?: string;
   previous?: string;
   pending?: string | null;
   error?: string;
@@ -84,9 +86,13 @@ function parseState(bytes: Uint8Array): StoreState {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw))
       throw new Error("Invalid plugin installation record.");
     const entry = raw as Record<string, unknown>;
-    if (Object.keys(entry).some((key) => !["active", "previous", "pending", "error"].includes(key)))
+    if (
+      Object.keys(entry).some(
+        (key) => !["active", "inactive", "previous", "pending", "error"].includes(key),
+      )
+    )
       throw new Error("Unexpected plugin installation field.");
-    for (const key of ["active", "previous", "pending"] as const) {
+    for (const key of ["active", "inactive", "previous", "pending"] as const) {
       if (
         entry[key] !== undefined &&
         !(key === "pending" && entry[key] === null) &&
@@ -104,10 +110,12 @@ function parseState(bytes: Uint8Array): StoreState {
 /** Verified packages are staged separately from the atomic active-version pointer. */
 export class PluginStore {
   readonly #root: string;
+  readonly catalogCache: PluginCatalogCache;
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(rootDirectory: string) {
     this.#root = resolve(rootDirectory);
+    this.catalogCache = new PluginCatalogCache(this.#root);
   }
 
   /** Recovery survives package replacement/removal; the plugin clears it after remote cleanup. */
@@ -228,7 +236,8 @@ export class PluginStore {
       installed =
         typeof entry.pending === "string"
           ? (await this.#verified(id, entry.pending)).manifest
-          : active;
+          : (active ??
+            (entry.inactive ? (await this.#verified(id, entry.inactive)).manifest : undefined));
     } catch (failure) {
       error = errorText(failure);
     }
@@ -348,7 +357,7 @@ export class PluginStore {
     entry: InstallationState | undefined,
   ): Promise<void> {
     if (plugin.manifest.apiVersion < 3 || entry === undefined) return;
-    for (const digest of new Set([entry.active, entry.previous, entry.pending])) {
+    for (const digest of new Set([entry.active, entry.inactive, entry.previous, entry.pending])) {
       if (!digest || digest === plugin.sha256) continue;
       let retained: VerifiedPluginPackage;
       try {
@@ -395,6 +404,7 @@ export class PluginStore {
         }
       }
       entry.active = digest;
+      delete entry.inactive;
       delete entry.pending;
       delete entry.error;
       state.plugins[id] = entry;
@@ -422,7 +432,8 @@ export class PluginStore {
       validId(id);
       if (!DIGEST.test(digest)) throw new Error("Invalid plugin package digest.");
       const entry = (await this.#state()).plugins[id];
-      if ([entry?.active, entry?.previous, entry?.pending].includes(digest)) return;
+      if ([entry?.active, entry?.inactive, entry?.previous, entry?.pending].includes(digest))
+        return;
       await directory(this.#root, false);
       const parent = join(this.#root, id);
       await directory(parent, false);
@@ -498,6 +509,7 @@ export class PluginStore {
           if (entry.pending === null) delete entry.active;
           else entry.active = entry.pending;
           delete entry.pending;
+          delete entry.inactive;
           delete entry.error;
         }
         if (!entry.active) continue;
@@ -529,13 +541,23 @@ export class PluginStore {
     return digest ? this.#verified(id, digest) : undefined;
   }
 
+  /** Retry only explicitly retained, fully verified installed code; never scan arbitrary directories. */
+  async getInstalled(id: string): Promise<ActivePlugin | undefined> {
+    validId(id);
+    const entry = (await this.#state()).plugins[id];
+    const digest = entry?.active ?? entry?.inactive;
+    return digest ? this.#verified(id, digest) : undefined;
+  }
+
   rollback(id: string): Promise<ActivePlugin | undefined> {
     return this.#serial(async () => {
       validId(id);
       const state = await this.#state();
       const entry = state.plugins[id];
       if (!entry) return undefined;
+      const failed = entry.active;
       delete entry.active;
+      delete entry.inactive;
       entry.error =
         "Plugin failed to start. The previous working version was restored when available.";
       let fallback: ActivePlugin | undefined;
@@ -548,6 +570,14 @@ export class PluginStore {
         }
       }
       delete entry.previous;
+      if (fallback === undefined && failed) {
+        try {
+          await this.#verified(id, failed);
+          entry.inactive = failed;
+        } catch {
+          /* Corrupt code cannot become a retry candidate. */
+        }
+      }
       await this.#save(state);
       return fallback;
     });

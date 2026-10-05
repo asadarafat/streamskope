@@ -71,8 +71,17 @@ Kafka access and broker network reachability still have to work independently.
    available immediately; a desktop restart is not required.
 3. Follow the plugin's guide to create a profile, then connect and inspect a topic.
 
-The desktop uses the official StreamSkope release catalog on GitHub. Installation
+The desktop uses the official StreamSkope release catalog on GitHub. New downloads
 and updates need access to GitHub; an installed plugin can load without it.
+Installed state appears independently of catalog discovery, so a stalled catalog
+does not block **Remove** or **Retry activation**. Retry verifies and reloads the
+retained installed package locally; it does not download a replacement.
+
+After a successful catalog check, the host retains a bounded local catalog.
+If GitHub cannot be reached, **Available** shows that cached catalog and the last
+successful check time. Cached entries describe the previous check, not current
+availability or an assurance that the installed version is up to date. A cached
+catalog is metadata; it does not make an undownloaded package available offline.
 Packages are checked for compatibility and integrity before activation. This is
 an official plugin catalog, not a general marketplace or a sandbox for arbitrary
 third-party code. Plugin backend code runs in the trusted application host.
@@ -84,6 +93,7 @@ third-party code. Plugin backend code runs in the trusted application host.
 | Remove                        | Requires the plugin's active work to stop and cleanup to succeed before removing its code                             |
 | Cleanup fails                 | Keeps the plugin available for recovery; inspect its error and retry using the relevant guide                         |
 | Reinstall                     | Restores the plugin UI for retained profiles                                                                          |
+| Retry activation              | Verifies retained package bytes and compatibility, then reloads locally without a GitHub request                      |
 
 Removing a plugin retains its saved profiles. Profiles owned by that plugin need
 a compatible installation before reconnecting; **Open plugins** leads back to

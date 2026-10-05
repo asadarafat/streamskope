@@ -65,6 +65,7 @@ async function start(): Promise<void> {
         ...(STREAMSKOPE_RELEASE === `v${DEVELOPMENT_VERSION}`
           ? {
               catalog: new DevelopmentPluginCatalog(join(repositoryRoot, "dist", "plugin-package")),
+              persistCatalog: false,
             }
           : {}),
       });

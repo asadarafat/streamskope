@@ -72,6 +72,9 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
   let launch: RunningWebDevelopment | undefined;
   let restarts = 0;
   let downloads = 0;
+  let catalogUnavailable = false;
+  let pendingCatalog: Promise<void> | undefined;
+  let completeCatalog: (() => void) | undefined;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
@@ -79,14 +82,17 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     const plugins = new PluginRuntime({
       store: new PluginStore(root),
       catalog: {
-        list: (): Promise<readonly OfficialPluginEntry[]> =>
-          Promise.resolve([
+        list: async (): Promise<readonly OfficialPluginEntry[]> => {
+          await pendingCatalog;
+          if (catalogUnavailable) throw new Error("The plugin catalog could not be reached.");
+          return [
             {
               manifest: available.manifest,
               sha256: available.sha256,
-              downloadUrl: "https://api.github.com/test-release-asset",
+              downloadUrl: "https://api.github.com/repos/asadarafat/streamskope/releases/assets/42",
             },
-          ]),
+          ];
+        },
         download: (): Promise<{ bytes: Uint8Array; sha256: string }> => {
           downloads += 1;
           return Promise.resolve(available);
@@ -142,25 +148,43 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await expect(capture).toHaveCount(0);
     await openPlugins(page);
     available = fixtures.update;
-    await page.getByRole("button", { name: "Refresh plugins", exact: true }).click();
+    await page.getByRole("button", { name: "Check for updates", exact: true }).click();
     await card
       .getByRole("button", { name: `Update to ${available.manifest.version}`, exact: true })
       .click();
     await expect(card).toContainText(`Active version ${available.manifest.version}`);
     available = fixtures.broken;
-    await page.getByRole("button", { name: "Refresh plugins", exact: true }).click();
+    await page.getByRole("button", { name: "Check for updates", exact: true }).click();
     await card
       .getByRole("button", { name: `Update to ${available.manifest.version}`, exact: true })
       .click();
     await expect(card).toContainText("previous version was restored");
     await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
     await page.screenshot({ path: info.outputPath("plugin-update-recovered.png") });
+
+    // An optional lookup must not hold local cleanup hostage. Exercise the real
+    // runtime and typed host while its catalog source cannot finish its request.
+    pendingCatalog = new Promise<void>((complete) => {
+      completeCatalog = complete;
+    });
+    await page.getByRole("button", { name: "Check for updates", exact: true }).click();
+    await expect(page.getByText("Checking for plugin updates…", { exact: true })).toBeVisible();
+    await expect(card.getByRole("button", { name: "Remove", exact: true })).toBeEnabled();
     await card.getByRole("button", { name: "Remove", exact: true }).click();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
     await card.getByRole("button", { name: "Remove", exact: true }).click();
     await page.getByRole("button", { name: "Remove plugin", exact: true }).click();
     await expect(card).toContainText("Not installed");
+    await expect(page.getByText("Checking for plugin updates…", { exact: true })).toBeVisible();
+    expect(downloads).toBe(3);
+    catalogUnavailable = true;
+    completeCatalog?.();
+    await expect(page.getByText(/The plugin catalog is unavailable/u)).toBeVisible();
+    await expect(page.getByText(/^Cached catalog · Last checked/u)).toBeVisible();
+    await expect(card.getByRole("button", { name: "Install", exact: true })).toBeEnabled();
+    catalogUnavailable = false;
+    pendingCatalog = undefined;
     // Wait for the modal itself: its controls disappear before its exit transition
     // releases the keyboard to Preferences.
     await expect(
@@ -181,6 +205,9 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await page.keyboard.press("Escape");
     available = fixtures.update;
     await openPlugins(page);
+    await expect(
+      page.getByRole("button", { name: "Check for updates", exact: true }),
+    ).toBeEnabled();
     await card.getByRole("button", { name: "Install", exact: true }).click();
     await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
     await page.keyboard.press("Escape");
@@ -198,6 +225,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     expect(downloads).toBe(4);
     expect(errors).toEqual([]);
   } finally {
+    completeCatalog?.();
     await page.goto("about:blank");
     await launch?.close();
     await rm(root, { recursive: true, force: true });
