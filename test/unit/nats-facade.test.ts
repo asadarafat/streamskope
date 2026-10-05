@@ -2,15 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { NatsOperationError } from "../../src/features/nats/application/failure";
 import { NatsApplicationSession } from "../../src/features/nats/application/session";
-import { InMemoryNatsProfileStore } from "../../src/features/nats/application/profile-service";
+import {
+  InMemoryNatsProfileStore,
+  NatsProfileService,
+} from "../../src/features/nats/application/profile-service";
 import type { NatsProfileStore } from "../../src/features/nats/application/profile-types";
 import {
   parseCorrelatedNatsResponse,
   parseNatsEvent,
   NATS_PROVIDER_EVENT_CODEC,
+  NATS_PROTOCOL_VERSION,
   type NatsCommand,
+  type NatsCommandResponse,
   type NatsEvent,
   type NatsProfileCreateInput,
+  type NatsProfilesSnapshot,
 } from "../../src/features/nats/contracts";
 import type { NatsBackendFacade } from "../../src/features/nats/facade";
 import { createNatsBackend } from "../../src/platform/node/nats-backend";
@@ -51,7 +57,7 @@ function request<Name extends NatsCommand["command"]>(
   payload: Extract<NatsCommand, { command: Name }>["payload"],
 ): Extract<NatsCommand, { command: Name }> {
   // Test requests use the same strict discriminator/payload pairing as feature callers.
-  return { version: 1, id: crypto.randomUUID(), command, payload } as Extract<
+  return { version: NATS_PROTOCOL_VERSION, id: crypto.randomUUID(), command, payload } as Extract<
     NatsCommand,
     { command: Name }
   >;
@@ -74,6 +80,77 @@ afterEach(async () => {
 });
 
 describe("Core NATS facade through production composition", () => {
+  it("keeps a delayed read snapshot older than a later published profile mutation", async () => {
+    const { backend } = composed();
+    const created = await backend.execute(request("profiles.create", { profile: draft }));
+    if (!created.ok) throw new Error("Expected initial profile commit.");
+    const captured = natsDeferred<void>();
+    const release = natsDeferred<void>();
+    releaseFixtures.push(() => release.resolve());
+    const originalList = NatsProfileService.prototype.list;
+    vi.spyOn(NatsProfileService.prototype, "list").mockImplementationOnce(async function (
+      this: NatsProfileService,
+      signal?: AbortSignal,
+    ): Promise<NatsProfilesSnapshot> {
+      const snapshot = await originalList.call(this, signal);
+      captured.resolve();
+      await release.promise;
+      return snapshot;
+    });
+    const staleRead = backend.execute(request("profiles.list", {}));
+    await captured.promise;
+    const current = await backend.execute(
+      request("profiles.update", {
+        profileId: "profile-1",
+        expectedRevision: 1,
+        profile: {
+          ...draft,
+          name: "Newer committed name",
+          authentication: { mode: "token", token: { mode: "retain" } },
+        },
+      }),
+    );
+    if (!current.ok) throw new Error("Expected updated profile commit.");
+    release.resolve();
+    const old = await staleRead;
+    if (!old.ok) throw new Error("Expected captured profile read.");
+    expect(old.result.profiles.revision).toBe(created.result.profiles.revision);
+    expect(old.result.profiles.revision).toBeLessThan(current.result.profiles.revision);
+    expect(old.result.profiles.profiles[0]?.name).toBe("Facade NATS");
+    expect(current.result.profiles.profiles[0]?.name).toBe("Newer committed name");
+  });
+  it("preserves profile commit authority when an event observer immediately admits another write", async () => {
+    const { backend } = composed();
+    const events: NatsEvent[] = [];
+    let replacement: Promise<NatsCommandResponse<"profiles.update">> | undefined;
+    backend.subscribe((event) => {
+      events.push(event);
+      if (event.event === "profiles.changed" && event.payload.profiles[0]?.revision === 1)
+        replacement = backend.execute(
+          request("profiles.update", {
+            profileId: "profile-1",
+            expectedRevision: 1,
+            profile: {
+              ...draft,
+              name: "Observer replacement",
+              authentication: { mode: "token", token: { mode: "retain" } },
+            },
+          }),
+        );
+    });
+    const committed = await backend.execute(request("profiles.create", { profile: draft }));
+    if (!committed.ok) throw new Error("Expected initial profile commit.");
+    expect(replacement).toBeDefined();
+    const replaced = await replacement;
+    if (replaced === undefined || !replaced.ok)
+      throw new Error("Expected observer profile update.");
+    const firstEvent = events.find(
+      (event) => event.event === "profiles.changed" && event.payload.profiles[0]?.revision === 1,
+    );
+    expect(firstEvent?.payload).toEqual(committed.result.profiles);
+    expect(replaced.result.profiles.revision).toBeGreaterThan(committed.result.profiles.revision);
+    expect(committed.result.profiles.profiles[0]?.name).toBe("Facade NATS");
+  });
   it("completes the declared eight-command workflow with strictly correlated receipts", async () => {
     const { backend } = composed();
     const creation = request("profiles.create", { profile: draft });
@@ -234,7 +311,7 @@ describe("Core NATS facade through production composition", () => {
     expect(
       parseCorrelatedNatsResponse(response, {
         id: response.id,
-        version: 1,
+        version: NATS_PROTOCOL_VERSION,
         command: "profiles.connect",
         payload: { profileId: "profile-1", expectedRevision: 1 },
       }),
@@ -332,8 +409,9 @@ describe("Core NATS facade through production composition", () => {
   it("returns a safe failure and joins actual cleanup after an invalid internal response", async () => {
     const { backend, engine } = composed();
     vi.spyOn(NatsApplicationSession.prototype, "snapshot").mockImplementationOnce(() => ({
-      connection: { state: "connected", profile: null },
+      connection: { revision: 0, state: "connected", profile: null },
       subscription: {
+        revision: 0,
         state: "idle",
         generation: null,
         subject: null,
@@ -428,7 +506,7 @@ describe("Core NATS facade through production composition", () => {
     };
     const { backend } = composed(store);
     const creation = {
-      version: 1 as const,
+      version: NATS_PROTOCOL_VERSION,
       command: "profiles.create" as const,
       id: "original-request",
       payload: { profile: draft },

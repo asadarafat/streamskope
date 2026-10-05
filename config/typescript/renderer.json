@@ -30,6 +30,8 @@
     "../../plugins/nsp/ui/**/*.ts",
     "../../plugins/nsp/ui/**/*.tsx",
     "../../src/platform/providers/**/*.ts",
-    "../../src/features/nats/contracts/**/*.ts"
+    "../../src/features/nats/contracts/**/*.ts",
+    "../../src/features/nats/ui/**/*.ts",
+    "../../src/features/nats/ui/**/*.tsx"
   ]
 }

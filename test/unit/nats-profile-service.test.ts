@@ -11,6 +11,7 @@ import type {
 } from "../../src/features/nats/application/profile-types";
 import type {
   NatsProfileCreateInput,
+  NatsProfileStoreCapability,
   NatsProfileUpdateInput,
 } from "../../src/features/nats/contracts";
 
@@ -46,6 +47,81 @@ function service(
 }
 
 describe("Core NATS profile application authority", () => {
+  it("keeps catalog authority monotonic when protection changes during a pending commit", async () => {
+    const memory = new InMemoryNatsProfileStore();
+    const saving = deferred<void>();
+    const finish = deferred<void>();
+    let ready = true;
+    let pause = false;
+    const store: NatsProfileStore = {
+      get capability(): NatsProfileStoreCapability {
+        return ready
+          ? memory.capability
+          : { durability: "session", protection: "unavailable", state: "unavailable" };
+      },
+      load: (signal) => memory.load(signal),
+      save: async (records, signal): Promise<void> => {
+        if (pause) {
+          saving.resolve();
+          await finish.promise;
+        }
+        await memory.save(records, signal);
+      },
+    };
+    const profiles = service(store);
+    const original = await profiles.create(draft);
+    pause = true;
+    const update = profiles.update("profile-1", 1, {
+      ...retained,
+      name: "After protection change",
+    });
+    await saving.promise;
+    ready = false;
+    const unavailable = await profiles.list();
+    expect(unavailable.revision).toBeGreaterThan(original.revision);
+    ready = true;
+    const recovered = await profiles.list();
+    expect(recovered.revision).toBeGreaterThan(unavailable.revision);
+    finish.resolve();
+    const committed = await update;
+    expect(committed.revision).toBeGreaterThan(recovered.revision);
+    expect(committed.capability.state).toBe("ready");
+    expect(unavailable.capability.state).toBe("unavailable");
+  });
+  it("captures committed catalog authority while concurrent reads still expose the prior commit", async () => {
+    const memory = new InMemoryNatsProfileStore();
+    const saving = deferred<void>();
+    const finish = deferred<void>();
+    let pause = false;
+    const store: NatsProfileStore = {
+      capability: memory.capability,
+      load: (signal) => memory.load(signal),
+      save: async (records, signal): Promise<void> => {
+        if (pause) {
+          saving.resolve();
+          await finish.promise;
+        }
+        await memory.save(records, signal);
+      },
+    };
+    const profiles = service(store);
+    const original = await profiles.create(draft);
+    pause = true;
+    const update = profiles.update("profile-1", 1, { ...retained, name: "Committed update" });
+    await saving.promise;
+    const concurrentRead = await profiles.list();
+    expect(concurrentRead.revision).toBe(original.revision);
+    expect(concurrentRead.profiles[0]?.name).toBe("Private NATS");
+    finish.resolve();
+    const committed = await update;
+    expect(committed.revision).toBeGreaterThan(concurrentRead.revision);
+    expect((await profiles.list()).revision).toBe(committed.revision);
+    pause = false;
+    const removed = await profiles.delete("profile-1", 2);
+    expect(removed.revision).toBeGreaterThan(committed.revision);
+    expect(committed.profiles[0]?.name).toBe("Committed update");
+    expect(committed.profiles[0]?.revision).toBe(2);
+  });
   it("retains credentials for host connection while exposing only presence flags", async () => {
     const store = new InMemoryNatsProfileStore();
     const profiles = service(store);
@@ -243,7 +319,7 @@ describe("Core NATS profile application authority", () => {
       recovery: "Unlock OS storage.",
     } as const;
     const profiles = service(new UnavailableNatsProfileStore(capability));
-    expect(await profiles.list()).toEqual({ capability, profiles: [] });
+    expect(await profiles.list()).toEqual({ revision: 0, capability, profiles: [] });
     await expect(profiles.create(draft)).rejects.toMatchObject({ code: "storage-unavailable" });
   });
 

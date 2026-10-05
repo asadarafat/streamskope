@@ -476,7 +476,7 @@ export default [
                     types: {
                       anyOf: [
                         "nats-contracts",
-
+                        "nats-renderer",
                         "kafka-contracts",
                         "kafka-renderer",
                         "platform-desktop",

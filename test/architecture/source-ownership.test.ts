@@ -20,6 +20,13 @@ it("exposes feature, platform and plugin API layers as the source roots", () => 
     "facade",
     "ui",
   ]);
+  expect(readdirSync(resolve(root, "src/features/nats")).sort()).toEqual([
+    "application",
+    "contracts",
+    "engine",
+    "facade",
+    "ui",
+  ]);
 });
 
 it("keeps direct Kubernetes access out of the desktop and browser hosts", () => {

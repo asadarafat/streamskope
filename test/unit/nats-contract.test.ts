@@ -10,6 +10,9 @@ import {
   parseNatsEvent,
   parseNatsProfileCreateInput,
   parseNatsProfileUpdateInput,
+  parseNatsProfilesSnapshot,
+  parseNatsConnectionSnapshot,
+  parseNatsSubscriptionSnapshot,
   parseNatsRecord,
   parseNatsServers,
   parseNatsSubject,
@@ -53,7 +56,7 @@ const profile = {
 } as const;
 function batch(records: readonly NatsRecord[] = [record]): NatsEvent {
   return {
-    version: 1,
+    version: NATS_PROTOCOL_VERSION,
     sequence: 2,
     event: "records.batch",
     operation: "subscription.start",
@@ -63,6 +66,39 @@ function batch(records: readonly NatsRecord[] = [record]): NatsEvent {
 }
 
 describe("Core NATS public contract", () => {
+  it("requires exact nonnegative snapshot authorities independently of profile and transport revisions", () => {
+    const states: readonly [(value: unknown) => unknown, Record<string, unknown>][] = [
+      [
+        parseNatsProfilesSnapshot,
+        {
+          revision: 7,
+          capability: { durability: "session", protection: "memory", state: "ready" },
+          profiles: [],
+        },
+      ],
+      [parseNatsConnectionSnapshot, { revision: 8, state: "disconnected", profile: null }],
+      [
+        parseNatsSubscriptionSnapshot,
+        {
+          revision: 9,
+          state: "idle",
+          generation: null,
+          subject: null,
+          counters: { ...counters, receivedRecords: 0, publishedRecords: 0 },
+        },
+      ],
+    ];
+    for (const [parse, snapshot] of states) {
+      expect(parse(snapshot)).toEqual(snapshot);
+      for (const revision of [undefined, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1])
+        expect(() => parse({ ...snapshot, revision })).toThrow();
+      const absent = { ...snapshot };
+      delete absent.revision;
+      expect(() => parse(absent)).toThrow();
+    }
+    const current = NATS_PROVIDER_EVENT_CODEC.availability(1, "ready");
+    expect(() => parseNatsEvent({ ...current, version: 1 })).toThrow();
+  });
   it("uses its own protocol and correlated command-specific responses", () => {
     const command: NatsCommand = {
       id: "request-1",
@@ -72,12 +108,13 @@ describe("Core NATS public contract", () => {
     };
     const response = {
       id: command.id,
-      version: 1,
+      version: NATS_PROTOCOL_VERSION,
       command: command.command,
       ok: true,
       result: {
         correlationId: "correlation-1",
         subscription: {
+          revision: 2,
           state: "streaming",
           generation: "generation-1",
           subject: "qualification.*",
@@ -93,23 +130,27 @@ describe("Core NATS public contract", () => {
       parseCorrelatedNatsResponse({ ...response, command: "subscription.stop" }, command),
     ).toThrow();
     expect(() => parseNatsCommand({ ...command, version: 49 })).toThrow();
+    expect(() => parseNatsCommand({ ...command, version: 1 })).toThrow();
+    expect(() => parseCorrelatedNatsResponse({ ...response, version: 1 }, command)).toThrow();
   });
 
   it("rehydrates profiles, connection and subscription together", () => {
     const command: NatsCommand = {
       id: "request-1",
-      version: 1,
+      version: NATS_PROTOCOL_VERSION,
       command: "profiles.list",
       payload: {},
     };
     const result = {
       correlationId: "correlation-1",
       profiles: {
+        revision: 0,
         capability: { durability: "session", protection: "memory", state: "ready" },
         profiles: [],
       },
-      connection: { state: "disconnected", profile: null },
+      connection: { revision: 0, state: "disconnected", profile: null },
       subscription: {
+        revision: 0,
         state: "idle",
         generation: null,
         subject: null,
@@ -118,14 +159,26 @@ describe("Core NATS public contract", () => {
     };
     expect(
       parseCorrelatedNatsResponse(
-        { id: command.id, version: 1, command: command.command, ok: true, result },
+        {
+          id: command.id,
+          version: NATS_PROTOCOL_VERSION,
+          command: command.command,
+          ok: true,
+          result,
+        },
         command,
       ).ok,
     ).toBe(true);
     const incomplete = { ...result, subscription: undefined };
     expect(() =>
       parseCorrelatedNatsResponse(
-        { id: command.id, version: 1, command: command.command, ok: true, result: incomplete },
+        {
+          id: command.id,
+          version: NATS_PROTOCOL_VERSION,
+          command: command.command,
+          ok: true,
+          result: incomplete,
+        },
         command,
       ),
     ).toThrow();
@@ -133,23 +186,26 @@ describe("Core NATS public contract", () => {
 
   it("represents pending profile resolution without inventing validated connection metadata", () => {
     const event = {
-      version: 1,
+      version: NATS_PROTOCOL_VERSION,
       sequence: 1,
       event: "connection.state",
       operation: "profiles.connect",
       correlationId: "correlation-1",
-      payload: { state: "connecting", profile: null },
+      payload: { revision: 1, state: "connecting", profile: null },
     };
     expect(parseNatsEvent(event)).toEqual(event);
     expect(() =>
-      parseNatsEvent({ ...event, payload: { state: "connected", profile: null } }),
+      parseNatsEvent({
+        ...event,
+        payload: { ...event.payload, state: "connected", profile: null },
+      }),
     ).toThrow();
   });
 
   it("rejects undeclared commands, payload fields and unsafe revision values", () => {
     const base = {
       id: "request-1",
-      version: 1,
+      version: NATS_PROTOCOL_VERSION,
       command: "profiles.connect",
       payload: { profileId: "profile-1", expectedRevision: 1 },
     };
@@ -329,12 +385,13 @@ describe("Core NATS public contract", () => {
 
   it("rejects unsafe failure fields and counter accounting contradictions", () => {
     const event = {
-      version: 1,
+      version: NATS_PROTOCOL_VERSION,
       sequence: 1,
       event: "subscription.changed",
       operation: "subscription.start",
       correlationId: "correlation-1",
       payload: {
+        revision: 3,
         state: "failed",
         subject: "qualification.*",
         generation: "generation-1",

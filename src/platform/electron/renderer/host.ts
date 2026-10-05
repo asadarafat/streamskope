@@ -10,6 +10,7 @@ import {
   type HostCommand,
   type StreamSkopeHost,
 } from "../../../features/kafka/contracts";
+import type { NatsHost } from "../../../features/nats/contracts";
 
 import {
   BrowserDevelopmentHostError,
@@ -21,6 +22,8 @@ export { BrowserDevelopmentHostError };
 declare global {
   interface Window {
     streamSkopeHost?: StreamSkopeHost;
+    /** Native preload exposes only named, typed built-in provider ports. */
+    streamSkopeProviders?: Readonly<{ kafka: StreamSkopeHost; nats?: NatsHost }>;
   }
 }
 

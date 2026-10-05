@@ -61,7 +61,7 @@ walkthrough lives in `website/docs/start/development.md`. Keep operator facts in
 the security, recovery, EDA, NSP and data-handling references, and link to them from
 feature guides instead of copying procedures. The existing docs qualification
 checks published message limits against the runtime contracts. The shared guide
-notice distinguishes development docs from published current-main docs and identifies
+notice distinguishes development docs from the immutable published-release docs and identifies
 the desktop build plus plugin/EDA compatibility. Record operator rehearsals and
 their limits in `website/docs/guide/qualification.md`; site browser checks alone
 do not validate backup/restore or broker permissions.
@@ -168,10 +168,10 @@ stream cannot change a sibling's readiness. Kafka's existing host API, gateway
 paths and IPC channels remain compatibility adapters, and its named backend
 options preserve existing protected profile files and connection plugins.
 The hosts also compose a Core NATS backend with its own typed protocol (version
-1), protected profile store and live subscription lifecycle. NATS does not import
-Kafka feature code. The operator UI remains Kafka-only until the NATS workspace
-is introduced and qualified separately. Connection plugins such as EDA and NSP
-remain Kafka profile extensions; a messaging provider is a built-in sibling.
+2), protected profile store and live subscription lifecycle. NATS does not import
+Kafka feature code. Its workspace provides Connection Profiles and Live
+Subscription within the existing product frame. Connection plugins such as EDA
+and NSP remain Kafka profile extensions; a messaging provider is a built-in sibling.
 
 Core NATS supports no authentication or token authentication, and plaintext or
 verified TLS with an optional PEM CA. The engine uses the supported public SDK
@@ -180,6 +180,35 @@ late connection attempts through real cleanup. Reconnection is explicit, and
 there is no subject inventory, stored history or replay. Receipt timestamps are
 host observation times. Copied payloads, headers, application queues and transport
 queues have independent bounds; omission counters identify their owner.
+
+Each control snapshot carries a monotonic host-lifetime revision, separate from
+profile record revisions and delivery counters. The renderer rejects older
+control snapshots even when native event delivery trails command receipts.
+Protocol 2 requires these revisions; protocol 1 hosts must be upgraded together
+with the renderer. Kafka retains its independent protocol.
+
+The NATS renderer uses the NATS command/event codecs and correlates each response
+to its submitted command. Browser development uses the named
+`/__streamskope_host/providers/nats/{commands,events}` routes and session/memory
+profile storage. Native composition resolves the named preload NATS port lazily;
+a missing native port is explicitly unavailable and never falls back to HTTP or
+Kafka. Resolution is cached at the first NATS visit, preserving Kafka-only
+development launchers. New commands/listeners require the current activation's
+authority, while admitted receipts and listeners remain intact through confirmed
+subscription-stop and disconnect cleanup. Failed cleanup retains the workspace
+for retry. The bounded live viewer fences subscription generations and accounts
+for viewer eviction separately from application/transport omissions; inspection
+retains original UTF-8/base64, headers and host-received UTC evidence.
+
+Core NATS real-server qualification uses `test/nats/provider-real.test.ts` and
+the actual Vite product/provider registry in
+`test/e2e/web-nats-workspace.spec.ts`, with the checksum-pinned NATS 2.15.0
+token/verified-TLS fixture. The ordinary PR job allows 20 minutes: the preceding
+provider-backend qualification took about 12.5 minutes before adding actual NATS
+browser workflows. Existing test/global deadlines remain unchanged. Record
+executed browser and server results for the exact revision; backend-only checks
+do not qualify the workspace or native operating-system credential storage.
+The operator guide is [Core NATS live subscriptions](website/docs/guide/core-nats.md).
 
 `AccountedProviderEventQueue` owns pending and in-flight event costs. Provider
 policies define record projection, generation changes, omission reporting and

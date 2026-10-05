@@ -106,6 +106,8 @@ export class NatsProfileService {
   private loadPromise: Promise<void> | undefined;
   private records: readonly NatsProfileRecord[] = [];
   private dataUnavailable = false;
+  private snapshotRevision = 0;
+  private snapshotCapability: NatsProfileStoreCapability | undefined;
 
   constructor(
     private readonly store: NatsProfileStore,
@@ -256,7 +258,13 @@ export class NatsProfileService {
             "Unlock or configure protected profile storage, then restart StreamSkope.",
         }
       : storeCapability;
-    return { capability, profiles: this.records.map(summary) };
+    if (
+      this.snapshotCapability !== undefined &&
+      JSON.stringify(this.snapshotCapability) !== JSON.stringify(capability)
+    )
+      this.snapshotRevision = natsInteger(this.snapshotRevision + 1);
+    this.snapshotCapability = capability;
+    return { revision: this.snapshotRevision, capability, profiles: this.records.map(summary) };
   }
   private assertAvailable(): void {
     if (this.dataUnavailable || this.store.capability.state !== "ready") throw storageFailure();
@@ -307,7 +315,9 @@ export class NatsProfileService {
       try {
         const records = await this.store.load(signal);
         signal?.throwIfAborted();
-        this.records = parseNatsProfileRecords(records);
+        const parsed = parseNatsProfileRecords(records);
+        this.snapshotRevision = natsInteger(this.snapshotRevision + 1);
+        this.records = parsed;
       } catch (cause) {
         if (signal?.aborted) {
           this.loadPromise = undefined;
@@ -325,6 +335,7 @@ export class NatsProfileService {
     signal?: AbortSignal,
   ): Promise<NatsProfilesSnapshot> {
     signal?.throwIfAborted();
+    natsInteger(this.snapshotRevision + 1);
     try {
       await this.store.save(records, signal);
     } catch (cause) {
@@ -334,6 +345,7 @@ export class NatsProfileService {
     }
     // The store returned its actual commit receipt. Cancellation after commit cannot undo it.
     this.records = records;
+    this.snapshotRevision = natsInteger(this.snapshotRevision + 1);
     return this.snapshot();
   }
 }
