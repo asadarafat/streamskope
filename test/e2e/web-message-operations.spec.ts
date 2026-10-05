@@ -44,6 +44,11 @@ class MessageOperationBackend implements StreamSkopeBackend {
     return Promise.resolve(testHostAccepted(command, `message-e2e-${command.id}`));
   }
 
+  /** This event-only fixture owns no broker reader. */
+  stopStream(): Promise<void> {
+    return Promise.resolve();
+  }
+
   shutdown(): Promise<void> {
     return Promise.resolve();
   }

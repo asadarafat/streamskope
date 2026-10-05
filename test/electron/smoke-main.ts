@@ -9,7 +9,10 @@ import {
   type HostEventListener,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { createElectronShell } from "../../src/platform/electron/main/electron-shell";
+import {
+  createElectronShell,
+  type RunningElectronShell,
+} from "../../src/platform/electron/main/electron-shell";
 import { testHostAccepted } from "../support/host-response";
 
 class ElectronSmokeBackend implements StreamSkopeBackend {
@@ -36,7 +39,14 @@ class ElectronSmokeBackend implements StreamSkopeBackend {
       this.listeners.delete(listener);
     };
   }
+
+  stopStream(): Promise<void> {
+    // This smoke fixture never opens a broker stream.
+    return Promise.resolve();
+  }
 }
+
+let runningShell: RunningElectronShell | undefined;
 
 async function start(): Promise<void> {
   const rendererUrl = process.env.STREAMSKOPE_SMOKE_RENDERER_URL;
@@ -44,7 +54,7 @@ async function start(): Promise<void> {
     throw new Error("STREAMSKOPE_SMOKE_RENDERER_URL is required.");
   }
   await app.whenReady();
-  await createElectronShell({
+  runningShell = await createElectronShell({
     backend: new ElectronSmokeBackend(),
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl,
@@ -52,7 +62,10 @@ async function start(): Promise<void> {
 }
 
 app.on("window-all-closed", () => {
-  app.quit();
+  void (runningShell?.close() ?? Promise.resolve()).then(
+    () => app.quit(),
+    () => app.exit(1),
+  );
 });
 
 void start().catch((error: unknown) => {

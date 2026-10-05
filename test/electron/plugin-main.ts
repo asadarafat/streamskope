@@ -5,7 +5,10 @@ import { app, safeStorage } from "electron";
 
 import type { KafkaBackendFacade } from "../../src/features/kafka/facade";
 import { createElectronKafkaBackend } from "../../src/platform/electron/main/electron-kafka-backend";
-import { createElectronShell } from "../../src/platform/electron/main/electron-shell";
+import {
+  createElectronShell,
+  type RunningElectronShell,
+} from "../../src/platform/electron/main/electron-shell";
 import {
   installPackagedRendererProtocol,
   PACKAGED_RENDERER_URL,
@@ -17,18 +20,26 @@ import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
 
 let backend: KafkaBackendFacade | undefined;
+let runningShell: RunningElectronShell | undefined;
 let closing = false;
 registerPackagedRendererScheme();
 
 async function shutdown(exitCode: number): Promise<void> {
   if (closing) return;
   closing = true;
-  try {
-    await backend?.shutdown();
-    app.exit(exitCode);
-  } catch {
-    app.exit(1);
-  }
+  const results = await Promise.allSettled(
+    [
+      (): Promise<void> => runningShell?.close() ?? Promise.resolve(),
+      (): Promise<void> => backend?.shutdown() ?? Promise.resolve(),
+    ].map((run): Promise<void> => {
+      try {
+        return run();
+      } catch (cause) {
+        return Promise.reject(cause);
+      }
+    }),
+  );
+  app.exit(results.some((result) => result.status === "rejected") ? 1 : exitCode);
 }
 
 async function start(): Promise<void> {
@@ -62,7 +73,7 @@ async function start(): Promise<void> {
     userDataPath: userData,
     plugins,
   });
-  await createElectronShell({
+  runningShell = await createElectronShell({
     backend,
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl: PACKAGED_RENDERER_URL,

@@ -21,6 +21,11 @@ class RejectingBackend implements StreamSkopeBackend {
     return Promise.reject(new Error(`Unexpected host command: ${command.command}`));
   }
 
+  /** This event-only fixture owns no broker reader. */
+  stopStream(): Promise<void> {
+    return Promise.resolve();
+  }
+
   shutdown(): Promise<void> {
     return Promise.resolve();
   }

@@ -369,70 +369,88 @@ describe("Kafka consumption facade lifecycle", () => {
     expect(stream.closeCalls).toBe(1);
   });
 
-  it("cancels a start whose preference preparation completes after Stop", async () => {
-    const preferences = new KafkaOperationalPreferenceService(
-      new InMemoryKafkaOperationalPreferenceStore({ durability: "session", state: "ready" }),
-    );
-    const port = new RecordingConnectionPort();
-    const connection = new RecordingActiveConnection();
-    const open = vi.spyOn(connection, "openMessageStream");
-    port.openOperations.push(() => Promise.resolve(connection));
-    const facade = createFacade(port, undefined, undefined, undefined, preferences);
-    await facade.execute(command("connection.connect", "connect"));
-    const loading = deferred<Awaited<ReturnType<typeof preferences.get>>>();
-    vi.spyOn(preferences, "get").mockReturnValueOnce(loading.promise);
-    const events: HostEvent[] = [];
-    facade.subscribe((event) => {
-      events.push(event);
-    });
-    const starting = facade.execute(command("messages.start", "start"));
-    expect(await facade.execute(command("messages.stop", "stop"))).toMatchObject({ ok: true });
-    loading.resolve(preferences.currentSnapshot());
-    expect(await starting).toMatchObject({ ok: false, error: { code: "CANCELLED" } });
-    expect(open).not.toHaveBeenCalled();
-    expect(
-      events
-        .filter((event) => event.event === "consumption.state")
-        .map((event) => event.payload.state),
-    ).toEqual(["stopped"]);
-  });
+  it.each(["renderer", "transport"] as const)(
+    "cancels a start whose preference preparation completes after %s Stop",
+    async (owner) => {
+      const preferences = new KafkaOperationalPreferenceService(
+        new InMemoryKafkaOperationalPreferenceStore({ durability: "session", state: "ready" }),
+      );
+      const port = new RecordingConnectionPort();
+      const connection = new RecordingActiveConnection();
+      const open = vi.spyOn(connection, "openMessageStream");
+      port.openOperations.push(() => Promise.resolve(connection));
+      const facade = createFacade(port, undefined, undefined, undefined, preferences);
+      await facade.execute(command("connection.connect", "connect"));
+      const loading = deferred<Awaited<ReturnType<typeof preferences.get>>>();
+      vi.spyOn(preferences, "get").mockReturnValueOnce(loading.promise);
+      const events: HostEvent[] = [];
+      facade.subscribe((event) => {
+        events.push(event);
+      });
+      const starting = facade.execute(command("messages.start", "start"));
+      if (owner === "renderer")
+        expect(await facade.execute(command("messages.stop", "stop"))).toMatchObject({ ok: true });
+      else await expect(facade.stopStream()).resolves.toBeUndefined();
+      loading.resolve(preferences.currentSnapshot());
+      expect(await starting).toMatchObject({ ok: false, error: { code: "CANCELLED" } });
+      expect(open).not.toHaveBeenCalled();
+      expect(
+        events
+          .filter((event) => event.event === "consumption.state")
+          .map((event) => event.payload.state),
+      ).toEqual(["stopped"]);
+    },
+  );
 
-  it("stops a pending stream open without publishing its late records or a false start failure", async () => {
-    const opening = deferred<ControlledMessageStream>();
-    const stream = new ControlledMessageStream();
-    const connection = new RecordingActiveConnection();
-    let signal: AbortSignal | undefined;
-    connection.messageStreamOperations.push((_request, openingSignal) => {
-      signal = openingSignal;
-      return opening.promise;
-    });
-    const port = new RecordingConnectionPort();
-    port.openOperations.push(() => Promise.resolve(connection));
-    const facade = createFacade(port);
-    const events: HostEvent[] = [];
-    facade.subscribe((event) => {
-      events.push(event);
-    });
-    await facade.execute(command("connection.connect", "connect"));
-    const starting = facade.execute(command("messages.start", "start"));
-    await vi.waitFor(() => {
-      expect(signal).toBeDefined();
-    });
-    const stopping = facade.execute(command("messages.stop", "stop"));
-    expect(signal?.aborted).toBe(true);
-    stream.push(message("late"));
-    opening.resolve(stream);
-    expect(await starting).toMatchObject({ ok: false, error: { code: "CANCELLED" } });
-    expect(await stopping).toMatchObject({ ok: true });
-    expect(stream.closeCalls).toBe(1);
-    expect(stream.deliveredMessages).toBe(0);
-    expect(events.filter((event) => event.event === "messages.batch")).toEqual([]);
-    expect(
-      events
-        .filter((event) => event.event === "consumption.state")
-        .map((event) => event.payload.state),
-    ).toEqual(["loading", "stopped"]);
-  });
+  it.each(["renderer", "transport"] as const)(
+    "stops a pending stream open through %s without publishing late records",
+    async (owner) => {
+      const opening = deferred<ControlledMessageStream>();
+      const stream = new ControlledMessageStream();
+      const connection = new RecordingActiveConnection();
+      let signal: AbortSignal | undefined;
+      connection.messageStreamOperations.push((_request, openingSignal) => {
+        signal = openingSignal;
+        return opening.promise;
+      });
+      const port = new RecordingConnectionPort();
+      port.openOperations.push(() => Promise.resolve(connection));
+      const facade = createFacade(port);
+      const events: HostEvent[] = [];
+      facade.subscribe((event) => {
+        events.push(event);
+      });
+      await facade.execute(command("connection.connect", "connect"));
+      const starting = facade.execute(command("messages.start", "start"));
+      await vi.waitFor(() => {
+        expect(signal).toBeDefined();
+      });
+      const stopping =
+        owner === "renderer"
+          ? facade.execute(command("messages.stop", "stop"))
+          : facade.stopStream();
+      let confirmed = false;
+      void stopping.then(() => {
+        confirmed = true;
+      });
+      expect(confirmed).toBe(false);
+      expect(signal?.aborted).toBe(true);
+      stream.push(message("late"));
+      opening.resolve(stream);
+      expect(await starting).toMatchObject({ ok: false, error: { code: "CANCELLED" } });
+      if (owner === "renderer") expect(await stopping).toMatchObject({ ok: true });
+      else await expect(stopping).resolves.toBeUndefined();
+      expect(confirmed).toBe(true);
+      expect(stream.closeCalls).toBe(1);
+      expect(stream.deliveredMessages).toBe(0);
+      expect(events.filter((event) => event.event === "messages.batch")).toEqual([]);
+      expect(
+        events
+          .filter((event) => event.event === "consumption.state")
+          .map((event) => event.payload.state),
+      ).toEqual(["loading", "stopped"]);
+    },
+  );
 
   it("reports incomplete Stop cleanup and surfaces a later close failure", async () => {
     const opening = deferred<ControlledMessageStream>();
@@ -475,5 +493,77 @@ describe("Kafka consumption facade lifecycle", () => {
         .filter((event) => event.event === "consumption.state")
         .some((event) => event.payload.state === "stopped"),
     ).toBe(false);
+  });
+
+  it("rejects transport stop when the actual stream close fails without disconnecting", async () => {
+    const cleanup = new Error("Injected stream close failure.");
+    const stream = new ControlledMessageStream();
+    vi.spyOn(stream, "close").mockImplementation(() => {
+      stream.end();
+      return Promise.reject(cleanup);
+    });
+    const connection = new RecordingActiveConnection();
+    const disconnect = vi.spyOn(connection, "close");
+    connection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const facade = createFacade(port);
+    const events: HostEvent[] = [];
+    facade.subscribe((event) => {
+      events.push(event);
+    });
+    try {
+      await facade.execute(command("connection.connect", "connect"));
+      await facade.execute(command("messages.start", "start"));
+      await expect(facade.stopStream()).rejects.toBe(cleanup);
+      expect(disconnect).not.toHaveBeenCalled();
+      expect(facade.connectionSnapshot()).toMatchObject({ state: "connected" });
+      expect(events.filter((event) => event.event === "consumption.state").at(-1)).toMatchObject({
+        payload: { state: "failed", request: { topic: "test" } },
+      });
+      expect(
+        events.some(
+          (event) => event.event === "consumption.state" && event.payload.state === "stopped",
+        ),
+      ).toBe(false);
+    } finally {
+      await facade.shutdown().catch(() => undefined);
+    }
+  });
+
+  it("joins transport stop to an existing shutdown without losing terminal evidence or deadlocking", async () => {
+    const closing = deferred<void>();
+    const stream = new ControlledMessageStream();
+    vi.spyOn(stream, "close").mockReturnValue(closing.promise);
+    const connection = new RecordingActiveConnection();
+    connection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const facade = createFacade(port, () => undefined);
+    const events: HostEvent[] = [];
+    facade.subscribe((event) => {
+      events.push(event);
+    });
+    await facade.execute(command("connection.connect", "connect"));
+    await facade.execute(command("messages.start", "start"));
+    stream.push(message("retained-until-shutdown"));
+    await settleAsyncIteration();
+    const shuttingDown = facade.shutdown();
+    const stopping = facade.stopStream();
+    try {
+      expect(stopping).toBe(shuttingDown);
+    } finally {
+      stream.end();
+      closing.resolve();
+    }
+    await Promise.all([shuttingDown, stopping]);
+    expect(
+      events
+        .filter((event) => event.event === "messages.batch")
+        .flatMap((event) => event.payload.messages.map((record) => record.id)),
+    ).toEqual(["retained-until-shutdown"]);
+    expect(events.filter((event) => event.event === "consumption.state").at(-1)).toMatchObject({
+      payload: { state: "stopped", receivedMessages: 1, request: { topic: "test" } },
+    });
   });
 });

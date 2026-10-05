@@ -44,8 +44,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run check -- --ci
-      - name: Verify real observed-health collection and replication recovery
-        run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts
+      - name: Verify real Kafka collection, replication recovery and final-client cleanup
+        run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts test/kafka/provider-stream-stop-real.test.ts
       - name: Verify workbench and monitoring browser workflows
         run: >-
           node tools/package/e2e.mjs web

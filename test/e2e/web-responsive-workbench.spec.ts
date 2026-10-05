@@ -83,6 +83,11 @@ class ResponsiveWorkbenchBackend implements StreamSkopeBackend {
     this.commands.length = 0;
   }
 
+  /** This event-only fixture owns no broker reader. */
+  stopStream(): Promise<void> {
+    return Promise.resolve();
+  }
+
   shutdown(): Promise<void> {
     return Promise.resolve();
   }

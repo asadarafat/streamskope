@@ -465,6 +465,23 @@ export class ConsumptionFacadeController {
     command: Extract<HostCommand, { readonly command: "messages.stop" }>,
     correlationId: string,
   ): Promise<HostCommandResponse> {
+    try {
+      await this.stopStream(correlationId);
+      return successResponse(command, correlationId);
+    } catch (error) {
+      return failureResponse(
+        command,
+        this.bindings.translateFailure(error, {
+          activeStateChanged: false,
+          connection: undefined,
+          correlationId,
+        }).error,
+      );
+    }
+  }
+
+  /** Host recovery shares the actual stop owner and preserves cleanup rejection. */
+  async stopStream(correlationId: string): Promise<void> {
     let stopping = this.stoppingConsumption;
     if (stopping === undefined || stopping.intent !== this.consumptionIntent) {
       stopping = {
@@ -495,7 +512,6 @@ export class ConsumptionFacadeController {
         outcome: "succeeded",
         severity: "info",
       });
-      return successResponse(command, correlationId);
     } catch (error) {
       const translated = this.bindings.translateFailure(error, {
         activeStateChanged: false,
@@ -508,7 +524,7 @@ export class ConsumptionFacadeController {
         correlationId,
         translated.detail,
       );
-      return failureResponse(command, translated.error);
+      throw error;
     }
   }
 

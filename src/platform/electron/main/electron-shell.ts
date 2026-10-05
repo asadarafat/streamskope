@@ -41,6 +41,8 @@ interface ElectronShellBaseOptions {
 type KafkaDesktopBackend = StreamSkopeBackend & {
   /** Host-only flow control; does not pause Kafka processing. */
   setMessagePresentationPaused?(paused: boolean): void;
+  /** Host-owned stream cleanup; no renderer command is fabricated during teardown. */
+  stopStream?(): Promise<void>;
 };
 
 export type ElectronShellOptions = ElectronShellBaseOptions &
@@ -59,7 +61,7 @@ export type ElectronShellOptions = ElectronShellBaseOptions &
 
 export interface RunningElectronShell {
   readonly window: BrowserWindow;
-  close(): void;
+  close(): Promise<void>;
 }
 
 export class ElectronShellStartupError extends Error {
@@ -252,21 +254,76 @@ export async function createElectronShell(
   let cleaned = false;
   let desktopDocumentHandlerRegistered = false;
   let externalUrlHandlerRegistered = false;
-  let detachProviders: (() => void) | undefined;
-  const cleanup = (): void => {
-    if (cleaned) {
-      return;
-    }
+  let detachProviders: (() => Promise<void>) | undefined;
+  let cleanupPromise: Promise<void> | undefined;
+  let closePromise: Promise<void> | undefined;
+  const cleanup = (): Promise<void> => {
+    if (cleanupPromise !== undefined) return cleanupPromise;
     cleaned = true;
-    if (desktopDocumentHandlerRegistered) {
-      ipcMain.removeHandler(DESKTOP_DOCUMENT_SAVE_CHANNEL);
+    let complete = (): void => undefined;
+    let reject = (_error: unknown): void => undefined;
+    cleanupPromise = new Promise<void>((resolve, fail) => {
+      complete = resolve;
+      reject = fail;
+    });
+    const failures: unknown[] = [];
+    for (const [registered, channel] of [
+      [desktopDocumentHandlerRegistered, DESKTOP_DOCUMENT_SAVE_CHANNEL],
+      [externalUrlHandlerRegistered, EXTERNAL_URL_OPEN_CHANNEL],
+    ] as const) {
+      if (!registered) continue;
+      try {
+        ipcMain.removeHandler(channel);
+      } catch (cause) {
+        failures.push(new Error("Desktop shell handler cleanup failed.", { cause }));
+      }
     }
-    if (externalUrlHandlerRegistered) {
-      ipcMain.removeHandler(EXTERNAL_URL_OPEN_CHANNEL);
+    let detached: Promise<void>;
+    try {
+      detached = detachProviders?.() ?? Promise.resolve();
+    } catch (cause) {
+      detached = Promise.reject(cause);
     }
-    detachProviders?.();
+    void Promise.allSettled([detached]).then(([result]) => {
+      if (result?.status === "rejected") failures.push(result.reason as unknown);
+      if (failures.length > 0) {
+        reject(new AggregateError(failures, "Desktop shell cleanup failed."));
+      } else complete();
+    });
+    return cleanupPromise;
   };
-  window.once("closed", cleanup);
+  const close = (): Promise<void> => {
+    if (closePromise !== undefined) return closePromise;
+    let complete = (): void => undefined;
+    let reject = (_error: unknown): void => undefined;
+    closePromise = new Promise<void>((resolve, fail) => {
+      complete = resolve;
+      reject = fail;
+    });
+    const cleaning = cleanup();
+    let windowFailure: unknown;
+    let windowFailed = false;
+    try {
+      if (!window.isDestroyed()) window.close();
+    } catch (cause) {
+      windowFailed = true;
+      windowFailure = cause;
+    }
+    void Promise.allSettled([cleaning]).then(([result]) => {
+      const failures: unknown[] = windowFailed ? [windowFailure] : [];
+      if (result?.status === "rejected") failures.push(result.reason as unknown);
+      if (failures.length > 0) {
+        reject(new AggregateError(failures, "Desktop shell cleanup failed."));
+      } else complete();
+    });
+    return closePromise;
+  };
+  window.once("closed", () => {
+    void cleanup().catch(() => {
+      // EventEmitter does not observe Promise rejection; explicit close retains this failure.
+      process.stderr.write("StreamSkope desktop window cleanup failed.\n");
+    });
+  });
   window.once("ready-to-show", () => {
     if (!window.isDestroyed()) {
       window.show();
@@ -275,8 +332,20 @@ export async function createElectronShell(
 
   try {
     Menu.setApplicationMenu(Menu.buildFromTemplate(createStreamSkopeMenuTemplate(window)));
+    const registry =
+      options.registry ?? new ProviderHostRegistry([createKafkaProviderEndpoint(options.backend)]);
+    const deliveryBindings =
+      options.registry === undefined
+        ? [createKafkaElectronDeliveryBinding(options.backend)]
+        : (options.deliveryBindings ?? []);
+    detachProviders = await attachElectronProviders(window, registry, deliveryBindings);
+    if (cleaned) {
+      await detachProviders();
+      throw new Error("Desktop window closed during startup.");
+    }
     ipcMain.handle(DESKTOP_DOCUMENT_SAVE_CHANNEL, async (event, value) => {
       assertOwnedRendererSender(event, window.webContents);
+      if (cleaned) throw new Error("Desktop shell is closing.");
       const document = parseDesktopTextDocument(value);
       const selected = await dialog.showSaveDialog(window, {
         defaultPath: document.fileName,
@@ -304,6 +373,7 @@ export async function createElectronShell(
     desktopDocumentHandlerRegistered = true;
     ipcMain.handle(EXTERNAL_URL_OPEN_CHANNEL, async (event, value) => {
       assertOwnedRendererSender(event, window.webContents);
+      if (cleaned) throw new Error("Desktop shell is closing.");
       const request = parseExternalUrlOpenRequest(value);
       await shell.openExternal(request.url);
       return {
@@ -312,18 +382,14 @@ export async function createElectronShell(
       };
     });
     externalUrlHandlerRegistered = true;
-    const registry =
-      options.registry ?? new ProviderHostRegistry([createKafkaProviderEndpoint(options.backend)]);
-    const deliveryBindings =
-      options.registry === undefined
-        ? [createKafkaElectronDeliveryBinding(options.backend)]
-        : (options.deliveryBindings ?? []);
-    detachProviders = attachElectronProviders(window, registry, deliveryBindings);
     await window.loadURL(options.rendererUrl);
   } catch (error) {
-    cleanup();
-    if (!window.isDestroyed()) {
-      window.close();
+    try {
+      await close();
+    } catch (cleanupCause) {
+      throw new ElectronShellStartupError("Electron shell startup cleanup failed.", {
+        cause: new AggregateError([error, cleanupCause], "Desktop shell startup failed."),
+      });
     }
     throw new ElectronShellStartupError("Electron shell could not start.", {
       cause: error,
@@ -331,13 +397,7 @@ export async function createElectronShell(
   }
 
   return {
-    close: (): void => {
-      if (!window.isDestroyed()) {
-        window.close();
-      } else {
-        cleanup();
-      }
-    },
+    close,
     window,
   };
 }

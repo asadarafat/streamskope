@@ -70,6 +70,11 @@ class ConsumerGroupReviewBackend implements StreamSkopeBackend {
     return Promise.resolve(testHostAccepted(command, `consumer-group-review-${command.id}`));
   }
 
+  /** This event-only fixture owns no broker reader. */
+  stopStream(): Promise<void> {
+    return Promise.resolve();
+  }
+
   shutdown(): Promise<void> {
     return Promise.resolve();
   }

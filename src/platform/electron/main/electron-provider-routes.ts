@@ -15,12 +15,12 @@ function assertOwnedSender(sender: unknown, window: BrowserWindow): void {
   }
 }
 
-/** Each registered provider owns independent handlers, sequence state and acknowledged delivery. */
-export function attachElectronProviders(
+/** Each registered provider owns independent admission and acknowledged delivery cleanup. */
+export async function attachElectronProviders(
   window: BrowserWindow,
   registry: ProviderHostRegistry,
   bindings: readonly ElectronProviderDeliveryBinding[],
-): () => void {
+): Promise<() => Promise<void>> {
   const bindingById = new Map<string, ElectronProviderDeliveryBinding>();
   for (const binding of bindings) {
     if (bindingById.has(binding.id) || registry.get(binding.id) === undefined) {
@@ -29,29 +29,49 @@ export function attachElectronProviders(
     bindingById.set(binding.id, binding);
   }
   const registered = new Set<string>();
-  const owners: Array<{ id: string; close(): void }> = [];
+  const owners: Array<{ id: string; close(): Promise<void> }> = [];
   let closed = false;
-  const close = (): void => {
-    if (closed) return;
+  let closePromise: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    if (closePromise !== undefined) return closePromise;
     closed = true;
+    let complete = (): void => undefined;
+    let reject = (_error: unknown): void => undefined;
+    closePromise = new Promise<void>((resolve, fail) => {
+      complete = resolve;
+      reject = fail;
+    });
     const failures: Error[] = [];
     for (const channel of registered) {
       try {
         ipcMain.removeHandler(channel);
-      } catch {
-        failures.push(new Error("Desktop provider handler removal failed."));
+      } catch (cause) {
+        failures.push(new Error("Desktop provider handler removal failed.", { cause }));
       }
     }
     registered.clear();
-    for (const owner of owners) {
+    const attempts = owners.map((owner): Promise<void> => {
       try {
-        owner.close();
-      } catch {
-        failures.push(new Error(`Desktop ${owner.id} event cleanup failed.`));
+        return owner.close();
+      } catch (cause) {
+        return Promise.reject(cause);
       }
-    }
-    if (failures.length)
-      throw new AggregateError(failures, "Desktop provider routes did not close cleanly.");
+    });
+    void Promise.allSettled(attempts).then((results) => {
+      for (const [index, result] of results.entries()) {
+        if (result.status === "rejected") {
+          failures.push(
+            new Error(`Desktop ${owners[index]!.id} event cleanup failed.`, {
+              cause: result.reason as unknown,
+            }),
+          );
+        }
+      }
+      if (failures.length > 0) {
+        reject(new AggregateError(failures, "Desktop provider cleanup did not complete."));
+      } else complete();
+    });
+    return closePromise;
   };
   const attach = (endpoint: ProviderWireEndpoint): void => {
     const channels = providerIpcChannels(endpoint.id);
@@ -60,92 +80,153 @@ export function attachElectronProviders(
     let unsubscribe: (() => void) | undefined;
     let lastSequence = 0;
     let generation = 0;
-    const release = (): void => {
-      generation += 1;
-      const stop = unsubscribe;
-      unsubscribe = undefined;
-      try {
-        stop?.();
-      } finally {
-        delivery?.close();
+    let recovery: Promise<void> | undefined;
+    let recoveryState: "pending" | "confirmed" | "failed" | undefined;
+    let recoveryFailures: Error[] = [];
+    const assertAdmission = (): void => {
+      if (closed) throw new Error("Desktop provider routes are closed.");
+      if (recoveryState === "pending") {
+        throw new Error(
+          "Desktop provider cleanup is pending. Wait for cleanup before reconnecting.",
+        );
+      }
+      if (recoveryState === "failed") {
+        throw new Error(
+          "Desktop provider cleanup could not be confirmed. Restart StreamSkope before reconnecting.",
+        );
       }
     };
-    owners.push({ id: endpoint.id, close: release });
-    const subscribe = (): void => {
-      release();
+    const release = (): Error[] => {
+      generation += 1;
+      const stop = unsubscribe;
+      const currentDelivery = delivery;
+      unsubscribe = undefined;
+      delivery = undefined;
+      const failures: Error[] = [];
+      try {
+        stop?.();
+      } catch (cause) {
+        failures.push(new Error("Desktop provider subscription cleanup failed.", { cause }));
+      }
+      try {
+        currentDelivery?.close();
+      } catch (cause) {
+        failures.push(new Error("Desktop provider delivery cleanup failed.", { cause }));
+      }
+      return failures;
+    };
+    const send = (event: Parameters<ElectronProviderDelivery["enqueue"]>[0]): void => {
+      if (!window.isDestroyed()) window.webContents.send(channels.event, event);
+    };
+    const startRecovery = (reason: string, failures: Error[] = []): Promise<void> => {
+      if (recovery !== undefined) {
+        recoveryFailures.push(...failures);
+        return recovery;
+      }
+      let complete = (): void => undefined;
+      let reject = (_error: unknown): void => undefined;
+      recovery = new Promise<void>((resolve, fail) => {
+        complete = resolve;
+        reject = fail;
+      });
+      recoveryState = "pending";
+      // Cleanup admission and Promise ownership precede arbitrary subscription/stop callbacks.
+      recoveryFailures = failures;
+      recoveryFailures.push(...release());
       const current = generation;
-      let failed = false;
-      const send = (event: Parameters<ElectronProviderDelivery["enqueue"]>[0]): void => {
-        if (!window.isDestroyed()) window.webContents.send(channels.event, event);
+      const operation = recovery;
+      void operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      const report = (confirmed: boolean): void => {
+        if (closed || window.isDestroyed() || generation !== current || recovery !== operation)
+          return;
+        try {
+          const fallback = confirmed
+            ? "Desktop provider event delivery failed. The active stream stopped. Reload the workbench to reconnect."
+            : "Desktop provider cleanup could not be confirmed. Restart StreamSkope before reconnecting.";
+          const instruction = binding?.recoveryInstruction?.(confirmed, reason) ?? fallback;
+          send(endpoint.availability(++lastSequence, "unavailable", instruction));
+        } catch {
+          // A closed or failed transport cannot carry recovery advice.
+        }
       };
-      const fail = (reason: string): void => {
-        if (failed || generation !== current) return;
-        failed = true;
-        let subscriptionClosed = true;
-        try {
-          const stop = unsubscribe;
-          unsubscribe = undefined;
-          stop?.();
-        } catch {
-          subscriptionClosed = false;
+      const finish = (failed: boolean, cause?: unknown): void => {
+        if (failed) {
+          recoveryFailures.push(new Error("Desktop provider stream cleanup failed.", { cause }));
         }
-        currentDelivery.close();
-        let recovery: Promise<string>;
-        try {
-          recovery = subscriptionClosed
-            ? (binding?.failureRecovery(reason) ??
-              Promise.resolve(
-                "Desktop provider event delivery failed. Reload the workbench or restart StreamSkope to reconnect.",
-              ))
-            : Promise.resolve(
-                "Desktop provider event cleanup could not be confirmed. Restart StreamSkope to reconnect.",
-              );
-        } catch {
-          recovery = Promise.resolve(
-            "Desktop provider event cleanup could not be confirmed. Restart StreamSkope to reconnect.",
-          );
+        if (recoveryFailures.length > 0) {
+          recoveryState = "failed";
+          report(false);
+          reject(new AggregateError(recoveryFailures, "Desktop provider cleanup failed."));
+        } else {
+          recoveryState = "confirmed";
+          report(true);
+          complete();
         }
-        const report = (instruction: string): void => {
-          if (
-            closed ||
-            window.isDestroyed() ||
-            delivery !== currentDelivery ||
-            generation !== current
-          )
-            return;
-          try {
-            send(endpoint.availability(++lastSequence, "unavailable", instruction));
-          } catch {
-            // Delivery is already closed; an unavailable transport cannot carry recovery advice.
-          }
-        };
-        void recovery.then(report, () =>
-          report(
-            "Desktop provider event cleanup could not be confirmed. Restart StreamSkope to reconnect.",
-          ),
+      };
+      try {
+        void endpoint.stopStream().then(
+          () => finish(false),
+          (cause: unknown) => finish(true, cause),
         );
+      } catch (cause) {
+        // Keep synchronous stop failure settlement asynchronous so a returned disposer joins it.
+        void Promise.resolve().then(() => finish(true, cause));
+      }
+      return operation;
+    };
+    owners.push({ id: endpoint.id, close: (): Promise<void> => startRecovery("closed") });
+    const subscribe = (): void => {
+      assertAdmission();
+      // A confirmed failure recovery permits a fresh stream; ordinary re-subscribe is local only.
+      recovery = undefined;
+      recoveryState = undefined;
+      const failures = release();
+      if (failures.length > 0) {
+        startRecovery("event-cleanup", failures);
+        assertAdmission();
+      }
+      const current = generation;
+      const fail = (reason: string): void => {
+        if (closed || generation !== current || recovery !== undefined) return;
+        startRecovery(reason);
       };
       const currentDelivery =
         binding?.create(send, fail) ?? new ElectronControlEventDelivery(send, fail);
       delivery = currentDelivery;
-      unsubscribe = endpoint.subscribe((wire) => {
-        if (failed || generation !== current) return;
-        try {
-          const event = endpoint.parseEvent(wire);
-          lastSequence = Math.max(lastSequence, event.sequence);
-          currentDelivery.enqueue(event);
-        } catch {
-          fail("event-validation");
-        }
-      });
-      if (failed) {
-        const stop = unsubscribe;
-        unsubscribe = undefined;
-        stop();
+      let stop: () => void;
+      try {
+        stop = endpoint.subscribe((wire) => {
+          if (closed || recovery !== undefined || generation !== current) return;
+          try {
+            const event = endpoint.parseEvent(wire);
+            lastSequence = Math.max(lastSequence, event.sequence);
+            currentDelivery.enqueue(event);
+          } catch {
+            fail("event-validation");
+          }
+        });
+      } catch (cause) {
+        startRecovery("event-subscription", [
+          new Error("Desktop provider subscription failed.", { cause }),
+        ]);
+        throw new Error("Desktop provider subscription failed.", { cause });
       }
+      if (generation !== current || recovery !== undefined || closed) {
+        try {
+          stop();
+        } catch (cause) {
+          recoveryFailures.push(
+            new Error("Desktop provider subscription cleanup failed.", { cause }),
+          );
+        }
+      } else unsubscribe = stop;
     };
     ipcMain.handle(channels.command, async (event, value) => {
       assertOwnedSender(event.sender, window);
+      assertAdmission();
       return endpoint.dispatch(value);
     });
     registered.add(channels.command);
@@ -171,9 +252,9 @@ export function attachElectronProviders(
     for (const endpoint of registry.endpoints()) attach(endpoint);
   } catch (error) {
     try {
-      close();
+      await close();
     } catch (cleanupCause) {
-      throw new Error("Desktop provider startup cleanup failed.", { cause: cleanupCause });
+      throw new AggregateError([error, cleanupCause], "Desktop provider startup cleanup failed.");
     }
     throw error;
   }

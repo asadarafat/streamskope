@@ -580,6 +580,17 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     }
   }
 
+  /** Selected-provider recovery; does not disconnect or remove capture resources. */
+  stopStream(): Promise<void> {
+    // Joining before tracking avoids shutdown -> admission.idle -> stop -> shutdown.
+    // It also preserves the terminal queue already owned by prepareShutdown.
+    if (this.shutdownPromise !== undefined) return this.shutdownPromise;
+    this.consumptionCommandIntent += 1;
+    return this.commandAdmission.track(() =>
+      this.consumption.stopStream(this.createCorrelationId()),
+    );
+  }
+
   shutdown(): Promise<void> {
     if (this.shutdownPromise === undefined) {
       this.commandAdmission.close();

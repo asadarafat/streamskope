@@ -9,7 +9,7 @@ import { createKafkaProviderEndpoint } from "../../node/kafka-provider";
 
 import { confirmPluginExit } from "./plugin-exit";
 import { createElectronKafkaBackend } from "./electron-kafka-backend";
-import { createElectronShell } from "./electron-shell";
+import { createElectronShell, type RunningElectronShell } from "./electron-shell";
 import { createKafkaElectronDeliveryBinding } from "./kafka-provider-delivery";
 import {
   installPackagedRendererProtocol,
@@ -19,6 +19,7 @@ import {
 
 let backend: Awaited<ReturnType<typeof createElectronKafkaBackend>> | undefined;
 let providers: ProviderHostRegistry | undefined;
+let runningShell: RunningElectronShell | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let exitPending = false;
 let restartRequested = false;
@@ -64,16 +65,30 @@ function shutdown(exitCode: number): Promise<void> {
   if (shutdownPromise !== undefined) {
     return shutdownPromise;
   }
-  shutdownPromise = Promise.resolve().then(async (): Promise<void> => {
-    let cleanupFailure: unknown;
+  let complete = (): void => undefined;
+  shutdownPromise = new Promise<void>((resolve) => {
+    complete = resolve;
+  });
+  const attempts: Promise<void>[] = [];
+  try {
+    if (runningShell !== undefined) attempts.push(runningShell.close());
+  } catch (cause) {
+    attempts.push(Promise.reject(cause));
+  }
+  try {
+    if (providers !== undefined) attempts.push(providers.shutdown());
+    else if (backend !== undefined) attempts.push(backend.shutdown());
+  } catch (cause) {
+    attempts.push(Promise.reject(cause));
+  }
+  void Promise.allSettled(attempts).then((results) => {
+    const failed = results.some((result) => result.status === "rejected");
     try {
-      if (providers !== undefined) await providers.shutdown();
-      else await backend?.shutdown();
-    } catch (error) {
-      cleanupFailure = error;
+      if (restartRequested && !failed) app.relaunch();
+      app.exit(failed ? 1 : exitCode);
+    } finally {
+      complete();
     }
-    if (restartRequested && cleanupFailure === undefined) app.relaunch();
-    app.exit(cleanupFailure === undefined ? exitCode : 1);
   });
   return shutdownPromise;
 }
@@ -104,13 +119,13 @@ async function start(): Promise<void> {
     plugins,
   });
   providers = new ProviderHostRegistry([createKafkaProviderEndpoint(backend)]);
-  const shell = await createElectronShell({
+  runningShell = await createElectronShell({
     registry: providers,
     deliveryBindings: [createKafkaElectronDeliveryBinding(backend)],
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl: developmentRendererUrl ?? PACKAGED_RENDERER_URL,
   });
-  shell.window.on("close", (event) => {
+  runningShell.window.on("close", (event) => {
     if (shutdownPromise !== undefined) return;
     event.preventDefault();
     void requestExit();

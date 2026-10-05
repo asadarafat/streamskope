@@ -146,7 +146,7 @@ describe("registered Electron provider routes", () => {
       expect(alpha.requests).toEqual([]);
       expect(beta.requests).toEqual([command]);
     } finally {
-      shell.close();
+      await shell.close();
     }
   });
 
@@ -181,7 +181,7 @@ describe("registered Electron provider routes", () => {
         value: beta.event("beta-2", 2),
       });
     } finally {
-      shell.close();
+      await shell.close();
     }
   });
 
@@ -229,7 +229,7 @@ describe("registered Electron provider routes", () => {
 
       beta.emit(beta.event("pending-at-close", 3));
       expect(vi.getTimerCount()).toBe(1);
-      shell.close();
+      await shell.close();
       expect(alpha.listenerCount()).toBe(0);
       expect(beta.listenerCount()).toBe(0);
       expect(native.handlers.size).toBe(0);
@@ -238,7 +238,7 @@ describe("registered Electron provider routes", () => {
       await vi.advanceTimersByTimeAsync(60_000);
       expect(window().webContents.sent).toEqual(sentBeforeClose);
     } finally {
-      shell?.close();
+      await shell?.close();
       vi.useRealTimers();
     }
   });
@@ -273,7 +273,224 @@ describe("registered Electron provider routes", () => {
       });
       expect(alpha.requests).toEqual([]);
     } finally {
-      shell.close();
+      await shell.close();
+    }
+  });
+
+  it("owns provider stop before admitting replacement commands and subscriptions", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 11 });
+    let completeStop = (): void => undefined;
+    alpha.stopOperation = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        completeStop = resolve;
+      });
+    const shell = await shellFor([alpha, beta]);
+    const a = providerIpcChannels("alpha"),
+      b = providerIpcChannels("beta");
+    try {
+      alpha.emit(beta.event("wrong-provider", 1));
+      expect(alpha.stopCalls).toBe(1);
+      expect(beta.stopCalls).toBe(0);
+      await expect(invoke(a.command, window().webContents, alpha.command())).rejects.toThrow(
+        "cleanup",
+      );
+      await expect(invoke(a.subscribe, window().webContents, 7)).rejects.toThrow("cleanup");
+      expect(alpha.requests).toEqual([]);
+      expect(alpha.subscribeCalls).toBe(1);
+      const command = beta.command("set", "healthy-during-cleanup");
+      await expect(invoke(b.command, window().webContents, command)).resolves.toEqual(
+        beta.response(command, "healthy-during-cleanup"),
+      );
+      let closeSettled = false;
+      const close = shell.close();
+      void Promise.resolve(close).then(() => {
+        closeSettled = true;
+      });
+      expect(native.handlers.size).toBe(0);
+      await Promise.resolve();
+      expect(closeSettled).toBe(false);
+      completeStop();
+      await close;
+      expect(alpha.stopCalls).toBe(1);
+      expect(beta.stopCalls).toBe(1);
+    } finally {
+      completeStop();
+      await shell.close();
+    }
+  });
+
+  it("attempts provider stop even when its upstream unsubscribe throws", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 11 });
+    alpha.unsubscribeFailure = new Error("private upstream cleanup detail");
+    const shell = await shellFor([alpha, beta]);
+    const b = providerIpcChannels("beta");
+    try {
+      expect(() => alpha.emit(beta.event("wrong-provider", 1))).not.toThrow();
+      expect(alpha.stopCalls).toBe(1);
+      expect(beta.stopCalls).toBe(0);
+      const command = beta.command();
+      await expect(invoke(b.command, window().webContents, command)).resolves.toEqual(
+        beta.response(command),
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(JSON.stringify(window().webContents.sent)).not.toContain("private upstream");
+      await expect(shell.close()).rejects.toThrow("cleanup");
+      expect(beta.stopCalls).toBe(1);
+      expect(native.handlers.size).toBe(0);
+    } finally {
+      await Promise.resolve(shell.close()).catch(() => undefined);
+    }
+  });
+
+  it("admits a fresh subscription only after its provider cleanup is confirmed", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 11 });
+    let completeStop = (): void => undefined;
+    alpha.stopOperation = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        completeStop = resolve;
+      });
+    const shell = await shellFor([alpha, beta]);
+    const a = providerIpcChannels("alpha");
+    try {
+      alpha.emit(beta.event("wrong-provider"));
+      await expect(invoke(a.subscribe, window().webContents, 7)).rejects.toThrow("pending");
+      completeStop();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await expect(invoke(a.subscribe, window().webContents, 7)).resolves.toBe(7);
+      expect(alpha.subscribeCalls).toBe(2);
+      const command = alpha.command("set", "new-owner");
+      await expect(invoke(a.command, window().webContents, command)).resolves.toEqual(
+        alpha.response(command, "new-owner"),
+      );
+      alpha.emit(alpha.event("new-stream", 2));
+      expect(window().webContents.sent.at(-1)?.value).toEqual(alpha.event("new-stream", 2));
+    } finally {
+      alpha.stopOperation = undefined;
+      await shell.close();
+    }
+    expect(alpha.stopCalls).toBe(2);
+  });
+
+  it.each(["synchronous", "asynchronous", "undefined"] as const)(
+    "retains an unconfirmed %s stop failure without exposing its private cause",
+    async (failure) => {
+      const alpha = createProviderFixture({ id: "alpha", version: 7 });
+      const beta = createProviderFixture({ id: "beta", version: 11 });
+      alpha.stopOperation = (): Promise<void> => {
+        if (failure === "synchronous") throw new Error("private stream cleanup detail");
+        return Promise.reject(
+          failure === "undefined" ? undefined : new Error("private stream cleanup detail"),
+        );
+      };
+      const shell = await shellFor([alpha, beta]);
+      const a = providerIpcChannels("alpha");
+      try {
+        expect(() => alpha.emit(beta.event("wrong-provider"))).not.toThrow();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await expect(invoke(a.command, window().webContents, alpha.command())).rejects.toThrow(
+          "Restart StreamSkope",
+        );
+        await expect(invoke(a.subscribe, window().webContents, 7)).rejects.toThrow(
+          "Restart StreamSkope",
+        );
+        expect(alpha.requests).toEqual([]);
+        expect(alpha.subscribeCalls).toBe(1);
+        expect(JSON.stringify(window().webContents.sent)).not.toContain("private stream");
+        await expect(shell.close()).rejects.toThrow("cleanup");
+        expect(alpha.stopCalls).toBe(1);
+        expect(beta.stopCalls).toBe(1);
+      } finally {
+        await shell.close().catch(() => undefined);
+      }
+    },
+  );
+
+  it("awaits all owned stops after partial native startup fails", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 11 });
+    let completeStop = (): void => undefined;
+    alpha.stopOperation = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        completeStop = resolve;
+      });
+    beta.subscribeFailure = new Error("Fixture subscriber refused attachment.");
+    const unrelated: Handler = (): string => "other-owner";
+    native.handlers.set("unrelated-owner", unrelated);
+    const starting = shellFor([alpha, beta]);
+    let startupSettled = false;
+    void starting.then(
+      () => {
+        startupSettled = true;
+      },
+      () => {
+        startupSettled = true;
+      },
+    );
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(alpha.stopCalls).toBe(1);
+      expect(beta.stopCalls).toBe(1);
+      expect(alpha.listenerCount()).toBe(0);
+      expect(native.handlers).toEqual(new Map([["unrelated-owner", unrelated]]));
+      expect(startupSettled).toBe(false);
+      completeStop();
+      await expect(starting).rejects.toBeInstanceOf(ElectronShellStartupError);
+      expect(window().destroyed).toBe(true);
+    } finally {
+      completeStop();
+      await starting.catch(() => undefined);
+    }
+  });
+
+  it("retires routes returned after the window closes during native attachment", async () => {
+    const fixture = createProviderFixture({ id: "probe", version: 7 });
+    const endpoint = {
+      ...fixture.endpoint,
+      subscribe: (listener: (wire: unknown) => void): (() => void) => {
+        window().close();
+        return fixture.endpoint.subscribe(listener);
+      },
+    };
+    await expect(
+      createElectronShell({
+        registry: new ProviderHostRegistry([endpoint]),
+        preloadPath: "/tmp/streamskope/provider-preload.js",
+        rendererUrl: "http://127.0.0.1:5173/",
+      }),
+    ).rejects.toBeInstanceOf(ElectronShellStartupError);
+    expect(fixture.listenerCount()).toBe(0);
+    expect(fixture.stopCalls).toBe(1);
+    expect(native.handlers.size).toBe(0);
+    expect(window().destroyed).toBe(true);
+  });
+
+  it("closes other routes even when removing an owned native handler throws", async () => {
+    const alpha = createProviderFixture({ id: "alpha", version: 7 });
+    const beta = createProviderFixture({ id: "beta", version: 11 });
+    const shell = await shellFor([alpha, beta]);
+    const channel = providerIpcChannels("alpha").command;
+    const retainedHandler = native.handlers.get(channel);
+    const remove = native.ipcMain.removeHandler;
+    vi.spyOn(native.ipcMain, "removeHandler").mockImplementation((owned) => {
+      if (owned === channel) throw new Error("private handler cleanup detail");
+      remove(owned);
+    });
+    try {
+      const closing = shell.close();
+      expect(alpha.listenerCount()).toBe(0);
+      expect(beta.listenerCount()).toBe(0);
+      expect(alpha.stopCalls).toBe(1);
+      expect(beta.stopCalls).toBe(1);
+      await expect(
+        retainedHandler?.({ sender: window().webContents }, alpha.command()),
+      ).rejects.toThrow("closed");
+      await expect(closing).rejects.toThrow("cleanup");
+      expect(shell.close()).toBe(closing);
+    } finally {
+      await shell.close().catch(() => undefined);
     }
   });
 
@@ -294,7 +511,7 @@ describe("registered Electron provider routes", () => {
         ).rejects.toBeInstanceOf(ProviderWireValidationError);
         expect(fixture.requests).toEqual([command]);
       } finally {
-        shell.close();
+        await shell.close();
       }
     },
   );
