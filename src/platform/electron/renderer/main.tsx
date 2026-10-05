@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { createRoot } from "react-dom/client";
 
+import type { NatsWorkspaceSource } from "../../../features/nats/ui/workspace-types";
 import type { StreamSkopeDesktop } from "../../desktop";
 
 import { installRendererRandomUuid } from "./crypto-compatibility";
@@ -20,7 +21,10 @@ const initialQueryImport = takeInitialQueryImport(window);
 
 function StreamSkopeApplication(): React.JSX.Element {
   const host = useMemo(() => resolveStreamSkopeHost(window), []);
-  const nats = useMemo(() => ({ resolveSource: () => resolveNatsWorkspaceSource(window) }), []);
+  const nats = useMemo(
+    () => ({ resolveSource: (): NatsWorkspaceSource => resolveNatsWorkspaceSource(window) }),
+    [],
+  );
   return (
     <StreamSkopeProductApp
       kafka={{ desktop: window.streamSkopeDesktop, host, initialQueryImport }}

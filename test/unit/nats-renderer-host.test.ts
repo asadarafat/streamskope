@@ -60,15 +60,17 @@ describe("Core NATS renderer host", () => {
     vi.stubGlobal("fetch", fetchMock);
     const host = createBrowserNatsHost(window);
     await expect(host.execute(command)).resolves.toEqual(receipt);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1/__streamskope_host/providers/nats/commands",
-      expect.objectContaining({
-        body: expect.any(String),
-        credentials: "same-origin",
-        mode: "same-origin",
-      }),
-    );
-    const submitted: unknown = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const request = fetchMock.mock.calls[0];
+    expect(request?.[0]).toBe("http://127.0.0.1/__streamskope_host/providers/nats/commands");
+    const options = request?.[1];
+    expect(options).toMatchObject({
+      credentials: "same-origin",
+      mode: "same-origin",
+    });
+    if (typeof options?.body !== "string") {
+      throw new Error("Expected the NATS command to be submitted as JSON text.");
+    }
+    const submitted: unknown = JSON.parse(options.body);
     expect(submitted).toEqual(command);
     for (const invalid of [
       { ...receipt, id: "another-request" },
@@ -79,9 +81,7 @@ describe("Core NATS renderer host", () => {
       await expect(host.execute(command)).rejects.toThrow();
     }
     const beforeInvalidCommand = fetchMock.mock.calls.length;
-    await expect(
-      host.execute({ ...command, payload: { unexpected: true } } as typeof command),
-    ).rejects.toThrow();
+    await expect(host.execute({ ...command, payload: { unexpected: true } })).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(beforeInvalidCommand);
   });
 
@@ -112,7 +112,10 @@ describe("Core NATS renderer host", () => {
       expect.objectContaining({
         version: NATS_PROTOCOL_VERSION,
         event: "backend.availability",
-        payload: { state: "unavailable", recovery: expect.any(String) },
+        payload: {
+          state: "unavailable",
+          recovery: "Restart the local StreamSkope development host and reload.",
+        },
       }),
     ]);
     await expect(host.execute(command)).rejects.toThrow("event stream is unavailable");

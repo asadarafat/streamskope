@@ -96,20 +96,25 @@ export function natsUiHostFixture(): {
       command: Command,
     ): Promise<NatsCommandResponse<Command["command"]>> => {
       calls.push(command.command);
-      const deferred = Promise.withResolvers<unknown>();
+      let resolve!: (value: unknown) => void;
+      let reject!: (reason: unknown) => void;
+      const response = new Promise<unknown>((complete, fail) => {
+        resolve = complete;
+        reject = fail;
+      });
       requests.push({
         command,
         answer: (result): void =>
-          deferred.resolve({
+          resolve({
             version: NATS_PROTOCOL_VERSION,
             id: command.id,
             command: command.command,
             ok: true,
             result: { correlationId: command.id, ...(result as object) },
           }),
-        reject: deferred.reject,
+        reject,
       });
-      return parseCorrelatedNatsResponse(await deferred.promise, command);
+      return parseCorrelatedNatsResponse(await response, command);
     },
     subscribe: (listener): (() => void) => {
       calls.push("subscribe");

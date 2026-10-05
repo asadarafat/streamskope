@@ -8,6 +8,7 @@ import {
   NATS_PROTOCOL_VERSION,
   parseCorrelatedNatsResponse,
   type NatsCommand,
+  type NatsCommandResponse,
   type NatsEvent,
   type NatsHost,
 } from "../../src/features/nats/contracts";
@@ -82,7 +83,9 @@ function fixture(
     commands,
     listeners,
     host: {
-      execute: async (command) => {
+      execute: async <Command extends NatsCommand>(
+        command: Command,
+      ): Promise<NatsCommandResponse<Command["command"]>> => {
         commands.push(command);
         return parseCorrelatedNatsResponse(await dispatch(command), command);
       },

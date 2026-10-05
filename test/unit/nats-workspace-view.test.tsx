@@ -22,7 +22,7 @@ describe("NATS workspace effect and failure presentation", () => {
     });
     expect(f.requests).toHaveLength(2);
     expect(f.listenerCount()).toBe(1);
-    await act(async () => {
+    await act(() => {
       const subscription = { ...uiNatsSubscription(), revision: 2 };
       f.requests[1]!.answer({
         profiles: uiNatsProfiles([{ ...uiNatsProfile, name: "Active mount" }], 2),
@@ -37,10 +37,12 @@ describe("NATS workspace effect and failure presentation", () => {
         },
         subscription,
       });
+      return Promise.resolve();
     });
     await waitFor(() => expect(view.result.current.loading).toBe(false));
-    await act(async () => {
+    await act(() => {
       f.bootstrap(f.requests[0]);
+      return Promise.resolve();
     });
     expect(view.result.current.profiles?.profiles[0]?.name).toBe("Active mount");
     expect(view.result.current.connection.state).toBe("connected");
@@ -53,10 +55,11 @@ describe("NATS workspace effect and failure presentation", () => {
   it("displays safe asynchronous failure guidance until the host actually recovers", async () => {
     const f = natsUiHostFixture();
     render(<NatsWorkspace source={{ state: "ready", host: f.host }} />);
-    await act(async () => {
+    await act(() => {
       f.bootstrap();
+      return Promise.resolve();
     });
-    await act(async () => {
+    await act(() => {
       f.emit({
         event: "connection.state",
         operation: "profiles.connect",
@@ -72,20 +75,22 @@ describe("NATS workspace effect and failure presentation", () => {
           },
         },
       });
+      return Promise.resolve();
     });
     expect(screen.getByRole("alert")).toHaveTextContent("The NATS server disconnected.");
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Reconnect the profile before subscribing.",
     );
     expect(screen.queryByRole("button", { name: "Dismiss", exact: true })).not.toBeInTheDocument();
-    await act(async () => {
+    await act(() => {
       f.emit({
         event: "backend.availability",
         payload: { state: "unavailable", recovery: "Reload the host." },
       });
+      return Promise.resolve();
     });
     expect(screen.getByRole("alert")).toHaveTextContent("The NATS host is unavailable.");
-    await act(async () => {
+    await act(() => {
       f.emit({ event: "backend.availability", payload: { state: "ready" } });
       f.bootstrap(f.requests[1]);
       f.emit({
@@ -102,6 +107,7 @@ describe("NATS workspace effect and failure presentation", () => {
           },
         },
       });
+      return Promise.resolve();
     });
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });

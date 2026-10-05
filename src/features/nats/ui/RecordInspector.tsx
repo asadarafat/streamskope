@@ -10,6 +10,7 @@ import {
 } from "../../../platform/ui/controls";
 import { StudioPanelHeader } from "../../../platform/ui/StudioPanel";
 import { StudioDetailRow } from "../../../platform/ui/StudioPropertyRow";
+
 import type { NatsRecord } from "../contracts";
 import {
   prepareNatsJsonPresentation,

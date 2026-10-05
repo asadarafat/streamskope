@@ -87,12 +87,12 @@ describe("Core NATS facade through production composition", () => {
     const captured = natsDeferred<void>();
     const release = natsDeferred<void>();
     releaseFixtures.push(() => release.resolve());
-    const originalList = NatsProfileService.prototype.list;
     vi.spyOn(NatsProfileService.prototype, "list").mockImplementationOnce(async function (
       this: NatsProfileService,
       signal?: AbortSignal,
     ): Promise<NatsProfilesSnapshot> {
-      const snapshot = await originalList.call(this, signal);
+      // The one-time override has been consumed, so this bound call delegates to the real list.
+      const snapshot = await this.list(signal);
       captured.resolve();
       await release.promise;
       return snapshot;

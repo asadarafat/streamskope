@@ -10,7 +10,7 @@ describe("bounded NATS JSON presentation", () => {
   it.each([
     '{"text":"snow ☃, emoji 🙂, \\n and \\t","nested":[true,null,{},[]]}',
     '{"\\ud800":"\\udfff","control":"\\u0000\\u001f","number":1e400}',
-    '{"brackets":"[\\\"{ and }\\\"]","number":-0,"tiny":1e-7,"large":1e20}',
+    '{"brackets":"[\\"{ and }\\"]","number":-0,"tiny":1e-7,"large":1e20}',
     '{"literal lone surrogate":"\ud800","separator":"\u2028"}',
   ])("matches standard two-space JSON without altering the source: %s", (source): void => {
     const expected = JSON.stringify(JSON.parse(source) as unknown, null, 2);

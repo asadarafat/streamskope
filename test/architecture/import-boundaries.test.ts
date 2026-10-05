@@ -134,6 +134,11 @@ describe("messaging provider isolation", () => {
         source: 'import { connect } from "@nats-io/transport-node"; export const access=connect;',
         rule: "no-restricted-imports",
       },
+      ...["nats", "nats/lib/nats-base-client"].map((module) => ({
+        file: "src/features/nats/ui/NatsWorkspace.tsx",
+        source: `import * as sdk from "${module}"; export const access=sdk;`,
+        rule: "no-restricted-imports",
+      })),
     ];
     for (const fixture of fixtures) {
       const [result] = await eslint.lintText(fixture.source, { filePath: fixture.file });

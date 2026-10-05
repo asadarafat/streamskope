@@ -1,7 +1,12 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import {
+  DataGrid,
+  type GridCellParams,
+  type GridColDef,
+  type GridRowParams,
+} from "@mui/x-data-grid";
 
 import { streamSkopeGeometry } from "../../../platform/ui/studioTokens";
 import type { NatsRecord } from "../contracts";
@@ -53,13 +58,13 @@ export function RecordDataGrid({
       disableMultipleRowSelection
       disableRowSelectionExcludeModel
       hideFooter
-      onCellKeyDown={(parameters, event): void => {
+      onCellKeyDown={(parameters: GridCellParams<NatsRecord>, event): void => {
         if (event.key === "Enter") {
           event.preventDefault();
           onSelect(parameters.row.id);
         }
       }}
-      onRowClick={(parameters): void => onSelect(parameters.row.id)}
+      onRowClick={(parameters: GridRowParams<NatsRecord>): void => onSelect(parameters.row.id)}
       onRowSelectionModelChange={(model): void => {
         const id = model.ids.values().next().value;
         if (typeof id === "string") onSelect(id);
