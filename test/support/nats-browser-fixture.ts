@@ -98,7 +98,7 @@ export async function startNatsBrowserFixture(
   };
 
   try {
-    server = await startNatsFixture({ authentication });
+    server = await startNatsFixture({ authentication, network: "host-loopback" });
     const activeServer = server;
     // Certificate lines also detect PEM serialized with escaped newlines in JSON artifacts.
     const sensitiveValues = [

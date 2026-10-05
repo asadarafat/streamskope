@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
 import { headers, type NatsConnection } from "@nats-io/transport-node";
-import { expect, test as base, type Locator, type Page } from "@playwright/test";
+import { expect, test as base, type Locator, type Page, type Request } from "@playwright/test";
 
 import type { NatsCommandName } from "../../src/features/nats/contracts";
 import {
@@ -152,14 +152,37 @@ async function openProduct(
   fixture: NatsBrowserFixture,
   diagnostics: ReturnType<typeof observeBrowserDiagnostics>,
 ): Promise<void> {
-  await page.goto(fixture.launch.browserUrl);
+  const rendererOrigin = new URL(fixture.launch.browserUrl).origin;
+  let failures = 0;
+  const failedResource = (request: Request): void => {
+    const url = new URL(request.url());
+    if (
+      url.origin !== rendererOrigin ||
+      !["document", "script", "stylesheet"].includes(request.resourceType()) ||
+      failures >= 32
+    )
+      return;
+    failures += 1;
+    const failure = request.failure()?.errorText ?? "";
+    const code = /^net::ERR_[A-Z_]+$/u.test(failure) ? failure : "request failed";
+    // Static startup evidence only: no query, headers, bodies, or submitted profile material.
+    diagnostics.problems.push(
+      fixture.containsSensitive(url.pathname)
+        ? "A startup resource pathname contained private fixture material."
+        : `startup resource ${url.pathname}: ${code}`,
+    );
+  };
+  page.on("requestfailed", failedResource);
   try {
+    await page.goto(fixture.launch.browserUrl);
     await expect(page.getByRole("combobox", { name: "Messaging provider" })).toBeVisible({
       timeout: 20_000,
     });
   } catch {
     expectSafeDiagnostics(fixture, diagnostics);
     throw new Error("The actual product did not expose its messaging provider selector.");
+  } finally {
+    page.off("requestfailed", failedResource);
   }
 }
 
