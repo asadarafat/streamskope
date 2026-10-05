@@ -166,7 +166,10 @@ it("shows installed plugins and completes removal while a network refresh is sti
   expect(await screen.findByText("No plugins are installed.")).toBeVisible();
   expect(commands.some((command) => command.command === "plugins.remove")).toBe(true);
   expect(screen.getByText("Checking for plugin updates…")).toBeVisible();
-  await act((): void => remote.resolve({ plugins: [], source: "live" }));
+  await act((): Promise<void> => {
+    remote.resolve({ plugins: [], source: "live" });
+    return Promise.resolve();
+  });
 });
 
 it("retries installed controls before a pending network refresh completes", async () => {
@@ -200,7 +203,10 @@ it("retries installed controls before a pending network refresh completes", asyn
     },
   );
   expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
-  await act((): void => remote.resolve({ plugins: [], source: "unavailable" }));
+  await act((): Promise<void> => {
+    remote.resolve({ plugins: [], source: "unavailable" });
+    return Promise.resolve();
+  });
 });
 
 it("explicitly reloads rejected renderer controls after a healthy backend retry and waits for them", async () => {
@@ -273,7 +279,7 @@ it("explicitly reloads rejected renderer controls after a healthy backend retry 
   await waitFor(() => expect(importer).toHaveBeenCalledTimes(2));
   expect(screen.getByText("Plugin controls unavailable")).toBeVisible();
   expect(screen.queryByText("Sample connection 2.0.0 is active.")).not.toBeInTheDocument();
-  await act((): void =>
+  await act((): Promise<void> => {
     completeRenderer({
       default: {
         apiVersion: 2,
@@ -284,8 +290,9 @@ it("explicitly reloads rejected renderer controls after a healthy backend retry 
           dispose: (): void => undefined,
         }),
       },
-    }),
-  );
+    });
+    return Promise.resolve();
+  });
   expect(await screen.findByText("Plugin controls available")).toBeVisible();
   expect(screen.getByText("Sample connection 2.0.0 is active.")).toBeVisible();
   expect(screen.queryByText("The plugin controls failed to load.")).not.toBeInTheDocument();

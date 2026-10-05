@@ -118,7 +118,7 @@ describe("plugin shutdown and profile boundaries", () => {
     const { runtime } = await setup({
       loadModule: () =>
         Promise.resolve({
-          activate: () => ({
+          activate: (): PluginBackend => ({
             ...backend(),
             beforeChange: () => Promise.resolve({ message: "Capture active", detail: "Session A" }),
             prepareUnload: stop,
