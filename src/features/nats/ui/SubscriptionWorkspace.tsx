@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Drawer from "@mui/material/Drawer";
 import Stack from "@mui/material/Stack";
@@ -27,6 +27,16 @@ export function SubscriptionWorkspace({
   const compact = useMediaQuery("(max-width:899.95px)");
   const grid = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const focusFrame = useRef<number | null>(null);
+  const cancelFocusRestoration = useCallback((): void => {
+    const frame = focusFrame.current;
+    focusFrame.current = null;
+    if (frame !== null) globalThis.cancelAnimationFrame(frame);
+  }, []);
+  useEffect(() => cancelFocusRestoration, [cancelFocusRestoration]);
+  useLayoutEffect(() => {
+    if (controller.selectedRecord !== null) cancelFocusRestoration();
+  }, [cancelFocusRestoration, controller.selectedRecord]);
   const busy = controller.pending.length > 0;
   const disabled = !controller.available || busy || !isInteractive();
   const subscriptionActive = ["loading", "streaming", "stopping"].includes(
@@ -37,6 +47,7 @@ export function SubscriptionWorkspace({
 
   function select(id: string): void {
     if (!isInteractive()) return;
+    cancelFocusRestoration();
     if (
       document.activeElement instanceof HTMLElement &&
       grid.current?.contains(document.activeElement)
@@ -46,16 +57,24 @@ export function SubscriptionWorkspace({
   }
 
   function closeInspector(): void {
+    if (!isInteractive()) return;
+    cancelFocusRestoration();
+    const opener = returnFocus.current;
+    const origin = grid.current;
     controller.selectRecord(null);
-    globalThis.requestAnimationFrame(() => {
-      if (returnFocus.current?.isConnected === true) returnFocus.current.focus();
+    const frame = globalThis.requestAnimationFrame((): void => {
+      if (focusFrame.current !== frame) return;
+      focusFrame.current = null;
+      if (!isInteractive() || origin?.isConnected !== true || grid.current !== origin) return;
+      if (opener?.isConnected === true && origin.contains(opener)) opener.focus();
       else {
         const focusTarget =
-          grid.current?.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]') ??
-          grid.current?.querySelector<HTMLElement>('[role="gridcell"], [role="columnheader"]');
+          origin.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]') ??
+          origin.querySelector<HTMLElement>('[role="gridcell"], [role="columnheader"]');
         focusTarget?.focus();
       }
     });
+    focusFrame.current = frame;
   }
 
   function start(): void {
