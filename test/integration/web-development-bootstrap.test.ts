@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,9 +8,13 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { BUILD_DEPENDENCY_PATCHES } from "../../tools/check/build-dependency-patch-data";
+import { RUNTIME_DEPENDENCY_PATCHES } from "../../tools/check/runtime-dependency-patch-data";
+
 const execute = promisify(execFile);
 const roots: string[] = [];
 const sourceRoot = new URL("../../", import.meta.url);
+const dependencyPatches = [...BUILD_DEPENDENCY_PATCHES, ...RUNTIME_DEPENDENCY_PATCHES];
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -22,18 +27,28 @@ async function fixture(): Promise<string> {
   await mkdir(join(root, "tools", "dev"));
   await mkdir(join(root, "tools", "check"));
   await cp(new URL("tools/dev.mjs", sourceRoot), join(root, "tools", "dev.mjs"));
-  await cp(
-    new URL("tools/check/forge-patch.ts", sourceRoot),
-    join(root, "tools", "check", "forge-patch.ts"),
-  );
-  await writeFile(
-    join(root, "package.json"),
-    JSON.stringify({
-      name: "bootstrap-test",
-      private: true,
-      dependencies: { "node-forge": "1.4.0", "jks-js": "1.1.7" },
-    }),
-  );
+  for (const name of [
+    "forge-patch.ts",
+    "build-dependency-patches.ts",
+    "build-dependency-patch-data.ts",
+    "runtime-dependency-patch-data.ts",
+  ])
+    await cp(new URL(`tools/check/${name}`, sourceRoot), join(root, "tools", "check", name));
+  const manifest = {
+    name: "bootstrap-test",
+    private: true,
+    type: "module",
+    dependencies: {
+      "node-forge": "1.4.0",
+      "jks-js": "1.1.7",
+      ...Object.fromEntries(RUNTIME_DEPENDENCY_PATCHES.map(({ name, version }) => [name, version])),
+    },
+    devDependencies: Object.fromEntries(
+      BUILD_DEPENDENCY_PATCHES.map(({ name, version }) => [name, version]),
+    ),
+  };
+  await writeFile(join(root, "package.json"), JSON.stringify(manifest));
+  const dependencies = ["node-forge", "jks-js", ...dependencyPatches.map(({ name }) => name)];
   const actualLock = JSON.parse(
     await readFile(new URL("package-lock.json", sourceRoot), "utf8"),
   ) as { packages: Record<string, unknown> };
@@ -41,24 +56,54 @@ async function fixture(): Promise<string> {
     join(root, "package-lock.json"),
     JSON.stringify({
       lockfileVersion: 3,
-      packages: Object.fromEntries(
-        ["", "node_modules/node-forge", "node_modules/jks-js"].map((path) => [
-          path,
-          actualLock.packages[path],
-        ]),
-      ),
+      packages: {
+        "": manifest,
+        ...Object.fromEntries(
+          dependencies.map((name) => [
+            `node_modules/${name}`,
+            actualLock.packages[`node_modules/${name}`],
+          ]),
+        ),
+      },
     }),
   );
-  for (const name of ["node-forge", "jks-js"])
+  for (const name of dependencies)
     await cp(new URL(`node_modules/${name}/`, sourceRoot), join(root, "node_modules", name), {
       recursive: true,
     });
+  // Start from the reviewed original sources even when npm ci already patched the workspace.
+  for (const patch of dependencyPatches) {
+    for (const file of patch.files) {
+      const path = join(root, "node_modules", patch.name, file.file);
+      let source = await readFile(path, "utf8");
+      if (createHash("sha256").update(source).digest("hex") === file.patchedSha256) {
+        for (const hunk of [...file.replacements].reverse())
+          source = source.replace(hunk.after, hunk.before);
+      }
+      expect(createHash("sha256").update(source).digest("hex")).toBe(file.originalSha256);
+      await writeFile(path, source);
+    }
+  }
+  // Keep the real TypeScript loader separate from the simulated native-health failure.
+  await cp(new URL("node_modules/tsx/", sourceRoot), join(root, "node_modules", "tsx"), {
+    recursive: true,
+  });
+  await cp(
+    new URL("node_modules/esbuild/", sourceRoot),
+    join(root, "node_modules", "tsx", "node_modules", "esbuild"),
+    { recursive: true },
+  );
+  for (const name of await readdir(new URL("node_modules/@esbuild/", sourceRoot)))
+    await cp(
+      new URL(`node_modules/@esbuild/${name}/`, sourceRoot),
+      join(root, "node_modules", "tsx", "node_modules", "@esbuild", name),
+      { recursive: true },
+    );
   await writeFile(join(root, ".npmrc"), "fund=false\n");
   const modules: Record<string, string> = {
     esbuild: `exports.transformSync = () => { if (process.env.TEST_HEALTHY !== "1") require("streamskope-native-fixture"); return {code:""}; };`,
     vite: "exports.version = 'fixture';",
     "@node-rs/crc32": "exports.crc32 = () => 0;",
-    tsx: "",
   };
   for (const [name, content] of Object.entries(modules)) {
     const path = join(root, "node_modules", name);
@@ -120,11 +165,34 @@ describe("web development native bootstrap", () => {
 
   it("starts a healthy installation without npm and propagates launcher failures", async () => {
     const root = await fixture();
-    expect(await launch(root, { TEST_HEALTHY: "1" })).toContain("fixture launcher ready");
+    const output = await launch(root, { TEST_HEALTHY: "1" });
+    expect(output).toContain("fixture launcher ready");
+    expect(output).toContain(
+      `Verified exact-source dependency mitigations: ${dependencyPatches.map(({ name }) => name).join(", ")}.`,
+    );
+    for (const patch of dependencyPatches) {
+      for (const file of patch.files) {
+        const source = await readFile(join(root, "node_modules", patch.name, file.file), "utf8");
+        expect(createHash("sha256").update(source).digest("hex")).toBe(file.patchedSha256);
+      }
+    }
     await expect(readFile(join(root, "install-calls"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(launch(root, { TEST_HEALTHY: "1", TEST_LAUNCH_EXIT: "7" })).rejects.toMatchObject({
       code: 7,
     });
+  });
+
+  it("refuses a modified NATS runtime dependency before starting the launcher", async () => {
+    const root = await fixture();
+    const patch = RUNTIME_DEPENDENCY_PATCHES[0];
+    const path = join(root, "node_modules", patch.name, patch.files[0].file);
+    await writeFile(path, `${await readFile(path, "utf8")}\n// changed dependency\n`);
+    await expect(launch(root, { TEST_HEALTHY: "1" })).rejects.toMatchObject({
+      code: 1,
+      stdout: expect.not.stringContaining("fixture launcher ready") as unknown,
+      stderr: expect.stringContaining("Missing or unreviewed dependency mitigation") as unknown,
+    });
+    await expect(readFile(join(root, "install-calls"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("repairs through a cache, reuses it and preserves the shared installation", async () => {
@@ -167,6 +235,7 @@ describe("web development native bootstrap", () => {
 
   it("allows concurrent preparation without publishing partial caches", async () => {
     const root = await fixture();
+    expect(await launch(root, { TEST_HEALTHY: "1" })).toContain("fixture launcher ready");
     const results = await Promise.all([launch(root), launch(root)]);
     for (const result of results) expect(result).toContain("fixture launcher ready");
     const caches = await readdir(join(root, ".cache", "web-native"));
@@ -181,7 +250,7 @@ describe("web development native bootstrap", () => {
       `
       const timer = setInterval(() => {}, 1000);
       process.on("SIGTERM", () => { clearInterval(timer); process.exitCode = 143; });
-      process.stdout.write("ready");
+      process.stdout.write("fixture launcher ready\\n");
     `,
     );
     const child = spawn(process.execPath, ["tools/dev.mjs"], {
@@ -190,7 +259,16 @@ describe("web development native bootstrap", () => {
       stdio: ["ignore", "pipe", "pipe"],
     });
     try {
-      await once(child.stdout, "data");
+      await Promise.race([
+        (async (): Promise<void> => {
+          let output = "";
+          while (!output.includes("fixture launcher ready\n"))
+            output += String((await once(child.stdout, "data"))[0]);
+        })(),
+        once(child, "exit").then(([code]) => {
+          throw new Error(`Fixture launcher exited before readiness (exit ${code}).`);
+        }),
+      ]);
       const exited = once(child, "exit");
       child.kill("SIGTERM");
       expect((await exited)[0]).toBe(143);

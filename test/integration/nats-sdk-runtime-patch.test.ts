@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -167,6 +167,7 @@ it("corrects public handshake sockets and TLS identity without breaking server f
 }, 60_000);
 
 it("verifies a real Node bundle consumes the corrected public SDK", async () => {
+  await mkdir(join(root, ".artifacts"), { recursive: true });
   const directory = await mkdtemp(join(root, ".artifacts/nats-bundle-probe-"));
   temporary.push(directory);
   const entry = join(directory, "entry.ts");

@@ -22,6 +22,7 @@ describe("Electron verification package content policy", () => {
       "dist/electron/trust-material-worker.cjs",
       "dist/renderer/index.html",
       "dist/renderer/assets/index.js",
+      "node_modules/@nats-io/transport-node/package.json",
       "node_modules/@platformatic/kafka/package.json",
       "node_modules/jks-js/package.json",
       "node_modules/ssh2/package.json",
@@ -119,12 +120,13 @@ describe("Electron verification package content policy", () => {
     ).not.toThrow();
   });
 
-  it("keeps only the reviewed Kafka host dependencies in the external production graph", async () => {
+  it("keeps only the reviewed event-streaming host dependencies in the external production graph", async () => {
     const manifest = JSON.parse(
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
     ) as PackageManifest;
 
     expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([
+      "@nats-io/transport-node",
       "@platformatic/kafka",
       "jks-js",
       "node-forge",
