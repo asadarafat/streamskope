@@ -45,6 +45,7 @@ import { KafkaCommandAdmission } from "./command-admission";
 import { executeQueryCommand } from "./query-facade";
 import { ConsumptionFacadeController } from "./consumption-facade";
 import type { KafkaBackendFacadeOptions } from "./types";
+import { FeatureLifecycle } from "./feature-lifecycle";
 import {
   backendAvailabilityEvent,
   connectionStateEvent,
@@ -106,6 +107,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly clusterServices;
   private readonly connectService: ConnectFacade;
   private readonly relationships: RelationshipFacade;
+  private readonly lifecycle: FeatureLifecycle;
   private readonly observations: ObservationFacade;
   private readonly environments: EnvironmentFacade;
   private readonly plugins;
@@ -265,6 +267,47 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         : { scheduleMessageFlush: options.scheduleMessageFlush }),
     });
     this.trustAcquisitions = options.trustAcquisitions;
+    this.lifecycle = new FeatureLifecycle([
+      {
+        owner: "Consumption",
+        invalidate: (reason): void => {
+          if (reason !== "shutdown") this.consumption.invalidate();
+        },
+      },
+      {
+        owner: "Observations",
+        invalidate: (): void => this.observations.cancel(),
+        drain: (): Promise<void> => this.observations.idle(),
+      },
+      {
+        owner: "Relationships",
+        invalidate: (): void => this.relationships.cancel(),
+        drain: (): Promise<void> => this.relationships.idle(),
+      },
+      {
+        owner: "Environments",
+        invalidate: (): void => this.environments.cancel(),
+        drain: (): Promise<void> => this.environments.idle(),
+      },
+      { owner: "Record replay", invalidate: (): Promise<void> => this.recordReplay.invalidate() },
+      { owner: "Correlation trace", invalidate: (): void => this.correlationTrace.invalidate() },
+      { owner: "Record codecs", invalidate: (): void => this.recordCodecs.invalidate() },
+      { owner: "Schema inspection", invalidate: (): void => this.schemaInspection.invalidate() },
+      { owner: "Schema samples", invalidate: (): void => this.schemaSamples.invalidate() },
+      { owner: "Cluster diagnostics", invalidate: (): void => this.clusterDiagnostics.clear() },
+      { owner: "Latency", invalidate: (): void => this.invalidateLatency() },
+      { owner: "Consumer groups", invalidate: (): void => this.consumerGroups.invalidate() },
+      { owner: "Cluster services", invalidate: (): void => this.clusterServices.invalidate() },
+      {
+        owner: "Trust acquisition",
+        invalidate: (reason): void => {
+          if (reason === "shutdown") this.trustAcquisitions?.clear();
+        },
+      },
+      { owner: "Kafka session", drain: (): Promise<void> => this.session.shutdown() },
+      { owner: "Plugins", drain: (): Promise<void> => this.plugins.close() },
+      { owner: "Queries", drain: (): Promise<void> => this.queries.idle() },
+    ]);
   }
 
   connectionSnapshot(): KafkaConnectionSnapshot {
@@ -661,47 +704,14 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.connectionIntent += 1;
     this.beginConnectionLifetime();
     const finishConsumption = this.consumption.prepareShutdown();
-    const cleanups = [
-      { owner: "Observations", run: (): void => this.observations.cancel() },
-      { owner: "Relationships", run: (): void => this.relationships.cancel() },
-      { owner: "Environments", run: (): void => this.environments.cancel() },
-      { owner: "Correlation trace", run: (): void => this.correlationTrace.invalidate() },
-      { owner: "Record codecs", run: (): void => this.recordCodecs.invalidate() },
-      { owner: "Schema inspection", run: (): void => this.schemaInspection.invalidate() },
-      { owner: "Schema samples", run: (): void => this.schemaSamples.invalidate() },
-      { owner: "Cluster diagnostics", run: (): void => this.clusterDiagnostics.clear() },
-      { owner: "Latency", run: (): void => this.invalidateLatency() },
-      { owner: "Consumer groups", run: (): void => this.consumerGroups.invalidate() },
-      { owner: "Cluster services", run: (): void => this.clusterServices.invalidate() },
-      { owner: "Trust acquisition", run: (): void => this.trustAcquisitions?.clear() },
-      { owner: "Record replay", run: (): Promise<void> => this.recordReplay.invalidate() },
-      { owner: "Kafka session", run: (): Promise<void> => this.session.shutdown() },
-      { owner: "Plugins", run: (): Promise<void> => this.plugins.close() },
-      { owner: "Queries", run: (): Promise<void> => this.queries.idle() },
-      { owner: "Observations", run: (): Promise<void> => this.observations.idle() },
-      { owner: "Relationships", run: (): Promise<void> => this.relationships.idle() },
-      { owner: "Environments", run: (): Promise<void> => this.environments.idle() },
-    ];
-    const results = await Promise.allSettled(
-      cleanups.map(({ run }) => {
-        try {
-          return Promise.resolve(run());
-        } catch {
-          return Promise.reject(new Error("Application cleanup invocation failed."));
-        }
-      }),
-    );
+    let shutdownFailure: Error | undefined;
+    try {
+      await this.lifecycle.shutdown();
+    } catch (error) {
+      shutdownFailure = error instanceof Error ? error : new Error("Application cleanup failed.");
+    }
     // Plugin cleanup may admit owned commands while its close hook is running.
     await this.commandAdmission.idle();
-    const failures = results.flatMap((result, index) =>
-      result.status === "rejected"
-        ? [new Error(`${cleanups[index]?.owner ?? "Application"} cleanup failed.`)]
-        : [],
-    );
-    const shutdownFailure =
-      failures.length === 0
-        ? undefined
-        : new AggregateError(failures, "Kafka application resources did not close cleanly.");
     finishConsumption(shutdownFailure);
     this.available = false;
     this.publish(
@@ -931,20 +941,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.publish(latencyHistoryEvent(this.latencyProbe.historySnapshot(), this.nextSequence()));
   }
 
-  private invalidateClusterState(preserveConsumption = false): void {
-    if (!preserveConsumption) this.consumption.invalidate();
-    this.observations.cancel();
-    this.relationships.cancel();
-    this.environments.cancel();
-    void this.recordReplay.invalidate().catch(() => undefined);
-    this.correlationTrace.invalidate();
-    this.recordCodecs.invalidate();
-    this.schemaInspection.invalidate();
-    this.schemaSamples.invalidate();
-    this.clusterDiagnostics.clear();
-    this.invalidateLatency();
-    this.consumerGroups.invalidate();
-    this.clusterServices.invalidate();
+  private invalidateClusterState(): void {
+    this.lifecycle.invalidate();
   }
 
   private publish(event: HostEvent): void {

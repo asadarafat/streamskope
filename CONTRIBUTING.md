@@ -137,6 +137,14 @@ notifications. The application's `KafkaSessionRequests` owns request supersessio
 cancellation and stale-response checks; `KafkaApplicationSession` owns connection
 and consumer lifecycles. Preserve the typed host contract between UI and facade.
 
+Connection-bound controllers register their invalidation and shutdown drain
+together in the facade's ordered `FeatureLifecycle` table. Add a feature there
+once rather than maintaining separate connection-change and exit lists. Normal
+connection changes invoke invalidation synchronously; shutdown invokes every
+owner and waits for all cleanup, even when one owner fails. Consumption retains
+its separate final flush. Command admission closes before cancellation and its
+final drain follows plugin cleanup, which may still use its owned host commands.
+
 `src/platform/node` owns shared backend composition, plugin loading, SSH/HTTPS adapters and
 file stores. Browser development and Electron use these same modules. Electron
 windows, IPC, exit prompts and operating-system secret protection stay in
