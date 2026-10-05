@@ -471,14 +471,12 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
       "Topics",
       "Consumer Groups",
       "Schema Registry",
+      "Kafka Connect",
       "Access Control Lists",
       "Transforms",
       "Connection Profiles",
     ]) {
       await expect(navigation.getByRole("button", { name: resource })).toBeVisible();
-    }
-    for (const unsupported of ["Kafka Connect"]) {
-      await expect(navigation.getByRole("button", { name: unsupported })).toHaveCount(0);
     }
     await expect(
       navigation.getByRole("button", { name: "Connection Profiles" }),
@@ -488,6 +486,7 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
       "Topics",
       "Consumer Groups",
       "Schema Registry",
+      "Kafka Connect",
       "Access Control Lists",
       "Transforms",
     ]) {
