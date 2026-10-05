@@ -21,6 +21,9 @@ export type PluginHostCommand = Extract<
   HostCommand,
   { readonly command: `plugins.${string}` | "plugin.execute" }
 >;
+export function isPluginHostCommand(command: HostCommand): command is PluginHostCommand {
+  return command.command === "plugin.execute" || command.command.startsWith("plugins.");
+}
 interface Bindings {
   readonly runtime?: PluginRuntimePort;
   readonly session: KafkaApplicationSession;

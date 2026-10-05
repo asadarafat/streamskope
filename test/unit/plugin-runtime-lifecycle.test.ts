@@ -201,7 +201,7 @@ describe("plugin shutdown and profile boundaries", () => {
     const reopened = new PluginRuntime({
       store,
       hostRelease: "v0.2.0",
-      loadModule: () => Promise.resolve({ activate: backend }),
+      loadModule: (): Promise<PluginBackendModule> => Promise.resolve({ activate: backend }),
     });
     reopened.bindHost(bindings());
     runtimes.push(reopened);
@@ -512,7 +512,7 @@ describe("hot plugin lifecycle", () => {
   it("confirms retained active work before retrying rejected UI from verified local bytes with a fresh activation", async () => {
     const close = vi.fn(() => Promise.resolve());
     const prepareUnload = vi.fn(() => Promise.resolve());
-    const original = {
+    const original: PluginBackend = {
       ...backend(),
       close,
       prepareUnload,
@@ -563,7 +563,7 @@ describe("hot plugin lifecycle", () => {
     async (failure) => {
       const originalClose = vi.fn(() => Promise.resolve());
       const candidateClose = vi.fn(() => Promise.resolve());
-      const original = {
+      const original: PluginBackend = {
         ...backend(),
         close: originalClose,
         beforeChange: () => Promise.resolve({ message: "Capture active", detail: "Session A" }),

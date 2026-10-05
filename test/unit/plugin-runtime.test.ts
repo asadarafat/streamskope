@@ -10,6 +10,7 @@ import type { JsonValue, PluginEvent, PluginManifest } from "../../src/plugins/c
 import { encodePluginPackage, pluginPackageSha256 } from "../../src/platform/node/plugins/package";
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
+import type { OfficialPluginEntry } from "../../src/platform/node/plugins/catalog";
 import { testHostExecute } from "../support/host-response";
 import { formatPluginVersion } from "../../src/plugins/validation";
 
@@ -139,9 +140,9 @@ describe("optional installed plugin runtime", () => {
       hostRelease: "v0.2.0",
       persistCatalog: false,
       catalog: {
-        list: () =>
+        list: (): Promise<OfficialPluginEntry[]> =>
           Promise.resolve([{ manifest, sha256: "a".repeat(64), downloadUrl: "development" }]),
-        download: () => Promise.reject(new Error("Unused")),
+        download: (): Promise<never> => Promise.reject(new Error("Unused")),
       },
     });
     runtimes.push(host);
@@ -203,13 +204,13 @@ describe("optional installed plugin runtime", () => {
     await store.install(packaged, pluginPackageSha256(packaged));
     let finish!: () => void;
     const waiting = new Promise<[]>((resolve) => {
-      finish = () => resolve([]);
+      finish = (): void => resolve([]);
     });
     const list = vi.fn(() => waiting);
     const host = new PluginRuntime({
       store,
       hostRelease: "v0.2.0",
-      catalog: { list, download: () => Promise.reject(new Error("No download")) },
+      catalog: { list, download: (): Promise<never> => Promise.reject(new Error("No download")) },
     });
     host.bindHost(bindings());
     runtimes.push(host);
@@ -265,8 +266,8 @@ describe("optional installed plugin runtime", () => {
       store,
       hostRelease: "v0.2.0",
       catalog: {
-        list: () => Promise.reject(new Error("Network timeout")),
-        download: () => Promise.reject(new Error("Unused")),
+        list: (): Promise<never> => Promise.reject(new Error("Network timeout")),
+        download: (): Promise<never> => Promise.reject(new Error("Unused")),
       },
     });
     host.bindHost(bindings());

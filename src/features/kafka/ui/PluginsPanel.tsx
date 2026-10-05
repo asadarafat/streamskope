@@ -120,7 +120,7 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
     });
     void refreshInstalled();
     void refreshCatalog();
-    return () => {
+    return (): void => {
       unsubscribe();
       installedRequest.current++;
       catalogRequest.current++;

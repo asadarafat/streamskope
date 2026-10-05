@@ -30,7 +30,6 @@ import type {
 import {
   comparePluginManifests,
   isPluginCompatibleWithHost,
-  isPrereleaseVersion,
   parsePluginId,
   parsePluginJson,
 } from "../../../plugins/validation";
@@ -38,7 +37,7 @@ import { STREAMSKOPE_RELEASE } from "../../../plugins/host-release";
 import { readBoundedFile } from "../bounded-file";
 
 import { OfficialPluginCatalog } from "./catalog";
-import type { StoredPluginCatalog } from "./catalog-cache";
+import { PluginCatalogDiscovery } from "./catalog-discovery";
 import { parsePluginPackage } from "./package";
 import { PluginStore, type ActivePlugin } from "./store";
 
@@ -162,13 +161,19 @@ export class PluginRuntime implements PluginRuntimePort {
   private starting: Promise<void> | undefined;
   private closing: Promise<void> | undefined;
   private startupError: string | undefined;
-  private catalogRefresh: Promise<PluginCatalogSnapshot> | undefined;
-  private memoryCatalog: StoredPluginCatalog | undefined;
+  private readonly catalogDiscovery: PluginCatalogDiscovery;
 
   constructor(private readonly options: PluginRuntimeOptions) {
     this.catalogSource =
       options.catalog ??
       new OfficialPluginCatalog(undefined, options.hostRelease ?? STREAMSKOPE_RELEASE);
+    this.catalogDiscovery = new PluginCatalogDiscovery({
+      source: this.catalogSource,
+      cache: options.store.catalogCache,
+      hostRelease: options.hostRelease ?? STREAMSKOPE_RELEASE,
+      assertOpen: (): void => this.assertOpen(),
+      ...(options.persistCatalog === undefined ? {} : { persist: options.persistCatalog }),
+    });
   }
 
   bindHost(host: PluginHostBindings): void {
@@ -553,75 +558,8 @@ export class PluginRuntime implements PluginRuntimePort {
     }
   }
 
-  private catalogSnapshot(
-    catalog: StoredPluginCatalog,
-    source: "live" | "cache",
-  ): PluginCatalogSnapshot {
-    const hostRelease = this.options.hostRelease ?? STREAMSKOPE_RELEASE;
-    return {
-      plugins: catalog.entries
-        .map((entry) => entry.manifest)
-        .filter(
-          (manifest) =>
-            isPluginCompatibleWithHost(manifest, hostRelease) &&
-            !(
-              manifest.apiVersion === 4 &&
-              isPrereleaseVersion(manifest.version) &&
-              !isPrereleaseVersion(hostRelease.replace(/^v/u, ""))
-            ),
-        ),
-      source,
-      checkedAt: catalog.checkedAt,
-    };
-  }
-
-  private async cachedCatalog(): Promise<PluginCatalogSnapshot> {
-    try {
-      if (this.memoryCatalog !== undefined)
-        return this.catalogSnapshot(this.memoryCatalog, "cache");
-      if (this.options.persistCatalog === false) return { plugins: [], source: "unavailable" };
-      const cached = await this.options.store.catalogCache.read();
-      return cached === undefined
-        ? { plugins: [], source: "unavailable" }
-        : this.catalogSnapshot(cached, "cache");
-    } catch (error) {
-      return { plugins: [], source: "unavailable", error: summary(error) };
-    }
-  }
-
-  async catalog(refresh = true): Promise<PluginCatalogSnapshot> {
-    this.assertOpen();
-    if (!refresh) return this.cachedCatalog();
-    if (this.catalogRefresh !== undefined) return this.catalogRefresh;
-    const current = this.refreshCatalog();
-    this.catalogRefresh = current;
-    try {
-      return await current;
-    } finally {
-      if (this.catalogRefresh === current) this.catalogRefresh = undefined;
-    }
-  }
-
-  private async refreshCatalog(): Promise<PluginCatalogSnapshot> {
-    try {
-      const entries = await this.catalogSource.list();
-      this.assertOpen();
-      const catalog = { entries, checkedAt: new Date().toISOString() };
-      const snapshot = this.catalogSnapshot(catalog, "live");
-      this.memoryCatalog = catalog;
-      if (this.options.persistCatalog === false) return snapshot;
-      try {
-        await this.options.store.catalogCache.save(catalog);
-        return snapshot;
-      } catch (error) {
-        return {
-          ...snapshot,
-          error: `Plugin catalog was refreshed but could not be saved. ${summary(error)}`,
-        };
-      }
-    } catch (error) {
-      return { ...(await this.cachedCatalog()), error: summary(error) };
-    }
+  catalog(refresh = true): Promise<PluginCatalogSnapshot> {
+    return this.catalogDiscovery.catalog(refresh);
   }
 
   async prepareChange(

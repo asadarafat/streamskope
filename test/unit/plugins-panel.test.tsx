@@ -17,7 +17,7 @@ import type {
 } from "../../src/plugins/contracts";
 import { PluginsPanel } from "../../src/features/kafka/ui/PluginsPanel";
 import { PluginsProvider, usePlugins } from "../../src/features/kafka/ui/PluginsProvider";
-import type { PluginRenderer } from "../../src/plugins/renderer-api";
+import type { PluginRenderer, PluginViewMount } from "../../src/plugins/renderer-api";
 import { OperationalPreferencesDialog } from "../../src/features/kafka/ui/OperationalPreferencesDialog";
 import { testHostExecute } from "../support/host-response";
 import { formatPluginVersion } from "../../src/plugins/validation";
@@ -137,10 +137,10 @@ function catalogGate(): {
 it("shows installed plugins and completes removal while a network refresh is still pending", async () => {
   const remote = catalogGate();
   const { host, commands } = fixture({
-    catalog: async (refresh) =>
+    catalog: (refresh): Promise<PluginCatalogSnapshot> =>
       refresh
         ? remote.promise
-        : { plugins: [], source: "cache", checkedAt: "2026-10-05T14:00:00.000Z" },
+        : Promise.resolve({ plugins: [], source: "cache", checkedAt: "2026-10-05T14:00:00.000Z" }),
     snapshot: {
       revision: 1,
       plugins: [
@@ -166,13 +166,14 @@ it("shows installed plugins and completes removal while a network refresh is sti
   expect(await screen.findByText("No plugins are installed.")).toBeVisible();
   expect(commands.some((command) => command.command === "plugins.remove")).toBe(true);
   expect(screen.getByText("Checking for plugin updates…")).toBeVisible();
-  await act(async () => remote.resolve({ plugins: [], source: "live" }));
+  await act((): void => remote.resolve({ plugins: [], source: "live" }));
 });
 
 it("retries installed controls before a pending network refresh completes", async () => {
   const remote = catalogGate();
   const { host, commands } = fixture({
-    catalog: async (refresh) => (refresh ? remote.promise : { plugins: [], source: "unavailable" }),
+    catalog: (refresh): Promise<PluginCatalogSnapshot> =>
+      refresh ? remote.promise : Promise.resolve({ plugins: [], source: "unavailable" }),
     snapshot: {
       revision: 1,
       plugins: [
@@ -199,7 +200,7 @@ it("retries installed controls before a pending network refresh completes", asyn
     },
   );
   expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
-  await act(async () => remote.resolve({ plugins: [], source: "unavailable" }));
+  await act((): void => remote.resolve({ plugins: [], source: "unavailable" }));
 });
 
 it("explicitly reloads rejected renderer controls after a healthy backend retry and waits for them", async () => {
@@ -221,13 +222,13 @@ it("explicitly reloads rejected renderer controls after a healthy backend retry 
   const host: StreamSkopeHost = {
     openExternalUrl: vi.fn(),
     subscribe: () => () => undefined,
-    execute: testHostExecute(async (command) => {
+    execute: testHostExecute((command): Promise<unknown> => {
       commands.push(command);
       // The host did not receive the earlier renderer failure and consequently
       // treats its healthy backend retry as a no-op with the same activation ID.
       if (command.command === "plugins.renderer.failed")
         throw new Error("The host could not receive the renderer error.");
-      return {
+      return Promise.resolve({
         command: command.command,
         id: command.id,
         version: HOST_PROTOCOL_VERSION,
@@ -240,7 +241,7 @@ it("explicitly reloads rejected renderer controls after a healthy backend retry 
               ? { pluginChange: null }
               : { pluginSnapshot: snapshot }),
         },
-      };
+      });
     }),
   };
   let completeRenderer!: (module: { default: PluginRenderer }) => void;
@@ -272,13 +273,16 @@ it("explicitly reloads rejected renderer controls after a healthy backend retry 
   await waitFor(() => expect(importer).toHaveBeenCalledTimes(2));
   expect(screen.getByText("Plugin controls unavailable")).toBeVisible();
   expect(screen.queryByText("Sample connection 2.0.0 is active.")).not.toBeInTheDocument();
-  await act(async () =>
+  await act((): void =>
     completeRenderer({
       default: {
         apiVersion: 2,
         id: manifest.id,
         connectionActions: [],
-        mount: () => ({ update: () => undefined, dispose: () => undefined }),
+        mount: (): PluginViewMount => ({
+          update: (): void => undefined,
+          dispose: (): void => undefined,
+        }),
       },
     }),
   );
@@ -296,9 +300,14 @@ it("retains cached available plugins and the last successful check after a netwo
   const checkedAt = "2026-10-05T14:00:00.000Z";
   let refreshes = 0;
   const { host } = fixture({
-    catalog: async (refresh) => {
-      if (refresh && ++refreshes > 1) throw new Error("The proxy requires authentication.");
-      return { plugins: [manifest], source: refresh ? "live" : "cache", checkedAt };
+    catalog: (refresh): Promise<PluginCatalogSnapshot> => {
+      if (refresh && ++refreshes > 1)
+        return Promise.reject(new Error("The proxy requires authentication."));
+      return Promise.resolve({
+        plugins: [manifest],
+        source: refresh ? "live" : "cache",
+        checkedAt,
+      });
     },
   });
   const user = userEvent.setup();
@@ -320,15 +329,17 @@ it("retains cached available plugins and the last successful check after a netwo
 
 it("keeps a refreshed catalog usable when saving its local copy fails", async () => {
   const { host } = fixture({
-    catalog: async (refresh) =>
-      refresh
-        ? {
-            plugins: [manifest],
-            source: "live",
-            checkedAt: "2026-10-05T14:00:00.000Z",
-            error: "The catalog cache is read-only.",
-          }
-        : { plugins: [], source: "unavailable" },
+    catalog: (refresh): Promise<PluginCatalogSnapshot> =>
+      Promise.resolve(
+        refresh
+          ? {
+              plugins: [manifest],
+              source: "live",
+              checkedAt: "2026-10-05T14:00:00.000Z",
+              error: "The catalog cache is read-only.",
+            }
+          : { plugins: [], source: "unavailable" },
+      ),
   });
   render(<PluginsPanel host={host} />);
   expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -341,12 +352,13 @@ it("keeps a refreshed catalog usable when saving its local copy fails", async ()
 
 it("accepts a fresh empty catalog instead of retaining stale available entries after a cache-save failure", async () => {
   const { host } = fixture({
-    catalog: async (refresh) => ({
-      plugins: refresh ? [] : [manifest],
-      source: refresh ? "live" : "cache",
-      checkedAt: "2026-10-05T14:00:00.000Z",
-      ...(refresh ? { error: "The catalog cache is read-only." } : {}),
-    }),
+    catalog: (refresh): Promise<PluginCatalogSnapshot> =>
+      Promise.resolve({
+        plugins: refresh ? [] : [manifest],
+        source: refresh ? "live" : "cache",
+        checkedAt: "2026-10-05T14:00:00.000Z",
+        ...(refresh ? { error: "The catalog cache is read-only." } : {}),
+      }),
   });
   render(<PluginsPanel host={host} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("The plugin catalog was refreshed");
