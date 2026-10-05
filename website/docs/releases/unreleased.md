@@ -7,6 +7,12 @@ unreleased: true
 
 ## Desktop
 
+Application shutdown rejects new requests immediately and waits for every owned
+cleanup to finish, including environment comparisons that open a separate saved
+destination. A failed cleanup cannot make shutdown finish while another cleanup
+is still running. Cancellation preserves acknowledged or uncertain write outcomes;
+it does not automatically retry a promotion.
+
 Observed health now prioritizes selected-topic findings, measurement coverage and
 investigation actions. Existing resources can be selected from the connected
 profile; collection progress and cooldown are visible. Partition filtering and
