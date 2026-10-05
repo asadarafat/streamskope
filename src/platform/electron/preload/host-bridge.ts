@@ -13,6 +13,7 @@ import {
 
 import { EXTERNAL_URL_OPEN_CHANNEL, providerIpcChannels } from "./channels";
 import { createPreloadProviderWire, type PreloadIpcRenderer } from "./provider-wire";
+import { createNatsPreloadHost } from "./nats-host";
 
 export type { PreloadIpcRenderer } from "./provider-wire";
 
@@ -53,6 +54,7 @@ export function exposeStreamSkopeHost(
   ipcRenderer: PreloadIpcRenderer,
 ): void {
   const kafka = createStreamSkopePreloadHost(ipcRenderer);
+  const nats = createNatsPreloadHost(ipcRenderer);
   contextBridge.exposeInMainWorld("streamSkopeHost", kafka);
-  contextBridge.exposeInMainWorld("streamSkopeProviders", Object.freeze({ kafka }));
+  contextBridge.exposeInMainWorld("streamSkopeProviders", Object.freeze({ kafka, nats }));
 }

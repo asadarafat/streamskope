@@ -29,6 +29,7 @@
     "../../plugins/nsp/contracts/**/*.ts",
     "../../plugins/nsp/ui/**/*.ts",
     "../../plugins/nsp/ui/**/*.tsx",
-    "../../src/platform/providers/**/*.ts"
+    "../../src/platform/providers/**/*.ts",
+    "../../src/features/nats/contracts/**/*.ts"
   ]
 }

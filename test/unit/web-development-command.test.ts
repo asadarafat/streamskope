@@ -2,10 +2,12 @@ import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { openDevelopmentBrowser } from "../../tools/dev/launch";
 import type { DevelopmentBackend, RunningWebDevelopment } from "../../src/platform/dev-host";
+import { ProviderHostRegistry } from "../../src/platform/node/provider-host";
+import { createProviderFixture } from "../support/provider-fixture";
 import {
   startWebDevelopmentCommand,
   WebDevelopmentSessionConflictError,
@@ -118,6 +120,107 @@ function commandFixture({
 }
 
 describe("web-development command session", () => {
+  it("passes a composite provider registry and plugin assets through the launcher without a Kafka wrapper", async () => {
+    const options = await commandOptions();
+    const kafka = createProviderFixture({ id: "kafka", version: 11 });
+    const nats = createProviderFixture({ id: "nats", version: 12 });
+    const providers = new ProviderHostRegistry([kafka.endpoint, nats.endpoint]);
+    const pluginAsset = (): Promise<undefined> => Promise.resolve(undefined);
+    const running = await startWebDevelopmentCommand(options, {
+      createProviders: () => ({ providers, pluginAsset }),
+      ownerPid: 101,
+      isProcessAlive: (pid) => pid === 101,
+      launch: (submitted): Promise<RunningWebDevelopment> => {
+        expect(submitted.providers).toBe(providers);
+        expect(submitted.backend).toBeUndefined();
+        expect(submitted.pluginAsset).toBe(pluginAsset);
+        return Promise.resolve({
+          browserUrl: BROWSER_URL,
+          close: () => providers.shutdown(),
+          host: {
+            close: () => Promise.resolve(),
+            hostname: "clab.orb.local",
+            origin: "http://clab.orb.local:4319",
+            port: 4319,
+          },
+          rendererOrigin: "http://clab.orb.local:5173",
+        });
+      },
+    });
+    const request = nats.command();
+    await expect(providers.get("nats")?.dispatch(request)).resolves.toEqual(nats.response(request));
+    await running.close();
+    await running.close();
+    expect(kafka.shutdownCalls).toBe(1);
+    expect(nats.shutdownCalls).toBe(1);
+    expect(await readdir(options.sessionDirectory)).toEqual([]);
+  });
+
+  it("attempts sibling registry cleanup and releases the lease while a rejected launch waits for deferred cleanup", async () => {
+    const options = await commandOptions();
+    const kafka = createProviderFixture({ id: "kafka", version: 11 });
+    const nats = createProviderFixture({ id: "nats", version: 12 });
+    const providers = new ProviderHostRegistry([kafka.endpoint, nats.endpoint]);
+    let finishNats = (): void => undefined;
+    kafka.shutdownOperation = (): Promise<void> => {
+      throw new Error("Kafka fixture cleanup failed.");
+    };
+    nats.shutdownOperation = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        finishNats = resolve;
+      });
+    const launchFailure = new Error("Fixture launcher rejected before returning ownership.");
+    let settled = false;
+    const outcome = startWebDevelopmentCommand(options, {
+      createProviders: () => ({ providers }),
+      ownerPid: 101,
+      isProcessAlive: (pid) => pid === 101,
+      launch: (): Promise<never> => Promise.reject(launchFailure),
+    }).then(
+      () => {
+        throw new Error("Expected startup rejection.");
+      },
+      (error: unknown): unknown => {
+        settled = true;
+        return error;
+      },
+    );
+    await vi.waitFor(() => expect(nats.shutdownCalls).toBe(1));
+    expect(kafka.shutdownCalls).toBe(1);
+    expect(settled).toBe(false);
+    await vi.waitFor(async () => expect(await readdir(options.sessionDirectory)).toEqual([]));
+    expect(settled).toBe(false);
+    finishNats();
+    const failure = await outcome;
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).cause).toBe(launchFailure);
+    expect((failure as AggregateError).errors[0]).toBe(launchFailure);
+    expect(kafka.shutdownCalls).toBe(1);
+    expect(nats.shutdownCalls).toBe(1);
+  });
+
+  it("releases the lease when a legacy backend shutdown throws synchronously before launch returns", async () => {
+    const options = await commandOptions();
+    const backend = new FakeBackend();
+    backend.shutdown = (): Promise<void> => {
+      backend.shutdownCalls += 1;
+      throw new Error("Legacy cleanup fixture failure.");
+    };
+    const launchFailure = new Error("Legacy launcher fixture failure.");
+    await expect(
+      startWebDevelopmentCommand(options, {
+        createBackend: () => backend,
+        ownerPid: 101,
+        isProcessAlive: (pid) => pid === 101,
+        launch: (): Promise<never> => {
+          throw launchFailure;
+        },
+      }),
+    ).rejects.toMatchObject({ cause: launchFailure });
+    expect(backend.shutdownCalls).toBe(1);
+    expect(await readdir(options.sessionDirectory)).toEqual([]);
+  });
+
   it("awaits development profile preparation before launching a new backend", async () => {
     const options = await commandOptions();
     const backend = new FakeBackend();

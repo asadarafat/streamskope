@@ -165,6 +165,13 @@ if (["cli", "sandbox"].includes(process.argv[2])) {
 
   try {
     const env = await prepare();
+    const patched = await run(
+      ["--import", "tsx", "tools/check/build-dependency-patches.ts", "--apply"],
+      env,
+      30_000,
+    );
+    if (patched !== 0)
+      throw new Error("Dependency verification failed before application startup.");
     process.exitCode = await run(["--import", "tsx", "tools/dev/start.ts"], env);
   } catch (error) {
     process.stderr.write(`StreamSkope web development startup failed: ${error.message}\n`);

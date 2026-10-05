@@ -29,6 +29,14 @@ const forbiddenRendererCases = [
       'import { KubeConfig } from "@kubernetes/client-node"; export const access = KubeConfig;',
   },
   {
+    fileName: "nats-client-import.ts",
+    source: 'import { connect } from "@nats-io/transport-node"; export const access = connect;',
+  },
+  ...["application", "engine", "facade"].map((layer) => ({
+    fileName: `nats-${layer}-import.ts`,
+    source: `import * as host from "../../../../src/features/nats/${layer}"; export const access = host;`,
+  })),
+  {
     fileName: "node-import.ts",
     source: 'import { readFile } from "node:fs/promises"; export const access = readFile;',
   },
@@ -82,6 +90,47 @@ describe("optional plugin renderer boundary", () => {
     expect(results[1]?.messages.map(({ ruleId }) => ruleId)).toContain("boundaries/dependencies");
     expect(results[2]?.messages.map(({ ruleId }) => ruleId)).toContain("no-restricted-imports");
     expect(results[3]?.messages.map(({ ruleId }) => ruleId)).toContain("boundaries/dependencies");
+  }, 60_000);
+});
+
+describe("messaging provider isolation", () => {
+  it("keeps Kafka and NATS as siblings and confines NATS SDK access to its engine", async () => {
+    const eslint = new ESLint({
+      cwd: repositoryRoot,
+      overrideConfig: [tseslint.configs.disableTypeChecked],
+    });
+    const fixtures = [
+      {
+        file: "src/features/nats/application/session.ts",
+        source:
+          'import { KafkaApplicationSession } from "../../kafka/application"; export const access=KafkaApplicationSession;',
+        rule: "boundaries/dependencies",
+      },
+      {
+        file: "src/features/kafka/application/session.ts",
+        source:
+          'import { NatsApplicationSession } from "../../nats/application"; export const access=NatsApplicationSession;',
+        rule: "boundaries/dependencies",
+      },
+      {
+        file: "src/features/nats/application/session.ts",
+        source: 'import { connect } from "@nats-io/transport-node"; export const access=connect;',
+        rule: "no-restricted-imports",
+      },
+      {
+        file: "src/features/nats/facade/facade.ts",
+        source:
+          'import { StreamSkopeNatsEngine } from "../engine/engine"; export const access=StreamSkopeNatsEngine;',
+        rule: "boundaries/dependencies",
+      },
+    ];
+    for (const fixture of fixtures) {
+      const [result] = await eslint.lintText(fixture.source, { filePath: fixture.file });
+      expect(
+        result?.messages.map((message) => message.ruleId),
+        fixture.file,
+      ).toContain(fixture.rule);
+    }
   }, 60_000);
 });
 

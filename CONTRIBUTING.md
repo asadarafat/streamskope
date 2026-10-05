@@ -167,8 +167,19 @@ Kafka. Each provider owns its event stream, sequence and delivery queue; a faile
 stream cannot change a sibling's readiness. Kafka's existing host API, gateway
 paths and IPC channels remain compatibility adapters, and its named backend
 options preserve existing protected profile files and connection plugins.
-Kafka remains the available provider at this stage; registration mechanics do
-not establish a working second provider or live-system qualification.
+The hosts also compose a Core NATS backend with its own typed protocol (version
+1), protected profile store and live subscription lifecycle. NATS does not import
+Kafka feature code. The operator UI remains Kafka-only until the NATS workspace
+is introduced and qualified separately. Connection plugins such as EDA and NSP
+remain Kafka profile extensions; a messaging provider is a built-in sibling.
+
+Core NATS supports no authentication or token authentication, and plaintext or
+verified TLS with an optional PEM CA. The engine uses the supported public SDK
+and confirms SUB/UNSUB with a broker flush before reporting start/stop. It owns
+late connection attempts through real cleanup. Reconnection is explicit, and
+there is no subject inventory, stored history or replay. Receipt timestamps are
+host observation times. Copied payloads, headers, application queues and transport
+queues have independent bounds; omission counters identify their owner.
 
 `AccountedProviderEventQueue` owns pending and in-flight event costs. Provider
 policies define record projection, generation changes, omission reporting and
@@ -343,6 +354,36 @@ for; new advisories and unverified copies still fail. Regression tests reproduce
 the stock stack overflow and unsafe cookie-cache reuse, then confirm the patched
 behavior. Once fixed upstream versions are qualified, remove the corresponding
 data, helper hooks and audit handling. Keep the regression tests.
+
+## Temporary NATS runtime dependency corrections
+
+The pinned public `@nats-io/transport-node` 3.4.0 SDK can leave its initial socket
+open when connection setup fails before it marks the transport connected. Real
+silent, delayed-INFO and stalled-TLS peers reproduce this through public `connect()`.
+That would make StreamSkope's cancellation and shutdown guarantees untrue.
+Its INFO-to-TLS upgrade also omits the selected host from Node's TLS options.
+For an IP destination, Node can then verify the default `localhost` identity and
+accept a trusted DNS-only certificate. An independent public TLS peer reproduces
+that mismatch while confirming the matching DNS identity succeeds.
+
+`tools/check/runtime-dependency-patch-data.ts` records a narrow exact-source
+correction against the [published transport source](https://github.com/nats-io/nats.js/blob/v3.4.0/transport-node/src/node_transport.ts).
+It retains the socket as soon as dialing begins and destroys it on early close,
+preserving existing handshake error observation and TLS verification. Early
+cleanup leaves the SDK's connected lifecycle notification untouched, so a failed
+address or server does not retire a subsequent valid fallback. This is a
+runtime lifecycle and TLS identity correction, separate from the build-only advisory mitigations.
+It grants no npm-audit exemption.
+The TLS upgrade passes the selected DNS name or IP as the verification host and
+preserves the SDK's DNS SNI value; verification cannot be disabled by profiles.
+
+`dev`, `check`, `build` and `package` apply and verify the allowlisted version,
+registry integrity, consumer resolution and complete source hashes. Unknown or
+altered copies fail closed. Qualification reproduces the stock failure, verifies
+idempotent correction, confirms fallback and TLS identity against independent
+peers, and exercises the public SDK in the bundled host. Remove
+the correction and its hooks once a qualified upstream release fixes these cases;
+retain the independent socket-lifecycle regression.
 
 ## GitHub builds
 

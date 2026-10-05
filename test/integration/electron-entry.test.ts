@@ -4,16 +4,30 @@ type AppListener = (...arguments_: unknown[]) => void;
 
 const native = vi.hoisted(() => {
   const listeners = new Map<string, AppListener[]>();
+  const protectionReceipts: { kafka: unknown; nats: unknown } = {
+    kafka: undefined,
+    nats: undefined,
+  };
   return {
     listeners,
     exitCodes: [] as number[],
     relaunches: 0,
     shellCloseCalls: 0,
     shutdownCalls: 0,
+    natsShutdownCalls: 0,
+    protectionCalls: 0,
+    profileProtection: {
+      capability: { durability: "durable", state: "unavailable", protection: "unavailable" },
+    },
+    protectionReceipts,
+    providerIds: [] as string[],
+    bindingIds: [] as string[],
+    natsCreateFailure: undefined as Error | undefined,
     shellCreated: 0,
     restart: undefined as (() => void) | undefined,
     closeOperation: (): Promise<void> => Promise.resolve(),
     shutdownOperation: (): Promise<void> => Promise.resolve(),
+    natsShutdownOperation: (): Promise<void> => Promise.resolve(),
     close: (): Promise<void> => {
       native.shellCloseCalls += 1;
       for (const listener of listeners.get("window-all-closed") ?? []) listener();
@@ -59,8 +73,11 @@ vi.mock("../../src/platform/electron/main/plugin-exit", () => ({
   confirmPluginExit: (): Promise<boolean> => Promise.resolve(true),
 }));
 vi.mock("../../src/platform/electron/main/electron-kafka-backend", () => ({
-  createElectronKafkaBackend: (): Promise<object> =>
-    Promise.resolve({
+  createElectronKafkaBackend: (options: {
+    readonly profileProtection: unknown;
+  }): Promise<object> => {
+    native.protectionReceipts.kafka = options.profileProtection;
+    return Promise.resolve({
       execute: (): Promise<never> => Promise.reject(new Error("Unexpected entry fixture command.")),
       subscribe: (): (() => void) => (): void => undefined,
       stopStream: (): Promise<void> => Promise.resolve(),
@@ -68,11 +85,44 @@ vi.mock("../../src/platform/electron/main/electron-kafka-backend", () => ({
         native.shutdownCalls += 1;
         return native.shutdownOperation();
       },
-    }),
+    });
+  },
+}));
+vi.mock("../../src/platform/electron/main/electron-profile-protection", () => ({
+  initializeElectronProfileProtection: (): Promise<object> => {
+    native.protectionCalls += 1;
+    return Promise.resolve(native.profileProtection);
+  },
+}));
+vi.mock("../../src/platform/electron/main/electron-nats-profile-store", () => ({
+  createElectronNatsProfileStore: (options: { readonly profileProtection: unknown }): object => {
+    native.protectionReceipts.nats = options.profileProtection;
+    return {};
+  },
+}));
+vi.mock("../../src/platform/node/nats-backend", () => ({
+  createNatsBackend: (): object => {
+    if (native.natsCreateFailure !== undefined) throw native.natsCreateFailure;
+    return {
+      execute: (): Promise<never> =>
+        Promise.reject(new Error("Unexpected NATS entry fixture command.")),
+      subscribe: (): (() => void) => (): void => undefined,
+      stopStream: (): Promise<void> => Promise.resolve(),
+      shutdown: (): Promise<void> => {
+        native.natsShutdownCalls += 1;
+        return native.natsShutdownOperation();
+      },
+    };
+  },
 }));
 vi.mock("../../src/platform/electron/main/electron-shell", () => ({
-  createElectronShell: (): Promise<object> => {
+  createElectronShell: (options: {
+    readonly registry: { endpoints(): readonly { readonly id: string }[] };
+    readonly deliveryBindings: readonly { readonly id: string }[];
+  }): Promise<object> => {
     native.shellCreated += 1;
+    native.providerIds = options.registry.endpoints().map(({ id }) => id);
+    native.bindingIds = options.deliveryBindings.map(({ id }) => id);
     return Promise.resolve({
       window: { on: (): void => undefined },
       close: native.close,
@@ -87,10 +137,18 @@ beforeEach(() => {
   native.relaunches = 0;
   native.shellCloseCalls = 0;
   native.shutdownCalls = 0;
+  native.natsShutdownCalls = 0;
+  native.protectionCalls = 0;
+  native.protectionReceipts.kafka = undefined;
+  native.protectionReceipts.nats = undefined;
+  native.providerIds = [];
+  native.bindingIds = [];
+  native.natsCreateFailure = undefined;
   native.shellCreated = 0;
   native.restart = undefined;
   native.closeOperation = (): Promise<void> => Promise.resolve();
   native.shutdownOperation = (): Promise<void> => Promise.resolve();
+  native.natsShutdownOperation = (): Promise<void> => Promise.resolve();
 });
 afterEach(() => vi.useRealTimers());
 
@@ -105,6 +163,57 @@ function closeWindows(): void {
 }
 
 describe("Electron entry cleanup ownership", () => {
+  it("initializes OS protection once and selects both typed providers and delivery bindings", async () => {
+    await start();
+    expect(native.protectionCalls).toBe(1);
+    expect(native.protectionReceipts.kafka).toBe(native.profileProtection);
+    expect(native.protectionReceipts.nats).toBe(native.profileProtection);
+    expect(native.providerIds).toEqual(["kafka", "nats"]);
+    expect(native.bindingIds).toEqual(["kafka", "nats"]);
+    closeWindows();
+    await vi.waitFor(() => expect(native.exitCodes).toEqual([0]));
+    expect(native.shutdownCalls).toBe(1);
+    expect(native.natsShutdownCalls).toBe(1);
+  });
+
+  it("awaits the already-created provider when second-provider startup fails", async () => {
+    let complete = (): void => undefined;
+    native.shutdownOperation = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        complete = resolve;
+      });
+    native.natsCreateFailure = new Error("NATS fixture startup failed.");
+    await import("../../src/platform/electron/main/electron-entry");
+    await vi.waitFor(() => expect(native.shutdownCalls).toBe(1));
+    expect(native.shellCreated).toBe(0);
+    expect(native.natsShutdownCalls).toBe(0);
+    expect(native.exitCodes).toEqual([]);
+    complete();
+    await vi.waitFor(() => expect(native.exitCodes).toEqual([1]));
+  });
+
+  it("retains the NATS shutdown barrier and refuses relaunch after its failure", async () => {
+    let rejectNats = (_error: Error): void => undefined;
+    native.natsShutdownOperation = (): Promise<void> =>
+      new Promise<void>((_resolve, reject) => {
+        rejectNats = reject;
+      });
+    await start();
+    vi.useFakeTimers();
+    native.restart?.();
+    await vi.advanceTimersByTimeAsync(100);
+    closeWindows();
+    expect(native.shellCloseCalls).toBe(1);
+    expect(native.shutdownCalls).toBe(1);
+    expect(native.natsShutdownCalls).toBe(1);
+    expect(native.exitCodes).toEqual([]);
+    expect(native.relaunches).toBe(0);
+    rejectNats(new Error("NATS fixture cleanup failed."));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(native.exitCodes).toEqual([1]);
+    expect(native.relaunches).toBe(0);
+  });
+
   it("waits for both shell cleanup and provider shutdown before exiting once", async () => {
     let completeClose = (): void => undefined;
     let completeShutdown = (): void => undefined;

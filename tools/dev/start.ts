@@ -8,6 +8,10 @@ import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
 import { DEVELOPMENT_VERSION } from "../../src/plugins/compatibility";
 import { STREAMSKOPE_RELEASE } from "../../src/plugins/host-release";
+import { createNatsBackend } from "../../src/platform/node/nats-backend";
+import { createKafkaProviderEndpoint } from "../../src/platform/node/kafka-provider";
+import { createNatsProviderEndpoint } from "../../src/platform/node/nats-provider";
+import { ProviderHostRegistry } from "../../src/platform/node/provider-host";
 
 import { FileFixtureOwnershipStore } from "./kafka-fixture/file-ownership-store";
 import { KafkaFixtureLifecycle } from "./kafka-fixture/lifecycle";
@@ -51,7 +55,7 @@ async function start(): Promise<void> {
       await lifecycle.ensureOwned(await defaultOwnedFixtureRequest(repositoryRoot));
       process.stdout.write("Local AIO Kafka, OAuth and Schema Registry are ready on loopback.\n");
     },
-    createBackend: async () => {
+    createProviders: async () => {
       const profileStore = createBrowserKafkaProfileStore();
       profilePreparation = await prepareLocalAioDevelopmentProfile(profileStore, {
         repositoryRoot,
@@ -65,8 +69,34 @@ async function start(): Promise<void> {
           : {}),
       });
       const backend = createKafkaBackend({ profileStore, plugins });
-      await plugins.start();
-      return Object.assign(backend, { pluginAsset: plugins.rendererAsset.bind(plugins) });
+      let nats: ReturnType<typeof createNatsBackend> | undefined;
+      try {
+        await plugins.start();
+        nats = createNatsBackend();
+        return {
+          providers: new ProviderHostRegistry([
+            createKafkaProviderEndpoint(backend),
+            createNatsProviderEndpoint(nats),
+          ]),
+          pluginAsset: plugins.rendererAsset.bind(plugins),
+        };
+      } catch (error) {
+        const results = await Promise.allSettled(
+          [backend, nats]
+            .filter((owner) => owner !== undefined)
+            .map((owner) => Promise.resolve().then(() => owner.shutdown())),
+        );
+        const failures = results.flatMap((result) =>
+          result.status === "rejected" ? [result.reason as unknown] : [],
+        );
+        if (failures.length > 0)
+          throw new AggregateError(
+            [error, ...failures],
+            "Development provider startup cleanup failed.",
+            { cause: error },
+          );
+        throw error;
+      }
     },
     openBrowser: openDevelopmentBrowser,
   });

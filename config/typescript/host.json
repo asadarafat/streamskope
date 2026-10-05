@@ -34,6 +34,10 @@
     "../../plugins/eda/backend/**/*.ts",
     "../../plugins/nsp/contracts/**/*.ts",
     "../../plugins/nsp/backend/**/*.ts",
-    "../../src/platform/providers/**/*.ts"
+    "../../src/platform/providers/**/*.ts",
+    "../../src/features/nats/contracts/**/*.ts",
+    "../../src/features/nats/application/**/*.ts",
+    "../../src/features/nats/engine/**/*.ts",
+    "../../src/features/nats/facade/**/*.ts"
   ]
 }

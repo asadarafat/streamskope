@@ -30,6 +30,7 @@ import {
   writeAtomicPrivateTextFile,
 } from "./atomic-private-text-file";
 import { readBoundedFile } from "./bounded-file";
+import type { ProfileProtector } from "./profile-protector";
 
 const LEGACY_PROFILE_FILE_VERSION = 1 as const;
 const SERVICES_PROFILE_FILE_VERSION = 2 as const;
@@ -42,12 +43,7 @@ const TRANSPORT_ROLLBACK_GENERATIONS = 100;
 
 type UnknownRecord = Record<string, unknown>;
 
-export interface KafkaProfileProtector {
-  protect(plaintext: string): Promise<Buffer>;
-  unprotect(
-    protectedValue: Buffer,
-  ): Promise<{ readonly plaintext: string; readonly shouldReEncrypt: boolean }>;
-}
+export type KafkaProfileProtector = ProfileProtector;
 
 export interface KafkaProfileFileStoreOptions {
   readonly createTempId?: () => string;

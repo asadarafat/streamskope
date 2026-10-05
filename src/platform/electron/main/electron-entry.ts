@@ -6,11 +6,16 @@ import { PluginRuntime } from "../../node/plugins/runtime";
 import { PluginStore } from "../../node/plugins/store";
 import { ProviderHostRegistry } from "../../node/provider-host";
 import { createKafkaProviderEndpoint } from "../../node/kafka-provider";
+import { createNatsBackend } from "../../node/nats-backend";
+import { createNatsProviderEndpoint } from "../../node/nats-provider";
 
 import { confirmPluginExit } from "./plugin-exit";
 import { createElectronKafkaBackend } from "./electron-kafka-backend";
 import { createElectronShell, type RunningElectronShell } from "./electron-shell";
 import { createKafkaElectronDeliveryBinding } from "./kafka-provider-delivery";
+import { createNatsElectronDeliveryBinding } from "./nats-provider-delivery";
+import { createElectronNatsProfileStore } from "./electron-nats-profile-store";
+import { initializeElectronProfileProtection } from "./electron-profile-protection";
 import {
   installPackagedRendererProtocol,
   PACKAGED_RENDERER_URL,
@@ -18,6 +23,7 @@ import {
 } from "./packaged-renderer-protocol";
 
 let backend: Awaited<ReturnType<typeof createElectronKafkaBackend>> | undefined;
+let natsBackend: ReturnType<typeof createNatsBackend> | undefined;
 let providers: ProviderHostRegistry | undefined;
 let runningShell: RunningElectronShell | undefined;
 let shutdownPromise: Promise<void> | undefined;
@@ -75,11 +81,13 @@ function shutdown(exitCode: number): Promise<void> {
   } catch (cause) {
     attempts.push(Promise.reject(new Error("Desktop shell cleanup failed.", { cause })));
   }
-  try {
-    if (providers !== undefined) attempts.push(providers.shutdown());
-    else if (backend !== undefined) attempts.push(backend.shutdown());
-  } catch (cause) {
-    attempts.push(Promise.reject(new Error("Desktop provider shutdown failed.", { cause })));
+  const ownedProviders = providers === undefined ? [backend, natsBackend] : [providers];
+  for (const owner of ownedProviders) {
+    try {
+      if (owner !== undefined) attempts.push(owner.shutdown());
+    } catch (cause) {
+      attempts.push(Promise.reject(new Error("Desktop provider shutdown failed.", { cause })));
+    }
   }
   void Promise.allSettled(attempts).then((results) => {
     const failed = results.some((result) => result.status === "rejected");
@@ -112,16 +120,31 @@ async function start(): Promise<void> {
       plugins.rendererAsset(path),
     );
   }
+  const userDataPath = app.getPath("userData");
+  const profileProtection = await initializeElectronProfileProtection(
+    safeStorage,
+    process.platform,
+  );
   backend = await createElectronKafkaBackend({
     platform: process.platform,
     safeStorage,
-    userDataPath: app.getPath("userData"),
+    userDataPath,
     plugins,
+    profileProtection,
   });
-  providers = new ProviderHostRegistry([createKafkaProviderEndpoint(backend)]);
+  natsBackend = createNatsBackend({
+    profileStore: createElectronNatsProfileStore({ userDataPath, profileProtection }),
+  });
+  providers = new ProviderHostRegistry([
+    createKafkaProviderEndpoint(backend),
+    createNatsProviderEndpoint(natsBackend),
+  ]);
   runningShell = await createElectronShell({
     registry: providers,
-    deliveryBindings: [createKafkaElectronDeliveryBinding(backend)],
+    deliveryBindings: [
+      createKafkaElectronDeliveryBinding(backend),
+      createNatsElectronDeliveryBinding(),
+    ],
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl: developmentRendererUrl ?? PACKAGED_RENDERER_URL,
   });

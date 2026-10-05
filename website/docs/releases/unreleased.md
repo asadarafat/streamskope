@@ -21,7 +21,11 @@ Desktop and development hosts isolate registered provider routes, event streams
 and shutdown ownership while preserving the existing Kafka host API. Desktop
 event failures mark the affected stream unavailable; replacement subscriptions
 cannot acknowledge events from an earlier subscription. Kafka remains the only
-available messaging provider at this stage.
+available messaging provider in the UI at this stage. The hosts now include a
+separately typed Core NATS backend with protected native profiles, verified
+token/TLS connections and confirmed live subscription cleanup. Its operator
+workspace is introduced and qualified separately. Core NATS offers live receipt
+only; it does not provide Kafka offsets, subject inventory or historical replay.
 
 The product shell now owns shared navigation presentation and layout. Provider
 switching waits for confirmed stream stop and disconnect, retains the current
