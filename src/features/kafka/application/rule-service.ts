@@ -22,6 +22,7 @@ import {
   KafkaRuleValidationError,
 } from "./rule-errors";
 import { cloneKafkaRuleDocument } from "./in-memory-rule-store";
+import { SerialMutationQueue } from "./serial-mutation-queue";
 import type {
   KafkaRuleDocument,
   KafkaRuleEvaluator,
@@ -251,7 +252,7 @@ export class KafkaRuleService {
   private document: KafkaRuleDocument = emptyDocument();
   private loaded = false;
   private loadPromise: Promise<void> | undefined;
-  private mutationTail: Promise<void> = Promise.resolve();
+  private readonly mutations = new SerialMutationQueue();
   private ruleDataUnavailable = false;
 
   constructor(
@@ -260,7 +261,7 @@ export class KafkaRuleService {
   ) {}
 
   create(input: KafkaRuleDefinition, signal?: AbortSignal): Promise<KafkaRuleSnapshot> {
-    return this.mutate(() => this.completeCreate(input, signal), signal);
+    return this.mutations.enqueue(() => this.completeCreate(input, signal), signal);
   }
 
   currentSnapshot(): KafkaRuleSnapshot {
@@ -268,7 +269,7 @@ export class KafkaRuleService {
   }
 
   delete(name: string, signal?: AbortSignal): Promise<KafkaRuleSnapshot> {
-    return this.mutate(() => this.completeDelete(name, signal), signal);
+    return this.mutations.enqueue(() => this.completeDelete(name, signal), signal);
   }
 
   evaluate(
@@ -346,7 +347,7 @@ export class KafkaRuleService {
     input: KafkaRuleDefinition,
     signal?: AbortSignal,
   ): Promise<KafkaRuleSnapshot> {
-    return this.mutate(() => this.completeUpdate(originalName, input, signal), signal);
+    return this.mutations.enqueue(() => this.completeUpdate(originalName, input, signal), signal);
   }
 
   validate(input: KafkaRuleDefinition): KafkaRuleEvaluationResult {
@@ -497,18 +498,6 @@ export class KafkaRuleService {
         cause: error,
       });
     }
-  }
-
-  private mutate<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const result = this.mutationTail.then(async () => {
-      signal?.throwIfAborted();
-      return operation();
-    });
-    this.mutationTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
   }
 
   private ruleIndex(name: string): number {
