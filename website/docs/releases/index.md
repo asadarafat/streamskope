@@ -26,6 +26,15 @@ their own versions and declared desktop, plugin API and target-system compatibil
 A desktop release does not publish new plugin packages or widen existing package
 compatibility. See [plugin versioning and compatibility](../plugins/versioning.md).
 
+<!-- plugin-release-history -->
+
+| Plugin release    | Archived notes                                  | Published assets                                                                            |
+| ----------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| EDA Capture 0.1.0 | [Read the release notes](plugins/eda/v0.1.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.1.0) |
+| NSP Capture 0.1.0 | [Read the release notes](plugins/nsp/v0.1.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.1.0) |
+
+<!-- /plugin-release-history -->
+
 ## Read qualification evidence
 
 Release notes distinguish executed checks from limitations and checks that were
