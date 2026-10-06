@@ -89,15 +89,23 @@ export function usePluginAcquisitions(host: StreamSkopeHost): PluginAcquisitions
         if (request.cancelled || !active.current) {
           // A host that completed while cancellation was in flight may return a
           // valid review receipt. Release it without ever applying it to the UI.
-          const result: HostCommandResponse = response;
-          if (result.ok && result.command === "plugins.package.inspect") {
-            const candidateId = result.result.pluginPackage?.candidateId;
-            if (candidateId !== undefined)
+          if (
+            response.ok &&
+            response.command === "plugins.package.inspect" &&
+            "pluginPackage" in response.result
+          ) {
+            const pluginPackage = response.result.pluginPackage;
+            if (
+              pluginPackage !== null &&
+              typeof pluginPackage === "object" &&
+              "candidateId" in pluginPackage &&
+              typeof pluginPackage.candidateId === "string"
+            )
               await host.execute({
                 command: "plugins.package.discard",
                 id: crypto.randomUUID(),
                 version: HOST_PROTOCOL_VERSION,
-                payload: { candidateId },
+                payload: { candidateId: pluginPackage.candidateId },
               });
           }
           throw new PluginAcquisitionCancelled();

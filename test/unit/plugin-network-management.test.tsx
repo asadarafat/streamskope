@@ -85,7 +85,7 @@ it("preserves a failed remote-check progress state when the host returns usable 
   });
   expect(await screen.findByText(/Update check:.*failed/u)).toBeVisible();
   expect(screen.queryByText(/Update check:.*succeeded/u)).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Install", exact: true })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Install" })).toBeEnabled();
 });
 
 it("keeps native proxy limits truthful and saves acquisition-only offline settings while local actions remain available", async () => {
@@ -331,9 +331,7 @@ it("cancels a pending acquisition on unmount and releases any late review receip
   });
   const { host, commands } = fixture({ inspectDeferred: () => pending });
   const view = render(<PluginsPanel host={host} />);
-  await userEvent
-    .setup()
-    .click(await screen.findByRole("button", { name: "Install", exact: true }));
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Install" }));
   await waitFor(() =>
     expect(commands.some((entry) => entry.command === "plugins.package.inspect")).toBe(true),
   );

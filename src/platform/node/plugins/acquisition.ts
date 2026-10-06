@@ -172,7 +172,7 @@ export class PluginAcquisitions {
     let result: T | undefined;
     let completed = false;
     try {
-      result = await ownedResult(
+      result = await ownedResult<T>(
         Promise.resolve().then(() => task(context)),
         context.signal,
         discardLate,

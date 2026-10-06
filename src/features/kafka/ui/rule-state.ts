@@ -178,6 +178,7 @@ function reduceHostEvent(state: KafkaRuleUiState, event: HostEvent): KafkaRuleUi
   switch (event.event) {
     case "plugin.event":
     case "plugins.changed":
+    case "plugins.network.progress":
       return sequenced;
     case "backend.availability":
       return event.payload.state === "unavailable"
