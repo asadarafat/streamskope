@@ -4,7 +4,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { GridColDef } from "@mui/x-data-grid";
 
-import type { NatsProfileStoreCapability, NatsProfileSummary } from "../contracts";
+import type { NatsProfileSummary } from "../contracts";
 import { StudioInventoryGrid } from "../../../platform/ui/StudioInventoryGrid";
 import {
   StudioAlert as Alert,
@@ -17,25 +17,11 @@ import {
 import { streamSkopeMuiMonospaceTypography } from "../../../platform/ui/createStreamSkopeTheme";
 
 import { ProfileEditor } from "./ProfileEditor";
+import {
+  captureNatsProfile as captureProfile,
+  natsProfileStorageLabel as capabilityText,
+} from "./profile-presentation";
 import type { NatsWorkspaceController } from "./use-nats-workspace";
-
-function capabilityText(capability: NatsProfileStoreCapability | undefined): string {
-  if (capability === undefined) return "Profile storage capability is not yet available.";
-  if (capability.state === "unavailable")
-    return `Profile storage unavailable. ${capability.recovery ?? "Restore protected storage and retry."}`;
-  if (capability.durability === "session" && capability.protection === "memory")
-    return "Session profiles · credentials held in memory. Profiles are lost when this development host restarts.";
-  return "Durable profiles · credentials protected by the operating system.";
-}
-
-function captureProfile(profile: NatsProfileSummary): NatsProfileSummary {
-  return {
-    ...profile,
-    servers: [...profile.servers],
-    authentication: { ...profile.authentication },
-    tls: { ...profile.tls },
-  };
-}
 
 export function ProfileWorkspace({
   controller,

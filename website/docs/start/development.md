@@ -53,7 +53,7 @@ STREAMSKOPE_DEV_PUBLIC_HOST=127.0.0.1 npm run dev
 ## 2. Connect to local Kafka
 
 1. Open **Connection Profiles**.
-2. Find **Local AIO Kafka** and click its connect/play button.
+2. Find **Local AIO Kafka**, check that its **System** is Kafka, and select **Connect**.
 3. Wait for **Connected** in the bottom status bar.
 
 **You should see:** the topic list. If connection fails, open **Raw logs** at the
@@ -87,8 +87,8 @@ To connect a different broker, follow [Connect your Kafka](../guide/connections.
 ## Try local NATS
 
 The launcher also prepares the private `aio-nats` lab and a **Local AIO NATS**
-session profile. Select **NATS** with **Messaging provider**, connect that
-profile and open **Live Subscription**. Enter `streamskope.fixture.>` and select
+session profile. In **Connection Profiles**, connect **Local AIO NATS** from its
+NATS row, then open **Live Subscription**. Enter `streamskope.fixture.>` and select
 **Start subscription** before publishing a sample batch:
 
 ```sh

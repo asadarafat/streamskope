@@ -1,5 +1,5 @@
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
-import type { StreamSkopeHost } from "../contracts";
+import type { HostEvent, StreamSkopeHost } from "../contracts";
 import { StreamSkopeThemeProvider } from "../../../platform/ui/StreamSkopeThemeProvider";
 
 import { StreamSkopeWorkbench, type StreamSkopeWorkbenchProperties } from "./StreamSkopeWorkbench";
@@ -10,6 +10,9 @@ export interface StreamSkopeAppProperties {
   readonly desktop?: StreamSkopeDesktop | undefined;
   readonly host: StreamSkopeHost;
   readonly providerControl?: React.ReactNode;
+  readonly profilesPage?: React.ReactNode;
+  readonly initialConnectionEvent?:
+    Extract<HostEvent, { readonly event: "connection.state" }> | undefined;
   readonly isInteractive?: (() => boolean) | undefined;
   readonly initialQueryImport?: string | undefined;
   readonly pluginImporter?: PluginRendererImporter | undefined;
@@ -24,6 +27,8 @@ export function KafkaWorkspace({
   streamMonitorObserver,
   initialQueryImport,
   providerControl,
+  profilesPage,
+  initialConnectionEvent,
   isInteractive,
 }: StreamSkopeAppProperties): React.JSX.Element {
   return (
@@ -33,6 +38,8 @@ export function KafkaWorkspace({
         host={host}
         initialQueryImport={initialQueryImport}
         providerControl={providerControl}
+        profilesPage={profilesPage}
+        initialConnectionEvent={initialConnectionEvent}
         isInteractive={isInteractive}
         {...(streamMonitorObserver === undefined ? {} : { streamMonitorObserver })}
       />

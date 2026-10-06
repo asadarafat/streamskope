@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment } from "../../src/platform/dev-host";
+import { launchProductWebFixture } from "../support/product-web-fixture";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
 import { startConnectFixture } from "../support/connect-fixture";
 import { observeBrowserDiagnostics } from "../support/workbench-browser";
@@ -41,10 +41,10 @@ test("reviews real Connect creation and a snapshot promotion without writing bef
   const name = "browser-owned-sink";
   const backend = createKafkaBackend();
   const diagnostics = observeBrowserDiagnostics(page);
-  let launch: Awaited<ReturnType<typeof launchWebDevelopment>> | undefined;
+  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   try {
     await fixture.admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await port(),
       rendererPort: await port(),

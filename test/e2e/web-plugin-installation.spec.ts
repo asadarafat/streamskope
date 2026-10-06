@@ -7,7 +7,10 @@ import { promisify } from "node:util";
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import {
   createBrowserKafkaProfileStore,
   createKafkaBackend,
@@ -126,7 +129,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     });
     const backend = createKafkaBackend({ profileStore: profiles, plugins });
     await plugins.start();
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend: Object.assign(backend, { pluginAsset: plugins.rendererAsset.bind(plugins) }),
       hostPort: await port(),
       rendererPort: await port(),
@@ -148,7 +151,10 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
       0,
     );
     await expect(
-      page.getByRole("menuitem", { name: "Existing Kafka cluster", exact: true }),
+      page.getByRole("menuitem", {
+        name: /^(?:Kafka broker|Existing Kafka cluster)$/u,
+        exact: true,
+      }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await openPlugins(page);
@@ -241,7 +247,10 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
       0,
     );
     await expect(
-      page.getByRole("menuitem", { name: "Existing Kafka cluster", exact: true }),
+      page.getByRole("menuitem", {
+        name: /^(?:Kafka broker|Existing Kafka cluster)$/u,
+        exact: true,
+      }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     available = fixtures.update;
@@ -322,7 +331,7 @@ test("reviews signed files, preserves a working plugin after a failed update, an
   try {
     await plugins.start();
     const backend = createKafkaBackend({ profileStore: createBrowserKafkaProfileStore(), plugins });
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend: Object.assign(backend, { pluginAsset: plugins.rendererAsset.bind(plugins) }),
       hostPort: await port(),
       rendererPort: await port(),

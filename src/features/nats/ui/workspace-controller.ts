@@ -46,6 +46,7 @@ export interface NatsWorkspaceOwner extends NatsWorkspaceActions {
 export function createNatsWorkspaceOwner(
   host: NatsHost,
   isInteractive: () => boolean,
+  observation: "workspace" | "control-only" = "workspace",
 ): NatsWorkspaceOwner {
   let state = initialNatsWorkspaceSnapshot();
   let window = emptyNatsRecordWindow();
@@ -119,6 +120,8 @@ export function createNatsWorkspaceOwner(
       return;
     }
     if (event.event === "records.batch") {
+      // Connection management observes control state without retaining another live window.
+      if (observation === "control-only") return;
       if (
         event.payload.generation !== state.subscription.generation ||
         !["loading", "streaming", "stopping", "stopped", "failed"].includes(

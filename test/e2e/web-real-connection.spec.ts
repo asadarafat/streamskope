@@ -8,7 +8,10 @@ import { expect, test } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import {
   PRIVATE_RUNBOOK_ARTIFACT_SENTINEL,
   RULE_EXPRESSION_ARTIFACT_SENTINEL,
@@ -86,7 +89,7 @@ function activeKafkaBackend(): ReturnType<typeof createKafkaBackend> {
 test.describe("real StreamSkope browser connection", () => {
   test.beforeEach(async () => {
     kafkaBackend = createKafkaBackend();
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend: kafkaBackend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),
@@ -873,7 +876,9 @@ test.describe("real StreamSkope browser connection", () => {
       "Session-only",
     );
     await page.getByRole("button", { name: "Add connection" }).click();
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .click();
     const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
     await editor.getByRole("textbox", { name: "Profile name" }).fill("Local stored aio");
     await editor.getByRole("textbox", { name: "Bootstrap brokers" }).fill(fixture.kafkaEndpoint);
@@ -889,7 +894,7 @@ test.describe("real StreamSkope browser connection", () => {
     await editor.getByRole("textbox", { name: "OAuth scope" }).fill(config.oauthScope);
     await editor.getByRole("button", { name: "Save profile" }).click();
 
-    const profileList = page.getByRole("list", { name: "Kafka connection profiles" });
+    const profileList = page.getByTestId("connection-profiles-grid");
     await expect(profileList.getByText("Local stored aio")).toBeVisible();
     await page.getByRole("searchbox", { name: "Search profiles" }).fill(fixture.kafkaEndpoint);
     await expect(profileList.getByText("Local stored aio")).toBeVisible();

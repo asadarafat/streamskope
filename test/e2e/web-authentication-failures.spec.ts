@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { loadFixtureConfig } from "../support/kafka-fixture";
 import {
   collapseActivity,
@@ -37,7 +40,7 @@ async function reservePort(): Promise<number> {
 
 test.describe("StreamSkope browser authentication failures", () => {
   test.beforeEach(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend: createKafkaBackend(),
       hostPort: await reservePort(),
       rendererPort: await reservePort(),

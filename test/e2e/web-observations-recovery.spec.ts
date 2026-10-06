@@ -8,7 +8,7 @@ import { expect, test, type Locator } from "@playwright/test";
 import { HOST_PROTOCOL_VERSION, type HostCommand } from "../../src/features/kafka/contracts";
 import { MemoryObservationStore } from "../../src/features/kafka/application/observation-store";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type DevelopmentBackend } from "../../src/platform/dev-host";
+import { launchProductWebFixture, type DevelopmentBackend } from "../support/product-web-fixture";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
 import { testHostExecute } from "../support/host-response";
 import { observeBrowserDiagnostics } from "../support/workbench-browser";
@@ -89,7 +89,7 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
   const diagnostics = observeBrowserDiagnostics(page);
   const topic = "browser-health-investigation",
     groupId = "browser-health-workers";
-  let launch: Awaited<ReturnType<typeof launchWebDevelopment>> | undefined;
+  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   let failure: { readonly cause: unknown } | undefined;
   try {
     await fixture.admin.createTopics({ topics: [{ topic, partitions: 2, replicas: 1 }] });
@@ -117,7 +117,7 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
         { timeout: 15_000 },
       )
       .toBe(true);
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await port(),
       rendererPort: await port(),

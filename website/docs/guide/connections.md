@@ -2,6 +2,9 @@
 
 Save a connection profile, test it, and open your cluster's topics.
 A profile keeps the settings for one Kafka connection together.
+**Connection Profiles** lists saved Kafka and NATS connections together. Check
+the **System** column before connecting. Selecting, editing or saving a profile
+does not replace the active connection; its **Connect** action does.
 
 Trying StreamSkope for the first time? Follow the [desktop quickstart](../start/quickstart.md).
 For a disposable broker in a development checkout, use the [development sandbox](../start/development.md).
@@ -23,7 +26,7 @@ these services use different issuing CAs; there is no separate CA field per serv
 
 ## Configure manually
 
-1. Open **Connection Profiles**, then **Add connection → Existing Kafka cluster**.
+1. Open **Connection Profiles**, then **Add connection → Kafka broker**.
 2. Enter a **Profile name** you will recognize and the **Bootstrap brokers**.
 3. Keep the default **TLS** broker transport and select the matching certificate
    or truststore, or deliberately select **Plaintext (insecure)** for an isolated
@@ -35,11 +38,14 @@ these services use different issuing CAs; there is no separate CA field per serv
    broker transport; HTTPS endpoints still verify certificates.
 5. Click **Test connection**. Wait for the result. If it fails, open **Raw logs**
    and resolve the reported connection, certificate or authentication problem.
-6. Click **Save profile**. Find the saved profile and click its connect/play button.
+6. Click **Save profile**. Find the saved Kafka profile and select **Connect**.
 7. Wait for **Connected**, then open **Topics**.
 
 **You should see:** the topics your account can access. Testing checks the supplied
 settings; you still need to save and connect to use them.
+Only one connection is active. Connecting a profile for another system stops the
+current stream and disconnects its host before connecting the selected profile.
+If cleanup fails, follow the recovery message for the original connection.
 
 <figure class="product-shot">
   <img data-sk-light="profiles.png" data-sk-dark="profiles-dark.png" alt="Connection profiles in StreamSkope" width="2880" height="1800" loading="lazy" decoding="async">

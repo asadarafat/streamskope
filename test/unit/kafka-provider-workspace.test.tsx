@@ -27,7 +27,7 @@ vi.mock("../../src/features/kafka/ui/StreamSkopeApp", () => ({
   KafkaWorkspace: (properties: StreamSkopeAppProperties): React.JSX.Element => {
     rendered.hosts.push(properties.host);
     rendered.imports.push(properties.initialQueryImport);
-    return <div>{properties.providerControl}</div>;
+    return <div>{properties.profilesPage}</div>;
   },
 }));
 
@@ -286,7 +286,7 @@ describe("Kafka workspace registration", () => {
         initialQueryImport: "preserved-first-visit",
       });
       const firstVisit = render(
-        registration.render({ isInteractive: () => true, providerControl: null }),
+        registration.render({ isInteractive: () => true, profilesPage: null }),
       );
       firstVisit.unmount();
       const result = await registration.deactivate();
@@ -295,7 +295,7 @@ describe("Kafka workspace registration", () => {
       expect(fixture.commands.map((command) => command.command)).toEqual(
         phase === "stop" ? ["messages.stop"] : ["messages.stop", "connection.disconnect"],
       );
-      render(registration.render({ isInteractive: () => true, providerControl: null }));
+      render(registration.render({ isInteractive: () => true, profilesPage: null }));
       expect(rendered.imports.at(-1)).toBe("preserved-first-visit");
     },
   );
@@ -321,21 +321,19 @@ describe("Kafka workspace registration", () => {
     let interactive = true;
     const isInteractive = (): boolean => interactive;
     const view = render(
-      registration.render({ isInteractive, providerControl: <span>Initial control</span> }),
+      registration.render({ isInteractive, profilesPage: <span>Initial control</span> }),
     );
     const first = rendered.hosts.at(-1);
     expect(first).toBeDefined();
     expect(first).not.toBe(fixture.host);
     expect(rendered.imports.at(-1)).toBe("first-import");
     interactive = false;
-    view.rerender(
-      registration.render({ isInteractive, providerControl: <span>Busy control</span> }),
-    );
+    view.rerender(registration.render({ isInteractive, profilesPage: <span>Busy control</span> }));
     expect(rendered.hosts.at(-1)).toBe(first);
     expect(rendered.imports.at(-1)).toBe("first-import");
     await expect(registration.deactivate()).resolves.toEqual({ state: "ready" });
     view.unmount();
-    render(registration.render({ isInteractive: () => true, providerControl: null }));
+    render(registration.render({ isInteractive: () => true, profilesPage: null }));
     expect(rendered.hosts.at(-1)).not.toBe(first);
     expect(rendered.imports.at(-1)).toBeUndefined();
   });

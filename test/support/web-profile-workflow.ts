@@ -1,12 +1,19 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { loadFixtureConfig, loadFixtureConnection } from "./kafka-fixture";
+
+export async function openRetrievalLibrary(editor: Locator): Promise<void> {
+  await editor
+    .getByRole("button", { name: "Retrieve certificates and credentials", exact: true })
+    .click();
+  await editor.getByRole("button", { name: "Manage retrieval presets", exact: true }).click();
+}
 
 export async function configureLocalConnection(page: Page, clientSecret?: string): Promise<void> {
   const config = await loadFixtureConfig();
   const fixture = await loadFixtureConnection();
   await page.getByRole("button", { name: "Add connection" }).click();
-  await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+  await page.getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u }).click();
   const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
   await editor.getByRole("textbox", { name: "Profile name" }).fill("Local aio");
   await editor.getByRole("textbox", { name: "Bootstrap brokers" }).fill(fixture.kafkaEndpoint);

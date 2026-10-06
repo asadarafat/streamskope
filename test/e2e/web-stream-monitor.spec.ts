@@ -13,7 +13,10 @@ import {
   type HostEventListener,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { testHostAccepted, testHostResponse } from "../support/host-response";
 
 class StreamMonitorBackend implements StreamSkopeBackend {
@@ -130,7 +133,7 @@ test.describe("StreamSkope browser Stream Monitor", () => {
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),

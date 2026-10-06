@@ -52,13 +52,20 @@ import {
 import { RemoteTrustAcquisitionPanel } from "./RemoteTrustAcquisitionPanel";
 
 interface ProfileDialogProperties {
+  readonly onConnectProfile?:
+    | ((
+        profileId: string,
+      ) => Promise<import("../../../platform/ui/provider-workspaces").ProviderConnectionOutcome>)
+    | undefined;
+  readonly onProfileSaved?: ((profileId: string) => void) | undefined;
   readonly transfer?: TextDocumentTransferPort | undefined;
   readonly host: StreamSkopeHost;
   readonly onClose: () => void;
   readonly onOpenActivity: (correlationId?: string) => void;
   readonly open: boolean;
-  readonly profile?: ProfileSummary;
-  readonly initialDestination?: { readonly name: string; readonly brokers: readonly string[] };
+  readonly profile?: ProfileSummary | undefined;
+  readonly initialDestination?:
+    { readonly name: string; readonly brokers: readonly string[] } | undefined;
 }
 
 export function ProfileDialog({
@@ -69,6 +76,8 @@ export function ProfileDialog({
   open,
   profile,
   initialDestination,
+  onConnectProfile,
+  onProfileSaved,
 }: ProfileDialogProperties): React.JSX.Element {
   const [retrievalOpen, setRetrievalOpen] = useState(false);
   const [retrievalStarted, setRetrievalStarted] = useState(false);
@@ -136,15 +145,18 @@ export function ProfileDialog({
     setSubmissionError(undefined);
     setSubmitting(true);
     try {
-      const response = await host.execute({
-        command: "profiles.connect",
-        id: globalThis.crypto.randomUUID(),
-        payload: { profileId },
-        version: HOST_PROTOCOL_VERSION,
-      });
+      const response =
+        onConnectProfile === undefined
+          ? await host.execute({
+              command: "profiles.connect",
+              id: globalThis.crypto.randomUUID(),
+              payload: { profileId },
+              version: HOST_PROTOCOL_VERSION,
+            })
+          : await onConnectProfile(profileId);
       if (!response.ok) {
         setSubmissionError(
-          `Profile saved. Connection failed: ${response.error.summary} ${response.error.recovery}`,
+          `Profile saved. Connection failed: ${"error" in response ? response.error.summary : response.summary} ${"error" in response ? response.error.recovery : response.recovery}`,
         );
         return;
       }
@@ -351,8 +363,10 @@ export function ProfileDialog({
         return;
       }
       setAcquisition(null);
+      const savedId = "profileId" in response.result ? response.result.profileId : undefined;
+      if (savedId !== undefined) onProfileSaved?.(savedId);
       if (connect) {
-        const id = "profileId" in response.result ? response.result.profileId : undefined;
+        const id = savedId;
         if (id === undefined) {
           setSavedWithoutIdentity(true);
           setSubmissionError(

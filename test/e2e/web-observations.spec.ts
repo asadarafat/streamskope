@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment } from "../../src/platform/dev-host";
+import { launchProductWebFixture } from "../support/product-web-fixture";
 import { ConnectHttpAdapter, ConnectHttpError } from "../../src/features/kafka/engine/connect-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
@@ -56,7 +56,7 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
       baseUrl: worker.url,
       authorization: (): Promise<undefined> => Promise.resolve(undefined),
     };
-  let launch: Awaited<ReturnType<typeof launchWebDevelopment>> | undefined;
+  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   try {
     await fixture.admin.createTopics({ topics: [{ topic, partitions: 2, replicas: 1 }] });
     await expect
@@ -120,7 +120,7 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
         { timeout: 45000 },
       )
       .toBe("RUNNING");
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await port(),
       rendererPort: await port(),

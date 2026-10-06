@@ -48,6 +48,54 @@ const input: NatsProfileCreateInput = {
 };
 
 describe("NATS mounted workspace authority", () => {
+  it("observes profiles and control revisions without retaining or publishing live records in management mode", async () => {
+    const host = natsUiHostFixture();
+    const owner = createNatsWorkspaceOwner(host.host, () => true, "control-only");
+    owners.push(owner);
+    owner.start();
+    host.bootstrap();
+    await vi.waitFor(() => expect(owner.snapshot().loading).toBe(false));
+    host.emit({
+      event: "subscription.changed",
+      operation: "subscription.start",
+      correlationId: "start",
+      payload: uiNatsSubscription(),
+    });
+    const before = owner.snapshot();
+    const listener = vi.fn();
+    owner.subscribe(listener);
+    host.emit({
+      event: "records.batch",
+      operation: "subscription.start",
+      correlationId: "start",
+      payload: {
+        generation: "generation-1",
+        records: [uiNatsRecord()],
+        counters: uiNatsSubscription("streaming", "generation-1", 1).counters,
+      },
+    });
+    expect(owner.snapshot()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+    expect(owner.snapshot().records).toEqual([]);
+    host.emit({
+      event: "connection.state",
+      operation: "connection.disconnect",
+      correlationId: "disconnect",
+      payload: { revision: 2, state: "disconnected", profile: null },
+    });
+    host.emit({
+      event: "connection.state",
+      operation: "profiles.connect",
+      correlationId: "late-connect",
+      payload: {
+        revision: 1,
+        state: "connected",
+        profile: { id: uiNatsProfile.id, revision: 1, name: uiNatsProfile.name },
+      },
+    });
+    expect(owner.snapshot().connection).toMatchObject({ revision: 2, state: "disconnected" });
+  });
+
   it("subscribes before bootstrap and removes exactly its admitted listener", () => {
     const f = fixture();
     expect(f.host.calls).toEqual(["subscribe", "profiles.list"]);

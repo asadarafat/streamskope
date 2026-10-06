@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import {
   loadFixtureConnection,
   provisionSeededFixtureTopic,
@@ -31,7 +34,7 @@ async function reservePort(): Promise<number> {
 }
 
 test.beforeEach(async () => {
-  launch = await launchWebDevelopment({
+  launch = await launchProductWebFixture({
     backend: createKafkaBackend(),
     hostPort: await reservePort(),
     rendererPort: await reservePort(),

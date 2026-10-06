@@ -9,7 +9,10 @@ import { expect, test } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 import { loadFixtureConnection } from "../support/kafka-fixture";
 import { configureLocalConnection } from "../support/web-profile-workflow";
@@ -119,7 +122,7 @@ for (const [kind, extraction, width, colorScheme] of [
           },
         }),
       ).toMatchObject({ ok: true });
-      launch = await launchWebDevelopment({
+      launch = await launchProductWebFixture({
         backend,
         hostPort: await freePort(),
         rendererPort: await freePort(),

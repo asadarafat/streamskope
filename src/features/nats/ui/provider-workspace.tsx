@@ -13,6 +13,7 @@ import {
 } from "../contracts";
 
 import { NatsWorkspace } from "./NatsWorkspace";
+import { createNatsProfilesFacet } from "./profiles-facet";
 import type { NatsWorkspaceSource } from "./workspace-types";
 
 /** Revoke new ownership; admitted receipts and listeners still observe original cleanup. */
@@ -23,7 +24,7 @@ export function createInteractiveNatsHost(host: NatsHost, isInteractive: () => b
     ): Promise<NatsCommandResponse<Command["command"]>> => {
       if (!isInteractive()) {
         throw new Error(
-          "This NATS workspace is inactive. Finish the provider switch before submitting another request.",
+          "This NATS workspace is inactive. Finish the connection change before submitting another request.",
         );
       }
       return host.execute(command);
@@ -61,7 +62,7 @@ export function createNatsWorkspaceRegistration({
     return (
       <NatsWorkspace
         source={gatedSource}
-        providerControl={controls.providerControl}
+        profilesPage={controls.profilesPage}
         isInteractive={controls.isInteractive}
       />
     );
@@ -72,16 +73,17 @@ export function createNatsWorkspaceRegistration({
           state: "blocked",
           summary: "NATS subscription could not be stopped.",
           recovery:
-            "Keep NATS selected, stop the subscription successfully, then retry the provider switch.",
+            "Stop the NATS subscription successfully, then retry Connect from Connection Profiles.",
         }
       : {
           state: "blocked",
           summary: "NATS could not be disconnected.",
-          recovery: "Keep NATS selected, disconnect successfully, then retry the provider switch.",
+          recovery: "Disconnect NATS successfully, then retry Connect from Connection Profiles.",
         };
   return {
     id: "nats",
     label: "NATS",
+    profiles: createNatsProfilesFacet(source),
     render: (controls): React.JSX.Element => <RegisteredNatsWorkspace controls={controls} />,
     deactivate: async (): Promise<ProviderDeactivationResult> => {
       // A never-rendered or unavailable workspace owns no host resources.

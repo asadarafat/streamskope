@@ -14,7 +14,10 @@ import {
   type KafkaLiveRuleEvaluation,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { expectWorkbenchReady } from "../support/workbench-browser";
 import { testHostAccepted } from "../support/host-response";
 
@@ -201,7 +204,7 @@ test.describe("StreamSkope browser workbench", () => {
   test.describe.configure({ mode: "serial", timeout: 60_000 });
 
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),
@@ -357,7 +360,7 @@ test.describe("StreamSkope browser workbench", () => {
       },
     });
 
-    await expect(page.getByText("Add a connection profile to connect to Kafka.")).toBeVisible();
+    await expect(page.getByText("Add a Kafka or NATS connection to get started.")).toBeVisible();
     await expect(page.getByRole("status", { name: "Profile storage status" })).toContainText(
       "Session-only",
     );
@@ -365,7 +368,9 @@ test.describe("StreamSkope browser workbench", () => {
     await expect(addProfile).toBeEnabled();
     await addProfile.focus();
     await page.keyboard.press("Enter");
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).focus();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .focus();
     await page.keyboard.press("Enter");
     const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
     await expect(editor).toBeVisible();
@@ -440,7 +445,7 @@ test.describe("StreamSkope browser workbench", () => {
         },
       },
     });
-    const profileList = page.getByRole("list", { name: "Kafka connection profiles" });
+    const profileList = page.getByTestId("connection-profiles-grid");
     await expect(profileList.getByText("Local aio")).toBeVisible();
     const stagingProfile = profileList.getByRole("button", { name: "Select profile Staging" });
     await expect(stagingProfile).toBeVisible();
@@ -449,6 +454,7 @@ test.describe("StreamSkope browser workbench", () => {
     await page.getByRole("searchbox", { name: "Search profiles" }).fill("9094");
     await expect(stagingProfile).toBeVisible();
     await expect(profileList.getByText("Local aio")).toBeHidden();
+    await stagingProfile.click();
     await expect(page.getByRole("heading", { name: "Staging", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Local aio", exact: true })).toHaveCount(0);
     await page.screenshot({
@@ -483,7 +489,9 @@ test.describe("StreamSkope browser workbench", () => {
     await expect(unavailable).toContainText(
       "Unlock the operating-system credential store, then restart StreamSkope.",
     );
-    await expect(page.getByRole("button", { name: "Add connection" })).toBeDisabled();
+    await page.getByRole("button", { name: "Add connection" }).click();
+    await expect(page.getByRole("menuitem", { name: "Kafka broker", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Configure ad hoc connection" })).toHaveCount(0);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
@@ -500,7 +508,9 @@ test.describe("StreamSkope browser workbench", () => {
       },
     });
     await page.getByRole("button", { name: "Add connection" }).click();
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .click();
     const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
     await expect(editor.getByRole("combobox", { name: "Trust material format" })).toContainText(
       "PEM certificate",

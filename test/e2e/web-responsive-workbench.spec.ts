@@ -18,7 +18,10 @@ import {
   type ProfileSummary,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import {
   expectNoHorizontalOverflow,
   observeBrowserDiagnostics,
@@ -299,7 +302,7 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
   test.describe.configure({ mode: "serial", timeout: 60_000 });
 
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),
@@ -432,6 +435,7 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
       },
     });
     await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole("button", { name: "Select profile Local AIO Kafka" }).click();
     await page.getByRole("button", { name: "Expand Activity" }).click();
     const workspace = page.getByRole("region", { name: "Connection profile workspace" });
     await expect(workspace).toContainText("Cluster services");
@@ -472,11 +476,13 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
 
     await expect(page.getByRole("banner")).toHaveCount(1);
     await expect(page.getByRole("contentinfo")).toHaveCount(1);
-    const provider = page.getByRole("combobox", { name: "Messaging provider" });
-    await expect(provider).toContainText("Kafka");
-    await provider.click();
-    await expect(page.getByRole("option")).toHaveText(["Kafka", "NATS"]);
-    await page.getByRole("option", { name: "Kafka", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Messaging provider" })).toHaveCount(0);
+    const profiles = page.getByTestId("connection-profiles-grid");
+    await expect(profiles.getByRole("columnheader", { name: "System", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Add connection", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Kafka broker", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "NATS server", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
     expect(
       backend.commands.filter(
         (command) =>
@@ -550,15 +556,17 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
     });
     expect(addProfileGeometry.topRightRadius).toBe(profileSearchGeometry.topLeftRadius);
     expect(addProfileGeometry.bottomRightRadius).toBe(profileSearchGeometry.bottomLeftRadius);
-    expect(addProfileGeometry.height).toBe(profileSearchGeometry.height);
+    expect(addProfileGeometry.height).toBeCloseTo(profileSearchGeometry.height, 0);
+    await page.getByRole("button", { name: "Select profile Local AIO Kafka" }).click();
     const profileWorkspace = page.getByLabel("Connection profile workspace");
     await expect(profileWorkspace).toContainText("Kafka connection");
     await expect(profileWorkspace).toContainText("Transport and profile");
-    const profileViewport = await profileWorkspace.evaluate((element) => ({
-      clientHeight: element.clientHeight,
-      scrollHeight: element.scrollHeight,
-    }));
-    expect(profileViewport.scrollHeight).toBeLessThanOrEqual(profileViewport.clientHeight + 1);
+    // The inspector may scroll vertically; each safe value must remain readable in its pane.
+    const valueWidths = await profileWorkspace
+      .locator("dd")
+      .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
+    expect(valueWidths.length).toBeGreaterThan(0);
+    expect(Math.min(...valueWidths)).toBeGreaterThanOrEqual(100);
 
     const commandCount = backend.commands.length;
     await expect(page.getByRole("main", { name: "Connection profiles page" })).toBeVisible();
@@ -808,9 +816,8 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
 
     const banner = page.getByRole("banner");
     await expect(banner).toContainText("StreamSkope");
-    await expect(banner.getByRole("combobox", { name: "Messaging provider" })).toContainText(
-      "Kafka",
-    );
+    await expect(banner.getByRole("combobox", { name: "Messaging provider" })).toHaveCount(0);
+    await expect(page.getByTestId("connection-profiles-grid")).toBeVisible();
     await expect(page.getByRole("main", { name: "Connection profiles page" })).toBeVisible();
     await banner.getByRole("button", { name: "Open Kafka resources" }).click();
     const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });

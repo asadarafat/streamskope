@@ -153,7 +153,7 @@ describe("NATS workspace ownership", () => {
     const registration = createNatsWorkspaceRegistration({ resolveSource });
     expect(resolveSource).not.toHaveBeenCalled();
     let interactive = true;
-    const controls = { isInteractive: (): boolean => interactive, providerControl: null };
+    const controls = { isInteractive: (): boolean => interactive, profilesPage: null };
     const view = render(<StrictMode>{registration.render(controls)}</StrictMode>);
     expect(resolveSource).toHaveBeenCalledTimes(1);
     const first = rendered.sources.at(-1);
@@ -178,7 +178,7 @@ describe("NATS workspace ownership", () => {
       ),
     ).toBe(true);
     view.unmount();
-    render(registration.render({ isInteractive: () => true, providerControl: null }));
+    render(registration.render({ isInteractive: () => true, profilesPage: null }));
     expect(resolveSource).toHaveBeenCalledTimes(1);
     expect(rendered.sources.at(-1)).not.toBe(first);
   });
@@ -206,7 +206,7 @@ describe("NATS workspace ownership", () => {
       const registration = createNatsWorkspaceRegistration({
         resolveSource: () => ({ state: "ready", host: original.host }),
       });
-      render(registration.render({ isInteractive: () => true, providerControl: null }));
+      render(registration.render({ isInteractive: () => true, profilesPage: null }));
       const result = await registration.deactivate();
       expect(result.state).toBe("blocked");
       expect(JSON.stringify(result)).not.toContain("private-token-or-certificate");
@@ -221,7 +221,7 @@ describe("NATS workspace ownership", () => {
     const registration = createNatsWorkspaceRegistration({
       resolveSource: () => ({ state: "ready", host: original.host }),
     });
-    render(registration.render({ isInteractive: () => true, providerControl: null }));
+    render(registration.render({ isInteractive: () => true, profilesPage: null }));
     const result = await registration.deactivate();
     expect(result).toMatchObject({
       state: "blocked",
@@ -239,7 +239,7 @@ describe("NATS workspace ownership", () => {
     const registration = createNatsWorkspaceRegistration({ resolveSource });
     await expect(registration.deactivate()).resolves.toEqual({ state: "ready" });
     expect(resolveSource).not.toHaveBeenCalled();
-    render(registration.render({ isInteractive: () => true, providerControl: null }));
+    render(registration.render({ isInteractive: () => true, profilesPage: null }));
     expect(rendered.sources.at(-1)).toEqual({
       state: "unavailable",
       recovery: "Update this host.",

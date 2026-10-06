@@ -15,7 +15,10 @@ import {
   type KafkaClusterDiagnosticsSnapshot,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { openProfileActions, openWorkbenchResource } from "../support/workbench-browser";
 import { testHostResponse, testHostAccepted } from "../support/host-response";
 
@@ -168,7 +171,7 @@ function publishSnapshot(snapshot: KafkaClusterDiagnosticsSnapshot): void {
 
 test.describe("StreamSkope cluster-details browser workflow", () => {
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),
@@ -227,7 +230,7 @@ test.describe("StreamSkope cluster-details browser workflow", () => {
 
     await openWorkbenchResource(page, "Connection Profiles");
     const profileActionsButton = page.getByRole("button", {
-      name: "More actions for profile Local validation",
+      name: "Profile actions Local validation",
     });
     const openButton = (await openProfileActions(page, "Local validation")).getByRole("menuitem", {
       name: "Cluster detail",

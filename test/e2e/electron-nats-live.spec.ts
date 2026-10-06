@@ -54,13 +54,11 @@ test.afterAll(async (): Promise<void> => {
   }
 });
 
-async function selectNats(page: Page, fixture: NatsFixture): Promise<void> {
-  await expect(page.getByRole("combobox", { name: "Messaging provider" })).toBeVisible({
+async function observeNats(page: Page, fixture: NatsFixture): Promise<void> {
+  await expect(page.getByTestId("connection-profiles-grid")).toBeVisible({
     timeout: 20_000,
   });
-  await page.getByRole("combobox", { name: "Messaging provider" }).click();
-  await page.getByRole("option", { name: "NATS", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Messaging provider" })).toContainText("NATS");
+  await expect(page.getByRole("combobox", { name: "Messaging provider" })).toHaveCount(0);
   await page.evaluate(
     (secrets): void => {
       const target = window as unknown as NativeNatsWindow;
@@ -83,7 +81,11 @@ async function resource(
     .getByRole("navigation", { name: "StreamSkope resources" })
     .getByRole("button", { name, exact: true })
     .click();
-  await expect(page.getByRole("main", { name })).toBeVisible();
+  await expect(
+    page.getByRole("main", {
+      name: name === "Connection Profiles" ? "Connection profiles page" : name,
+    }),
+  ).toBeVisible();
 }
 
 async function snapshot(
@@ -246,8 +248,8 @@ test("restores a genuine protected NATS profile across restart and confirms real
         sandbox: true,
         storage: "gnome_libsecret",
       });
-      phase = "native NATS provider selection";
-      await selectNats(page, fixture!);
+      phase = "native shared catalog and NATS event subscription";
+      await observeNats(page, fixture!);
       return page;
     };
     phase = "protected native profile creation";
@@ -256,7 +258,8 @@ test("restores a genuine protected NATS profile across restart and confirms real
     phase = "native NATS resource navigation";
     await resource(page, "Connection Profiles");
     phase = "native NATS profile editor opening";
-    await page.getByRole("button", { name: "Add NATS profile" }).click();
+    await page.getByRole("button", { name: "Add connection", exact: true }).click();
+    await page.getByRole("menuitem", { name: "NATS server", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Create NATS profile" });
     const name = "Native verified NATS";
     phase = "native NATS public profile fields";
@@ -308,7 +311,8 @@ test("restores a genuine protected NATS profile across restart and confirms real
     ).toBeVisible();
     const restored = await snapshot(page, fixture);
     expect(restored.profiles.profiles).toEqual([original]);
-    await page.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
+    await page.getByRole("button", { name: `Profile actions ${name}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     const restoredEditor = page.getByRole("dialog", { name: "Edit NATS profile" });
     for (const field of [
       restoredEditor.getByLabel("Token", { exact: true }),

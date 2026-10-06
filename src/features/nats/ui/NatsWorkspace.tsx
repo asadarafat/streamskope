@@ -28,13 +28,13 @@ const label = (state: string): string => state.charAt(0).toUpperCase() + state.s
 
 export interface NatsWorkspaceProperties {
   readonly source: NatsWorkspaceSource;
-  readonly providerControl?: ReactNode;
+  readonly profilesPage?: ReactNode;
   readonly isInteractive?: () => boolean;
 }
 
 export function NatsWorkspace({
   source,
-  providerControl,
+  profilesPage,
   isInteractive = alwaysInteractive,
 }: NatsWorkspaceProperties): React.JSX.Element {
   const navigator = useProductNavigator();
@@ -79,9 +79,11 @@ export function NatsWorkspace({
           }}
         >
           <Breadcrumbs aria-label="Breadcrumb" separator="/">
-            <Typography color="text.secondary" variant="body2">
-              NATS
-            </Typography>
+            {navigation === "profiles" && profilesPage !== undefined ? null : (
+              <Typography color="text.secondary" variant="body2">
+                NATS
+              </Typography>
+            )}
             <Typography aria-current="page" variant="body2">
               {navigation === "profiles" ? "Connection Profiles" : "Live Subscription"}
             </Typography>
@@ -95,7 +97,6 @@ export function NatsWorkspace({
         setNavigation(destination);
         navigator.close();
       }}
-      providerControl={providerControl}
       resourceLabel="NATS resources"
       resources={resources}
       status={
@@ -159,7 +160,9 @@ export function NatsWorkspace({
           </Alert>
         )}
         {navigation === "profiles" ? (
-          <ProfileWorkspace controller={controller} isInteractive={isInteractive} />
+          (profilesPage ?? (
+            <ProfileWorkspace controller={controller} isInteractive={isInteractive} />
+          ))
         ) : (
           <SubscriptionWorkspace controller={controller} isInteractive={isInteractive} />
         )}

@@ -6,7 +6,10 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { loadFixtureConfig, loadFixtureConnection } from "../support/kafka-fixture";
 import {
   acquireRemoteJksTrust,
@@ -37,7 +40,7 @@ async function reservePort(): Promise<number> {
 }
 
 test.beforeEach(async () => {
-  launch = await launchWebDevelopment({
+  launch = await launchProductWebFixture({
     backend: createKafkaBackend(),
     hostPort: await reservePort(),
     rendererPort: await reservePort(),
@@ -70,7 +73,9 @@ test("acquires selected remote JKS trust and connects a profile to aio-kafka", a
     await page.setViewportSize({ height: 650, width: 1000 });
     await page.goto(launch.browserUrl);
     await page.getByRole("button", { name: "Add connection" }).click();
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .click();
     const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
     await editor.getByRole("textbox", { name: "Profile name" }).fill("Remote acquired aio");
     await editor.getByRole("textbox", { name: "Bootstrap brokers" }).fill(fixture.kafkaEndpoint);
@@ -155,7 +160,9 @@ test("opens structured Activity from an invalid remote JKS acquisition", async (
     await page.setViewportSize({ height: 650, width: 1000 });
     await page.goto(launch.browserUrl);
     await page.getByRole("button", { name: "Add connection" }).click();
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .click();
     const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
     await editor.getByRole("textbox", { name: "Profile name" }).fill("Invalid remote JKS");
     await prepareRemoteJksTrust(page, ssh);
