@@ -12,6 +12,7 @@ import { createNatsBackend } from "../../src/platform/node/nats-backend";
 import { createKafkaProviderEndpoint } from "../../src/platform/node/kafka-provider";
 import { createNatsProviderEndpoint } from "../../src/platform/node/nats-provider";
 import { ProviderHostRegistry } from "../../src/platform/node/provider-host";
+import { InMemoryNatsProfileStore } from "../../src/features/nats/application";
 
 import { FileFixtureOwnershipStore } from "./kafka-fixture/file-ownership-store";
 import { KafkaFixtureLifecycle } from "./kafka-fixture/lifecycle";
@@ -23,6 +24,8 @@ import {
 } from "./kafka-fixture/development-profile";
 import { startWebDevelopmentCommand, type RunningWebDevelopmentCommand } from "./session";
 import { DevelopmentPluginCatalog } from "./plugin-catalog";
+import { NatsFixtureLifecycle } from "./nats-fixture/lifecycle";
+import { prepareLocalNatsDevelopmentProfile } from "./nats-fixture/development-profile";
 
 let launch: RunningWebDevelopmentCommand | undefined;
 let closing: Promise<void> | undefined;
@@ -43,6 +46,7 @@ function stop(): void {
 async function start(): Promise<void> {
   const repositoryRoot = resolve(process.cwd());
   let profilePreparation: LocalAioDevelopmentProfilePreparation | undefined;
+  let natsProfilePreparation: "seeded" | "unchanged" | "unavailable" | undefined;
   launch = await startWebDevelopmentCommand(webDevelopmentOptions(process.env, repositoryRoot), {
     prepare: async () => {
       process.stdout.write(
@@ -54,6 +58,10 @@ async function start(): Promise<void> {
       );
       await lifecycle.ensureOwned(await defaultOwnedFixtureRequest(repositoryRoot));
       process.stdout.write("Local AIO Kafka, OAuth and Schema Registry are ready on loopback.\n");
+      await new NatsFixtureLifecycle(repositoryRoot).ensure();
+      process.stdout.write(
+        "Local AIO NATS is ready with token authentication and verified TLS on loopback.\n",
+      );
     },
     createProviders: async () => {
       const profileStore = createBrowserKafkaProfileStore();
@@ -73,7 +81,12 @@ async function start(): Promise<void> {
       let nats: ReturnType<typeof createNatsBackend> | undefined;
       try {
         await plugins.start();
-        nats = createNatsBackend();
+        const natsProfileStore = new InMemoryNatsProfileStore();
+        natsProfilePreparation = await prepareLocalNatsDevelopmentProfile(
+          natsProfileStore,
+          repositoryRoot,
+        );
+        nats = createNatsBackend({ profileStore: natsProfileStore });
         return {
           providers: new ProviderHostRegistry([
             createKafkaProviderEndpoint(backend),
@@ -123,6 +136,10 @@ async function start(): Promise<void> {
       "Development plugins use local packages. Run npm run package -- plugin, then Preferences > Plugins > Refresh plugins > Install or Update.\n",
     );
   }
+  if (natsProfilePreparation === "seeded")
+    process.stdout.write(
+      "Local AIO NATS is ready as a session-only default. Subscribe to streamskope.fixture.>, then run npm run dev -- nats publish in another terminal.\n",
+    );
   if (launch.reused) {
     return;
   }

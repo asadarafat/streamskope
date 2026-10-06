@@ -1,0 +1,5 @@
+{
+  "port": 14222,
+  "subject": "streamskope.fixture.events",
+  "payload": { "source": "aio-nats", "message": "StreamSkope NATS fixture" }
+}
