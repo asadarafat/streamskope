@@ -6,7 +6,10 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { loadFixtureConfig, loadFixtureConnection } from "../support/kafka-fixture";
 import {
   acquireRemoteJksTrust,
@@ -37,7 +40,7 @@ async function reservePort(): Promise<number> {
 }
 
 test.beforeEach(async () => {
-  launch = await launchWebDevelopment({
+  launch = await launchProductWebFixture({
     backend: createKafkaBackend(),
     hostPort: await reservePort(),
     rendererPort: await reservePort(),

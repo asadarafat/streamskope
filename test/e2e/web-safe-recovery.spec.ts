@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment } from "../../src/platform/dev-host";
+import { launchProductWebFixture } from "../support/product-web-fixture";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
 import {
   fetchTopicMessages,
@@ -44,7 +44,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     if (response.status() >= 400)
       httpProblems.push(`${response.status()} ${new URL(response.url()).pathname}`);
   });
-  let launch: Awaited<ReturnType<typeof launchWebDevelopment>> | undefined;
+  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   try {
     await fixture.admin.createTopics({ topics: [topic, target], partitions: 1, replicas: 1 });
     await expect
@@ -84,7 +84,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     } finally {
       await producer.close();
     }
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await port(),
       rendererPort: await port(),

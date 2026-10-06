@@ -47,7 +47,7 @@ jobs:
       - run: npm run check -- --ci
       - name: Verify real Kafka collection, replication recovery and final-client cleanup
         run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts test/kafka/provider-stream-stop-real.test.ts
-      - name: Verify Core NATS token, TLS and subscription lifecycle
+      - name: Verify NATS token, TLS and subscription lifecycle
         run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/nats-real.json test/nats/provider-real.test.ts
       - name: Verify production renderer module initialization
         run: |
@@ -60,7 +60,7 @@ jobs:
           test/e2e/web-observations-recovery.spec.ts
           test/e2e/web-responsive-workbench.spec.ts
           --grep 'keyboard-operable|investigates real lag|persistent resource hierarchy|expanded dock in both themes|main resource page primary'
-      - name: Verify Core NATS live workspace and provider switching in Chromium
+      - name: Verify NATS live workspace and connection handoffs in Chromium
         run: node tools/package/e2e.mjs web test/e2e/web-nats-workspace.spec.ts
       - name: Verify hot plugin lifecycle and local management during catalog failure
         run: node tools/package/e2e.mjs web test/e2e/web-plugin-installation.spec.ts

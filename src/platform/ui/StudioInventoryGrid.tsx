@@ -21,7 +21,18 @@ function InventoryStateOverlay({
       aria-label={label}
       aria-live="polite"
       role="status"
-      sx={{ alignItems: "center", display: "flex", height: "100%", justifyContent: "center", p: 3 }}
+      sx={{
+        position: "absolute",
+        top: streamSkopeGeometry.tableHeaderHeight,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        alignItems: "center",
+        display: "flex",
+        justifyContent: "center",
+        p: 3,
+        bgcolor: "background.paper",
+      }}
     >
       <Typography color="text.secondary" variant="body2">
         {children}
@@ -87,6 +98,7 @@ export function StudioInventoryGrid<Row extends GridValidRowModel>({
         borderColor: "divider",
         flex: "1 1 0",
         minHeight: 0,
+        position: "relative",
       }}
     >
       <DataGrid
@@ -102,12 +114,8 @@ export function StudioInventoryGrid<Row extends GridValidRowModel>({
         rowHeight={streamSkopeGeometry.tableRowHeight}
         rows={rows}
         slots={{
-          loadingOverlay: () => (
-            <InventoryStateOverlay label={stateLabel}>{loadingMessage}</InventoryStateOverlay>
-          ),
-          noRowsOverlay: () => (
-            <InventoryStateOverlay label={stateLabel}>{emptyMessage}</InventoryStateOverlay>
-          ),
+          loadingOverlay: () => null,
+          noRowsOverlay: () => null,
         }}
         sx={{
           border: 0,
@@ -118,6 +126,10 @@ export function StudioInventoryGrid<Row extends GridValidRowModel>({
           },
         }}
       />
+      {/* Live inventory state belongs beside the grid, whose children must be rows. */}
+      <InventoryStateOverlay label={stateLabel}>
+        {loading ? loadingMessage : rows.length === 0 ? emptyMessage : null}
+      </InventoryStateOverlay>
     </Box>
   );
 }

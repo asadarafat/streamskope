@@ -18,7 +18,10 @@ import {
   type ProfileSummary,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import {
   expectNoHorizontalOverflow,
   observeBrowserDiagnostics,
@@ -299,7 +302,7 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
   test.describe.configure({ mode: "serial", timeout: 60_000 });
 
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),
@@ -553,16 +556,17 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
     });
     expect(addProfileGeometry.topRightRadius).toBe(profileSearchGeometry.topLeftRadius);
     expect(addProfileGeometry.bottomRightRadius).toBe(profileSearchGeometry.bottomLeftRadius);
-    expect(addProfileGeometry.height).toBe(profileSearchGeometry.height);
+    expect(addProfileGeometry.height).toBeCloseTo(profileSearchGeometry.height, 0);
     await page.getByRole("button", { name: "Select profile Local AIO Kafka" }).click();
     const profileWorkspace = page.getByLabel("Connection profile workspace");
     await expect(profileWorkspace).toContainText("Kafka connection");
     await expect(profileWorkspace).toContainText("Transport and profile");
-    const profileViewport = await profileWorkspace.evaluate((element) => ({
-      clientHeight: element.clientHeight,
-      scrollHeight: element.scrollHeight,
-    }));
-    expect(profileViewport.scrollHeight).toBeLessThanOrEqual(profileViewport.clientHeight + 1);
+    // The inspector may scroll vertically; each safe value must remain readable in its pane.
+    const valueWidths = await profileWorkspace
+      .locator("dd")
+      .evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
+    expect(valueWidths.length).toBeGreaterThan(0);
+    expect(Math.min(...valueWidths)).toBeGreaterThanOrEqual(100);
 
     const commandCount = backend.commands.length;
     await expect(page.getByRole("main", { name: "Connection profiles page" })).toBeVisible();

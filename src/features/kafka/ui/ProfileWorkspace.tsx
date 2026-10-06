@@ -87,9 +87,14 @@ function ProfileEvidenceSection({
         component="dl"
         sx={{
           display: twoColumns ? "grid" : "block",
-          gridTemplateColumns: twoColumns
-            ? { md: "repeat(2, minmax(0, 1fr))", xs: "minmax(0, 1fr)" }
-            : undefined,
+          gridTemplateColumns: twoColumns ? "minmax(0, 1fr)" : undefined,
+          ...(twoColumns
+            ? {
+                "@container studio-workspace (min-width: 760px)": {
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                },
+              }
+            : {}),
           m: 0,
         }}
       >
@@ -305,7 +310,10 @@ export function ProfileWorkspace({
           sx={{
             display: "grid",
             gap: 1.5,
-            gridTemplateColumns: { lg: "repeat(2, minmax(0, 1fr))", xs: "minmax(0, 1fr)" },
+            gridTemplateColumns: "minmax(0, 1fr)",
+            "@container studio-workspace (min-width: 760px)": {
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            },
             minWidth: 0,
           }}
         >
@@ -399,7 +407,7 @@ export function ProfileWorkspace({
             />
           </ProfileEvidenceSection>
 
-          <Box sx={{ gridColumn: { lg: "1 / -1" } }}>
+          <Box sx={{ gridColumn: "1 / -1" }}>
             <ProfileEvidenceSection title="Cluster services" twoColumns>
               <StudioDetailRow
                 label="Schema Registry"

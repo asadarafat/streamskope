@@ -107,7 +107,7 @@ test.describe("actual signed plugin release artifacts in the native source shell
       throw new Error("Release artifact qualification must use the shipped publisher registry.");
   });
 
-  for (const hostRelease of ["0.9.0", "0.9.1"]) {
+  for (const hostRelease of ["0.9.0", "0.9.1", "0.9.2"]) {
     for (const component of ["eda", "nsp"] as const) {
       test(`imports, preserves and reinstalls ${component.toUpperCase()} release bytes offline on host ${hostRelease}`, async ({
         browserName: _browserName,

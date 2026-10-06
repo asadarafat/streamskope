@@ -10,7 +10,10 @@ import {
   type HostEventListener,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { expectWorkbenchReady } from "../support/workbench-browser";
 
 class RejectingBackend implements StreamSkopeBackend {
@@ -76,7 +79,7 @@ function activeLaunch(): RunningWebDevelopment {
 
 test.describe("StreamSkope browser launch recovery", () => {
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend: new RejectingBackend(),
       hostPort: await reservePort(),
       rendererPort: await reservePort(),

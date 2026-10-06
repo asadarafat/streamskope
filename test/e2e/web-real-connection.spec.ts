@@ -8,7 +8,10 @@ import { expect, test } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import {
   PRIVATE_RUNBOOK_ARTIFACT_SENTINEL,
   RULE_EXPRESSION_ARTIFACT_SENTINEL,
@@ -86,7 +89,7 @@ function activeKafkaBackend(): ReturnType<typeof createKafkaBackend> {
 test.describe("real StreamSkope browser connection", () => {
   test.beforeEach(async () => {
     kafkaBackend = createKafkaBackend();
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend: kafkaBackend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),

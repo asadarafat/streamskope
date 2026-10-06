@@ -13,7 +13,10 @@ import {
   type HostEventListener,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { expectWorkbenchReady } from "../support/workbench-browser";
 import { testHostResponse, testHostAccepted } from "../support/host-response";
 import { edaPluginManifest, testHostResponse as edaResponse } from "../support/eda-ui-host";
@@ -198,7 +201,7 @@ test.describe("plaintext Kafka profile", () => {
   test.describe.configure({ mode: "serial", timeout: 60_000 });
 
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),

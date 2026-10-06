@@ -24,7 +24,7 @@ export function createInteractiveKafkaHost(
   const requireInteractive = (): void => {
     if (!isInteractive())
       throw new Error(
-        "This Kafka workspace is inactive. Finish the provider switch before submitting another request.",
+        "This Kafka workspace is inactive. Finish the connection change before submitting another request.",
       );
   };
   return {
@@ -95,7 +95,7 @@ export function createKafkaWorkspaceRegistration(
             state: "blocked",
             summary: "Kafka consumption could not be stopped.",
             recovery:
-              "Keep Kafka selected, stop consumption successfully, then retry the provider switch.",
+              "Stop Kafka consumption successfully, then retry Connect from Connection Profiles.",
           };
         phase = "disconnect";
         const disconnected = await properties.host.execute({
@@ -108,8 +108,7 @@ export function createKafkaWorkspaceRegistration(
           return {
             state: "blocked",
             summary: "Kafka could not be disconnected.",
-            recovery:
-              "Keep Kafka selected, disconnect successfully, then retry the provider switch.",
+            recovery: "Disconnect Kafka successfully, then retry Connect from Connection Profiles.",
           };
         // An import belongs to the first visit; effect replay and failed cleanup keep that visit.
         initialQueryImportConsumed = true;
@@ -120,13 +119,13 @@ export function createKafkaWorkspaceRegistration(
               state: "blocked",
               summary: "Kafka consumption could not be stopped.",
               recovery:
-                "Keep Kafka selected, stop consumption successfully, then retry the provider switch.",
+                "Stop Kafka consumption successfully, then retry Connect from Connection Profiles.",
             }
           : {
               state: "blocked",
               summary: "Kafka could not be disconnected.",
               recovery:
-                "Keep Kafka selected, disconnect successfully, then retry the provider switch.",
+                "Disconnect Kafka successfully, then retry Connect from Connection Profiles.",
             };
       }
     },

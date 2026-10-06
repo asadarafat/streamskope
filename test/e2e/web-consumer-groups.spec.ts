@@ -16,7 +16,10 @@ import {
   type KafkaConsumerGroupInventorySnapshot,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import {
   expectNoHorizontalOverflow,
   expectWorkbenchReady,
@@ -243,7 +246,7 @@ test.describe("consumer-group visual workflow", () => {
   test.describe.configure({ mode: "serial", timeout: 60_000 });
 
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),

@@ -10,6 +10,7 @@ import {
   StudioMenu,
   StudioMenuItem,
   StudioTextField,
+  StudioTooltip,
 } from "./controls";
 import { StudioInventoryCellAction, StudioInventoryGrid } from "./StudioInventoryGrid";
 import type {
@@ -111,7 +112,26 @@ export function ConnectionProfilesCatalog({
       flex: 1,
       valueGetter: (_value, row) => row.endpoints.join(", "),
     },
-    { field: "source", headerName: "Source", minWidth: 120, flex: 0.7 },
+    {
+      field: "source",
+      headerName: "Source",
+      minWidth: 140,
+      flex: 0.7,
+      renderCell: ({ row }) => (
+        <Stack direction="row" sx={{ height: "100%", alignItems: "center", gap: 0.75 }}>
+          <Typography noWrap variant="body2">
+            {row.source}
+          </Typography>
+          {row.transport.startsWith("Plaintext") ? (
+            <StudioTooltip title="This connection sends credentials and messages without encryption.">
+              <Typography variant="caption" color="warning.main">
+                Plaintext
+              </Typography>
+            </StudioTooltip>
+          ) : null}
+        </Stack>
+      ),
+    },
     {
       field: "actions",
       headerName: "Connection",
@@ -121,7 +141,7 @@ export function ConnectionProfilesCatalog({
         <Stack direction="row" sx={{ height: "100%", alignItems: "center" }}>
           <StudioButton
             disabled={busy || (!row.active && !ready(row))}
-            aria-label={`${row.active ? "Disconnect" : "Connect"} profile ${row.name}`}
+            aria-label={`${row.active ? "Disconnect" : row.transport.startsWith("Plaintext") ? "Connect insecure plaintext" : "Connect"} profile ${row.name}`}
             onClick={() => (row.active ? onDisconnect() : onConnect(row))}
           >
             {row.active ? "Disconnect" : "Connect"}
@@ -239,11 +259,14 @@ export function ConnectionProfilesCatalog({
             {workspaces.map((workspace, index) => (
               <Typography
                 key={workspace.id}
+                component="p"
                 variant="caption"
                 color="text.secondary"
                 sx={{ mt: 0.5 }}
               >
-                {workspace.label}: {snapshots[index]?.storageLabel}
+                {snapshots[index]?.storageLabel.startsWith(workspace.label)
+                  ? snapshots[index]?.storageLabel
+                  : `${workspace.label}: ${snapshots[index]?.storageLabel ?? "Loading storage…"}`}
               </Typography>
             ))}
           </Box>
@@ -251,6 +274,7 @@ export function ConnectionProfilesCatalog({
         <Box
           component="section"
           aria-label="Selected connection profile"
+          tabIndex={0}
           sx={{ flex: { lg: "0 1 36%" }, minWidth: { lg: 280 }, overflow: "auto" }}
         >
           {selectedId === null ? (

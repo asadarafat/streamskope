@@ -15,7 +15,10 @@ import {
   type KafkaLiveRuleEvaluation,
   type StreamSkopeBackend,
 } from "../../src/features/kafka/contracts";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 import { expectWorkbenchReady } from "../support/workbench-browser";
 import { testHostAccepted } from "../support/host-response";
 
@@ -149,7 +152,7 @@ test.describe("StreamSkope browser message operations", () => {
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll(async () => {
-    launch = await launchWebDevelopment({
+    launch = await launchProductWebFixture({
       backend,
       hostPort: await reservePort(),
       rendererPort: await reservePort(),

@@ -5,7 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment } from "../../src/platform/dev-host";
+import { launchProductWebFixture } from "../support/product-web-fixture";
 import { provisionSeededFixtureTopic } from "../support/kafka-fixture";
 import { connectLocalProfile } from "../support/web-profile-workflow";
 import { fetchTopicMessages, observeBrowserDiagnostics } from "../support/workbench-browser";
@@ -30,7 +30,7 @@ test("decodes, compares, traces and previews a schema sample in the real browser
   test.setTimeout(120_000);
   const fixture = await provisionSeededFixtureTopic();
   const backend = createKafkaBackend();
-  const launch = await launchWebDevelopment({
+  const launch = await launchProductWebFixture({
     backend,
     hostPort: await port(),
     rendererPort: await port(),

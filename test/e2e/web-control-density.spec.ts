@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import { expect, test, type Locator } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchWebDevelopment, type RunningWebDevelopment } from "../../src/platform/dev-host";
+import {
+  launchProductWebFixture,
+  type RunningWebDevelopment,
+} from "../support/product-web-fixture";
 
 async function reservePort(): Promise<number> {
   const server = createServer();
@@ -23,7 +26,7 @@ async function height(locator: Locator): Promise<number> {
 
 let launch: RunningWebDevelopment;
 test.beforeAll(async () => {
-  launch = await launchWebDevelopment({
+  launch = await launchProductWebFixture({
     backend: createKafkaBackend(),
     hostPort: await reservePort(),
     rendererPort: await reservePort(),
