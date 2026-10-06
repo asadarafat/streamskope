@@ -7,6 +7,11 @@ unreleased: true
 
 ## Desktop
 
+Production renderer builds preserve React and Material UI dependency initialization
+order across lazy workspaces. Partial forced vendor chunks could previously leave
+the desktop window blank before the application loaded. Required CI now executes
+the minified production renderer in Chromium as well as development workflows.
+
 Plugin management applies installed state independently of catalog discovery.
 Removing an installed plugin or retrying inactive retained bytes stays available
 while GitHub is unreachable. A successful catalog check is cached with its date;
