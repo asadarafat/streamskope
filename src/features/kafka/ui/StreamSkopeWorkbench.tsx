@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Box, Stack, Typography } from "@mui/material";
 
-import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
+import { HOST_PROTOCOL_VERSION, type HostEvent, type StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 import { ProviderWorkbenchShell } from "../../../platform/ui/ProviderWorkbenchShell";
@@ -75,6 +75,9 @@ export interface StreamSkopeWorkbenchProperties {
   readonly desktop?: StreamSkopeDesktop | undefined;
   readonly host: StreamSkopeHost;
   readonly providerControl?: React.ReactNode;
+  readonly profilesPage?: React.ReactNode;
+  readonly initialConnectionEvent?:
+    Extract<HostEvent, { readonly event: "connection.state" }> | undefined;
   readonly isInteractive?: (() => boolean) | undefined;
   readonly initialQueryImport?: string | undefined;
   readonly streamMonitorObserver?: RendererStreamMonitorObserver;
@@ -86,11 +89,17 @@ export function StreamSkopeWorkbench({
   streamMonitorObserver,
   initialQueryImport,
   providerControl,
+  profilesPage,
+  initialConnectionEvent,
   isInteractive,
 }: StreamSkopeWorkbenchProperties): React.JSX.Element {
   const [queriesOpen, setQueriesOpen] = useState(initialQueryImport !== undefined);
   const [queryImport, setQueryImport] = useState(initialQueryImport);
-  const [state, dispatch] = useReducer(reduceKafkaUiState, initialKafkaUiState);
+  const [state, dispatch] = useReducer(reduceKafkaUiState, initialConnectionEvent, (event) =>
+    event === undefined
+      ? initialKafkaUiState
+      : reduceKafkaUiState(initialKafkaUiState, { type: "host.event", event }),
+  );
   const [rendererStreamMonitor] = useState(
     () => streamMonitorObserver ?? createRendererStreamMonitorObserver(),
   );
@@ -607,10 +616,12 @@ export function StreamSkopeWorkbench({
         topicCount={state.topics.length}
       />
     ) : navigation === "profiles" ? (
-      <ConnectionProfilesPage
-        panel={profilePanelProperties}
-        workspace={profileWorkspaceProperties}
-      />
+      (profilesPage ?? (
+        <ConnectionProfilesPage
+          panel={profilePanelProperties}
+          workspace={profileWorkspaceProperties}
+        />
+      ))
     ) : navigation === "consumer-groups" ? (
       <ConsumerGroupsPage
         host={host}

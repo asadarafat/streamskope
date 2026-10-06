@@ -97,7 +97,7 @@ export async function connectElectronToFixture(
   fixture: FixtureConnection,
 ): Promise<void> {
   await page.getByRole("button", { name: "Add connection" }).click();
-  await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+  await page.getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u }).click();
   const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
   await editor.getByRole("textbox", { name: "Profile name" }).fill("Electron local aio");
   await editor.getByRole("textbox", { name: "Bootstrap brokers" }).fill(fixture.kafkaEndpoint);

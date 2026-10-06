@@ -123,7 +123,10 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
       0,
     );
     await expect(
-      page.getByRole("menuitem", { name: "Existing Kafka cluster", exact: true }),
+      page.getByRole("menuitem", {
+        name: /^(?:Kafka broker|Existing Kafka cluster)$/u,
+        exact: true,
+      }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
 

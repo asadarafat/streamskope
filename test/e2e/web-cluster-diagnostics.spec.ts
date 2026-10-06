@@ -227,7 +227,7 @@ test.describe("StreamSkope cluster-details browser workflow", () => {
 
     await openWorkbenchResource(page, "Connection Profiles");
     const profileActionsButton = page.getByRole("button", {
-      name: "More actions for profile Local validation",
+      name: "Profile actions Local validation",
     });
     const openButton = (await openProfileActions(page, "Local validation")).getByRole("menuitem", {
       name: "Cluster detail",

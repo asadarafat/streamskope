@@ -9,8 +9,9 @@ identifies the source revision and whether this is development or published
 documentation. Development instructions may describe features absent from an
 older installer; merging source does not update its release documentation.
 
-**NATS** is a built-in sibling of **Kafka**. Select it with **Messaging
-provider** in the application header. EDA Connector and NSP Connector are optional
+**NATS** is a built-in sibling of **Kafka**. Kafka and NATS profiles share
+**Connection Profiles**; connecting a profile opens its system's workspace.
+EDA Connector and NSP Connector are optional
 Kafka connection plugins; installing either does not add or configure NATS.
 
 StreamSkope connects to an external NATS server using the endpoints and
@@ -26,7 +27,7 @@ replay and Kafka-style partitions/offsets are outside this workspace's scope.
 
 ## Save and connect a profile
 
-1. Open **Connection Profiles**, then **Add NATS profile**.
+1. Open **Connection Profiles**, then **Add connection → NATS server**.
 2. Enter **Profile name** and **NATS servers** using the endpoints supplied by
    your server operator. Credentials belong in the authentication fields, never
    in a server URL.
@@ -38,7 +39,8 @@ replay and Kafka-style partitions/offsets are outside this workspace's scope.
    Enter **CA certificate PEM** for private trust, or use system trust when the
    server certificate is accepted by the host's trust store. TLS failure does
    not fall back to plaintext.
-5. Select **Save profile**, then the profile's **Connect** action. Wait for
+5. Select **Save profile**, then the profile's **Connect** action in the shared
+   table. Its **System** column identifies it as NATS. Wait for
    **Connection status** to show connected before starting a subscription.
 
 The storage capability displayed with the profiles is authoritative. Native
@@ -109,11 +111,13 @@ error. Reconnection is explicit. When the backend becomes unavailable, new
 operations stop and old rows remain evidence; follow its recovery message and
 connect/start a new subscription after recovery.
 
-Changing **Messaging provider** first stops the current stream and disconnects.
-If either cleanup fails, StreamSkope keeps the original workspace selected and
-offers retry. Successful switching retires its old callbacks while preserving
-commands already admitted and their actual receipts. Switching does not delete
-profiles or remote capture resources. A native host that lacks the NATS port
+Browsing profiles, opening an editor or saving another profile keeps the active
+connection running. StreamSkope maintains one active connection: connecting a
+profile on another system first stops the current stream and disconnects through
+the original host. If either cleanup fails, the original connection and workspace
+remain available for recovery. Successful connection changes retire old callbacks
+while preserving commands already admitted and their actual receipts. They do
+not delete profiles or remote capture resources. A native host that lacks the NATS port
 shows an unavailable workspace; it never redirects NATS to Kafka or HTTP.
 
 ## Try a separate local development server

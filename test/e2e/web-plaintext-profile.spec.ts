@@ -322,7 +322,9 @@ test.describe("plaintext Kafka profile", () => {
     const addProfile = page.getByRole("button", { name: "Add connection" });
     await addProfile.focus();
     await page.keyboard.press("Enter");
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).focus();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .focus();
     await page.keyboard.press("Enter");
     const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
     const tls = editor.getByRole("radio", { name: "TLS" });

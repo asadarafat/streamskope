@@ -4,9 +4,17 @@ import { StrictMode, isValidElement, useEffect, useMemo } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type {
+  ConnectionProfilesCatalogProperties,
+  CatalogProfile,
+} from "../../src/platform/ui/ConnectionProfilesCatalog";
 import { ProviderApplication } from "../../src/platform/ui/ProviderApplication";
 import type {
   ProviderDeactivationResult,
+  ProviderConnectionOutcome,
+  ProviderProfileManagementControls,
+  ProviderProfilesFacet,
+  ProviderProfilesSnapshot,
   ProviderWorkspaceControls,
   ProviderWorkspaceRegistration,
 } from "../../src/platform/ui/provider-workspaces";
@@ -90,6 +98,58 @@ function hostFixture(): {
   return { host, commands, listeners };
 }
 
+function catalogRow(providerId: string, profileId = "shared-id"): CatalogProfile {
+  return {
+    id: JSON.stringify([providerId, profileId]),
+    profileId,
+    providerId,
+    providerLabel: providerId === "kafka" ? "Kafka" : "Probe",
+    revision: 1,
+    name: `${providerId} profile`,
+    endpoints: ["remote.example:1234"],
+    source: "Direct",
+    authentication: "None",
+    transport: "TLS",
+    active: false,
+  };
+}
+function facetFixture(
+  providerId: string,
+  captures: ProviderProfileManagementControls[] = [],
+  connect: ProviderProfilesFacet["connect"] = vi.fn(() =>
+    Promise.resolve<ProviderConnectionOutcome>({ ok: true }),
+  ),
+): ProviderProfilesFacet {
+  const row = catalogRow(providerId);
+  const snapshot: ProviderProfilesSnapshot = {
+    profiles: [{ ...row, id: row.profileId }],
+    loading: false,
+    available: true,
+    storageReady: true,
+    storageLabel: "Protected storage",
+    failure: null,
+    creationActions: [
+      {
+        id: "new",
+        label: providerId === "kafka" ? "Kafka broker" : "NATS server",
+        description: "Direct connection",
+        kind: "direct",
+        available: true,
+      },
+    ],
+  };
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: () => () => undefined,
+    refresh: () => Promise.resolve(),
+    connect,
+    renderManagement: (controls): React.JSX.Element | null => {
+      captures.push(controls);
+      return controls.action === null ? null : <div>{providerId} profile settings</div>;
+    },
+  };
+}
+
 interface Capture {
   readonly controls: ProviderWorkspaceControls;
   readonly proxy: StreamSkopeHost;
@@ -114,17 +174,13 @@ function WorkspaceProbe({
   );
   useEffect(() => proxy.subscribe(() => undefined), [proxy]);
   const activity = useWorkbenchActivity(desktop, [], controls.isInteractive);
-  if (
-    !isValidElement<{ onChange: (event: { target: { value: string } }) => void }>(
-      controls.providerControl,
-    )
-  )
+  if (!isValidElement<ConnectionProfilesCatalogProperties>(controls.profilesPage))
     throw new Error("Expected the real provider control.");
-  const control = controls.providerControl;
+  const control = controls.profilesPage;
   captures.push({
     controls,
     proxy,
-    select: (id): void => control.props.onChange({ target: { value: id } }),
+    select: (id): void => control.props.onConnect(catalogRow(id)),
   });
   const action = (
     <StudioButton
@@ -138,7 +194,7 @@ function WorkspaceProbe({
   return (
     <>
       <div>Kafka fixture workspace</div>
-      {controls.providerControl}
+      {controls.profilesPage}
       <span>{activity.commandPaletteOpen ? "Palette open" : "Palette closed"}</span>
       <span>{activity.preferenceDialogOpen ? "Preferences open" : "Preferences closed"}</span>
       {portal ? (
@@ -177,6 +233,7 @@ function workspaceFixtures(
         id: "kafka",
         label: "Kafka",
         deactivate,
+        profiles: facetFixture("kafka"),
         render: (controls) => (
           <WorkspaceProbe
             controls={controls}
@@ -191,16 +248,13 @@ function workspaceFixtures(
         id: "probe",
         label: "Probe",
         deactivate: probeDeactivate,
+        profiles: facetFixture("probe"),
         render: (controls): React.JSX.Element => {
-          if (
-            !isValidElement<{ onChange: (event: { target: { value: string } }) => void }>(
-              controls.providerControl,
-            )
-          )
+          if (!isValidElement<ConnectionProfilesCatalogProperties>(controls.profilesPage))
             throw new Error("Expected the real provider control.");
-          const control = controls.providerControl;
-          probeSelections.push((id): void => control.props.onChange({ target: { value: id } }));
-          return <div>Probe fixture workspace{controls.providerControl}</div>;
+          const control = controls.profilesPage;
+          probeSelections.push((id): void => control.props.onConnect(catalogRow(id)));
+          return <div>Probe fixture workspace{controls.profilesPage}</div>;
         },
       },
     ],
@@ -221,6 +275,153 @@ function renderApplication(
   );
 }
 
+describe("connection catalog behavior", () => {
+  it("shows profiles with colliding local IDs and lets users inspect/create the other provider without stopping the active workspace", async () => {
+    const fixtures = workspaceFixtures(vi.fn(() => Promise.resolve({ state: "ready" as const })));
+    const managers: ProviderProfileManagementControls[] = [];
+    const first = fixtures.workspaces[0],
+      second = fixtures.workspaces[1];
+    if (!first || !second) throw new Error("Expected both providers.");
+    const workspaces = [first, { ...second, profiles: facetFixture("probe", managers) }];
+    renderApplication(workspaces);
+    const original = latest(fixtures.captures);
+    const page = original.controls.profilesPage;
+    if (!isValidElement<ConnectionProfilesCatalogProperties>(page))
+      throw new Error("Expected catalog.");
+    expect(page.props.snapshots.map((snapshot) => snapshot.profiles[0]?.id)).toEqual([
+      "shared-id",
+      "shared-id",
+    ]);
+    act(() => page.props.onSelect(catalogRow("probe")));
+    expect(screen.getByText("probe profile settings")).toBeInTheDocument();
+    expect(first.deactivate).not.toHaveBeenCalled();
+    expect(fixtures.probeDeactivate).not.toHaveBeenCalled();
+    expect(original.controls.isInteractive()).toBe(true);
+    act(() => page.props.onCreate("probe", "new"));
+    const create = managers.at(-1);
+    if (!create) throw new Error("Expected inactive-provider editor.");
+    expect(create.action).toEqual({ kind: "create", actionId: "new" });
+    expect(create.isInteractive()).toBe(true);
+    act(() => create.onProfileReady("new-profile"));
+    expect(create.isInteractive()).toBe(true);
+    act(() => create.onClose());
+    expect(create.isInteractive()).toBe(false);
+    await expect(create.onConnect({ id: "shared-id", revision: 1 })).resolves.toMatchObject({
+      ok: false,
+    });
+    expect(first.deactivate).not.toHaveBeenCalled();
+    expect(original.controls.isInteractive()).toBe(true);
+  });
+
+  it("routes inactive-provider Save and connect through confirmed original-host cleanup and only then dispatches the destination", async () => {
+    const cleanup = deferred<ProviderDeactivationResult>();
+    const deactivate = vi.fn(() => cleanup.promise);
+    const fixtures = workspaceFixtures(deactivate);
+    const managers: ProviderProfileManagementControls[] = [];
+    const connect = vi.fn(() => Promise.resolve({ ok: true as const }));
+    const first = fixtures.workspaces[0],
+      second = fixtures.workspaces[1];
+    if (!first || !second) throw new Error("Expected both providers.");
+    renderApplication([first, { ...second, profiles: facetFixture("probe", managers, connect) }]);
+    const original = latest(fixtures.captures);
+    const page = original.controls.profilesPage;
+    if (!isValidElement<ConnectionProfilesCatalogProperties>(page))
+      throw new Error("Expected catalog.");
+    act(() => page.props.onCreate("probe", "new"));
+    const manager = managers.at(-1);
+    if (!manager) throw new Error("Expected editor.");
+    let receipt: Promise<unknown> | undefined;
+    act(() => {
+      receipt = manager.onConnect({ id: "shared-id", revision: 1 });
+    });
+    expect(original.controls.isInteractive()).toBe(false);
+    expect(connect).not.toHaveBeenCalled();
+    await waitFor(() => expect(deactivate).toHaveBeenCalledOnce());
+    await act(async () => {
+      cleanup.resolve({ state: "ready" });
+      await receipt;
+    });
+    expect(connect).toHaveBeenCalledExactlyOnceWith({ id: "shared-id", revision: 1 });
+    expect(screen.getByText("Probe fixture workspace")).toBeInTheDocument();
+    expect(manager.isInteractive()).toBe(false);
+    expect(original.controls.isInteractive()).toBe(false);
+  });
+
+  it("preserves the actual admitted target receipt when the application unmounts during connection", async () => {
+    const receipt = deferred<ProviderConnectionOutcome>();
+    const fixtures = workspaceFixtures(() => Promise.resolve({ state: "ready" }));
+    const first = fixtures.workspaces[0],
+      second = fixtures.workspaces[1];
+    if (!first || !second) throw new Error("Expected both providers.");
+    const managers: ProviderProfileManagementControls[] = [];
+    const connect = vi.fn(() => receipt.promise);
+    const view = renderApplication([
+      first,
+      { ...second, profiles: facetFixture("probe", managers, connect) },
+    ]);
+    const page = latest(fixtures.captures).controls.profilesPage;
+    if (!isValidElement<ConnectionProfilesCatalogProperties>(page))
+      throw new Error("Expected catalog.");
+    act(() => page.props.onCreate("probe", "new"));
+    const manager = managers.at(-1);
+    if (!manager) throw new Error("Expected editor.");
+    let actual: Promise<ProviderConnectionOutcome> | undefined;
+    act(() => {
+      actual = manager.onConnect({ id: "shared-id", revision: 1 });
+    });
+    await waitFor(() => expect(connect).toHaveBeenCalledOnce());
+    view.unmount();
+    await act(async () => {
+      receipt.resolve({ ok: true });
+      await receipt.promise;
+    });
+    await expect(actual).resolves.toEqual({ ok: true });
+    expect(manager.isInteractive()).toBe(false);
+    expect(fixtures.probeSelections).toEqual([]);
+  });
+
+  it("does not dispatch the destination on uncertain cleanup and safely exposes a failed destination after confirmed cleanup", async () => {
+    const blocked = vi.fn(() =>
+      Promise.resolve({
+        state: "blocked" as const,
+        summary: "Stop not confirmed",
+        recovery: "Retry stop",
+      }),
+    );
+    const fixtures = workspaceFixtures(blocked);
+    const first = fixtures.workspaces[0],
+      second = fixtures.workspaces[1];
+    if (!first || !second) throw new Error("Expected both providers.");
+    const connect = vi.fn(() =>
+      Promise.resolve({
+        ok: false as const,
+        summary: "Target authentication failed",
+        recovery: "Edit the target profile",
+      }),
+    );
+    const view = renderApplication([
+      first,
+      { ...second, profiles: facetFixture("probe", [], connect) },
+    ]);
+    act(() => latest(fixtures.captures).select("probe"));
+    await screen.findByText(/Stop not confirmed/u);
+    expect(connect).not.toHaveBeenCalled();
+    expect(latest(fixtures.captures).controls.isInteractive()).toBe(true);
+    view.unmount();
+    const next = workspaceFixtures(() => Promise.resolve({ state: "ready" }));
+    const source = next.workspaces[0],
+      target = next.workspaces[1];
+    if (!source || !target) throw new Error("Expected both providers.");
+    renderApplication([source, { ...target, profiles: facetFixture("probe", [], connect) }]);
+    const original = latest(next.captures);
+    act(() => original.select("probe"));
+    await screen.findByText(/Target authentication failed/u);
+    expect(connect).toHaveBeenCalledOnce();
+    expect(screen.getByText("Probe fixture workspace")).toBeInTheDocument();
+    expect(original.controls.isInteractive()).toBe(false);
+  });
+});
+
 describe("provider activation ownership", () => {
   it("retains the inert old workspace until cleanup confirms ready and synchronously rejects rapid selection", async () => {
     const pending = deferred<ProviderDeactivationResult>(),
@@ -230,7 +431,6 @@ describe("provider activation ownership", () => {
     const original = latest(fixtures.captures);
     act(() => {
       original.select("unknown");
-      original.select("kafka");
     });
     expect(deactivate).not.toHaveBeenCalled();
     act(() => {
@@ -242,10 +442,8 @@ describe("provider activation ownership", () => {
     expect(screen.getByText("Kafka fixture workspace")).toBeInTheDocument();
     expect(screen.queryByText("Probe fixture workspace")).not.toBeInTheDocument();
     expect(screen.getByTestId("provider-workspace")).toHaveAttribute("inert");
-    expect(screen.getByRole("combobox", { name: "Messaging provider" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(screen.queryByRole("combobox", { name: "Messaging provider" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add connection" })).toBeDisabled();
     await waitFor(() => expect(deactivate).toHaveBeenCalledTimes(1));
     await act(async () => {
       pending.resolve({ state: "ready" });
@@ -323,7 +521,7 @@ describe("provider activation ownership", () => {
     expect(latest(fixtures.captures).proxy).toBe(original.proxy);
     expect(fixtures.fixture.listeners.size).toBe(1);
     await original.proxy.execute(command);
-    fireEvent.click(screen.getByRole("button", { name: "Retry switch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
     expect(original.controls.isInteractive()).toBe(false);
     await waitFor(() => expect(deactivate).toHaveBeenCalledTimes(2));
     await act(async () => {
@@ -420,6 +618,7 @@ describe("provider activation ownership", () => {
     const authorities: ProviderWorkspaceControls[] = [];
     const wrapped: ProviderWorkspaceRegistration = {
       ...registration,
+      profiles: facetFixture("kafka"),
       render: (controls) => {
         authorities.push(controls);
         return registration.render(controls);
@@ -430,9 +629,10 @@ describe("provider activation ownership", () => {
       id: "probe",
       label: "Probe",
       deactivate: () => Promise.resolve({ state: "ready" }),
+      profiles: facetFixture("probe"),
       render: (controls) => {
         probeControls = controls;
-        return <div>Strict replay probe{controls.providerControl}</div>;
+        return <div>Strict replay probe{controls.profilesPage}</div>;
       },
     };
     const workspaces = [wrapped, probe];
@@ -454,24 +654,22 @@ describe("provider activation ownership", () => {
     const firstAuthority = authorities.at(-1);
     if (firstAuthority === undefined)
       throw new Error("Expected initial Kafka workspace authority.");
-    const control = firstAuthority.providerControl;
-    if (!isValidElement<{ onChange: (event: { target: { value: string } }) => void }>(control))
+    const control = firstAuthority.profilesPage;
+    if (!isValidElement<ConnectionProfilesCatalogProperties>(control))
       throw new Error("Expected current provider selector.");
     await act(async () => {
-      control.props.onChange({ target: { value: "probe" } });
+      control.props.onConnect(catalogRow("probe"));
       await Promise.resolve();
     });
     expect(screen.getByText("Strict replay probe")).toBeInTheDocument();
     if (
       probeControls === undefined ||
-      !isValidElement<{ onChange: (event: { target: { value: string } }) => void }>(
-        probeControls.providerControl,
-      )
+      !isValidElement<ConnectionProfilesCatalogProperties>(probeControls.profilesPage)
     )
       throw new Error("Expected probe provider selector.");
-    const returnControl = probeControls.providerControl;
+    const returnControl = probeControls.profilesPage;
     await act(async () => {
-      returnControl.props.onChange({ target: { value: "kafka" } });
+      returnControl.props.onConnect(catalogRow("kafka"));
       await Promise.resolve();
     });
     expect(screen.queryByRole("textbox", { name: "Query JSON or link" })).not.toBeInTheDocument();

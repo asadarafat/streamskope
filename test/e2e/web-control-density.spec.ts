@@ -44,7 +44,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     expect(buttonHeight).toBeGreaterThanOrEqual(24);
     expect(buttonHeight).toBeLessThan(30);
     await add.click();
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .click();
     const dialog = page.getByRole("dialog", { name: "Add Kafka profile" });
     const name = dialog.getByRole("textbox", { name: "Profile name" });
     const inputBox = name.locator("..");

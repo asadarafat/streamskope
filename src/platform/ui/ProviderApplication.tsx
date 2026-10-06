@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Box } from "@mui/material";
 
 import {
@@ -8,11 +8,17 @@ import {
   StudioDialogActions as DialogActions,
   StudioDialogContent as DialogContent,
   StudioDialogTitle as DialogTitle,
-  StudioMenuItem as MenuItem,
-  StudioSelect as Select,
 } from "./controls";
+import {
+  ConnectionProfilesCatalog,
+  catalogProfileId,
+  type CatalogProfile,
+} from "./ConnectionProfilesCatalog";
 import type {
-  ProviderDeactivationResult,
+  ProviderConnectionOutcome,
+  ProviderProfileManagementAction,
+  ProviderProfileReference,
+  ProviderProfilesSnapshot,
   ProviderWorkspaceRegistration,
 } from "./provider-workspaces";
 
@@ -24,10 +30,21 @@ interface Activation {
   retired: boolean;
 }
 
-interface FailedSelection {
-  readonly targetId: string;
+type ConnectionRequest =
+  | {
+      readonly kind: "connect";
+      readonly providerId: string;
+      readonly profile: ProviderProfileReference;
+    }
+  | { readonly kind: "disconnect" };
+interface FailedConnection {
+  readonly request: ConnectionRequest;
   readonly summary: string;
   readonly recovery: string;
+}
+interface ManagementOwner {
+  readonly providerId: string;
+  readonly action: ProviderProfileManagementAction;
 }
 
 export interface ProviderApplicationProperties {
@@ -35,7 +52,27 @@ export interface ProviderApplicationProperties {
   readonly initialProviderId?: string;
 }
 
-/** Provider selection waits for confirmed cleanup while retaining the current workspace. */
+function createCatalogStore(workspaces: readonly ProviderWorkspaceRegistration[]): {
+  readonly getSnapshot: () => readonly ProviderProfilesSnapshot[];
+  readonly subscribe: (listener: () => void) => () => void;
+} {
+  let snapshot = workspaces.map((workspace) => workspace.profiles.getSnapshot());
+  return {
+    getSnapshot: (): readonly ProviderProfilesSnapshot[] => {
+      const next = workspaces.map((workspace) => workspace.profiles.getSnapshot());
+      if (next.some((item, index) => item !== snapshot[index])) snapshot = next;
+      return snapshot;
+    },
+    subscribe: (listener) => {
+      const subscriptions = workspaces.map((workspace) => workspace.profiles.subscribe(listener));
+      return (): void => {
+        for (const unsubscribe of subscriptions) unsubscribe();
+      };
+    },
+  };
+}
+
+/** The catalog is provider-neutral; only Connect replaces the active session. */
 export function ProviderApplication({
   workspaces,
   initialProviderId,
@@ -57,24 +94,23 @@ export function ProviderApplication({
   ) {
     throw new Error("Messaging workspace registration is fixed for this application lifetime.");
   }
+  const [store] = useState(() => createCatalogStore(workspaces));
+  const snapshots = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const mounted = useRef(true);
   const current = useRef<Activation | undefined>(undefined);
   const nextKey = useRef(0);
   const switching = useRef(false);
-  const pending = useRef<Promise<void> | undefined>(undefined);
+  const pending = useRef<Promise<ProviderConnectionOutcome> | undefined>(undefined);
   const createActivation = (workspace: ProviderWorkspaceRegistration): Activation => {
-    const activation: Activation = {
+    const next: Activation = {
       key: ++nextKey.current,
       workspace,
       interactive: true,
       retired: false,
-      isInteractive: (): boolean =>
-        mounted.current &&
-        current.current === activation &&
-        activation.interactive &&
-        !activation.retired,
+      isInteractive: () =>
+        mounted.current && current.current === next && next.interactive && !next.retired,
     };
-    return activation;
+    return next;
   };
   const [activation, setActivation] = useState(() => {
     const initial =
@@ -85,16 +121,36 @@ export function ProviderApplication({
   });
   current.current ??= activation;
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<FailedSelection>();
-  const currentFailure = useRef<FailedSelection | undefined>(undefined);
-  const publishFailure = (next: FailedSelection | undefined): void => {
+  const [filter, setFilter] = useState("");
+  const [selection, setSelection] = useState<{ providerId: string; profileId: string } | null>(
+    null,
+  );
+  const selected = useRef(selection);
+  const publishSelection = (next: typeof selection): void => {
+    selected.current = next;
+    setSelection(next);
+  };
+  const [management, setManagement] = useState<ManagementOwner | null>(null);
+  const managementOwner = useRef<ManagementOwner | null>(null);
+  const [failure, setFailure] = useState<FailedConnection>();
+  const currentFailure = useRef<FailedConnection | undefined>(undefined);
+  const publishFailure = (next: FailedConnection | undefined): void => {
     currentFailure.current = next;
     setFailure(next);
+  };
+  const publishManagement = (next: ManagementOwner | null): void => {
+    managementOwner.current = next;
+    setManagement(next);
+  };
+  const inactive: ProviderConnectionOutcome = {
+    ok: false,
+    summary: "This connection action is no longer active.",
+    recovery: "Select the profile again and retry.",
   };
 
   useLayoutEffect(() => {
     mounted.current = true;
-    // React development effect replay is a new ownership lifetime, not renewed old authority.
+    // StrictMode replay starts a new ownership lifetime; old callbacks never regain authority.
     if (current.current?.retired === true) {
       const replacement = createActivation(current.current.workspace);
       current.current = replacement;
@@ -107,49 +163,64 @@ export function ProviderApplication({
         owned.interactive = false;
         owned.retired = true;
       }
+      managementOwner.current = null;
     };
   }, []);
 
-  const selectProvider = (targetId: string): Promise<void> => {
+  const runConnection = (request: ConnectionRequest): Promise<ProviderConnectionOutcome> => {
+    if (switching.current) return pending.current ?? Promise.resolve(inactive);
     const source = current.current;
-    const target = registry.get(targetId);
-    if (
-      !mounted.current ||
-      source === undefined ||
-      source.retired ||
-      target === undefined ||
-      source.workspace.id === targetId
-    ) {
-      return Promise.resolve();
-    }
-    if (switching.current) return pending.current ?? Promise.resolve();
-    // Close admission before React commits inert or a portalled callback can run again.
+    const target =
+      request.kind === "connect" ? registry.get(request.providerId) : source?.workspace;
+    if (!mounted.current || source === undefined || source.retired || target === undefined)
+      return Promise.resolve(inactive);
+    // Close admission synchronously, including portalled, keyboard and native callbacks.
     switching.current = true;
     source.interactive = false;
     setBusy(true);
     publishFailure(undefined);
-    const finish = (result: ProviderDeactivationResult): void => {
-      if (!mounted.current || current.current !== source || source.retired) return;
-      if (result.state === "blocked") {
-        source.interactive = true;
-        publishFailure({ targetId, summary: result.summary, recovery: result.recovery });
-        return;
-      }
-      source.interactive = false;
-      source.retired = true;
-      const replacement = createActivation(target);
-      current.current = replacement;
-      setActivation(replacement);
+    const fail = (
+      outcome: Extract<ProviderConnectionOutcome, { ok: false }>,
+    ): ProviderConnectionOutcome => {
+      if (mounted.current)
+        publishFailure({ request, summary: outcome.summary, recovery: outcome.recovery });
+      return outcome;
     };
     const operation = Promise.resolve()
-      .then(() => source.workspace.deactivate())
-      .then(finish, () =>
-        finish({
-          state: "blocked",
+      .then(async (): Promise<ProviderConnectionOutcome> => {
+        const cleanup = await source.workspace.deactivate().catch(() => ({
+          state: "blocked" as const,
           summary: "The messaging provider could not finish connection cleanup.",
           recovery: "Keep this workspace open, resolve its connection cleanup, then retry.",
-        }),
-      )
+        }));
+        if (!mounted.current || current.current !== source || source.retired) return inactive;
+        if (cleanup.state === "blocked") {
+          source.interactive = true;
+          return fail({ ok: false, summary: cleanup.summary, recovery: cleanup.recovery });
+        }
+        source.retired = true;
+        const outcome =
+          request.kind === "disconnect"
+            ? { ok: true as const }
+            : await target.profiles.connect(request.profile).catch(() => ({
+                ok: false as const,
+                summary: "The selected profile could not connect.",
+                recovery: "Inspect its connection settings, test it, then retry Connect.",
+              }));
+        if (!mounted.current || current.current !== source) return outcome;
+        // Show the destination even on connect failure, so its own recovery remains available.
+        const replacement = createActivation(target);
+        current.current = replacement;
+        setActivation(replacement);
+        if (request.kind === "connect") {
+          publishSelection({ providerId: target.id, profileId: request.profile.id });
+          publishManagement({
+            providerId: target.id,
+            action: { kind: "inspect", profileId: request.profile.id },
+          });
+        }
+        return outcome.ok ? outcome : fail(outcome);
+      })
       .finally(() => {
         if (pending.current !== operation) return;
         pending.current = undefined;
@@ -159,25 +230,103 @@ export function ProviderApplication({
     pending.current = operation;
     return operation;
   };
-  const providerControl = (
-    <Select
-      size="small"
-      fullWidth={false}
-      value={activation.workspace.id}
-      disabled={busy}
-      inputProps={{ "aria-label": "Messaging provider" }}
-      onChange={(event): void => {
-        if (!activation.isInteractive()) return;
-        void selectProvider(event.target.value);
+  const refresh = (): void => {
+    if (!activation.isInteractive()) return;
+    // A failed provider store cannot prevent its sibling inventory from refreshing.
+    void Promise.allSettled(workspaces.map((workspace) => workspace.profiles.refresh()));
+  };
+  const inspect = (providerId: string, profileId: string): void => {
+    publishSelection({ providerId, profileId });
+    publishManagement({ providerId, action: { kind: "inspect", profileId } });
+  };
+  const managementViews = workspaces.map((workspace) => {
+    const owner = management?.providerId === workspace.id ? management : null;
+    const owns = (): boolean =>
+      mounted.current && !switching.current && owner !== null && managementOwner.current === owner;
+    return (
+      <Box key={workspace.id}>
+        {workspace.profiles.renderManagement({
+          action: owner?.action ?? null,
+          isInteractive: owns,
+          onClose: () => {
+            if (!owns()) return;
+            if (selected.current?.providerId === workspace.id && owner?.action?.kind !== "inspect")
+              inspect(workspace.id, selected.current.profileId);
+            else {
+              if (owner?.action?.kind === "inspect") publishSelection(null);
+              publishManagement(null);
+            }
+          },
+          onProfileReady: (profileId) => {
+            if (!owns()) return;
+            publishSelection({ providerId: workspace.id, profileId });
+            setFilter("");
+            void workspace.profiles.refresh();
+          },
+          onConnect: (profile) =>
+            owns()
+              ? runConnection({ kind: "connect", providerId: workspace.id, profile })
+              : Promise.resolve(inactive),
+        })}
+      </Box>
+    );
+  });
+  const profilesPage = (
+    <ConnectionProfilesCatalog
+      workspaces={workspaces}
+      snapshots={snapshots}
+      filter={filter}
+      busy={busy}
+      selectedId={
+        selection === null ? null : catalogProfileId(selection.providerId, selection.profileId)
+      }
+      management={managementViews}
+      onFilter={(value) => {
+        if (activation.isInteractive()) setFilter(value);
       }}
-      sx={{ minWidth: 112 }}
-    >
-      {[...registry.values()].map((workspace) => (
-        <MenuItem key={workspace.id} value={workspace.id}>
-          {workspace.label}
-        </MenuItem>
-      ))}
-    </Select>
+      onSelect={(profile) => {
+        if (activation.isInteractive()) inspect(profile.providerId, profile.profileId);
+      }}
+      onAction={(profile, action) => {
+        if (!activation.isInteractive()) return;
+        publishSelection({ providerId: profile.providerId, profileId: profile.profileId });
+        publishManagement({
+          providerId: profile.providerId,
+          action: { kind: action, profileId: profile.profileId },
+        });
+      }}
+      onCreate={(providerId, actionId) => {
+        if (activation.isInteractive())
+          publishManagement({ providerId, action: { kind: "create", actionId } });
+      }}
+      onProviderAction={(profile, actionId) => {
+        if (
+          !activation.isInteractive() ||
+          !profile.actions?.some((action) => action.id === actionId && action.available)
+        )
+          return;
+        publishSelection({ providerId: profile.providerId, profileId: profile.profileId });
+        publishManagement({
+          providerId: profile.providerId,
+          action: { kind: "provider", profileId: profile.profileId, actionId },
+        });
+      }}
+      onConnect={(profile: CatalogProfile) => {
+        if (activation.isInteractive())
+          void runConnection({
+            kind: "connect",
+            providerId: profile.providerId,
+            profile: {
+              id: profile.profileId,
+              ...(profile.revision === undefined ? {} : { revision: profile.revision }),
+            },
+          });
+      }}
+      onDisconnect={() => {
+        if (activation.isInteractive()) void runConnection({ kind: "disconnect" });
+      }}
+      onRefresh={refresh}
+    />
   );
   const ownsFailure = (): boolean =>
     activation.isInteractive() && failure !== undefined && currentFailure.current === failure;
@@ -190,17 +339,17 @@ export function ProviderApplication({
         aria-busy={busy}
         sx={{ minWidth: 0, minHeight: 0 }}
       >
-        {activation.workspace.render({ providerControl, isInteractive: activation.isInteractive })}
+        {activation.workspace.render({ profilesPage, isInteractive: activation.isInteractive })}
       </Box>
       <Dialog
         open={failure !== undefined}
-        onClose={(): void => {
+        onClose={() => {
           if (ownsFailure()) publishFailure(undefined);
         }}
-        aria-labelledby="provider-switch-failure-title"
+        aria-labelledby="connection-handoff-failure-title"
       >
-        <DialogTitle id="provider-switch-failure-title">
-          Unable to switch messaging provider
+        <DialogTitle id="connection-handoff-failure-title">
+          Unable to complete connection change
         </DialogTitle>
         <DialogContent>
           <Alert severity="error">
@@ -209,18 +358,18 @@ export function ProviderApplication({
         </DialogContent>
         <DialogActions>
           <Button
-            onClick={(): void => {
+            onClick={() => {
               if (ownsFailure()) publishFailure(undefined);
             }}
           >
             Keep working
           </Button>
           <Button
-            onClick={(): void => {
-              if (ownsFailure() && failure !== undefined) void selectProvider(failure.targetId);
+            onClick={() => {
+              if (ownsFailure() && failure !== undefined) void runConnection(failure.request);
             }}
           >
-            Retry switch
+            Retry connection
           </Button>
         </DialogActions>
       </Dialog>

@@ -24,12 +24,12 @@ on first use. The installer does not bundle Kafka or create a local broker.
 Have reachable bootstrap brokers, TLS trust material and any OAuth settings ready.
 Ask your administrator for [inspection permissions](../guide/security.md#kafka-access-and-effects).
 
-1. Choose **Add connection → Existing Kafka cluster**, enter a name and bootstrap brokers, and keep TLS enabled
+1. Choose **Add connection → Kafka broker**, enter a name and bootstrap brokers, and keep TLS enabled
    for a secured cluster. Select the matching PEM, JKS or PKCS12 trust material.
 2. Configure OAuth if required. Follow [Connect your Kafka](../guide/connections.md#configure-manually)
    for field details and optional service connections.
 3. Choose **Test connection** and resolve any reported error before saving.
-4. Choose **Save profile**, then its connect/play button. Wait for **Connected**.
+4. Choose **Save profile**, then **Connect** on its Kafka row. Wait for **Connected**.
 
 **You should see:** the topics visible to your account. Testing a draft does not
 save or connect it. For Nokia EDA, use [Connect via EDA](../plugins/eda.md) to install

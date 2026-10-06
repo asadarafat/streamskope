@@ -99,7 +99,7 @@ function ProfileEvidenceSection({
   );
 }
 
-function ProfileDeleteDialog({
+export function ProfileDeleteDialog({
   host,
   onClose,
   profile,

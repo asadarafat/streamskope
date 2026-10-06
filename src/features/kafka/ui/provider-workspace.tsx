@@ -14,6 +14,7 @@ import {
 } from "../contracts";
 
 import { KafkaWorkspace, type StreamSkopeAppProperties } from "./StreamSkopeApp";
+import { KafkaProfileCatalog } from "./profile-catalog";
 
 /** New requests require this activation's authority; already admitted results remain unchanged. */
 export function createInteractiveKafkaHost(
@@ -49,6 +50,7 @@ export function createKafkaWorkspaceRegistration(
   properties: StreamSkopeAppProperties,
 ): ProviderWorkspaceRegistration {
   let initialQueryImportConsumed = false;
+  const catalog = new KafkaProfileCatalog(properties);
   function RegisteredKafkaWorkspace({
     controls,
   }: {
@@ -57,6 +59,7 @@ export function createKafkaWorkspaceRegistration(
     const [initialQueryImport] = useState(() =>
       initialQueryImportConsumed ? undefined : properties.initialQueryImport,
     );
+    const [initialConnectionEvent] = useState(catalog.initialConnectionEvent);
     const host = useMemo(
       () => createInteractiveKafkaHost(properties.host, controls.isInteractive),
       [properties.host, controls.isInteractive],
@@ -66,7 +69,9 @@ export function createKafkaWorkspaceRegistration(
         {...properties}
         host={host}
         initialQueryImport={initialQueryImport}
-        providerControl={controls.providerControl}
+        providerControl={undefined}
+        profilesPage={controls.profilesPage}
+        initialConnectionEvent={initialConnectionEvent}
         isInteractive={controls.isInteractive}
       />
     );
@@ -74,6 +79,7 @@ export function createKafkaWorkspaceRegistration(
   return {
     id: "kafka",
     label: "Kafka",
+    profiles: catalog.facet,
     render: (controls): React.JSX.Element => <RegisteredKafkaWorkspace controls={controls} />,
     deactivate: async (): Promise<ProviderDeactivationResult> => {
       let phase: "stop" | "disconnect" = "stop";

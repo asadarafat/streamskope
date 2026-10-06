@@ -13,6 +13,7 @@ import {
 } from "../contracts";
 
 import { NatsWorkspace } from "./NatsWorkspace";
+import { createNatsProfilesFacet } from "./profiles-facet";
 import type { NatsWorkspaceSource } from "./workspace-types";
 
 /** Revoke new ownership; admitted receipts and listeners still observe original cleanup. */
@@ -61,7 +62,7 @@ export function createNatsWorkspaceRegistration({
     return (
       <NatsWorkspace
         source={gatedSource}
-        providerControl={controls.providerControl}
+        profilesPage={controls.profilesPage}
         isInteractive={controls.isInteractive}
       />
     );
@@ -82,6 +83,7 @@ export function createNatsWorkspaceRegistration({
   return {
     id: "nats",
     label: "NATS",
+    profiles: createNatsProfilesFacet(source),
     render: (controls): React.JSX.Element => <RegisteredNatsWorkspace controls={controls} />,
     deactivate: async (): Promise<ProviderDeactivationResult> => {
       // A never-rendered or unavailable workspace owns no host resources.

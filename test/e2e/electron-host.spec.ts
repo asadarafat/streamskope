@@ -9,7 +9,6 @@ import {
   expect,
   test,
   type ElectronApplication,
-  type Locator,
   type Page,
 } from "@playwright/test";
 
@@ -22,6 +21,7 @@ import {
 import { summarizeElectronProcessEvidence } from "../support/electron-runtime-evidence";
 import { createPerformanceEvidence } from "../support/performance-evidence";
 import { RULE_EXPRESSION_ARTIFACT_SENTINEL } from "../support/sensitive-artifacts";
+import { openRetrievalLibrary } from "../support/web-profile-workflow";
 import {
   buildElectronSmoke,
   buildRenderer,
@@ -46,16 +46,9 @@ import {
   openWorkbenchResource,
 } from "../support/workbench-browser";
 
-async function openRetrievalLibrary(editor: Locator): Promise<void> {
-  await editor
-    .getByRole("button", { name: "Retrieve certificates and credentials", exact: true })
-    .click();
-  await editor.getByRole("button", { name: "Manage retrieval presets", exact: true }).click();
-}
-
 async function openNewKafkaProfile(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Add connection" }).click();
-  await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+  await page.getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u }).click();
 }
 
 const repositoryRoot = process.cwd();
@@ -537,7 +530,9 @@ test("keeps the header status-only when protected profile storage is unavailable
 
     await expect(page.getByText("Profile storage unavailable", { exact: true })).toBeVisible();
     await expect(page.getByText("Existing connection state was not changed.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add connection" })).toBeDisabled();
+    await page.getByRole("button", { name: "Add connection" }).click();
+    await expect(page.getByRole("menuitem", { name: "Kafka broker", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Configure ad hoc connection" })).toHaveCount(0);
   } finally {
     await application?.close();

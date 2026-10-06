@@ -37,7 +37,7 @@ test("explains command output and flags legacy redirection before retrieval", as
 }, info) => {
   await page.goto(launch.browserUrl);
   await page.getByRole("button", { name: "Add connection", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+  await page.getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u }).click();
   await page
     .getByRole("button", { name: "Retrieve certificates and credentials", exact: true })
     .click();
@@ -68,7 +68,7 @@ test("manages generic retrieval presets and exchanges definitions without conver
 }, info) => {
   await page.goto(launch.browserUrl);
   await page.getByRole("button", { name: "Add connection", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+  await page.getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u }).click();
   const profile = page.getByRole("dialog", { name: "Add Kafka profile" });
   await profile
     .getByRole("button", { name: "Retrieve certificates and credentials", exact: true })
@@ -144,7 +144,9 @@ for (const [colorScheme, width] of [
     const add = page.getByRole("button", { name: "Add connection", exact: true });
     await expect(add).toBeEnabled();
     await add.click();
-    await page.getByRole("menuitem", { name: "Existing Kafka cluster" }).click();
+    await page
+      .getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u })
+      .click();
     const profile = page.getByRole("dialog", { name: "Add Kafka profile" });
     await profile.getByRole("textbox", { name: "Profile name" }).fill("Unsaved profile");
     await page.screenshot({

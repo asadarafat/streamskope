@@ -155,7 +155,10 @@ export async function openTopicTask(
 }
 
 export async function openProfileActions(page: Page, profileName: string): Promise<Locator> {
-  await page.getByRole("button", { name: `More actions for profile ${profileName}` }).click();
+  await page
+    .getByRole("button", { name: `Profile actions ${profileName}`, exact: true })
+    .or(page.getByRole("button", { name: `More actions for profile ${profileName}`, exact: true }))
+    .click();
   const menu = page.getByRole("menu", { name: `Profile actions for ${profileName}` });
   await expect(menu).toBeVisible();
   return menu;

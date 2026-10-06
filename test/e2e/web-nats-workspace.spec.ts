@@ -139,14 +139,6 @@ async function verifyFixtureCleanup(fixture: NatsBrowserFixture, outputDir: stri
     throw new Error("NATS browser cleanup or private-material artifact verification failed.");
 }
 
-async function selectProvider(page: Page, provider: "Kafka" | "NATS"): Promise<void> {
-  const selector = page.getByRole("combobox", { name: "Messaging provider" });
-  await selector.click();
-  await page.getByRole("option", { name: provider, exact: true }).click();
-  await expect(selector).toContainText(provider);
-  await expect(selector).toBeEnabled();
-}
-
 async function openProduct(
   page: Page,
   fixture: NatsBrowserFixture,
@@ -175,12 +167,13 @@ async function openProduct(
   page.on("requestfailed", failedResource);
   try {
     await page.goto(fixture.launch.browserUrl);
-    await expect(page.getByRole("combobox", { name: "Messaging provider" })).toBeVisible({
+    await expect(page.getByTestId("connection-profiles-grid")).toBeVisible({
       timeout: 20_000,
     });
+    await expect(page.getByRole("combobox", { name: "Messaging provider" })).toHaveCount(0);
   } catch {
     expectSafeDiagnostics(fixture, diagnostics);
-    throw new Error("The actual product did not expose its messaging provider selector.");
+    throw new Error("The actual product did not expose its shared connection catalog.");
   } finally {
     page.off("requestfailed", failedResource);
   }
@@ -192,9 +185,13 @@ async function openNatsResource(
 ): Promise<void> {
   const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });
   if (!(await navigation.isVisible()))
-    await page.getByRole("button", { name: "Open NATS resources" }).click();
+    await page.getByRole("button", { name: /^Open (?:Kafka|NATS) resources$/u }).click();
   await navigation.getByRole("button", { name: resource, exact: true }).click();
-  await expect(page.getByRole("main", { name: resource })).toBeVisible();
+  await expect(
+    page.getByRole("main", {
+      name: resource === "Connection Profiles" ? "Connection profiles page" : resource,
+    }),
+  ).toBeVisible();
 }
 
 async function expectPrivateEditorCleared(page: Page, fixture: NatsBrowserFixture): Promise<void> {
@@ -235,7 +232,8 @@ async function createProfile(
   options: { token?: string; caPem?: string; anonymous?: boolean } = {},
 ): Promise<void> {
   await openNatsResource(page, "Connection Profiles");
-  await page.getByRole("button", { name: "Add NATS profile" }).click();
+  await page.getByRole("button", { name: "Add connection", exact: true }).click();
+  await page.getByRole("menuitem", { name: "NATS server", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Create NATS profile" });
   await expect(dialog.getByRole("textbox", { name: "Profile name", exact: true })).toBeFocused();
   await dialog.getByRole("textbox", { name: "Profile name", exact: true }).fill(name);
@@ -258,7 +256,7 @@ async function createProfile(
   await dialog.getByRole("button", { name: "Save profile", exact: true }).click();
   await expectReceipt(fixture, "profiles.create", receiptIndex);
   await expectPrivateEditorCleared(page, fixture);
-  await expect(page.getByRole("grid", { name: "NATS profiles" })).toContainText(name);
+  await expect(page.getByTestId("connection-profiles-grid")).toContainText(name);
 }
 
 async function fillPrivateField(field: Locator, value: string): Promise<void> {
@@ -370,7 +368,71 @@ function expectSafeDiagnostics(
 test.describe("real NATS browser workspace", () => {
   // Covers browser/page setup too; setting the limit inside a callback is too late for fixtures.
   test.describe.configure({ timeout: 120_000 });
-  test("inspects original wildcard records, confirms stop, retains edited credentials and switches providers", async ({
+  test("browses and edits a Kafka profile without interrupting the active NATS subscription", async ({
+    page,
+    natsBrowser: fixture,
+  }) => {
+    const diagnostics = observeBrowserDiagnostics(page);
+    await openProduct(page, fixture, diagnostics);
+    await createProfile(page, fixture, "NATS kept connected");
+    await connectProfile(page, fixture, "NATS kept connected");
+    const generation = await startSubscription(page, fixture, "qualification.*");
+    const receiptIndex = fixture.receipts.length;
+
+    await openNatsResource(page, "Connection Profiles");
+    await page.getByRole("button", { name: "Add connection", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Kafka broker", exact: true }).click();
+    const editor = page.getByRole("dialog", { name: "Add Kafka profile", exact: true });
+    await editor.getByRole("textbox", { name: "Profile name", exact: true }).fill("Kafka draft");
+    await editor
+      .getByRole("textbox", { name: "Bootstrap brokers", exact: true })
+      .fill("127.0.0.1:1");
+    await editor.getByRole("radio", { name: "Plaintext (insecure)", exact: true }).check();
+    await editor.getByRole("button", { name: "Save profile", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+
+    const profiles = page.getByTestId("connection-profiles-grid");
+    await expect(profiles.getByRole("columnheader", { name: "System", exact: true })).toBeVisible();
+    await expect(profiles).toContainText("Kafka draft");
+    await expect(profiles).toContainText("NATS kept connected");
+    await page.getByRole("button", { name: "Select profile Kafka draft", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Profile actions Kafka draft", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+    const edit = page.getByRole("dialog", { name: "Edit Kafka profile Kafka draft", exact: true });
+    await edit
+      .getByRole("textbox", { name: "Profile name", exact: true })
+      .fill("Kafka saved draft");
+    await edit.getByRole("button", { name: "Update profile", exact: true }).click();
+    await expect(edit).toHaveCount(0);
+    await expect(profiles).toContainText("Kafka saved draft");
+    expect(fixture.receipts.slice(receiptIndex).map((receipt) => receipt.command)).not.toContain(
+      "subscription.stop",
+    );
+    expect(fixture.receipts.slice(receiptIndex).map((receipt) => receipt.command)).not.toContain(
+      "connection.disconnect",
+    );
+
+    const publisher = await openPublisher(fixture);
+    publisher.publish("qualification.catalog-browsing", "still-received-without-connection-change");
+    await publisher.flush();
+    await openNatsResource(page, "Live Subscription");
+    await expect(page.getByLabel("Connection status", { exact: true })).toContainText("Connected");
+    await expect(page.getByLabel("Subscription status", { exact: true })).toContainText(
+      "Streaming",
+    );
+    await expect(
+      natsGrid(page).getByRole("gridcell", { name: "qualification.catalog-browsing", exact: true }),
+    ).toBeVisible();
+    expect(
+      fixture.records().find((record) => record.subject === "qualification.catalog-browsing")
+        ?.generation,
+    ).toBe(generation);
+    await expectPrivateEditorCleared(page, fixture);
+    expectSafeDiagnostics(fixture, diagnostics);
+  });
+
+  test("inspects wildcard records, confirms cleanup and reconnects retained credentials through shared profiles", async ({
     page,
     natsBrowser: fixture,
   }, testInfo) => {
@@ -379,16 +441,16 @@ test.describe("real NATS browser workspace", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openProduct(page, fixture, diagnostics);
 
-    // Keep an actual Kafka resource visit to check restoration across repeated provider switches.
+    // Disconnected profiles are shared; choosing an editor does not activate its provider.
     const kafkaNavigation = page.getByRole("navigation", { name: "StreamSkope resources" });
     await kafkaNavigation.getByRole("button", { name: "Connection Profiles", exact: true }).click();
-    await expect(page.getByRole("main", { name: "Connection Profiles page" })).toBeVisible();
-    await selectProvider(page, "NATS");
+    await expect(page.getByRole("main", { name: "Connection profiles page" })).toBeVisible();
     await expect(page.getByRole("main")).toContainText(/session/iu);
 
     // An unsubmitted editor closes with Escape and returns to its admitting control.
-    const addProfile = page.getByRole("button", { name: "Add NATS profile" });
+    const addProfile = page.getByRole("button", { name: "Add connection", exact: true });
     await addProfile.click();
+    await page.getByRole("menuitem", { name: "NATS server", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "Profile name", exact: true })).toBeFocused();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     await page.keyboard.press("Escape");
@@ -547,7 +609,8 @@ test.describe("real NATS browser workspace", () => {
       "Disconnected",
     );
     await openNatsResource(page, "Connection Profiles");
-    await page.getByRole("button", { name: `Edit profile ${profileName}`, exact: true }).click();
+    await page.getByRole("button", { name: `Profile actions ${profileName}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Edit NATS profile" });
     expect(
       await editor
@@ -578,17 +641,18 @@ test.describe("real NATS browser workspace", () => {
     for (let cycle = 0; cycle < 2; cycle += 1) {
       const switchIndex = fixture.receipts.length;
       const recordsBeforeSwitch = fixture.records().length;
-      await selectProvider(page, "Kafka");
+      await page.getByRole("button", { name: "Stop subscription", exact: true }).click();
       const stopped = await expectReceipt(fixture, "subscription.stop", switchIndex);
+      await page.getByRole("button", { name: "Disconnect", exact: true }).click();
       const disconnected = await expectReceipt(fixture, "connection.disconnect", switchIndex);
       expect(stopped.completed).toBeLessThan(disconnected.admitted);
-      await expect(page.getByRole("main", { name: "Connection Profiles page" })).toBeVisible();
+      await openNatsResource(page, "Connection Profiles");
+      await expect(page.getByTestId("connection-profiles-grid")).toBeVisible();
       publisher.publish("qualification.switched-sentinel", "must-not-arrive-in-retired-workspace");
       await publisher.flush();
       await delay(350);
       expect(publisher.isClosed()).toBe(false);
       expect(fixture.records().length).toBe(recordsBeforeSwitch);
-      await selectProvider(page, "NATS");
       await expect(page.getByLabel("Connection status", { exact: true })).toContainText(
         "Disconnected",
       );
@@ -614,7 +678,6 @@ test.describe("real NATS browser workspace", () => {
     test.setTimeout(120_000);
     const diagnostics = observeBrowserDiagnostics(page);
     await openProduct(page, fixture, diagnostics);
-    await selectProvider(page, "NATS");
     for (const failure of [
       {
         name: "Wrong token",
@@ -638,7 +701,11 @@ test.describe("real NATS browser workspace", () => {
       if (receipt.response.ok) throw new Error("The invalid NATS profile unexpectedly connected.");
       expect(receipt.response.error.code).toBe(failure.code);
       await expect(page.getByLabel("Connection status", { exact: true })).toContainText("Failed");
-      await expect(page.getByRole("alert").filter({ hasText: failure.summary })).toBeVisible();
+      const recovery = page.getByRole("dialog", { name: "Unable to complete connection change" });
+      await expect(recovery).toBeVisible();
+      await expect(recovery.getByRole("alert")).toContainText(failure.summary);
+      await recovery.getByRole("button", { name: "Keep working", exact: true }).click();
+      await expect(recovery).toHaveCount(0);
       await expectPrivateEditorCleared(page, fixture);
     }
     await createProfile(page, fixture, "Recovered verified NATS");
@@ -665,7 +732,6 @@ test.describe("real NATS browser permissions", () => {
     test.setTimeout(120_000);
     const diagnostics = observeBrowserDiagnostics(page);
     await openProduct(page, fixture, diagnostics);
-    await selectProvider(page, "NATS");
     await createProfile(page, fixture, "Restricted verified NATS", { anonymous: true });
     await connectProfile(page, fixture, "Restricted verified NATS");
     await openNatsResource(page, "Live Subscription");

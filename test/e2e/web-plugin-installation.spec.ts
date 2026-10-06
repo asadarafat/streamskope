@@ -148,7 +148,10 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
       0,
     );
     await expect(
-      page.getByRole("menuitem", { name: "Existing Kafka cluster", exact: true }),
+      page.getByRole("menuitem", {
+        name: /^(?:Kafka broker|Existing Kafka cluster)$/u,
+        exact: true,
+      }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await openPlugins(page);
@@ -241,7 +244,10 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
       0,
     );
     await expect(
-      page.getByRole("menuitem", { name: "Existing Kafka cluster", exact: true }),
+      page.getByRole("menuitem", {
+        name: /^(?:Kafka broker|Existing Kafka cluster)$/u,
+        exact: true,
+      }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     available = fixtures.update;
