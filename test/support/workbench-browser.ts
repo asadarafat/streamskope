@@ -19,6 +19,30 @@ export async function expectWorkbenchReady(page: Page): Promise<void> {
   if (await navigation.isVisible()) await expect(navigation).toBeVisible();
 }
 
+export async function approvePluginReview(
+  page: Page,
+  action: "Install plugin" | "Update plugin" | "Stop capture and update",
+  captureWarning?: string,
+): Promise<void> {
+  const review = page.getByRole("dialog", { name: "Review plugin", exact: true });
+  await expect(review).toBeVisible();
+  await review
+    .getByRole("button", {
+      name: action === "Stop capture and update" ? "Update plugin" : action,
+      exact: true,
+    })
+    .click();
+  if (action === "Stop capture and update") {
+    // Active capture needs a second confirmation after the verified-package review.
+    const confirmation = page.getByRole("dialog", { name: "Update plugin?", exact: true });
+    await expect(confirmation).toBeVisible();
+    if (captureWarning !== undefined) await expect(confirmation).toContainText(captureWarning);
+    await confirmation.getByRole("button", { name: action, exact: true }).click();
+    await expect(confirmation).toHaveCount(0, { timeout: 60_000 });
+  }
+  await expect(review).toHaveCount(0);
+}
+
 export async function openWorkbenchResource(
   page: Page,
   resource: "Connection Profiles" | "Consumer Groups" | "Overview" | "Topics",

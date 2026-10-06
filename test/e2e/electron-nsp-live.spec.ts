@@ -35,7 +35,7 @@ import {
   removeOwnedNspTopic,
 } from "../support/nsp-live-broker";
 import { pluginPackageFixtures } from "../support/plugin-package-fixture";
-import { openWorkbenchResource } from "../support/workbench-browser";
+import { approvePluginReview, openWorkbenchResource } from "../support/workbench-browser";
 
 // Credentials and live message data never enter traces, screenshots or video artifacts.
 test.use({ screenshot: "off", trace: "off", video: "off" });
@@ -214,6 +214,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     await openPlugins(page);
     const card = page.getByRole("region", { name: "NSP Capture", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
+    await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${current.manifest.version}`);
     const installed = await installation(page);
     assert(installed?.activationId, "NSP must be activated from its installed package.");
@@ -303,6 +304,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     await card
       .getByRole("button", { name: `Update to ${update.manifest.version}`, exact: true })
       .click();
+    await approvePluginReview(page, "Update plugin");
     await expect(card).toContainText(`Active version ${update.manifest.version}`);
     const updated = await installation(page);
     expect(updated?.activationId).not.toBe(installed.activationId);
@@ -327,6 +329,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     await page.keyboard.press("Escape");
     await openPlugins(page);
     await card.getByRole("button", { name: "Install", exact: true }).click();
+    await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${update.manifest.version}`);
     await closePreferences(page);
     await page.getByRole("button", { name: "Refresh NSP credentials", exact: true }).click();

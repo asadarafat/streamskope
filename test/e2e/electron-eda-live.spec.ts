@@ -34,7 +34,7 @@ import {
   startElectronPluginFixture,
 } from "../support/electron-plugin";
 import { pluginPackageFixtures } from "../support/plugin-package-fixture";
-import { openWorkbenchResource } from "../support/workbench-browser";
+import { approvePluginReview, openWorkbenchResource } from "../support/workbench-browser";
 
 // Live credentials and message data must never be recorded in a trace or failure screenshot.
 test.use({ screenshot: "off", trace: "off", video: "off" });
@@ -356,6 +356,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     await openPlugins(page);
     const card = page.getByRole("region", { name: "EDA Capture", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
+    await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${current.manifest.version}`);
     const first = await installation(page);
     assert(first?.activationId);
@@ -456,11 +457,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     await card
       .getByRole("button", { name: `Update to ${update.manifest.version}`, exact: true })
       .click();
-    const updateDialog = page.getByRole("dialog", { name: /Update/u });
-    await expect(updateDialog).toContainText("Stop EDA capture");
-    await updateDialog
-      .getByRole("button", { name: "Stop capture and update", exact: true })
-      .click();
+    await approvePluginReview(page, "Stop capture and update", "Stop EDA capture");
     await expect(card).toContainText(`Active version ${update.manifest.version}`, {
       timeout: 60_000,
     });
@@ -498,6 +495,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     });
     assert(repeated.ok, "Repeated plugin removal must remain safe.");
     await card.getByRole("button", { name: "Install", exact: true }).click();
+    await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${update.manifest.version}`);
     await closePreferences(page);
     const reinstalledSource = await resume();
