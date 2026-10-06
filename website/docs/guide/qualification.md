@@ -151,11 +151,11 @@ historical evidence, rather than qualification of this candidate.
 
 <!-- publication-qualification -->
 
-## Published release: v0.8.0
+## Published release: v0.9.0
 
-These pages describe [v0.8.0](../releases/v0.8.0.md) at source [`8c1e452`](https://github.com/asadarafat/streamskope/commit/8c1e452d5397ebd2a52070d70b18dd35ff7fb48e). The release notes link the packaging workflow; earlier release results below are historical.
+These pages describe [v0.9.0](../releases/v0.9.0.md) at source [`919dd67`](https://github.com/asadarafat/streamskope/commit/919dd67cdffb9a088c5890d818b22952c8db0d08). The release notes link the packaging workflow; earlier release results below are historical.
 
-The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.8.0/qualification-v0.8.0.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
+The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.9.0/qualification-v0.9.0.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
 <!-- /publication-qualification -->
 
 ## Historical qualification: v0.7.1
