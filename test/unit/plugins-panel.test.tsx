@@ -85,6 +85,7 @@ it("retries installed controls before a pending network refresh completes", asyn
     },
   });
   render(<PluginsPanel host={host} />);
+  await act((): Promise<void> => Promise.resolve());
   const retry = await screen.findByRole("button", { name: "Retry activation" });
   expect(retry).toBeEnabled();
   await userEvent.setup().click(retry);

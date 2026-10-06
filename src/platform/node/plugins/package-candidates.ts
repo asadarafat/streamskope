@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { PluginPackageInspection } from "../../../plugins/contracts";
+
 import { pluginProblem } from "./problem";
 
 export const PLUGIN_PACKAGE_REVIEW_TTL_MS = 5 * 60_000;

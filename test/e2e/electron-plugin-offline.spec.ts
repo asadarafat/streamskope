@@ -16,7 +16,9 @@ import {
 
 const run = promisify(execFile);
 
-test("installs a reviewed signed file and cached copy in the native host while GitHub is unavailable", async ({}, info) => {
+test("installs a reviewed signed file and cached copy in the native host while GitHub is unavailable", async ({
+  browserName: _browserName,
+}, info) => {
   test.setTimeout(180_000);
   test.skip(!electronPluginStorageAvailable, "A native protected credential service is required.");
   await run(process.execPath, ["--import", "tsx", "tools/package.ts", "plugin", "eda"], {
@@ -60,7 +62,7 @@ test("installs a reviewed signed file and cached copy in the native host while G
     await review.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "Remove", exact: true }).click();
     await page
-      .getByRole("dialog", { name: "Remove plugin", exact: true })
+      .getByRole("dialog", { name: /^Remove/u })
       .getByRole("button", { name: "Remove plugin", exact: true })
       .click();
     await expect(

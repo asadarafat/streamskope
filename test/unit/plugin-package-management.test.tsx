@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -59,6 +59,7 @@ it("reviews a signed local package while remote discovery is pending and discard
       commands.find((command) => command.command === "plugins.package.discard")?.payload,
     ).toEqual({ candidateId: "review-sample" }),
   );
+  await waitFor(() => expect(review).not.toBeInTheDocument());
   expect(screen.getByText("Checking for plugin updates…")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Install from file" }));
   await approvePackage();
@@ -237,12 +238,17 @@ it("does not expire or discard a reviewed package while its admitted installatio
       },
       installDeferred: (): Promise<void> => installing,
     });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PluginsPanel host={host} />);
     await act((): Promise<void> => Promise.resolve());
-    await user.click(screen.getByRole("button", { name: "Install from file" }));
+    await act((): Promise<void> => {
+      fireEvent.click(screen.getByRole("button", { name: "Install from file" }));
+      return Promise.resolve();
+    });
     const review = screen.getByRole("dialog", { name: "Review plugin" });
-    await user.click(within(review).getByRole("button", { name: "Install plugin" }));
+    await act((): Promise<void> => {
+      fireEvent.click(within(review).getByRole("button", { name: "Install plugin" }));
+      return Promise.resolve();
+    });
     await act((): Promise<void> => vi.advanceTimersByTimeAsync(5_001));
     expect(within(review).getByRole("button", { name: "Applying change…" })).toBeDisabled();
     expect(review).not.toHaveTextContent("This review expired");
@@ -273,10 +279,12 @@ it("expires a reviewed package without starting installation and releases its re
         status: "install",
       },
     });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PluginsPanel host={host} />);
     await act((): Promise<void> => Promise.resolve());
-    await user.click(screen.getByRole("button", { name: "Install from file" }));
+    await act((): Promise<void> => {
+      fireEvent.click(screen.getByRole("button", { name: "Install from file" }));
+      return Promise.resolve();
+    });
     const review = screen.getByRole("dialog", { name: "Review plugin" });
     expect(within(review).getByRole("button", { name: "Install plugin" })).toBeEnabled();
     await act((): Promise<void> => vi.advanceTimersByTimeAsync(5_001));

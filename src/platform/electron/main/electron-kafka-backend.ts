@@ -13,8 +13,8 @@ import { AtomicKafkaProfileFileStore } from "../../node/kafka-profile-file-store
 import { DesktopOperationalPreferenceStore } from "../../node/desktop-operational-preference-store";
 import { AtomicKafkaRuleFileStore } from "../../node/kafka-rule-file-store";
 import { AtomicKafkaTopicConfigurationHistoryFileStore } from "../../node/kafka-topic-configuration-history-file-store";
-import type { PluginPackageFilePicker } from "./plugin-file-picker";
 
+import type { PluginPackageFilePicker } from "./plugin-file-picker";
 import {
   initializeElectronProfileProtection,
   type ElectronProfileProtection,

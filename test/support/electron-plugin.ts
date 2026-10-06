@@ -141,7 +141,7 @@ export async function startElectronPluginFixture(
     throw error;
   }
   async function cleanup(): Promise<void> {
-    let output = hostOutput.join("");
+    let output = [hostOutput.join(""), ...errors, ...assetFailures].join("\n");
     for (const value of sensitiveValues) if (value) output = output.replaceAll(value, "[redacted]");
     await info.attach("electron-host-output", { body: output, contentType: "text/plain" });
     await protectedStorage?.dispose();

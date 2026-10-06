@@ -356,7 +356,7 @@ describe("offline reviewed plugin delivery", () => {
       } catch (error) {
         expect(error).toMatchObject({
           code: "BACKEND_UNAVAILABLE",
-          recovery: expect.stringContaining("review"),
+          recovery: expect.stringContaining("review") as unknown,
         });
         expect((error as Error).message).not.toContain(root);
       }
@@ -364,7 +364,7 @@ describe("offline reviewed plugin delivery", () => {
     await host.discardPackage(candidate.candidateId);
     await expect(host.preparePackageChange(candidate.candidateId)).rejects.toMatchObject({
       code: "BACKEND_UNAVAILABLE",
-      message: expect.stringMatching(/expired|closed/u),
+      message: expect.stringMatching(/expired|closed/u) as unknown,
     });
     const brokenChooser = (
       await setup({

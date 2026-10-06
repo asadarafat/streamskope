@@ -1,6 +1,7 @@
 import { Box, Stack, Typography } from "@mui/material";
 
 import type { PluginChangePrompt, PluginManifest } from "../../../plugins/contracts";
+
 import {
   StudioAlert as Alert,
   StudioButton as Button,

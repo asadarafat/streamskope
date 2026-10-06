@@ -1,6 +1,7 @@
 import { Box, Stack, Typography } from "@mui/material";
 
 import type { StreamSkopeHost } from "../contracts";
+
 import { StudioAlert as Alert, StudioButton as Button } from "../../../platform/ui/controls";
 import { usePlugins } from "./PluginsProvider";
 import { usePluginInventory } from "./usePluginInventory";

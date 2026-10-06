@@ -7,6 +7,7 @@ import {
   StudioDialogContent as DialogContent,
   StudioDialogTitle as DialogTitle,
 } from "../../../platform/ui/controls";
+
 import type { PluginLocalConfirmation } from "./usePluginChanges";
 
 export function PluginLocalChangeDialog({

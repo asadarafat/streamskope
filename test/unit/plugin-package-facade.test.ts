@@ -147,7 +147,7 @@ describe("plugin package host facade", () => {
     "reports unavailable for %s on older runtime ports and absent hosts",
     async (name, payload, method) => {
       for (const runtime of [pluginRuntime(), undefined]) {
-        expect(runtime?.[method]).toBeUndefined();
+        expect(runtime?.[method] === undefined).toBe(true);
         const backend = facade(runtime);
         expect(await backend.execute(request(name, payload))).toMatchObject({
           ok: false,
