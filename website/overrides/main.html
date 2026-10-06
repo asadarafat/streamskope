@@ -39,6 +39,9 @@
 content = super() %} {% if config.extra.release_navigation and page.url == 'releases/' %}{% set
 history %}{% include "partials/release-history.html" %}{% endset %}{% set content = content |
 replace("<!-- release-history -->", history) %}{% endif %} {% if page.meta.desktop_downloads %} {%
-set downloads %}{% include "partials/desktop-downloads.html" %}{% endset %} {{ content | replace("<!-- desktop-downloads -->",
-downloads) }} {% else %}{{ content }}{% endif %} {% if page.meta.plugin_compatibility %} {% include
+set downloads %}{% include "partials/desktop-downloads.html" %}{% endset %}{% set content = content
+| replace("<!-- desktop-downloads -->", downloads) %}{% endif %}{% if
+page.meta.plugin_portable_downloads %}{% set portable %}{% include
+"partials/portable-downloads.html" %}{% endset %}{% set content = content | replace("<!-- portable-plugin-downloads -->",
+portable) %}{% endif %}{{ content }} {% if page.meta.plugin_compatibility %} {% include
 "partials/plugin-compatibility.html" %} {% endif %} {% endblock %}

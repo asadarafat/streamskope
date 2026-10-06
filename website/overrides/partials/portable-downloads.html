@@ -1,0 +1,58 @@
+<div
+  class="sk-plugin-compatibility"
+  role="region"
+  aria-label="Portable plugin downloads"
+  tabindex="0"
+>
+  <table aria-label="Signed portable plugin files">
+    <thead>
+      <tr>
+        <th scope="col">Plugin</th>
+        <th scope="col">Signed portable file</th>
+        <th scope="col">Published requirements</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for plugin in config.extra.source_plugins %}
+      <tr data-portable-status="{{ plugin.portable_availability }}">
+        <th scope="row">{{ plugin.name }}</th>
+        <td>
+          {% if plugin.portable_availability == 'published' %}
+          <a href="{{ plugin.portable_url }}" data-portable-download="{{ plugin.system }}"
+            >Download signed file</a
+          >
+          <br /><code>{{ plugin.portable_name }}</code> <br /><a
+            href="{{ plugin.published_release_url }}"
+            >Plugin release notes and assets</a
+          >
+          <br />Publisher: {{ plugin.portable_publisher }}. {% elif plugin.portable_availability ==
+          'unavailable' %}{% if plugin.availability == 'published' %} No signed portable file for
+          the selected compatible catalog package when checked. {% else %}No compatible catalog
+          package was found when checked.{% endif %}{% else %} Portable availability not checked in
+          this preview. No download is asserted. {% endif %}
+        </td>
+        <td>
+          {% if plugin.portable_availability == 'published' %} Version
+          <code>{{ plugin.published_version }}</code> · API {{ plugin.published_api }}. {% if
+          plugin.published_minimum_host %} <br />Desktop ≥{{ plugin.published_minimum_host }}{% if
+          plugin.published_maximum_host_exclusive %}, &lt;{{ plugin.published_maximum_host_exclusive
+          }}{% endif %}. <br />{{ plugin.published_system | upper }} {{
+          plugin.published_minimum_target }} through {{ plugin.published_maximum_target }}. {% else
+          %} <br />Package does not declare desktop and target intervals. {% endif %} {% else %} No
+          portable package requirements to compare. Check the app's verified cache or catalog. {%
+          endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if config.extra.documentation.status == 'Published documentation' %}
+<p>
+  Verified {{ config.extra.source_plugins[0].checked_at }} for desktop {{
+  config.extra.desktop_release }}.
+  <a href="{{ 'plugin-publications.json' | url }}"
+    >Recorded release links, package digests and publisher identities</a
+  >. Availability can change after this snapshot.
+</p>
+{% endif %}

@@ -61,7 +61,9 @@ async function start(): Promise<void> {
   const publisherFixture = process.env.STREAMSKOPE_PLUGIN_TEST_PUBLISHERS;
   const portableFile = process.env.STREAMSKOPE_PLUGIN_TEST_FILE;
   const offline = process.env.STREAMSKOPE_PLUGIN_TEST_OFFLINE === "1";
+  const hostRelease = process.env.STREAMSKOPE_PLUGIN_TEST_HOST_RELEASE;
   const plugins = new PluginRuntime({
+    ...(hostRelease === undefined ? {} : { hostRelease }),
     store: new PluginStore(join(userData, "plugins"), {
       ...(publisherFixture === undefined
         ? {}

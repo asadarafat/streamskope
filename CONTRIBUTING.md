@@ -751,8 +751,8 @@ draft. Review and publish it. Native desktop/EDA OCI packaging and Pages do not
 run for a plugin release. A desktop release is not required for a plugin fix
 supported by the current host API.
 
-The development source implements plugin API **4**. EDA/NSP plugins each declare
-host compatibility **>=0.4.0, <0.8.0**; these bounds do not assign the desktop's
+The development source implements plugin API **4**. EDA/NSP source manifests each
+declare explicit host compatibility; these bounds do not assign the desktop's
 next version. Publish a compatible supporting desktop before announcing API 4
 plugins as usable. The original **v0.1.0+build.1** and its API **3** assets remain
 published and immutable. Keep source-only changes marked unreleased until their

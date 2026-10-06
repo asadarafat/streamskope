@@ -18,6 +18,9 @@ assert(desktopRelease, "The site declares its documented desktop release");
 const developmentSource =
   JSON.parse(await readFile("package.json", "utf8")).version === "0.0.0-dev";
 const published = process.env.STREAMSKOPE_DOCS_PUBLISH === "1";
+const pluginPublications = published
+  ? JSON.parse(await readFile(resolve(root, "plugin-publications.json"), "utf8"))
+  : undefined;
 const prefix = "/streamskope/";
 const urlIndex = process.argv.indexOf("--url");
 let base = urlIndex < 0 ? undefined : process.argv[urlIndex + 1];
@@ -132,6 +135,41 @@ try {
       await comparison.click();
     } else {
       await expect(pluginNotice).toHaveCount(0);
+    }
+    const portableDownloads = page.getByRole("region", { name: "Portable plugin downloads" });
+    if (route === "plugins/offline/") {
+      await expect(portableDownloads).toBeVisible();
+      for (const plugin of ["eda", "nsp"]) {
+        const manifest = JSON.parse(await readFile(`plugins/${plugin}/manifest.json`, "utf8"));
+        const row = portableDownloads.getByRole("row", { name: new RegExp(manifest.name, "u") });
+        const publication = pluginPublications?.packages.find((entry) => entry.id === manifest.id);
+        const download = row.getByRole("link", { name: "Download signed file", exact: true });
+        if (publication?.portable) {
+          await expect(row).toHaveAttribute("data-portable-status", "published");
+          await expect(download).toHaveAttribute("href", publication.portable.url);
+          await expect(row).toContainText(publication.portable.name);
+          await expect(row).toContainText(publication.portable.publisher);
+          await expect(
+            row.getByRole("link", { name: "Plugin release notes and assets" }),
+          ).toHaveAttribute("href", publication.release_url);
+          await expect(row).toContainText(`API ${publication.api}`);
+        } else {
+          await expect(download).toHaveCount(0);
+          await expect(row).toHaveAttribute(
+            "data-portable-status",
+            published ? "unavailable" : "unchecked",
+          );
+          await expect(row).toContainText(
+            published
+              ? publication
+                ? "No signed portable file for the selected compatible catalog package when checked"
+                : "No compatible catalog package was found when checked"
+              : "Portable availability not checked in this preview",
+          );
+        }
+      }
+    } else {
+      await expect(portableDownloads).toHaveCount(0);
     }
     if (route === "plugins/versioning/") {
       for (const plugin of ["eda", "nsp"]) {

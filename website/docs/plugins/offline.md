@@ -1,5 +1,6 @@
 ---
 plugin_scope: all
+plugin_portable_downloads: true
 ---
 
 # Install a plugin without GitHub access
@@ -71,12 +72,24 @@ Installation and confirmed owned-work cleanup use their existing lifecycle rules
 
 ## Prepare the file on a connected computer
 
-1. Open the chosen plugin release in the
-   [official GitHub releases](https://github.com/asadarafat/streamskope/releases).
-2. Download its **portable** asset, such as
-   `streamskope-nsp-portable-v0.1.0.skope-plugin`. This filename is an example,
-   not a claim that this version is published. Check the release's desktop and
-   target requirements.
+The table below identifies signed portable files verified for the desktop release
+shown in this site's version notice. Desktop installer releases and connection
+plugin releases are separate. Open the linked **plugin release**, rather than
+looking for plugin files among the desktop installers.
+
+<!-- portable-plugin-downloads -->
+
+If a row has no portable download, the catalog-selected compatible package has
+no verified portable file in this snapshot. Use a complete previously downloaded package
+from the app's cache, restore catalog access, or wait for a compatible plugin
+release. Renaming an older catalog package does not make it a signed portable file.
+Publication or network verification failures are not treated as proof of absence.
+
+1. Open the verified plugin release linked in the table and compare its desktop
+   and target requirements with your environment.
+2. Download that row's **signed portable file**. The portable and primary catalog
+   assets contain the same plugin code, resources and version. Choose the portable
+   asset for **Install from file**.
 3. Transfer that exact file to the desktop computer using your organization's
    approved method. Keep the release identity with it for troubleshooting.
 
