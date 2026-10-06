@@ -5,6 +5,8 @@ import { app, safeStorage } from "electron";
 
 import type { KafkaBackendFacade } from "../../src/features/kafka/facade";
 import { createElectronKafkaBackend } from "../../src/platform/electron/main/electron-kafka-backend";
+import { createElectronNatsProfileStore } from "../../src/platform/electron/main/electron-nats-profile-store";
+import { initializeElectronProfileProtection } from "../../src/platform/electron/main/electron-profile-protection";
 import {
   createElectronShell,
   type RunningElectronShell,
@@ -14,6 +16,12 @@ import {
   PACKAGED_RENDERER_URL,
   registerPackagedRendererScheme,
 } from "../../src/platform/electron/main/packaged-renderer-protocol";
+import { createKafkaElectronDeliveryBinding } from "../../src/platform/electron/main/kafka-provider-delivery";
+import { createNatsElectronDeliveryBinding } from "../../src/platform/electron/main/nats-provider-delivery";
+import { createKafkaProviderEndpoint } from "../../src/platform/node/kafka-provider";
+import { createNatsBackend } from "../../src/platform/node/nats-backend";
+import { createNatsProviderEndpoint } from "../../src/platform/node/nats-provider";
+import { ProviderHostRegistry } from "../../src/platform/node/provider-host";
 import { parsePluginPackage } from "../../src/platform/node/plugins/package";
 import type { OfficialPluginEntry } from "../../src/platform/node/plugins/catalog";
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
@@ -22,6 +30,8 @@ import type { TrustedPluginPublisher } from "../../src/platform/node/plugins/pub
 import { createPluginPackageFilePicker } from "../../src/platform/electron/main/plugin-file-picker";
 
 let backend: KafkaBackendFacade | undefined;
+let natsBackend: ReturnType<typeof createNatsBackend> | undefined;
+let providers: ProviderHostRegistry | undefined;
 let runningShell: RunningElectronShell | undefined;
 let closing = false;
 registerPackagedRendererScheme();
@@ -35,10 +45,15 @@ app.on("web-contents-created", (_event, contents) => {
 async function shutdown(exitCode: number): Promise<void> {
   if (closing) return;
   closing = true;
+  const ownedProviders = providers === undefined ? [backend, natsBackend] : [providers];
   const results = await Promise.allSettled(
     [
       (): Promise<void> => runningShell?.close() ?? Promise.resolve(),
-      (): Promise<void> => backend?.shutdown() ?? Promise.resolve(),
+      ...ownedProviders.map(
+        (owner): (() => Promise<void>) =>
+          (): Promise<void> =>
+            owner?.shutdown() ?? Promise.resolve(),
+      ),
     ].map((run): Promise<void> => {
       try {
         return run();
@@ -104,14 +119,30 @@ async function start(): Promise<void> {
     },
   });
   installPackagedRendererProtocol(rendererRoot, (path) => plugins.rendererAsset(path));
+  const profileProtection = await initializeElectronProfileProtection(
+    safeStorage,
+    process.platform,
+  );
   backend = await createElectronKafkaBackend({
     platform: process.platform,
     safeStorage,
     userDataPath: userData,
     plugins,
+    profileProtection,
   });
+  natsBackend = createNatsBackend({
+    profileStore: createElectronNatsProfileStore({ userDataPath: userData, profileProtection }),
+  });
+  providers = new ProviderHostRegistry([
+    createKafkaProviderEndpoint(backend),
+    createNatsProviderEndpoint(natsBackend),
+  ]);
   runningShell = await createElectronShell({
-    backend,
+    registry: providers,
+    deliveryBindings: [
+      createKafkaElectronDeliveryBinding(backend),
+      createNatsElectronDeliveryBinding(),
+    ],
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl: PACKAGED_RENDERER_URL,
   });

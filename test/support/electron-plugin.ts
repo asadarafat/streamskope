@@ -11,6 +11,7 @@ import {
 } from "@playwright/test";
 
 import { buildElectronSmoke, buildRenderer } from "./electron-application";
+import { expectProductionProfileStorage } from "./profile-storage";
 import {
   protectedStorageSessionAvailable,
   startProtectedStorageSession,
@@ -92,6 +93,7 @@ export async function startElectronPluginFixture(
     await expect(page.getByLabel("Profile storage status")).toContainText("OS-protected profiles", {
       timeout: 15_000,
     });
+    await expectProductionProfileStorage(page);
     expect(page.url()).toBe("streamskope://app/");
     const origin = await page.evaluate(() => performance.timeOrigin);
     const security = await application.evaluate(({ BrowserWindow, safeStorage }) => {

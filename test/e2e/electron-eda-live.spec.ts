@@ -441,7 +441,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     const captureProfile = (await profiles(page)).find((p) => p.id === captureProfileId)!;
     await page
       .getByRole("button", {
-        name: `Disconnect insecure plaintext profile ${captureProfile.name}`,
+        name: `Disconnect profile ${captureProfile.name}`,
         exact: true,
       })
       .click();
@@ -510,9 +510,17 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     await openWorkbenchResource(page, "Connection Profiles");
     await page
       .getByRole("button", {
-        name: `Disconnect insecure plaintext profile ${captureProfile.name}`,
+        name: `Disconnect profile ${captureProfile.name}`,
         exact: true,
       })
+      .click();
+    await expect
+      .poll(async () => (await profiles(page)).find((p) => p.id === captureProfileId)?.active)
+      .toBe(false);
+    await expect(page.getByTestId("provider-workspace")).toHaveAttribute("aria-busy", "false");
+    await openWorkbenchResource(page, "Connection Profiles");
+    await page
+      .getByRole("button", { name: `Select profile ${captureProfile.name}`, exact: true })
       .click();
     await page.getByRole("button", { name: "Stop and remove capture", exact: true }).click();
     await page
@@ -541,6 +549,19 @@ test("qualifies live EDA capture through an installed plugin in one protected El
             dialogs: [...document.querySelectorAll('[role="dialog"]')].map((element) =>
               element.getAttribute("aria-labelledby"),
             ),
+            managedCapture: {
+              count: document.querySelectorAll('[aria-label="Managed capture"]').length,
+              removeButtons: [...document.querySelectorAll("button")]
+                .filter((element) => element.textContent?.trim() === "Stop and remove capture")
+                .map((element) => ({ disabled: element.disabled })),
+              statusUnavailable: document.body.textContent?.includes("Status unavailable") === true,
+              checkingStatus: document.body.textContent?.includes("Checking capture") === true,
+              statusRequestFailed:
+                document.body.textContent?.includes("Capture status could not be checked") === true,
+              missingPlugin:
+                document.body.textContent?.includes("requires a plugin that is not available") ===
+                true,
+            },
             navigation: [...document.querySelectorAll("nav")].map((element) => ({
               label: element.getAttribute("aria-label"),
               hiddenByModal: element.closest('[aria-hidden="true"]') !== null,
