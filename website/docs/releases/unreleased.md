@@ -5,107 +5,153 @@ unreleased: true
 
 # Unreleased changes
 
-## Desktop
+Core NATS live subscriptions, offline plugin management and actionable Kafka
+health investigations extend the desktop workbench. Reliability fixes cover
+production startup, stream cleanup and cancellation.
 
-Production renderer builds preserve React and Material UI dependency initialization
-order across lazy workspaces. Partial forced vendor chunks could previously leave
-the desktop window blank before the application loaded. Required CI now executes
-the minified production renderer in Chromium as well as development workflows.
+## Highlights
 
-Plugin management applies installed state independently of catalog discovery.
-Removing an installed plugin or retrying inactive retained bytes stays available
-while GitHub is unreachable. A successful catalog check is cached with its date;
-failed refresh shows that dated catalog without claiming current availability.
-Local retry verifies bytes and compatibility and retains recoverable state after
-an activation failure. Cached catalog metadata alone cannot install a new package
-offline.
+- Kafka and Core NATS share one application frame, with provider-specific workspaces.
+- Signed portable plugin files and complete cached packages can be reviewed and
+  installed without reaching GitHub; compatible plugin publication remains separate.
+- Observed health prioritizes selected-topic findings, measurement coverage and
+  investigation actions.
 
-Plugin release tooling now produces a publisher-signed portable package alongside
-the existing catalog package. Host verification authenticates its complete payload
-against shipped Ed25519 public keys before parsing or execution; primary downloads
-and existing installations keep their original format. Identical payloads across
-formats retain the same immutable plugin identity. **Install from file** reviews a verified portable package without GitHub access.
-Complete cached packages have a separate exact-version path; dated catalog
-metadata does not imply downloaded bytes. Review receipts expire and pin the
-verified archive, while confirmation binds the candidate and current active work.
-File, cache and catalog installation share cleanup, activation, recovery and
-idempotency. Older downloads are not retroactively signed; a later desktop and
-compatible plugin publication are still required to deliver these source features.
+## Features
 
-Application shutdown rejects new requests immediately and waits for every owned
-cleanup to finish, including environment comparisons that open a separate saved
-destination. A failed cleanup cannot make shutdown finish while another cleanup
-is still running. Cancellation preserves acknowledged or uncertain write outcomes;
-it does not automatically retry a promotion.
+### Core NATS live subscriptions
 
-Cancelled Kafka reads and latency probes keep already-started driver promises
-observed through settlement, preventing unhandled rejections when cancellation
-wins.
+Select **Core NATS** to create a profile with token authentication and verified TLS,
+subscribe to wildcard subjects, and inspect original payloads, headers and reply
+subjects. Native profiles use protected credential storage when available;
+development profiles are session-only. Viewer eviction, application omissions
+and transport omissions are reported separately. Stop and disconnect require
+confirmed cleanup before switching providers.
 
-Desktop and development hosts isolate registered provider routes, event streams
-and shutdown ownership while preserving the existing Kafka host API. Desktop
-event failures mark the affected stream unavailable; replacement subscriptions
-cannot acknowledge events from an earlier subscription. The product now exposes
-**Kafka** and **Core NATS** as built-in messaging providers in the same frame.
-The [Core NATS workspace](../guide/core-nats.md) provides native protected or
-development-session profiles, token authentication, verified TLS, wildcard live
-subscriptions, original payload/header inspection and confirmed stop/disconnect.
-Viewer eviction, application omissions and transport omissions are distinct.
-Provider switching waits for subscription stop and disconnect, retaining the
-current workspace when cleanup fails. Missing native NATS support is explicitly
-unavailable. EDA/NSP remain Kafka connection plugins. Core NATS offers live receipt
-only; it does not provide Kafka offsets, subject inventory or historical replay.
-These source changes do not alter published v0.8.0 installers or Pages; publication
-of a later desktop release is required for a new immutable documentation snapshot.
+Core NATS provides live receipt only: no retained message history, Kafka offsets,
+subject inventory or historical replay. EDA and NSP remain Kafka connection
+plugins. See [Core NATS subscriptions](https://asadarafat.github.io/streamskope/guide/core-nats/).
+
+### Offline plugin installation and network controls
+
+**Install from file** reviews a publisher-signed portable package without GitHub
+access. The host authenticates the complete payload against shipped Ed25519
+public keys before parsing or execution. Complete cached packages have a separate
+exact-version installation path; cached catalog metadata alone cannot install a
+new package. Review receipts expire and bind the candidate to the current active
+work. File, cache and catalog installation share cleanup, activation, recovery and
+idempotency.
+
+Installed-state management remains available when catalog discovery fails.
+Removal and local activation retry do not require a successful catalog refresh.
+A cached catalog shows its observation date rather than claiming current
+availability. Failed activation retains recoverable state, and retries verify
+the retained package and its compatibility again.
+
+Plugin downloads use the system proxy or a configured HTTP/HTTPS proxy. Proxy
+credentials are scoped to that proxy and OS-protected when available; otherwise
+they remain session-only. Download progress and cancellation are separate from
+installed-plugin lifecycle actions. Explicit offline mode blocks **remote** plugin
+acquisition while file/cache installation and local provider connections remain
+available. See [offline plugin installation](https://asadarafat.github.io/streamskope/plugins/offline/).
+
+This desktop adds signed portable delivery support; compatible plugin packages
+must be published separately. Older downloads are not retroactively signed, and
+desktop publication does not change their API or desktop-version bounds.
+
+### Reusable development fixtures
 
 The source launcher prepares a private, digest-pinned `aio-nats` lab alongside
-`aio-kafka`, with token authentication, verified TLS and a session-only profile.
+`aio-kafka`, with verified TLS, token authentication and a session-only profile.
 Start a subscription before publishing bounded generated samples. Persistent and
-disposable NATS tests share one server definition while retaining separate
-ownership and cleanup. A standalone real-server 60-second soak supplements the
-existing pipeline soak; neither measures renderer interaction or native IPC latency.
+disposable NATS tests share one server definition while keeping separate ownership
+and cleanup. An on-demand real-server 60-second soak supplements the existing
+pipeline soak. See [Source workbench](https://asadarafat.github.io/streamskope/start/development/).
 
-The product shell now owns shared navigation presentation and layout. Provider
-switching waits for confirmed stream stop and disconnect, retains the current
-workspace after a cleanup failure, and blocks new commands from retired views
-without discarding already-admitted write responses.
+## Improvements
 
-When the final development-browser client leaves, the host stops its active reader
-and waits for confirmed cleanup before accepting more commands. Desktop event
-failure uses the same confirmed-stop rule. The broker connection stays available;
-failed cleanup requires restarting the host. Transport queues account for records
-held by an outstanding write, and HTTP omission counts stay with the read generation
-that lost those records.
+### Kafka observed health
 
-Observed health now prioritizes selected-topic findings, measurement coverage and
-investigation actions. Existing resources can be selected from the connected
-profile; collection progress and cooldown are visible. Partition filtering and
-sorting and group/topic/exact-record drilldowns reduce manual investigation work.
-Host loss stops collection and marks previous measurements as retained evidence;
-recovery requires a new capture before resource links become actionable.
+Connected-profile resource selection, visible collection progress and cooldown,
+partition filtering and sorting, and group/topic/exact-record drilldowns reduce
+manual investigation. Host loss stops collection and marks previous measurements
+as retained evidence; recovery requires a new capture before resource links become
+actionable.
 
 Collection errors retain specific safe recovery reasons. Selected-topic lag is
-independent of unrelated group-member/assignment omissions. Record sampling uses
-bounded adaptive windows; incomplete coverage does not qualify key or size
-inference. Existing schema-1 history remains readable.
+independent of unrelated group-member or assignment omissions. Record sampling
+uses bounded adaptive windows; incomplete coverage does not qualify key or size
+inference. Existing schema-1 history remains readable. See
+[Observed health](https://asadarafat.github.io/streamskope/guide/observed-health/).
 
-The desktop host protocol advances to 52 for explicit observation coverage,
-recovery errors, cache-only plugin catalog reads, local activation retry, reviewed
-package delivery and owned plugin-download networking.
-Development renderer and host builds must be updated together;
-the desktop installer includes both. This does not change the plugin API.
+### Provider and host ownership
 
-Plugin downloads use the desktop's system proxy or an explicitly configured
-HTTP/HTTPS proxy. Credentials are scoped to that proxy and OS-protected when
-available; otherwise they remain session-only. Download progress and cancellation
-remain separate from installed-plugin lifecycle actions. Explicit offline mode
-blocks plugin acquisition while signed-file/cache installation and local provider
-connections remain available. See [offline plugin installation](../plugins/offline.md).
+The shared shell owns navigation presentation and layout. Registered provider
+routes, events and shutdown ownership remain isolated. Provider switching waits
+for confirmed stop and disconnect, retains the current workspace after cleanup
+failure, and blocks commands from retired views while preserving already-admitted
+write receipts and cleanup events.
 
-Focused operator recovery and isolated multi-broker outage/recovery checks cover
-the changed behavior. Executed results and limitations belong to the exact PR
-revision; earlier release qualification is not carried forward automatically.
+Desktop event failures mark the affected stream unavailable. Replacement
+subscriptions cannot acknowledge events from an earlier subscription. Missing
+native NATS support is explicitly unavailable.
 
-The next desktop version will be assigned when a maintainer starts the release
-workflow. Plugin releases remain independent; their pending notes are retained
-in the corresponding plugin release commentary.
+## Fixes
+
+- Production renderer builds preserve React and Material UI initialization order
+  across lazy workspaces. Partial forced vendor chunks could leave the desktop
+  window blank before the application loaded. Required CI now exercises the
+  minified production renderer as well as development workflows.
+- Shutdown rejects new requests immediately and waits for every owned cleanup,
+  including environment comparisons that use a separate saved destination. One
+  failed cleanup cannot make shutdown finish while another is still running.
+- Cancellation preserves acknowledged or uncertain write outcomes and does not
+  automatically retry a promotion. Cancelled Kafka reads and latency probes keep
+  started driver promises observed through settlement, avoiding unhandled rejections.
+- When the final development-browser client leaves, its host stops the reader and
+  confirms cleanup before accepting further commands. Desktop event failure uses
+  the same stop rule. The broker connection remains available; failed cleanup
+  requires restarting the host. Transport queues account for records held by an
+  outstanding write, and HTTP omission counts stay with their read generation.
+
+## Upgrade and compatibility
+
+The desktop host protocol advances from **48 to 52**. Update renderer and host
+together; the desktop installer includes both. Plugin API **4** is unchanged.
+This release does not publish or upgrade EDA/NSP plugin packages.
+
+Existing published API 3 packages cannot become API 4 packages through a desktop
+upgrade. Source API 4 manifests also retain their declared desktop bounds; those
+bounds currently exclude desktop 0.9.0. These API 4 source packages require a
+separate plugin release whose manifest supports 0.9.0. Existing compatible
+packages retain their own requirements and supported API generation. Check requirements in
+**Preferences → Plugins** rather than inferring compatibility from this desktop
+version. Ordinary Kafka and Core NATS connections do not require capture plugins.
+
+Back up the full application-data directory before an installed upgrade. Follow
+[Upgrade, back up and recover](https://asadarafat.github.io/streamskope/guide/recovery/)
+for protection, recovery and rollback limits.
+
+## Qualification and limits
+
+The [source-bound qualification record](https://asadarafat.github.io/streamskope/guide/qualification/#current-source-qualification)
+retains exact revisions, executed checks and earlier failed attempts. Local
+qualification after v0.8.0 passed shared static/types and unit/integration checks,
+real Kafka/NATS cases, browser workflows, configured live EDA/NSP checks, six native
+Linux ARM64 scenarios, and both 60-second soaks. The real NATS soak delivered all
+60,000 records without duplicates, invalid records or omissions; the pipeline soak
+passed its unchanged budgets.
+
+Native local evidence uses Linux ARM64 source bundles with genuine GNOME credential
+storage. It does not qualify new macOS/Windows installers, installed upgrade/rollback
+or OS process sandbox enforcement. Native installer checks are recorded by the
+release build separately; publication does not establish unexecuted tests.
+
+EDA used the existing capture application. Native plugin catalogs were isolated
+local fixtures; update packages used the same code with newer manifests. NSP API
+certificate verification was disabled in the lab; Kafka verification was enabled.
+Neither soak measures renderer interaction or native IPC latency, and the NATS
+soak does not measure server resource use or internal queue high-water marks.
+
+Release CI assigns the desktop version in its build checkout. Plugin releases remain
+independent; their pending notes live in each plugin's release commentary.

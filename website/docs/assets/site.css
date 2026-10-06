@@ -241,6 +241,9 @@
 .sk-version p {
   margin: 0.25rem 0;
 }
+.sk-release-history tbody td:nth-child(2) {
+  white-space: nowrap;
+}
 .md-typeset .sk-plugin-compatibility table {
   display: table;
   table-layout: fixed;

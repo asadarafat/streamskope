@@ -556,13 +556,21 @@ The final **published GitHub body** is the authoritative release record, includi
 any edits made while reviewing the draft. Copy that body unchanged into Zensical
 through a normal documentation PR. For desktop, use
 `website/docs/releases/vVERSION.md` with `title`, `release_version` and
-`release_tag` front matter. For a plugin, use
+`release_tag` front matter. Add `release_date` from its GitHub publication timestamp
+and a short `release_summary` for the history overview; do not edit the archived body.
+For a plugin, use
 `website/docs/releases/plugins/NAME/vVERSION.md` with `title` front matter only;
-desktop publication validators own the `release_*` fields. Link the new page from
-the release index and navigation. Keep its links usable in both GitHub and the docs
+desktop publication validators own the `release_*` fields. Desktop history and
+navigation are generated from the archived pages. Keep its links usable in both GitHub and the docs
 site. Pages includes the desktop publication event's body automatically in its
 release snapshot. Keep the archival documentation PR for repository history and
 subsequent snapshots; it does not deploy Pages or change an existing release snapshot.
+The sidebar shows only the five newest published stable desktop versions and
+**See all releases**; the overview retains older versions and prereleases. Keep
+one `<!-- release-history -->` marker in the overview rather than a second version
+list. The full internal tree preserves breadcrumbs for older pages. Stamped
+release candidates remain previews until publication advances the baseline; public
+builds reject any remaining pending notes. Unreleased commentary appears only in previews.
 
 For a desktop publication, update the published download baseline. Keep desktop
 release identity separate from source plugin guide scope and package availability. Reset only the commentary shipped in that component's release;

@@ -134,8 +134,7 @@ class DocumentationVersionTests(unittest.TestCase):
         self.source_version(version)
         self.notes(tag, version)
         (self.root / "website/docs/releases/index.md").write_text(
-            "# Releases\n\n| [Unreleased changes](unreleased.md) | Unassigned | Development |\n"
-            "| [v0.1.0+build.1](v0.1.0+build.1.md) | 0.1.0 | Historical release |\n")
+            "# Releases\n\n<!-- release-history -->\n")
         self.event = self.root / "release-event.json"
         self.event.write_text(json.dumps({"action": "published", "release": {
             "tag_name": tag, "draft": False, "prerelease": "-" in version,
@@ -198,6 +197,8 @@ class DocumentationVersionTests(unittest.TestCase):
 
     def test_publication_aligns_tagged_source_notes_and_downloads_reproducibly(self):
         environment = self.release_environment()
+        notes = self.root / "website/docs/releases/v0.2.0.md"
+        notes.write_text(notes.read_text().replace("release_tag:", "release_status: pending\nrelease_tag:"))
         with self.assertRaisesRegex(ValueError, "downloads must match"):
             docs.documentation_context(self.root, environment)
         docs.publication.prepare_publication(self.root, environment)
@@ -209,8 +210,10 @@ class DocumentationVersionTests(unittest.TestCase):
         self.assertEqual(identity, {"revision": environment["GITHUB_SHA"], "desktop_release": "v0.2.0"})
         notes = self.root / "website/docs/releases/v0.2.0.md"
         self.assertEqual(notes.read_text().split("---\n\n", 1)[1], json.loads(self.event.read_text())["release"]["body"])
+        self.assertNotIn("release_status:", notes.read_text())
         self.assertFalse(self.unreleased.exists())
-        self.assertIn("[v0.2.0](v0.2.0.md)", (self.root / "website/docs/releases/index.md").read_text())
+        self.assertEqual((self.root / "website/docs/releases/index.md").read_text(),
+                         "# Releases\n\n<!-- release-history -->\n")
         self.assertTrue((self.root / "website/docs/releases/v0.1.0+build.1.md").is_file())
         before = {p: p.read_bytes() for p in self.root.rglob("*.md")}
         docs.publication.prepare_publication(self.root, environment)
@@ -261,6 +264,26 @@ class DocumentationVersionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "release evidence section"):
             docs.publication.prepare_publication(self.root, environment)
         self.assertEqual(original, {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()})
+
+    def test_publication_rejects_invalid_date_or_overview_before_mutating_checkout(self):
+        environment = self.release_environment()
+        event = json.loads(self.event.read_text())
+        original = {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()}
+        for published_at in (True, "2026-02-30T08:15:00Z", "2026-10-06", "2026-10-06T29:15:00Z"):
+            with self.subTest(published_at=published_at):
+                self.event.write_text(json.dumps({**event, "release": {**event["release"],
+                                                                       "published_at": published_at}}))
+                with self.assertRaisesRegex(ValueError, "published_at"):
+                    docs.publication.prepare_publication(self.root, environment)
+                self.assertEqual(original, {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()})
+        self.event.write_text(json.dumps(event))
+        index = self.root / "website/docs/releases/index.md"
+        for content in ("# Releases\n", "<!-- release-history -->\n<!-- release-history -->\n"):
+            index.write_text(content)
+            before = {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()}
+            with self.subTest(content=content), self.assertRaisesRegex(ValueError, "release-history marker"):
+                docs.publication.prepare_publication(self.root, environment)
+            self.assertEqual(before, {p: p.read_bytes() for p in self.root.glob("website/**/*") if p.is_file()})
 
     def test_rejects_wrong_event_revision_version_or_notes_before_preparing_publication(self):
         environment = self.release_environment()

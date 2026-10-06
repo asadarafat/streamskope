@@ -1,4 +1,5 @@
 """Release identity and bounded public-site verification."""
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -199,13 +200,21 @@ def prepare_publication(root=ROOT, environment=None):
     if count != 1:
         raise ValueError("Pages requires one documented desktop release setting")
     index = root / "website/docs/releases/index.md"
-    row = f"| [{tag}]({tag}.md) | {version} | Published release; notes from the publication event |"
-    contents, rows = re.subn(r'^\|[^\n]*\(unreleased\.md\)[^\n]*$', row,
-                             index.read_text(), flags=re.M)
-    if rows != 1 and not (rows == 0 and row in contents):
-        raise ValueError("Release index needs one unreleased row or this publication's row")
+    if index.read_text().count("<!-- release-history -->") != 1:
+        raise ValueError("Release index needs exactly one release-history marker")
+    release_date = ""
+    if release.get("published_at") is not None:
+        timestamp = release["published_at"]
+        try:
+            if (not isinstance(timestamp, str) or not re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", timestamp)):
+                raise ValueError("Expected a UTC publication timestamp")
+            datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise ValueError("Release published_at needs a valid UTC publication timestamp") from error
+        release_date = f"release_date: {json.dumps(timestamp[:10])}\n"
     notes = (f"---\ntitle: StreamSkope {tag}\nrelease_version: {version}\n"
-             f"release_tag: {tag}\n---\n\n" + release["body"])
+             f"release_tag: {tag}\n{release_date}---\n\n" + release["body"])
     qualification = root / "website/docs/guide/qualification.md"
     evidence = publication_qualification(qualification.read_text(), release,
                                          subprocess.check_output(
@@ -213,7 +222,6 @@ def prepare_publication(root=ROOT, environment=None):
     # Validate all inputs before changing the disposable checkout. Main is never stamped.
     (root / f"website/docs/releases/{tag}.md").write_text(notes)
     config.write_text(source)
-    index.write_text(contents)
     qualification.write_text(evidence)
     (root / "website/docs/releases/unreleased.md").unlink(missing_ok=True)
 
