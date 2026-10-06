@@ -22,7 +22,7 @@ import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
 // Exercise transactional controls through the supported reduced-motion UI.
 // Accordion scrolling must not move a pointer target during a settings action.
-test.use({ reducedMotion: "reduce" });
+test.use({ contextOptions: { reducedMotion: "reduce" } });
 
 async function port(): Promise<number> {
   const server = createServer();
