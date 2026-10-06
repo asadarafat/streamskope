@@ -139,6 +139,7 @@ def inspect_site(root, base_path="/"):
             "assets/streamskope-intro-light.mp4", "assets/streamskope-intro-dark.mp4",
             "assets/qualification/lifecycle-2026-10-04.json",
             "assets/qualification/topic-monitor-2026-10-04.json",
+            "assets/qualification/pre-release-2026-10-06.json",
         } or file.name == "LICENSE"
         if not special and file.suffix not in ALLOWED_SUFFIXES:
             raise ValueError(f"Unexpected publication file: {relative}")

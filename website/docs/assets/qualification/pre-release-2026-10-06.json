@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 1,
+  "summaryDate": "2026-10-06",
+  "kind": "Local pre-release source qualification; no release version assigned",
+  "provenance": "Selected public facts and SHA-256 bindings to locally retained reports; private endpoints, credentials, records, identifiers, raw logs and browser attachments are excluded.",
+  "source": {
+    "commit": "94b97f168a670cc30bada27d5accaac19a8489a3",
+    "checkoutTree": "7aed5a9e45838cc9499f3c43ec6433184c477067",
+    "trees": {
+      "src": "533bceb11f41de937f455bed21f773307ef9f7eb",
+      "plugins": "5e509f9a3962bab1f6c82acdce785989a35d67f2",
+      "config": "6dc80c5e0095f0b82de7a01540adbaf864fc423e",
+      "tools": "2b57208c8ddf2a282dff7a15d1beb738661786d3",
+      "test": "f6ae8f9c6490447681a1f248d4e93bfaf81602aa",
+      "aio-nats": "72404d67692915ce72e34d25fbd9df53f6cf82fc"
+    },
+    "packageLockSha256": "c837e7a88c2107f9c217f9a3b21255f6ecdd18043bbf656ea67fb6eb3ee0f6ca",
+    "applicationVersion": "0.0.0-dev",
+    "relationshipToFinalPR": "Later documentation changes preserve the qualified application, plugins, build configuration, development/check/package tooling and exercised native/performance sources. Documentation publication validation is qualified separately."
+  },
+  "sourceEquivalence": {
+    "baseline": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+    "candidate": "94b97f168a670cc30bada27d5accaac19a8489a3",
+    "identicalPaths": [
+      "src",
+      "plugins",
+      "config",
+      "tools",
+      "aio-nats",
+      "package.json",
+      "package-lock.json",
+      ".github/workflows",
+      ".prettierignore"
+    ],
+    "changedNativeHarnessPaths": [
+      "test/e2e/electron-eda-live.spec.ts",
+      "test/e2e/electron-nsp-live.spec.ts",
+      "test/e2e/electron-plugin-installation.spec.ts",
+      "test/support/workbench-browser.ts"
+    ]
+  },
+  "runtime": {
+    "arch": "arm64",
+    "node": "v24.12.0",
+    "platform": "linux"
+  },
+  "matrix": [
+    {
+      "name": "local-check",
+      "exitCode": 0,
+      "seconds": 723.24,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c"
+    },
+    {
+      "name": "real-kafka",
+      "exitCode": 0,
+      "seconds": 39.67,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c"
+    },
+    {
+      "name": "real-nats",
+      "exitCode": 0,
+      "seconds": 6.17,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c"
+    },
+    {
+      "name": "web-monitor",
+      "exitCode": 0,
+      "seconds": 102.94,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c"
+    },
+    {
+      "name": "web-nats",
+      "exitCode": 0,
+      "seconds": 59.49,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c"
+    },
+    {
+      "name": "web-plugins",
+      "exitCode": 0,
+      "seconds": 53.27,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c"
+    },
+    {
+      "name": "production-startup",
+      "exitCode": 0,
+      "seconds": 4.37,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c"
+    },
+    {
+      "name": "native-lifecycles",
+      "exitCode": 0,
+      "sourceCommit": "94b97f168a670cc30bada27d5accaac19a8489a3",
+      "seconds": 143.86,
+      "durationMethod": "Playwright reported duration"
+    },
+    {
+      "name": "nats-live-soak",
+      "exitCode": 0,
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+      "seconds": 60.3,
+      "durationMethod": "soak reported duration; production, tooling and performance-test sources unchanged"
+    }
+  ],
+  "matrixReportSha256": "c9971789c5d6c0c464b386b2e4433a037f5039e6ef1a8dda3b1ab122f6e10b75",
+  "retainedLogSha256": {
+    "real-kafka.log": "7a11a9dbef992c4c37e8460a8d5e7a8fcf05ba03f7ed53a18cc3c40cc586483c",
+    "web-plugins.log": "b45a822635a60ff6b17155655ebe47c60c762bf15a2df5a7b066b85e594d64d2",
+    "native-lifecycles.log": "983f019c23209669235a990fcfe93a0f081bb57d6ada378f5f4fb69e453d92e0",
+    "real-nats.log": "88cc8e4d19c41eceda61dcf703ec7780dfa3dd9a71347804d85bf8631e289b5c",
+    "local-check.log": "95b347d32a5fd94fb657ca04cb738e188e6789e5fee517534e968590f1c748db",
+    "nats-live-soak.log": "f140528e9d44eedf0397c3210c9373e90542a4f998a9131f9ecc5d334c9c1e14",
+    "production-startup.log": "35dab48f3b2659b34e6c6d21be1b871b33e51b2a35b05b628e1b825305e97c61",
+    "web-nats.log": "37760565533b7e63b8d4465f1c4b06f34058aec2933a84be41939ba8dc06289c",
+    "web-monitor.log": "96660be13839bf6433cabb143ec90316856f9dabb6dd49f040208fabd6c8e67c"
+  },
+  "documentation": {
+    "outcome": "passed",
+    "htmlPages": 54,
+    "browserRoutes": 49,
+    "media": "passed",
+    "scope": "search, themes, mobile and accessibility; development documentation without publication",
+    "publicationValidationInputs": {
+      "tools/docs.py": "20d8df888dd87db13a5feb69cb05151969bba4ba6d981d682ad8ab2d7cae3eaa",
+      "test/docs/test_docs.py": "c68fdc69947c15a660ca5cd86acb09d4ab19640e4e252f58db1aa3c7dea5b8e8"
+    },
+    "publicationGuard": "Only the explicitly named sanitized summary is admitted; raw qualification JSON remains rejected."
+  },
+  "retainedReportSha256": {
+    "web-monitor.json": "479acb6fa9645a6557ec50ccfd5ba98325278e46e3c0b8532a46f5853dc2863b",
+    "nsp-live.json": "a4036b2e4c27b5d8eb603a60951eea4456d3244d6ddfe7881c18777d59a2fec5",
+    "native-lifecycles.json": "7bd6df7b5e6ef00fcb9510d1718106be99cc3c0747ab25d9116ac0b9c68f80a1",
+    "production-startup.json": "e047b3af55c61a60eb73218cf37a96e5ad754bf6c31679f45391d0b6e3c25f28",
+    "shared.json": "5125045398c947a8ee791b5f063db4d6a9dd168c342eba785b03f74c5d6dd010",
+    "real-nats.json": "e2f19b873b5bc994886be86454525de68c0c13a02ef951d48ad132cbe4fbf3ea",
+    "nats-live-soak.json": "f140528e9d44eedf0397c3210c9373e90542a4f998a9131f9ecc5d334c9c1e14",
+    "real-kafka.json": "bcfba480fb90c47422e5c1ef51ddbfb06c38f88c7bd0195d22436cfdcfa47681",
+    "pipeline-soak.json": "1a3e92a2f5e140804b429132858fe9c9c92222ab0d08770c22f3fd2088ba637d",
+    "web-plugins.json": "41c94bf204ee154d62a3195a311ebfed06642fa1fc7ab86b418c1290b9ccb52f",
+    "web-nats.json": "45da3dcda51e9b63bb3ef8596fbb8e338db21ce2fd7bef015e2fb925e9165c60",
+    "eda-live.json": "cc19b9943e2b24a68373531de19fce0209de10fa02119483138420d269bda115"
+  },
+  "shared": {
+    "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+    "testTree": "96d64c71c4628e479b0f614d49384bf82daf8c5c",
+    "outcome": "passed",
+    "tests": 3088,
+    "files": 357,
+    "additionalChecks": [
+      "static analysis",
+      "types",
+      "Go race",
+      "dependency and advisory policy",
+      "documentation qualification"
+    ]
+  },
+  "realProviders": {
+    "real-kafka": {
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+      "outcome": "passed",
+      "tests": 3
+    },
+    "real-nats": {
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+      "outcome": "passed",
+      "tests": 4
+    }
+  },
+  "browser": {
+    "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+    "outcome": "passed",
+    "scenarios": 11,
+    "skipped": 0,
+    "groups": {
+      "web-monitor": 5,
+      "web-nats": 3,
+      "web-plugins": 2,
+      "production-startup": 1
+    }
+  },
+  "native": {
+    "sourceCommit": "94b97f168a670cc30bada27d5accaac19a8489a3",
+    "outcome": "passed",
+    "scenarios": 6,
+    "skipped": 0,
+    "scope": "Five production product-window scenarios plus one dedicated Electron proxy transport scenario; source bundles on Linux ARM64.",
+    "namedSubchecks": [
+      {
+        "id": "live-eda-installed-lifecycle",
+        "checkCount": 26,
+        "checks": [
+          "actual-package-ui-install",
+          "protected-profile-store",
+          "renderer-context-isolation-and-node-disabled",
+          "existing-cluster-application-ready",
+          "port-conflict-actionable-no-profile",
+          "foreign-listener-preserved",
+          "unknown-session-cleanup-preserves-active-session",
+          "ui-capture-profile-created",
+          "known-exported-record-received",
+          "native-ui-known-record-visible",
+          "disconnect-retains-capture",
+          "reconnect-receives-record",
+          "active-update-confirmed-cleanup",
+          "saved-profile-retained",
+          "original-producer-preserved-during-update",
+          "resume-after-update-new-session-same-profile",
+          "updated-package-record-receipt",
+          "active-removal-cleans-only-owned-session",
+          "removed-plugin-retains-profile",
+          "repeat-removal-idempotent",
+          "reinstall-resume-same-profile",
+          "reinstalled-package-record-receipt",
+          "ui-stop-cleans-session-and-profile",
+          "original-producer-preserved",
+          "same-process-and-window-no-reload",
+          "no-renderer-errors"
+        ]
+      },
+      {
+        "id": "nats-native-live-evidence",
+        "checkCount": 13,
+        "checks": [
+          "production-provider-and-preload",
+          "genuine-gnome-protection",
+          "protected-profile-created",
+          "no-plaintext-secrets-in-profile-file",
+          "same-account-restart-restores-profile",
+          "restored-editor-does-not-return-secrets",
+          "restored-token-and-ca-connect-without-reentry",
+          "real-original-record-fidelity",
+          "native-inspector-original-payload",
+          "confirmed-stop-prevents-later-receipt",
+          "disconnect-retains-protected-profile",
+          "no-private-material-in-responses-or-events",
+          "no-renderer-errors"
+        ]
+      },
+      {
+        "id": "nsp-native-live-evidence",
+        "checkCount": 12,
+        "checks": [
+          "package-ui-install",
+          "real-workflow-profile-dialog",
+          "os-protected-profile",
+          "native-refresh-reuses-profile",
+          "native-ui-known-record-receipt",
+          "hot-ui-update",
+          "updated-profile-refresh",
+          "ui-removal-preserves-profile",
+          "ui-reinstall-refresh-and-reconnect",
+          "same-process-and-window",
+          "execution-journal-cleared",
+          "owned-topic-deletion-confirmed"
+        ]
+      }
+    ]
+  },
+  "liveEda": {
+    "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+    "outcome": "passed",
+    "targetVersion": "v26.8.2",
+    "checkCount": 12,
+    "checks": [
+      "cluster-version",
+      "application-version",
+      "source-discovery",
+      "capture-ready",
+      "lease-renewal",
+      "kafka-record-receipt",
+      "observed-health",
+      "relationship-discovery",
+      "source-preserved",
+      "stop",
+      "owned-resource-cleanup",
+      "repeat-stop"
+    ],
+    "apiCertificateVerification": true,
+    "application": "existing installed capture app; fresh app installation was not rehearsed"
+  },
+  "liveNsp": {
+    "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+    "outcome": "passed",
+    "targetVersion": "26.4.0",
+    "targetBuild": 200,
+    "checkCount": 23,
+    "checks": [
+      "clean-package-install",
+      "repeat-install-retains-one-plugin",
+      "running-target-version",
+      "combined-workflow",
+      "core-profile-test",
+      "profile-saved",
+      "execution-cleanup",
+      "repeat-reuses-profile-and-workflow",
+      "saved-profile-connect",
+      "topic-discovery",
+      "known-record-produce-and-receipt",
+      "observed-health",
+      "relationship-discovery",
+      "hot-update-preserves-and-refreshes-profile",
+      "hot-remove-preserves-profile",
+      "reinstall-reuses-profile",
+      "foreign-request-marker-cleanup-refused",
+      "real-interruption-recovery",
+      "pending-cleanup-blocks-removal",
+      "repeat-cleanup",
+      "recovery-reuses-profile-and-workflow",
+      "secrets-absent-from-renderer-events",
+      "owned-topic-deletion-confirmed"
+    ],
+    "apiCertificateVerification": false,
+    "kafkaCertificateVerification": true,
+    "writes": "Uniquely owned generated fixture topics and records only; business topics were metadata-only.",
+    "cleanup": "Owned executions and fixture topics absent; immutable shared helper intentionally retained."
+  },
+  "pipelineSoak": {
+    "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+    "outcome": "passed",
+    "seconds": 60,
+    "generated": 59995,
+    "published": 59995,
+    "hostDisplayDrops": 0,
+    "cpuPercentOneCore": 32.55337148187067,
+    "eventLoopP99Milliseconds": 23.642111,
+    "sampledPeakRssBytes": 720232448,
+    "budgets": {
+      "maximumCpuPercentOneCore": 60,
+      "maximumPeakRssBytes": 805306368,
+      "maximumEventLoopP99Ms": 150,
+      "maximumDisplayDropRatio": 0.02,
+      "maximumIngestToReducerP95Ms": 1000,
+      "maximumIngestToReducerP99Ms": 2000,
+      "minimumGeneratedRatio": 0.99
+    },
+    "scope": "Production application ingestion, facade, clone transfer and reducer; not Kafka fetch, actual native IPC, React rendering or interaction latency."
+  },
+  "natsSoak": {
+    "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+    "outcome": "passed",
+    "scope": "Fixed 60-second independent SDK publication through the existing pinned token/verified-TLS AIO NATS server and production provider endpoint. CPU, event-loop and sampled RSS cover only the load interval in this Node process; server resource use, React interaction latency, renderer paint and native IPC latency are not measured.",
+    "evidence": {
+      "workload": {
+        "seconds": 60,
+        "rate": 1000,
+        "payloadPaddingBytes": 256,
+        "burstMilliseconds": 100,
+        "recordsPerBurst": 100,
+        "scheduledRecords": 60000,
+        "maximumLoadMilliseconds": 65000,
+        "overallDeadlineMilliseconds": 80000
+      },
+      "serverImage": "nats:2.15.0-alpine@sha256:d5091b05d2033732bf4b282301e4d588f49e8fa9bb58ea0387a0ecea08277bd3",
+      "published": 60000,
+      "delivered": 60000,
+      "uniqueReceived": 60000,
+      "offeredRecordsAtConfiguredRate": 60000,
+      "generatedOfferedRatio": 1,
+      "ungeneratedOfferedRecords": 0,
+      "duplicates": 0,
+      "invalidRecords": 0,
+      "boundarySecretsDetected": false,
+      "publicCounterObservations": {
+        "samples": 611,
+        "observedQueueRecordsMaximum": 0,
+        "observedQueueBytesMaximum": 0,
+        "observedApplicationOmissionsMaximum": 0,
+        "observedTransportOmissionsMaximum": 0,
+        "internalQueueHighWaterMarks": "not measured; maxima cover only publicly emitted counters"
+      },
+      "measurement": {
+        "loadMilliseconds": 60000.929007000006,
+        "totalMilliseconds": 60299.578193,
+        "deliveryDrainMilliseconds": 0.00679100000706967,
+        "sampledPeakNodeRssBytes": 138661888,
+        "rssSampleIntervalMilliseconds": 100,
+        "cpuPercentOneCore": 13.094970578011136,
+        "eventLoopP99Milliseconds": 19.038207
+      },
+      "qualificationBudgets": {
+        "minimumGeneratedRatio": 0.99,
+        "maximumCpuPercentOneCore": 60,
+        "maximumPeakRssBytes": 805306368,
+        "maximumEventLoopP99Ms": 150
+      },
+      "lifecycle": {
+        "confirmedRepeatStop": true,
+        "noPostStopDelivery": true,
+        "confirmedRepeatDisconnect": true,
+        "providerAndPublisherCleanupConfirmed": true,
+        "existingOwnedServerVerified": true,
+        "providerCreated": true,
+        "publisherConnected": true,
+        "persistentServerLifecycle": "no persistent server creation, stop or removal operation is invoked by this soak"
+      },
+      "failures": []
+    }
+  },
+  "resolvedAttempts": [
+    {
+      "outcome": "failed outdated native harness",
+      "sourceCommit": "7fc86df6ce4c5f08794b5abcc6849b04db1c159c",
+      "problem": "Existing EDA/NSP native flows stopped at the mandatory plugin review dialog before install or live operations.",
+      "resolutionCommit": "94b97f168a670cc30bada27d5accaac19a8489a3",
+      "retainedReportSha256": "bde262ea161735649dd6cda39dbea5322c5f8d6b7ce90aedc6f737ec8faa301b"
+    },
+    {
+      "outcome": "failed before fix",
+      "sourceBase": "1c748cf8f6f2d919c67b348ee2954b8d4df71ace",
+      "problem": "Production renderer initialization failed before native UI loaded.",
+      "resolutionPR": 75,
+      "resolutionCommit": "4b54756b3237d33009cf8b05caf22c1cc176f246",
+      "beforeReportSha256": "fd8979a8986d217e76a4d2b7bd8322c24eba1644ce7ef878d83ce1ab34d8cc3b",
+      "afterReportSha256": "50ba4d6f0d0dd7cce88095c2a6342d9332e4523f7adbee93de7d23e64b89e0e0"
+    },
+    {
+      "outcome": "failed launcher attempt",
+      "problem": "Global environment preload restored live configuration in an isolated regression subprocess; a remaining active EDA capture prevented subsequent capture creation.",
+      "resolution": "Parent-only environment setup respects subprocess isolation; natural lease expiry cleaned the prior capture. Healthy EDA required no resource adjustment."
+    }
+  ],
+  "limits": [
+    "No new macOS/Windows installer, published-to-published upgrade or rollback rehearsal.",
+    "No OS process sandbox enforcement qualification.",
+    "Native plugin catalogs are isolated local fixtures; update packages retain the same built code with a newer manifest, not published upgrades.",
+    "Existing EDA capture application; no fresh cluster-app installation.",
+    "NSP lab API certificate verification is disabled; Kafka broker verification remains enabled.",
+    "Soaks do not measure renderer interaction, native IPC or NATS server resource use; emitted NATS counters do not establish internal queue high-water marks.",
+    "No release, version assignment or Pages publication performed."
+  ]
+}

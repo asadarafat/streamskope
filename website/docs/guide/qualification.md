@@ -29,6 +29,42 @@ installers. Results from an earlier revision do not qualify changed source.
 
 <span id="current-source-qualification"></span>
 
+## Pre-release source qualification: 2026-10-06
+
+The [sanitized local qualification report](../assets/qualification/pre-release-2026-10-06.json)
+records the checks completed after published v0.8.0. Shared, real-provider,
+browser, host integration and soak checks used source `7fc86df`; corrected native
+test flows used `94b97f1`. Their application, plugin, build configuration, tooling,
+fixture and package-manifest sources are identical. The native test harness
+changed to confirm the required plugin review before installation and update.
+The report retains both checkpoints, source-tree identities and report hashes.
+Required PR CI qualifies its final head separately.
+
+| Check                            | Executed result                                                                                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local shared qualification       | 3,088 tests in 357 files; static/types, Go race, dependency/advisory policy and docs passed; 54 HTML pages and 49 browser routes including media                                       |
+| Original 60-second pipeline soak | Passed unchanged budgets: zero host display drops, 32.6% one-core CPU and 23.6 ms event-loop p99                                                                                       |
+| Real providers                   | Three Kafka and four NATS cases passed, including broker recovery, verified TLS, authentication/permission failures and confirmed stop                                                 |
+| Browser workflows                | 11 passed: Monitor/recovery/layout, NATS, plugin lifecycle/offline installation and minified production startup; none skipped                                                          |
+| Native Linux ARM64 workflows     | Six scenarios passed: live EDA, live NSP, NATS protected-profile restart, plugin lifecycle, signed-file/cache offline installation and isolated Electron proxy transport; none skipped |
+| Live EDA 26.8.2                  | 12 host checks and 26 native named checks passed, including known record receipt, source preservation and owned capture cleanup                                                        |
+| Live NSP 26.4.0 build 200        | 23 host checks and 12 native named checks passed, including generated record receipt, profile reuse, interruption recovery and owned execution/topic cleanup                           |
+| Real NATS 60-second soak         | 60,000 records published and received; zero duplicates, invalid records or omissions; 13.1% one-core CPU and 19.0 ms event-loop p99                                                    |
+
+These are source-bundle rehearsals on Linux ARM64, with genuine GNOME credential
+storage. They do not qualify new macOS/Windows installers, an installed desktop
+upgrade/rollback or OS process sandbox enforcement. EDA used its existing capture
+application. Plugin catalogs were isolated local fixtures; update packages used
+the same code with a newer manifest. NSP API certificate verification was disabled
+in the lab; Kafka verification remained enabled. Neither soak measures React
+interaction or native IPC latency, and the NATS soak does not measure server
+resource usage or internal queue high-water marks.
+
+The report preserves the earlier production-renderer startup failure and its fix
+in PR [#75](https://github.com/asadarafat/streamskope/pull/75), plus the corrected
+test-launcher and native-review-flow attempts. Historical failed Monitor results
+below remain unchanged. No release version was assigned by this qualification.
+
 ## Source-bound rehearsal evidence
 
 The following rehearsals exercised the listed source candidates on **2026-10-03 UTC**.
