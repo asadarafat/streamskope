@@ -1,7 +1,7 @@
 {
   "id": "streamskope.nsp",
-  "name": "NSP Capture",
-  "description": "Connect to NSP Kafka using your NSP API credentials.",
+  "name": "NSP Connector",
+  "description": "Discover NSP Kafka connection settings using your NSP API credentials.",
   "version": "0.0.0-dev",
   "apiVersion": 4,
   "backend": "backend.cjs",

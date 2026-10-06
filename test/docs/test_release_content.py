@@ -22,16 +22,16 @@ class ReleaseContentTests(unittest.TestCase):
         return file
 
     def test_old_plugin_unreleased_banner_fails_even_in_preview(self):
-        self.page("plugins/eda.md", "---\nunreleased: true\n---\n# EDA Capture\n")
+        self.page("plugins/eda.md", "---\nunreleased: true\n---\n# EDA Connector\n")
         for published in (True, False):
             with self.subTest(published=published), self.assertRaisesRegex(ValueError, "ambiguous unreleased"):
                 inspect_release_content(self.root, published)
 
     def test_explicit_plugin_scope_is_valid_without_claiming_publication(self):
-        file = self.page("plugins/eda.md", "---\nplugin_scope: eda\n---\n# EDA Capture\n")
+        file = self.page("plugins/eda.md", "---\nplugin_scope: eda\n---\n# EDA Connector\n")
         inspect_release_content(self.root, True)
         for scope in ("all", "nsp", "missing"):
-            file.write_text(f"---\nplugin_scope: {scope}\n---\n# EDA Capture\n")
+            file.write_text(f"---\nplugin_scope: {scope}\n---\n# EDA Connector\n")
             with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "plugin_scope"):
                 inspect_release_content(self.root, True)
 

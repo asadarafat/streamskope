@@ -36,7 +36,7 @@ export function createNatsElectronDeliveryBinding(): ElectronProviderDeliveryBin
     },
     recoveryInstruction: (confirmed) =>
       confirmed
-        ? "Renderer delivery failed. The NATS subscription stopped; live records may be missing. Reload and start a new subscription. Core NATS cannot replay them."
+        ? "Renderer delivery failed. The NATS subscription stopped; live records may be missing. Reload and start a new subscription. This live subscription cannot replay them."
         : "Renderer delivery failed and NATS subscription cleanup could not be confirmed. Restart StreamSkope before subscribing again.",
   };
 }

@@ -2,16 +2,16 @@
 plugin_scope: eda
 ---
 
-# EDA Capture
+# EDA Connector
 
 <span id="capture-from-eda"></span>
 
-Use EDA Capture to inspect an existing exporter destination or create a temporary
+Use EDA Connector to inspect an existing exporter destination or create a temporary
 destination without changing the original exporter. Start with a running desktop
 app and review [Security and permissions](../guide/security.md#eda-authorization) with your
 EDA administrator.
 
-EDA Capture is an optional [connection plugin](index.md). It adds **Capture from
+EDA Connector is an optional [connection plugin](index.md). It adds **Connect via
 EDA** to **Add connection** and resume/status/cleanup actions to managed capture
 profiles. The EDA cluster app supplies the temporary broker and tunnel endpoint;
 the desktop plugin supplies the setup experience and local tunnel.
@@ -28,10 +28,10 @@ the desktop plugin supplies the setup experience and local tunnel.
 
 ## Install the desktop plugin and discover sources
 
-1. Open **Preferences → Plugins**, then **Install** on **EDA Capture**. Activation
+1. Open **Preferences → Plugins**, then **Install** on **EDA Connector**. Activation
    is immediate. Catalog refresh and download need GitHub access; an installed
    plugin can load without GitHub access.
-2. Open **Add connection → Capture from EDA**. Enter the EDA HTTPS origin and
+2. Open **Add connection → Connect via EDA**. Enter the EDA HTTPS origin and
    credentials, keep TLS verification enabled, then choose **Discover sources**.
 3. Select a source and review its Kafka destination. Discovery reads EDA and does
    not deploy a capture or require local Kubernetes credentials.

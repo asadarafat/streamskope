@@ -1,6 +1,6 @@
 [project]
 site_name = "StreamSkope"
-site_description = "Get started with StreamSkope: connect Kafka, inspect messages and check consumer lag."
+site_description = "Get started with StreamSkope: connect Kafka or NATS, inspect records and troubleshoot connections."
 site_url = "http://127.0.0.1:8002/"
 docs_dir = "docs"
 site_dir = ".site"
@@ -17,7 +17,7 @@ nav = [
   ] },
   { "Everyday tasks" = [
     { "Find and inspect a message" = "guide/messages.md" },
-    { "Core NATS live subscriptions" = "guide/core-nats.md" },
+    { "NATS live subscriptions" = "guide/core-nats.md" },
     { "Decode a structured record" = "guide/structured-events.md" },
     { "Check consumer lag" = "guide/operations.md" },
     { "Observe Kafka health" = "guide/observed-health.md" },
@@ -29,8 +29,8 @@ nav = [
     { "Plugin overview" = "plugins/index.md" },
     { "Versioning and compatibility" = "plugins/versioning.md" },
     { "Install without GitHub" = "plugins/offline.md" },
-    { "EDA Capture" = "plugins/eda.md" },
-    { "NSP Capture" = "plugins/nsp.md" }
+    { "EDA Connector" = "plugins/eda.md" },
+    { "NSP Connector" = "plugins/nsp.md" }
   ] },
   { "Operate safely" = [
     { "Reset consumer offsets" = "guide/offset-recovery.md" },

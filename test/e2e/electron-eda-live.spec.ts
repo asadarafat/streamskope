@@ -105,7 +105,7 @@ async function closePreferences(page: Page): Promise<void> {
   await expect(page.getByRole("navigation", { name: "StreamSkope resources" })).toBeVisible();
 }
 async function credentials(page: Page, input: EdaApiCredentialsInput): Promise<void> {
-  const dialog = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+  const dialog = page.getByRole("dialog", { name: "Connect via EDA" });
   await dialog.getByLabel("EDA API URL", { exact: true }).fill(input.baseUrl);
   await dialog.getByLabel("EDA username", { exact: true }).fill(input.username);
   await dialog.getByLabel("EDA password", { exact: true }).fill(input.password);
@@ -321,10 +321,10 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     await page.getByRole("button", { name: "Resume capture", exact: true }).click();
     await credentials(page, edaApi);
     await page
-      .getByRole("dialog", { name: "Capture Nokia EDA streams" })
+      .getByRole("dialog", { name: "Connect via EDA" })
       .getByRole("button", { name: "Resume capture", exact: true })
       .click();
-    await expect(page.getByRole("dialog", { name: "Capture Nokia EDA streams" })).toHaveCount(0, {
+    await expect(page.getByRole("dialog", { name: "Connect via EDA" })).toHaveCount(0, {
       timeout: 360_000,
     });
     return savedSource();
@@ -354,7 +354,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
       });
     }, expectedRecordText);
     await openPlugins(page);
-    const card = page.getByRole("region", { name: "EDA Capture", exact: true });
+    const card = page.getByRole("region", { name: "EDA Connector", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
     await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${current.manifest.version}`);
@@ -387,7 +387,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     );
     checks.push("existing-cluster-application-ready");
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Connect via EDA", exact: true }).click();
     await credentials(page, edaApi);
     if (candidates.length > 1) {
       await page.getByLabel("Exporter source", { exact: true }).click();
@@ -399,7 +399,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
         .click();
     }
     await page.getByRole("button", { name: "Set up temporary capture", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+    const dialog = page.getByRole("dialog", { name: "Connect via EDA" });
     await expect(dialog).toContainText("StreamSkope Capture is installed", { timeout: 30_000 });
     await dialog.getByLabel("Local Kafka port", { exact: true }).fill(String(occupied.port));
     await dialog.getByRole("button", { name: "Start capture", exact: true }).click();

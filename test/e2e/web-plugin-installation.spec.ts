@@ -41,7 +41,7 @@ async function port(): Promise<number> {
 async function openPlugins(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Preferences", exact: true }).click();
   await page.getByRole("tab", { name: "Plugins", exact: true }).click();
-  await expect(page.getByRole("region", { name: "EDA Capture", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "EDA Connector", exact: true })).toBeVisible();
 }
 
 async function approvePlugin(
@@ -144,7 +144,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
       return id;
     });
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Capture from EDA", exact: true })).toHaveCount(
+    await expect(page.getByRole("menuitem", { name: "Connect via EDA", exact: true })).toHaveCount(
       0,
     );
     await expect(
@@ -152,7 +152,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await openPlugins(page);
-    const card = page.getByRole("region", { name: "EDA Capture", exact: true });
+    const card = page.getByRole("region", { name: "EDA Connector", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
     await approvePlugin(page, "Install plugin", info.outputPath("plugin-package-review.png"));
     await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
@@ -160,8 +160,8 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await page.screenshot({ path: info.outputPath("plugin-installed.png") });
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
-    const capture = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+    await page.getByRole("menuitem", { name: "Connect via EDA", exact: true }).click();
+    const capture = page.getByRole("dialog", { name: "Connect via EDA" });
     await expectDialogControlOwnership(capture);
     await expect(capture.getByLabel("EDA API URL")).toBeVisible();
     await expect(capture.getByLabel("EDA username")).toBeVisible();
@@ -237,7 +237,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await preferences.press("Escape");
     await expect(preferences).toHaveCount(0);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Capture from EDA", exact: true })).toHaveCount(
+    await expect(page.getByRole("menuitem", { name: "Connect via EDA", exact: true })).toHaveCount(
       0,
     );
     await expect(
@@ -254,7 +254,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Connect via EDA", exact: true }).click();
     await expectDialogControlOwnership(capture);
     await expect(capture.getByLabel("EDA API URL")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -349,7 +349,7 @@ test("reviews signed files, preserves a working plugin after a failed update, an
     expect((await plugins.list()).plugins).toEqual([]);
     await file.click();
     await approvePlugin(page, "Install plugin", info.outputPath("plugin-file-review.png"));
-    const card = page.getByRole("region", { name: "EDA Capture", exact: true });
+    const card = page.getByRole("region", { name: "EDA Connector", exact: true });
     await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
     const installed = (await plugins.list()).plugins[0]!.activationId;
     await page.getByRole("button", { name: /^Plugin download settings/u }).click();
@@ -386,7 +386,7 @@ test("reviews signed files, preserves a working plugin after a failed update, an
     await page.getByRole("button", { name: "Remove plugin", exact: true }).click();
     await expect(card).toHaveCount(0);
     const cached = page.getByRole("region", {
-      name: `Cached EDA Capture ${fixtures.current.manifest.version}`,
+      name: `Cached EDA Connector ${fixtures.current.manifest.version}`,
       exact: true,
     });
     await expect(cached).toBeVisible();
@@ -409,10 +409,8 @@ test("reviews signed files, preserves a working plugin after a failed update, an
     await preferences.press("Escape");
     await expect(preferences).toHaveCount(0);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
-    await expectDialogControlOwnership(
-      page.getByRole("dialog", { name: "Capture Nokia EDA streams" }),
-    );
+    await page.getByRole("menuitem", { name: "Connect via EDA", exact: true }).click();
+    await expectDialogControlOwnership(page.getByRole("dialog", { name: "Connect via EDA" }));
     expect(
       await page.evaluate(
         () => (globalThis as typeof globalThis & { lifecycleDocument: string }).lifecycleDocument,

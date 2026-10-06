@@ -1,4 +1,4 @@
-# StreamSkope secure Core NATS fixture
+# StreamSkope secure NATS fixture
 
 This persistent development lab is a sibling of `aio-kafka`. It runs one
 digest-pinned Core NATS server with verified TLS and a generated token. The
@@ -24,7 +24,7 @@ npm run dev
 
 The web-development launcher ensures both AIO labs are healthy and seeds an
 empty, host-owned NATS profile store with a session-only **Local AIO NATS**
-profile. Select the **Core NATS** provider, connect that profile, and subscribe
+profile. Select the **NATS** provider, connect that profile, and subscribe
 to `streamskope.fixture.>`.
 
 The NATS lab can also run without the workbench:

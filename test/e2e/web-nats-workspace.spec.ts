@@ -139,7 +139,7 @@ async function verifyFixtureCleanup(fixture: NatsBrowserFixture, outputDir: stri
     throw new Error("NATS browser cleanup or private-material artifact verification failed.");
 }
 
-async function selectProvider(page: Page, provider: "Kafka" | "Core NATS"): Promise<void> {
+async function selectProvider(page: Page, provider: "Kafka" | "NATS"): Promise<void> {
   const selector = page.getByRole("combobox", { name: "Messaging provider" });
   await selector.click();
   await page.getByRole("option", { name: provider, exact: true }).click();
@@ -367,7 +367,7 @@ function expectSafeDiagnostics(
   expect(diagnostics.problems).toEqual([]);
 }
 
-test.describe("real Core NATS browser workspace", () => {
+test.describe("real NATS browser workspace", () => {
   // Covers browser/page setup too; setting the limit inside a callback is too late for fixtures.
   test.describe.configure({ timeout: 120_000 });
   test("inspects original wildcard records, confirms stop, retains edited credentials and switches providers", async ({
@@ -383,7 +383,7 @@ test.describe("real Core NATS browser workspace", () => {
     const kafkaNavigation = page.getByRole("navigation", { name: "StreamSkope resources" });
     await kafkaNavigation.getByRole("button", { name: "Connection Profiles", exact: true }).click();
     await expect(page.getByRole("main", { name: "Connection Profiles page" })).toBeVisible();
-    await selectProvider(page, "Core NATS");
+    await selectProvider(page, "NATS");
     await expect(page.getByRole("main")).toContainText(/session/iu);
 
     // An unsubmitted editor closes with Escape and returns to its admitting control.
@@ -588,7 +588,7 @@ test.describe("real Core NATS browser workspace", () => {
       await delay(350);
       expect(publisher.isClosed()).toBe(false);
       expect(fixture.records().length).toBe(recordsBeforeSwitch);
-      await selectProvider(page, "Core NATS");
+      await selectProvider(page, "NATS");
       await expect(page.getByLabel("Connection status", { exact: true })).toContainText(
         "Disconnected",
       );
@@ -614,7 +614,7 @@ test.describe("real Core NATS browser workspace", () => {
     test.setTimeout(120_000);
     const diagnostics = observeBrowserDiagnostics(page);
     await openProduct(page, fixture, diagnostics);
-    await selectProvider(page, "Core NATS");
+    await selectProvider(page, "NATS");
     for (const failure of [
       {
         name: "Wrong token",
@@ -654,7 +654,7 @@ test.describe("real Core NATS browser workspace", () => {
   });
 });
 
-test.describe("real Core NATS browser permissions", () => {
+test.describe("real NATS browser permissions", () => {
   test.describe.configure({ timeout: 120_000 });
   test.use({ natsAuthentication: "anonymous-restricted" });
 
@@ -665,7 +665,7 @@ test.describe("real Core NATS browser permissions", () => {
     test.setTimeout(120_000);
     const diagnostics = observeBrowserDiagnostics(page);
     await openProduct(page, fixture, diagnostics);
-    await selectProvider(page, "Core NATS");
+    await selectProvider(page, "NATS");
     await createProfile(page, fixture, "Restricted verified NATS", { anonymous: true });
     await connectProfile(page, fixture, "Restricted verified NATS");
     await openNatsResource(page, "Live Subscription");

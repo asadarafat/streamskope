@@ -1,7 +1,7 @@
 {
   "id": "streamskope.eda",
-  "name": "EDA Capture",
-  "description": "Capture EDA event streams and explore them in StreamSkope.",
+  "name": "EDA Connector",
+  "description": "Discover EDA Kafka destinations or set up a separate temporary capture.",
   "version": "0.0.0-dev",
   "apiVersion": 4,
   "backend": "backend.cjs",

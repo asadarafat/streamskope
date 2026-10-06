@@ -59,10 +59,8 @@ async function selectNats(page: Page, fixture: NatsFixture): Promise<void> {
     timeout: 20_000,
   });
   await page.getByRole("combobox", { name: "Messaging provider" }).click();
-  await page.getByRole("option", { name: "Core NATS", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Messaging provider" })).toContainText(
-    "Core NATS",
-  );
+  await page.getByRole("option", { name: "NATS", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Messaging provider" })).toContainText("NATS");
   await page.evaluate(
     (secrets): void => {
       const target = window as unknown as NativeNatsWindow;
@@ -131,7 +129,7 @@ async function privateField(field: Locator, value: string): Promise<void> {
   }
 }
 
-test("restores a genuine protected Core NATS profile across restart and confirms real TLS capture cleanup", async ({
+test("restores a genuine protected NATS profile across restart and confirms real TLS capture cleanup", async ({
   browserName: _browserName,
 }, info) => {
   test.setTimeout(240_000);
@@ -248,7 +246,7 @@ test("restores a genuine protected Core NATS profile across restart and confirms
         sandbox: true,
         storage: "gnome_libsecret",
       });
-      phase = "native Core NATS provider selection";
+      phase = "native NATS provider selection";
       await selectNats(page, fixture!);
       return page;
     };

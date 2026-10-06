@@ -112,7 +112,7 @@ async function closePreferences(page: Page): Promise<void> {
 }
 async function credentials(page: Page, input: NspConnectInput, refresh = false): Promise<void> {
   const dialog = page.getByRole("dialog", {
-    name: refresh ? "Refresh NSP connection" : "Connect to NSP",
+    name: refresh ? "Refresh NSP connection" : "Connect via NSP",
     exact: true,
   });
   if (!refresh) await dialog.getByLabel("NSP API URL", { exact: true }).fill(input.apiUrl);
@@ -212,7 +212,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     );
     expect(await installation(page)).toBeUndefined();
     await openPlugins(page);
-    const card = page.getByRole("region", { name: "NSP Capture", exact: true });
+    const card = page.getByRole("region", { name: "NSP Connector", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
     await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${current.manifest.version}`);
@@ -220,7 +220,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     assert(installed?.activationId, "NSP must be activated from its installed package.");
     await closePreferences(page);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Connect to NSP", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Connect via NSP", exact: true }).click();
     await credentials(page, input);
     const saved = await profiles(page);
     expect(saved).toHaveLength(1);
@@ -323,7 +323,7 @@ test("qualifies installed NSP UI, known record receipt and hot package lifecycle
     expect(await installation(page)).toBeUndefined();
     expect((await profiles(page)).map((p) => p.id)).toEqual([profile.id]);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Connect to NSP", exact: true })).toHaveCount(
+    await expect(page.getByRole("menuitem", { name: "Connect via NSP", exact: true })).toHaveCount(
       0,
     );
     await page.keyboard.press("Escape");

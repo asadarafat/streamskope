@@ -21,7 +21,7 @@ whole guide to that version. Check the version notice on each page and the
 
 ## Desktop and plugins release independently
 
-Desktop versions use Semantic Versioning. EDA Capture and NSP Capture each have
+Desktop versions use Semantic Versioning. EDA Connector and NSP Connector each have
 their own versions and declared desktop, plugin API and target-system compatibility.
 A desktop release does not publish new plugin packages or widen existing package
 compatibility. See [plugin versioning and compatibility](../plugins/versioning.md).

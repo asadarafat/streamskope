@@ -43,7 +43,7 @@ export function resolveNatsWorkspaceSource(browserWindow: Window): NatsWorkspace
     return {
       state: "unavailable",
       recovery:
-        "This desktop host does not expose Core NATS. Use a desktop build with the Core NATS provider.",
+        "This desktop host does not expose NATS. Use a desktop build with the NATS provider.",
     };
   }
   return { state: "ready", host: createBrowserNatsHost(browserWindow) };

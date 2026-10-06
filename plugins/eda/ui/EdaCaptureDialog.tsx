@@ -490,7 +490,7 @@ export function EdaCaptureDialog({
       onClose={busy ? undefined : onClose}
       open={open}
     >
-      <DialogTitle id="eda-capture-dialog-title">Capture Nokia EDA streams</DialogTitle>
+      <DialogTitle id="eda-capture-dialog-title">Connect via EDA</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <Typography variant="body2" color="text.secondary">

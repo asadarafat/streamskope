@@ -1,31 +1,30 @@
 ---
-title: Core NATS live subscriptions
+title: NATS live subscriptions
 ---
 
-# Inspect a Core NATS live subscription
+# Inspect a NATS live subscription
 
 Use the documentation for your installed desktop release. The site notice
 identifies the source revision and whether this is development or published
 documentation. Development instructions may describe features absent from an
 older installer; merging source does not update its release documentation.
 
-**Core NATS** is a built-in sibling of **Kafka**. Select it with **Messaging
-provider** in the application header. EDA Capture and NSP Capture are optional
+**NATS** is a built-in sibling of **Kafka**. Select it with **Messaging
+provider** in the application header. EDA Connector and NSP Connector are optional
 Kafka connection plugins; installing either does not add or configure NATS.
 
-You need a reachable NATS server, a known subject or wildcard, permission to
-subscribe, and an independent producer of new events. The workspace reads live
-Core NATS traffic. It does not list subjects, retrieve history, expose Kafka
-partitions/offsets, publish/replay messages or manage JetStream.
+StreamSkope connects to an external NATS server using the endpoints and
+authentication you supply. The desktop does not start or embed a NATS server,
+and this view does not inspect an internal StreamSkope message bus. A remote
+server can be on your network or reachable through your site's authorized route.
+
+You need a reachable server, a known subject or wildcard, permission to subscribe,
+and an independent producer of new events. The workspace reads live NATS
+subscriptions. It can connect to a server with JetStream enabled, but it does not
+manage JetStream or read stored stream history. Subject inventory, publishing,
+replay and Kafka-style partitions/offsets are outside this workspace's scope.
 
 ## Save and connect a profile
-
-For a source checkout, the [local development walkthrough](../start/development.md#try-local-core-nats)
-provides an owned token/TLS server and **Local AIO NATS** profile. Subscribe to
-`streamskope.fixture.>` before running `npm run dev -- nats publish` in a second
-terminal. Each invocation sends a finite generated sample batch; it does not seed
-retained history. This developer command is separate from the desktop's read-only
-NATS workspace.
 
 1. Open **Connection Profiles**, then **Add NATS profile**.
 2. Enter **Profile name** and **NATS servers** using the endpoints supplied by
@@ -100,7 +99,7 @@ Omission counters describe separate stages:
 
 Published records means records emitted by the host's delivery stage; it does
 not prove every client processed them. These counters do not measure all broker
-traffic or establish zero loss. Core NATS provides no replay for missed records.
+traffic or establish zero loss. This live subscription provides no replay for missed records.
 Restarting a subscription receives future traffic only.
 
 An authentication error needs an accepted token; a TLS error needs the correct
@@ -116,6 +115,16 @@ offers retry. Successful switching retires its old callbacks while preserving
 commands already admitted and their actual receipts. Switching does not delete
 profiles or remote capture resources. A native host that lacks the NATS port
 shows an unavailable workspace; it never redirects NATS to Kafka or HTTP.
+
+## Try a separate local development server
+
+For a source checkout, the [local development walkthrough](../start/development.md#try-local-nats)
+provides a separately owned token/TLS server and **Local AIO NATS** profile.
+That fixture is a test server run by development tooling, not a desktop dependency
+or an internal StreamSkope transport. Subscribe to `streamskope.fixture.>` before
+using the walkthrough's publisher command. Each invocation sends a finite
+sample batch; it does not seed retained history. The desktop workspace remains
+read-only.
 
 ## Qualification boundary
 

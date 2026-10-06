@@ -9,7 +9,7 @@ Choose a desktop installer below, or [use the development sandbox](development.m
 Before downloading, check the [supported authentication and data formats](compatibility.md)
 and [desktop prerequisites](#desktop-prerequisites).
 
-GitHub Releases contains desktop installers. The separately versioned EDA Capture
+GitHub Releases contains desktop installers. The separately versioned EDA Connector
 catalog and container image are not desktop releases; their tags do not imply a
 new desktop download is available.
 

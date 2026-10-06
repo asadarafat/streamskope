@@ -53,7 +53,7 @@ export class NspCaptureBackend implements PluginBackend {
     this.initialized ??= Promise.resolve().then(async () => {
       if (this.host.recoveryState === undefined)
         throw new Error(
-          "NSP Capture requires a newer StreamSkope host with persistent plugin recovery support.",
+          "NSP Connector requires a newer StreamSkope host with persistent plugin recovery support.",
         );
       this.recovery = parseRecovery(await this.host.recoveryState.read());
     });
@@ -67,7 +67,7 @@ export class NspCaptureBackend implements PluginBackend {
         ? {
             state: "cleanup-required",
             requestId: this.recovery.requestId,
-            message: `Complete cleanup on ${this.recovery.apiUrl} using the same NSP account before starting another capture.`,
+            message: `Complete cleanup on ${this.recovery.apiUrl} using the same NSP account before starting another connection setup.`,
           }
         : { state: "idle" };
   }
@@ -173,7 +173,7 @@ export class NspCaptureBackend implements PluginBackend {
         progress("authenticate", "Checking the running NSP product version.");
         requireNspTargetVersion(await client.readVersion());
         signal.throwIfAborted();
-        progress("workflow", "Checking the owned NSP capture workflow.");
+        progress("workflow", "Checking the owned NSP connection helper workflow.");
         const workflow = await client.ensureWorkflow();
         signal.throwIfAborted();
         const recovery: NspRecovery = {
@@ -272,7 +272,7 @@ export class NspCaptureBackend implements PluginBackend {
     await this.initialize();
     if (this.pending === undefined && this.recovery === undefined) return undefined;
     return {
-      message: "Finish NSP capture cleanup before changing the plugin?",
+      message: "Finish NSP workflow execution cleanup before changing the plugin?",
       detail:
         "Running retrieval is cancelled and its execution output must be removed. Saved profiles and the reusable NSP helper workflow are retained.",
       stateKey: JSON.stringify([this.pending?.id, this.recovery]),
@@ -300,7 +300,7 @@ export class NspCaptureBackend implements PluginBackend {
     await this.initialize();
     if (this.pending === undefined && this.recovery === undefined) return undefined;
     return {
-      title: "NSP capture operation",
+      title: "NSP connection operation",
       message: "An NSP retrieval or cleanup is unfinished.",
       detail:
         "Cancel the running retrieval and confirm cleanup before exiting. Pending recovery identifiers are retained across restart.",
@@ -327,7 +327,7 @@ export class NspCaptureBackend implements PluginBackend {
 export function activate(host: PluginBackendHost): PluginBackend {
   if (host.recoveryState === undefined)
     throw new Error(
-      "NSP Capture requires a newer StreamSkope host with persistent plugin recovery support.",
+      "NSP Connector requires a newer StreamSkope host with persistent plugin recovery support.",
     );
   // Candidates are loaded before the old instance drains; read its journal only after activation.
   return new NspCaptureBackend(host);

@@ -110,7 +110,8 @@ export function SubscriptionWorkspace({
           Live Subscription
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }} variant="body2">
-          Read live Core NATS deliveries using an exact subject or the * and &gt; wildcards.
+          Read live NATS deliveries from your server using an exact subject or the * and &gt;
+          wildcards.
         </Typography>
         <Box
           component="form"
@@ -210,8 +211,8 @@ export function SubscriptionWorkspace({
           <Typography color="warning.main" role="status" variant="body2">
             Viewer evicted: {controller.viewerOmittedRecords.toLocaleString()} · application
             omitted: {counters.applicationOmittedRecords.toLocaleString()} · transport omitted:{" "}
-            {counters.transportOmittedRecords.toLocaleString()}. Core NATS has no replay history in
-            this workspace.
+            {counters.transportOmittedRecords.toLocaleString()}. This live subscription has no
+            replay history.
           </Typography>
         ) : null}
         {controller.selectionNotice === null ? null : (

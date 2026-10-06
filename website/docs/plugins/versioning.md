@@ -24,7 +24,7 @@ procedures; even equal APIs do not prove that every source change has shipped.
 ## Read the version and requirements
 
 Each plugin has its own release sequence. For example, an EDA-only fix could
-publish EDA Capture **0.1.1** while NSP Capture remains **0.1.0** and the desktop
+publish EDA Connector **0.1.1** while NSP Connector remains **0.1.0** and the desktop
 remains **0.2.0**. These numbers illustrate independent versioning; they do not
 reserve future versions or establish publication.
 
@@ -33,7 +33,7 @@ reserve future versions or establish publication.
 | Plugin version   | `0.1.0`                   | Version of that plugin's code, resources and compatibility declaration. |
 | Desktop interval | `>=0.2.0, <0.3.0`         | Inclusive minimum and exclusive maximum host version.                   |
 | Plugin API       | `4`                       | Host capabilities and manifest contract required to load the plugin.    |
-| Target system    | `eda`                     | Platform handled by the plugin; NSP Capture declares `nsp`.             |
+| Target system    | `eda`                     | Platform handled by the plugin; NSP Connector declares `nsp`.           |
 | Target interval  | `26.8.2` through `26.8.2` | Inclusive product versions; equal bounds support exactly one release.   |
 
 Open **Preferences → Plugins** to inspect the version and requirements. The catalog
@@ -69,12 +69,12 @@ bounds. Minimum `0.2.0` with maximum-exclusive `0.3.0` does not silently admit
 `0.3.0-rc.1`. Stable desktops do not receive prerelease plugins from the catalog;
 preview desktops can receive them when their declared host requirements match.
 
-| Artifact            | Release tag / asset example                                                  |
-| ------------------- | ---------------------------------------------------------------------------- |
-| Desktop             | `v0.2.0` / `StreamSkope-0.2.0-darwin-arm64.dmg`                              |
-| EDA Capture plugin  | `plugins/eda/v0.1.0` / `streamskope-eda-v0.1.0.skope-plugin`                 |
-| NSP Capture plugin  | `plugins/nsp/v0.1.0` / `streamskope-nsp-v0.1.0.skope-plugin`                 |
-| NSP helper download | `streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml` in the NSP plugin release |
+| Artifact             | Release tag / asset example                                                  |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Desktop              | `v0.2.0` / `StreamSkope-0.2.0-darwin-arm64.dmg`                              |
+| EDA Connector plugin | `plugins/eda/v0.1.0` / `streamskope-eda-v0.1.0.skope-plugin`                 |
+| NSP Connector plugin | `plugins/nsp/v0.1.0` / `streamskope-nsp-v0.1.0.skope-plugin`                 |
+| NSP helper download  | `streamskope-nsp-v0.1.0-nsp-capture.workflow.yaml` in the NSP plugin release |
 
 New plugin release builds additionally provide a publisher-signed portable asset,
 for example `streamskope-nsp-portable-v0.1.0.skope-plugin`. It encloses the exact
@@ -134,7 +134,7 @@ Create or refresh a connection
        no  -> report the mismatch before new target-side work
 ```
 
-NSP Capture can retry cleanup of an owned execution even when the target version
+NSP Connector can retry cleanup of an owned execution even when the target version
 changes or its version endpoint is unavailable. EDA recovery has separate lease,
 tunnel and cleanup requirements; follow the [EDA recovery guide](eda.md#stop-update-and-resume).
 Saved profiles remain available for recovery; removing a plugin does not delete them.
@@ -175,8 +175,8 @@ original support declaration.
 | EDA cluster app               | Separate artifact aligned exactly with its EDA target, currently `26.8.2`. A desktop/plugin update does not rename or republish it.       |
 | NSP helper workflow           | Bundled and digest-verified in the NSP plugin. Changes require a new plugin version and review of the immutable deployed helper identity. |
 
-Continue with the [plugin overview](index.md), [EDA Capture](eda.md) or
-[NSP Capture](nsp.md) for setup and cleanup call flows.
+Continue with the [plugin overview](index.md), [EDA Connector](eda.md) or
+[NSP Connector](nsp.md) for setup and cleanup call flows.
 
 ## Development packages
 

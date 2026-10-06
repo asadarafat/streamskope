@@ -58,7 +58,7 @@ export function NspCaptureDialog({
   const active = useRef(true);
   const pending = useRef<string | undefined>(undefined);
   const busy = requestId !== undefined || status.state === "running";
-  const title = profileId === undefined ? "Connect to NSP" : "Refresh NSP connection";
+  const title = profileId === undefined ? "Connect via NSP" : "Refresh NSP connection";
 
   const refreshStatus = useCallback(async (): Promise<void> => {
     try {

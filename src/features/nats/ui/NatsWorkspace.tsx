@@ -16,7 +16,7 @@ import type { NatsWorkspaceSource } from "./workspace-types";
 type Resource = "profiles" | "subscription";
 const resources: readonly ProductResourceGroup<Resource>[] = [
   {
-    label: "Core NATS",
+    label: "NATS",
     items: [
       { label: "Connection Profiles", value: "profiles", available: true },
       { label: "Live Subscription", value: "subscription", available: true },
@@ -80,7 +80,7 @@ export function NatsWorkspace({
         >
           <Breadcrumbs aria-label="Breadcrumb" separator="/">
             <Typography color="text.secondary" variant="body2">
-              Core NATS
+              NATS
             </Typography>
             <Typography aria-current="page" variant="body2">
               {navigation === "profiles" ? "Connection Profiles" : "Live Subscription"}
@@ -123,7 +123,7 @@ export function NatsWorkspace({
           <Typography color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }} variant="caption">
             {unavailable
               ? "Connection and subscription health cannot be verified"
-              : "Core NATS · live delivery"}
+              : "NATS · live subscriptions"}
           </Typography>
         </>
       }

@@ -73,7 +73,7 @@ export function nspFailure(error: unknown, cancelled = false): unknown {
     });
   }
   if (cancelled)
-    return Object.assign(new Error("NSP capture was cancelled."), {
+    return Object.assign(new Error("NSP connection setup was cancelled."), {
       code: "CANCELLED",
       stage: "acquisition",
       retryable: true,

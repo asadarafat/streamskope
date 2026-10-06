@@ -17,7 +17,7 @@ const run = promisify(execFile);
 async function openPlugins(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Preferences", exact: true }).click();
   await page.getByRole("tab", { name: "Plugins", exact: true }).click();
-  await expect(page.getByRole("region", { name: "EDA Capture", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "EDA Connector", exact: true })).toBeVisible();
 }
 
 async function closePreferences(page: Page): Promise<void> {
@@ -59,8 +59,8 @@ async function pluginInstallation(page: Page): Promise<
 
 async function openCapture(page: Page, screenshot?: string): Promise<void> {
   await page.getByRole("button", { name: "Add connection", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
-  const capture = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+  await page.getByRole("menuitem", { name: "Connect via EDA", exact: true }).click();
+  const capture = page.getByRole("dialog", { name: "Connect via EDA" });
   await expect(capture.getByLabel("EDA API URL")).toBeVisible();
   await expect(capture.getByLabel("EDA username")).toBeVisible();
   await expect(capture.getByRole("button", { name: "Discover sources" })).toBeVisible();
@@ -88,12 +88,12 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
     fixture;
   try {
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Capture from EDA", exact: true })).toHaveCount(
+    await expect(page.getByRole("menuitem", { name: "Connect via EDA", exact: true })).toHaveCount(
       0,
     );
     await page.keyboard.press("Escape");
     await openPlugins(page);
-    const card = page.getByRole("region", { name: "EDA Capture", exact: true });
+    const card = page.getByRole("region", { name: "EDA Connector", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
     await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${original.manifest.version}`);
@@ -119,7 +119,7 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
     await expect(card).toContainText("Not installed");
     await closePreferences(page);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Capture from EDA", exact: true })).toHaveCount(
+    await expect(page.getByRole("menuitem", { name: "Connect via EDA", exact: true })).toHaveCount(
       0,
     );
     await expect(

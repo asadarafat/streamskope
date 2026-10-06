@@ -228,9 +228,9 @@ test.describe("plaintext Kafka profile", () => {
       });
       const before = backend.commands.length;
       await page.getByRole("button", { name: "Add connection" }).click();
-      await page.getByRole("menuitem", { name: "Capture from EDA" }).focus();
+      await page.getByRole("menuitem", { name: "Connect via EDA" }).focus();
       await page.keyboard.press("Enter");
-      const dialog = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+      const dialog = page.getByRole("dialog", { name: "Connect via EDA" });
       await expect(dialog.getByText("Capture deployment setup")).toHaveCount(0);
       await expect(dialog.getByLabel("EDA API URL")).toHaveValue("");
       await dialog.getByLabel("EDA API URL").fill("https://eda.example.test");
@@ -282,8 +282,8 @@ test.describe("plaintext Kafka profile", () => {
     });
     const before = backend.commands.length;
     await page.getByRole("button", { name: "Add connection" }).click();
-    await page.getByRole("menuitem", { name: "Capture from EDA" }).click();
-    const dialog = page.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+    await page.getByRole("menuitem", { name: "Connect via EDA" }).click();
+    const dialog = page.getByRole("dialog", { name: "Connect via EDA" });
     await dialog.getByLabel("EDA API URL").fill("https://eda.example.test");
     await dialog.getByLabel("EDA username").fill("fixture-user");
     await dialog.getByLabel("EDA password").fill("fixture-password");

@@ -16,7 +16,7 @@ import { formatPluginVersion } from "../../src/plugins/validation";
 
 const manifest: PluginManifest = {
   id: "streamskope.eda",
-  name: "EDA Capture",
+  name: "EDA Connector",
   version: "26.8.2",
   targetEdaVersion: "26.8.2",
   apiVersion: 2,
@@ -166,7 +166,7 @@ function multipleReleases(
     const entryManifest: PluginManifest = {
       ...manifest,
       id: descriptor.id,
-      name: entry.plugin === "nsp" ? "NSP Capture" : manifest.name,
+      name: entry.plugin === "nsp" ? "NSP Connector" : manifest.name,
       version: entry.version,
     };
     const manifestAsset = Buffer.from(

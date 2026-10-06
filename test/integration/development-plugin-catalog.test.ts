@@ -20,7 +20,7 @@ import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 const directories: string[] = [];
 const manifest: PluginManifest = {
   id: "streamskope.eda",
-  name: "EDA Capture",
+  name: "EDA Connector",
   version: "0.0.0-dev.1790928000000",
   apiVersion: 4,
   backend: "backend.cjs",

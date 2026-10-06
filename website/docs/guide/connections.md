@@ -48,8 +48,8 @@ settings; you still need to save and connect to use them.
 
 ## Read messages from EDA
 
-Install **EDA Capture** through **Preferences → Plugins**, then open
-**Add connection → Capture from EDA**. Follow [Capture from EDA](../plugins/eda.md) for
+Install **EDA Connector** through **Preferences → Plugins**, then open
+**Add connection → Connect via EDA**. Follow [Connect via EDA](../plugins/eda.md) for
 cluster prerequisites, existing Kafka access, temporary captures and recovery.
 Installation, updates and removal apply without restarting the desktop.
 
@@ -71,8 +71,8 @@ A saved profile does not guarantee that its temporary capture still exists.
 
 ## Connect through NSP
 
-Install NSP Capture, then use your NSP API URL and credentials to create a tested
-Kafka profile. Follow [Connect to NSP Kafka](../plugins/nsp.md) for the workflow,
+Install NSP Connector, then use your NSP API URL and credentials to create a tested
+Kafka profile. Follow [Connect via NSP](../plugins/nsp.md) for the workflow,
 permissions and cleanup behavior. Check each plugin's [desktop and target requirements](../plugins/versioning.md); the original
 v0.1.0+build.1 packages and development API 4 packages have different host requirements.
 
