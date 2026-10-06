@@ -66,13 +66,17 @@ Kafka access and broker network reachability still have to work independently.
 
 ## Install and manage plugins
 
-1. Open **Preferences → Plugins** and refresh the catalog if needed.
+1. Open **Preferences → Plugins** and select **Check for updates** if needed.
 2. Select **Install** for a compatible plugin. Its connection action becomes
    available immediately; a desktop restart is not required.
 3. Follow the plugin's guide to create a profile, then connect and inspect a topic.
 
-The desktop uses the official StreamSkope release catalog on GitHub. New downloads
-and updates need access to GitHub; an installed plugin can load without it.
+The desktop uses the official StreamSkope release catalog on GitHub. Catalog downloads need access to GitHub. You can also use **Install from file**
+with a publisher-signed portable package, or select a complete verified package
+already in the local cache. Every new installation has a review that pins its
+exact version and bytes before applying the same hot lifecycle.
+Read [Install without GitHub](offline.md) for transfer, trust and target prerequisites.
+An installed plugin can load without internet access.
 Installed state appears independently of catalog discovery, so a stalled catalog
 does not block **Remove** or **Retry activation**. Retry verifies and reloads the
 retained installed package locally; it does not download a replacement.
@@ -82,7 +86,8 @@ If GitHub cannot be reached, **Available** shows that cached catalog and the las
 successful check time. Cached entries describe the previous check, not current
 availability or an assurance that the installed version is up to date. A cached
 catalog is metadata; it does not make an undownloaded package available offline.
-Packages are checked for compatibility and integrity before activation. This is
+Local file imports require a trusted publisher signature; cached archives are checked
+again. Packages are checked for compatibility and integrity before activation. This is
 an official plugin catalog, not a general marketplace or a sandbox for arbitrary
 third-party code. Plugin backend code runs in the trusted application host.
 

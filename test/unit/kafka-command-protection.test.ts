@@ -5,6 +5,7 @@ import {
   parseHostCommand,
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   type HostCommand,
+  type HostCommandResponse,
 } from "../../src/features/kafka/contracts";
 import { KafkaOperationalPreferenceService } from "../../src/features/kafka/application/operational-preference-service";
 import { InMemoryKafkaOperationalPreferenceStore } from "../../src/features/kafka/application/in-memory-operational-preference-store";
@@ -58,9 +59,38 @@ const writes = [
   "plugins.restart",
   "plugins.exit.resolve",
   "plugins.change.prepare",
+  "plugins.package.change.prepare",
+  "plugins.package.install",
 ] as const;
 
 describe("host record protection", () => {
+  it.each(["plugins.delivery", "plugins.package.inspect", "plugins.package.discard"] as const)(
+    "allows local %s without waiting for protection or invoking remote work",
+    async (operation) => {
+      const service = preferences();
+      const load = vi.spyOn(service, "get");
+      const rejected = vi.fn();
+      const guard = new KafkaCommandProtection({
+        preferences: service,
+        disconnected: (): boolean => false,
+        managedProfile: (): Promise<boolean> => Promise.resolve(false),
+        rejected,
+      });
+      const dispatch = vi.fn(() =>
+        Promise.resolve({
+          ...request(operation),
+          ok: true,
+          result: { correlationId: "local" },
+        } as HostCommandResponse),
+      );
+      expect(await guard.execute(request(operation), "local", dispatch)).toMatchObject({
+        ok: true,
+      });
+      expect(dispatch).toHaveBeenCalledOnce();
+      expect(load).not.toHaveBeenCalled();
+      expect(rejected).not.toHaveBeenCalled();
+    },
+  );
   it.each([
     "records.replay.review",
     "consumerGroups.reset.review",

@@ -18,11 +18,19 @@ import { parsePluginPackage } from "../../src/platform/node/plugins/package";
 import type { OfficialPluginEntry } from "../../src/platform/node/plugins/catalog";
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import { PluginStore } from "../../src/platform/node/plugins/store";
+import type { TrustedPluginPublisher } from "../../src/platform/node/plugins/publishers";
+import { createPluginPackageFilePicker } from "../../src/platform/electron/main/plugin-file-picker";
 
 let backend: KafkaBackendFacade | undefined;
 let runningShell: RunningElectronShell | undefined;
 let closing = false;
 registerPackagedRendererScheme();
+// Capture startup failures before Playwright can attach to the first window.
+app.on("web-contents-created", (_event, contents) => {
+  contents.on("console-message", (details) => {
+    if (details.level === "error") process.stderr.write(`${details.message}\n`);
+  });
+});
 
 async function shutdown(exitCode: number): Promise<void> {
   if (closing) return;
@@ -50,14 +58,41 @@ async function start(): Promise<void> {
     throw new Error("Electron plugin test paths are required.");
   app.setPath("userData", userData);
   await app.whenReady();
+  const publisherFixture = process.env.STREAMSKOPE_PLUGIN_TEST_PUBLISHERS;
+  const portableFile = process.env.STREAMSKOPE_PLUGIN_TEST_FILE;
+  const offline = process.env.STREAMSKOPE_PLUGIN_TEST_OFFLINE === "1";
   const plugins = new PluginRuntime({
-    store: new PluginStore(join(userData, "plugins")),
+    store: new PluginStore(join(userData, "plugins"), {
+      ...(publisherFixture === undefined
+        ? {}
+        : {
+            trustedPublishers: JSON.parse(publisherFixture) as TrustedPluginPublisher[],
+          }),
+    }),
+    ...(portableFile === undefined
+      ? {}
+      : {
+          choosePackageFile: createPluginPackageFilePicker(() =>
+            Promise.resolve({
+              canceled: false,
+              filePaths: [portableFile],
+            }),
+          ),
+        }),
     catalog: {
       list: async (): Promise<readonly OfficialPluginEntry[]> => {
+        if (offline) throw new Error("GitHub is unavailable in this isolated fixture.");
         const { manifest, sha256 } = parsePluginPackage(await readFile(catalogPackage));
-        return [{ manifest, sha256, downloadUrl: "https://api.github.com/test-release-asset" }];
+        return [
+          {
+            manifest,
+            sha256,
+            downloadUrl: "https://api.github.com/repos/asadarafat/streamskope/releases/assets/1",
+          },
+        ];
       },
       download: async (): Promise<{ bytes: Uint8Array; sha256: string }> => {
+        if (offline) throw new Error("GitHub is unavailable in this isolated fixture.");
         const bytes = await readFile(catalogPackage);
         return { bytes, sha256: parsePluginPackage(bytes).sha256 };
       },

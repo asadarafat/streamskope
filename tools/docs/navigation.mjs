@@ -74,7 +74,13 @@ export async function checkNavigation(page, base, evidence, accessible) {
       for (const [name, links] of [
         [
           "Plugins",
-          ["Plugin overview", "Versioning and compatibility", "EDA Capture", "NSP Capture"],
+          [
+            "Plugin overview",
+            "Versioning and compatibility",
+            "Install without GitHub",
+            "EDA Capture",
+            "NSP Capture",
+          ],
         ],
         [
           "Operate safely",

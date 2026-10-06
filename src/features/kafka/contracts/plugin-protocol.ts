@@ -1,11 +1,21 @@
 import type {
   PluginCatalogSnapshot,
   PluginChangePrompt,
+  PluginCachedPackage,
+  PluginDeliverySnapshot,
   PluginExitPrompt,
   PluginInstallation,
+  PluginPackageInspection,
+  PluginPackagePublisher,
+  PluginPackageReference,
   PluginSnapshot,
 } from "../../../plugins/contracts";
-import { parsePluginId, parsePluginJson, parsePluginManifest } from "../../../plugins/validation";
+import {
+  comparePluginVersions,
+  parsePluginId,
+  parsePluginJson,
+  parsePluginManifest,
+} from "../../../plugins/validation";
 
 import type {
   HostCommand,
@@ -18,6 +28,7 @@ import type {
 import { HostContractValidationError } from "./validation-error";
 import {
   declaredValue,
+  canonicalIsoTimestamp,
   exactKeys,
   optionalText,
   nonNegativeInteger,
@@ -39,10 +50,177 @@ function pluginValue<T>(parse: () => T, path: string): T {
 function id(value: unknown, path: string): string {
   return pluginValue(() => parsePluginId(value), path);
 }
-function list<T>(value: unknown, path: string, parse: (value: unknown) => T): readonly T[] {
-  if (!Array.isArray(value) || value.length > 64)
-    throw new HostContractValidationError(path, "must contain at most 64 entries");
+function list<T>(
+  value: unknown,
+  path: string,
+  parse: (value: unknown) => T,
+  maximum = 64,
+): readonly T[] {
+  if (!Array.isArray(value) || value.length > maximum)
+    throw new HostContractValidationError(path, `must contain at most ${maximum} entries`);
   return value.map(parse);
+}
+
+function packageVersion(value: unknown, path: string): string {
+  const parsed = text(value, path, 256);
+  return pluginValue(() => {
+    comparePluginVersions(parsed, parsed);
+    return parsed;
+  }, path);
+}
+
+function digest(value: unknown, path: string): string {
+  const parsed = text(value, path, 64);
+  if (!/^[a-f0-9]{64}(?![\s\S])/u.test(parsed))
+    throw new HostContractValidationError(path, "must be a canonical SHA256 digest");
+  return parsed;
+}
+
+function packageReference(value: unknown): PluginPackageReference {
+  const input = record(value, "pluginPackageReference");
+  exactKeys(input, ["pluginId", "version", "sha256"], "pluginPackageReference");
+  return {
+    pluginId: id(input.pluginId, "pluginPackageReference.pluginId"),
+    version: packageVersion(input.version, "pluginPackageReference.version"),
+    sha256: digest(input.sha256, "pluginPackageReference.sha256"),
+  };
+}
+
+function publisher(value: unknown): PluginPackagePublisher {
+  const input = record(value, "pluginPublisher");
+  exactKeys(input, ["keyId", "name"], "pluginPublisher");
+  const keyId = text(input.keyId, "pluginPublisher.keyId", 80);
+  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?![\s\S])/u.test(keyId))
+    throw new HostContractValidationError(
+      "pluginPublisher.keyId",
+      "must be a canonical publisher identifier",
+    );
+  return { keyId, name: text(input.name, "pluginPublisher.name", 256) };
+}
+
+function trust(
+  input: Record<string, unknown>,
+  path: string,
+): {
+  readonly trust: PluginCachedPackage["trust"];
+  readonly publisher?: PluginPackagePublisher;
+} {
+  const parsed = declaredValue(
+    input.trust,
+    ["publisher", "official", "development"] as const,
+    `${path}.trust`,
+  );
+  const verifiedPublisher = input.publisher === undefined ? undefined : publisher(input.publisher);
+  if ((parsed === "publisher") !== (verifiedPublisher !== undefined))
+    throw new HostContractValidationError(
+      `${path}.publisher`,
+      "must be present only for publisher-verified packages",
+    );
+  return {
+    trust: parsed,
+    ...(verifiedPublisher === undefined ? {} : { publisher: verifiedPublisher }),
+  };
+}
+
+function cachedPackage(value: unknown): PluginCachedPackage {
+  const input = record(value, "pluginCachedPackage");
+  exactKeys(input, ["manifest", "sha256", "cachedAt", "publisher", "trust"], "pluginCachedPackage");
+  return {
+    manifest: pluginValue(
+      () => parsePluginManifest(input.manifest),
+      "pluginCachedPackage.manifest",
+    ),
+    sha256: digest(input.sha256, "pluginCachedPackage.sha256"),
+    cachedAt: canonicalIsoTimestamp(input.cachedAt, "pluginCachedPackage.cachedAt"),
+    ...trust(input, "pluginCachedPackage"),
+  };
+}
+
+function delivery(value: unknown): PluginDeliverySnapshot {
+  const input = record(value, "pluginDelivery");
+  exactKeys(input, ["fileInstallationAvailable", "cachedPackages"], "pluginDelivery");
+  const cachedPackages = list(
+    input.cachedPackages,
+    "pluginDelivery.cachedPackages",
+    cachedPackage,
+    4,
+  );
+  const identities = cachedPackages.map(
+    (entry) => `${entry.manifest.id}:${entry.manifest.version}:${entry.sha256}`,
+  );
+  if (new Set(identities).size !== identities.length)
+    throw new HostContractValidationError(
+      "pluginDelivery.cachedPackages",
+      "must not contain duplicate packages",
+    );
+  return {
+    fileInstallationAvailable: truth(
+      input.fileInstallationAvailable,
+      "pluginDelivery.fileInstallationAvailable",
+    ),
+    cachedPackages,
+  };
+}
+
+function inspection(value: unknown): PluginPackageInspection | null {
+  if (value === null) return null;
+  const input = record(value, "pluginPackage");
+  exactKeys(
+    input,
+    [
+      "candidateId",
+      "manifest",
+      "sha256",
+      "source",
+      "publisher",
+      "trust",
+      "expiresAt",
+      "installedVersion",
+      "status",
+      "reason",
+    ],
+    "pluginPackage",
+  );
+  const parsedTrust = trust(input, "pluginPackage");
+  const source = declaredValue(
+    input.source,
+    ["file", "catalog", "cache"] as const,
+    "pluginPackage.source",
+  );
+  if (source === "file" && parsedTrust.trust !== "publisher")
+    throw new HostContractValidationError(
+      "pluginPackage.trust",
+      "file installation requires a verified publisher",
+    );
+  const reason = optionalText(input, "reason", "pluginPackage", 4096);
+  const status = declaredValue(
+    input.status,
+    ["install", "update", "already-installed", "blocked"] as const,
+    "pluginPackage.status",
+  );
+  if (status === "blocked" && reason === undefined)
+    throw new HostContractValidationError(
+      "pluginPackage.reason",
+      "must explain why the package cannot be installed",
+    );
+  return {
+    candidateId: text(input.candidateId, "pluginPackage.candidateId", 128),
+    manifest: pluginValue(() => parsePluginManifest(input.manifest), "pluginPackage.manifest"),
+    sha256: digest(input.sha256, "pluginPackage.sha256"),
+    source,
+    ...parsedTrust,
+    expiresAt: canonicalIsoTimestamp(input.expiresAt, "pluginPackage.expiresAt"),
+    ...(input.installedVersion === undefined
+      ? {}
+      : {
+          installedVersion: packageVersion(
+            input.installedVersion,
+            "pluginPackage.installedVersion",
+          ),
+        }),
+    status,
+    ...(reason === undefined ? {} : { reason }),
+  };
 }
 function installation(value: unknown): PluginInstallation {
   const input = record(value, "plugin");
@@ -117,7 +295,7 @@ function changePrompt(value: unknown): PluginChangePrompt | null {
 }
 function catalog(value: unknown): PluginCatalogSnapshot {
   const input = record(value, "pluginCatalog");
-  exactKeys(input, ["plugins", "error", "source", "checkedAt"], "pluginCatalog");
+  exactKeys(input, ["plugins", "packages", "error", "source", "checkedAt"], "pluginCatalog");
   const error = optionalText(input, "error", "pluginCatalog", 4096);
   const checkedAt = optionalText(input, "checkedAt", "pluginCatalog", 32);
   if (
@@ -128,10 +306,30 @@ function catalog(value: unknown): PluginCatalogSnapshot {
       "pluginCatalog.checkedAt",
       "must be an ISO UTC timestamp",
     );
+  const plugins = list(input.plugins, "pluginCatalog.plugins", (entry) =>
+    pluginValue(() => parsePluginManifest(entry), "pluginCatalog.plugins"),
+  );
+  const packages =
+    input.packages === undefined
+      ? undefined
+      : list(input.packages, "pluginCatalog.packages", packageReference, 2);
+  if (
+    packages !== undefined &&
+    (new Set(packages.map((entry) => entry.pluginId)).size !== packages.length ||
+      packages.some(
+        (entry) =>
+          !plugins.some(
+            (manifest) => manifest.id === entry.pluginId && manifest.version === entry.version,
+          ),
+      ))
+  )
+    throw new HostContractValidationError(
+      "pluginCatalog.packages",
+      "must reference distinct declared manifests",
+    );
   return {
-    plugins: list(input.plugins, "pluginCatalog.plugins", (entry) =>
-      pluginValue(() => parsePluginManifest(entry), "pluginCatalog.plugins"),
-    ),
+    plugins,
+    ...(packages === undefined ? {} : { packages }),
     ...(error === undefined ? {} : { error }),
     ...(checkedAt === undefined ? {} : { checkedAt }),
     ...(input.source === undefined
@@ -179,10 +377,56 @@ export function parsePluginHostCommand(
   const payload = record(value, "command.payload");
   switch (command) {
     case "plugins.list":
+    case "plugins.delivery":
     case "plugins.restart":
     case "plugins.exit.prepare":
       exactKeys(payload, [], "command.payload");
       return { command, id: requestId, version, payload: {} };
+    case "plugins.package.inspect": {
+      const source = declaredValue(
+        payload.source,
+        ["file", "catalog", "cache"] as const,
+        "command.payload.source",
+      );
+      if (source === "file") {
+        exactKeys(payload, ["source"], "command.payload");
+        return { command, id: requestId, version, payload: { source } };
+      }
+      exactKeys(payload, ["source", "pluginId", "version", "sha256"], "command.payload");
+      return {
+        command,
+        id: requestId,
+        version,
+        payload: {
+          source,
+          pluginId: id(payload.pluginId, "command.payload.pluginId"),
+          version: packageVersion(payload.version, "command.payload.version"),
+          sha256: digest(payload.sha256, "command.payload.sha256"),
+        },
+      };
+    }
+    case "plugins.package.change.prepare":
+    case "plugins.package.discard":
+      exactKeys(payload, ["candidateId"], "command.payload");
+      return {
+        command,
+        id: requestId,
+        version,
+        payload: { candidateId: text(payload.candidateId, "command.payload.candidateId", 128) },
+      };
+    case "plugins.package.install": {
+      exactKeys(payload, ["candidateId", "confirmationToken"], "command.payload");
+      const confirmationToken = optionalText(payload, "confirmationToken", "command.payload", 128);
+      return {
+        command,
+        id: requestId,
+        version,
+        payload: {
+          candidateId: text(payload.candidateId, "command.payload.candidateId", 128),
+          ...(confirmationToken === undefined ? {} : { confirmationToken }),
+        },
+      };
+    }
     case "plugins.catalog":
       exactKeys(payload, ["refresh"], "command.payload");
       return {
@@ -280,7 +524,9 @@ export function parsePluginHostResponse(
 ): HostCommandResponse | undefined {
   if (
     command !== "plugin.execute" &&
-    (!command.startsWith("plugins.") || command === "plugins.restart")
+    (!command.startsWith("plugins.") ||
+      command === "plugins.restart" ||
+      command === "plugins.package.discard")
   )
     return undefined;
   const result = record(value, "response.result");
@@ -289,6 +535,7 @@ export function parsePluginHostResponse(
   switch (command) {
     case "plugins.list":
     case "plugins.install":
+    case "plugins.package.install":
     case "plugins.retry":
     case "plugins.remove":
     case "plugins.renderer.failed":
@@ -299,11 +546,26 @@ export function parsePluginHostResponse(
         result: { correlationId, pluginSnapshot: snapshot(result.pluginSnapshot) },
       };
     case "plugins.change.prepare":
+    case "plugins.package.change.prepare":
       exactKeys(result, ["correlationId", "pluginChange"], "response.result");
       return {
         ...base,
         command,
         result: { correlationId, pluginChange: changePrompt(result.pluginChange) },
+      };
+    case "plugins.delivery":
+      exactKeys(result, ["correlationId", "pluginDelivery"], "response.result");
+      return {
+        ...base,
+        command,
+        result: { correlationId, pluginDelivery: delivery(result.pluginDelivery) },
+      };
+    case "plugins.package.inspect":
+      exactKeys(result, ["correlationId", "pluginPackage"], "response.result");
+      return {
+        ...base,
+        command,
+        result: { correlationId, pluginPackage: inspection(result.pluginPackage) },
       };
     case "plugins.catalog":
       exactKeys(result, ["correlationId", "pluginCatalog"], "response.result");

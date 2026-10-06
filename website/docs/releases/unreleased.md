@@ -19,8 +19,13 @@ Plugin release tooling now produces a publisher-signed portable package alongsid
 the existing catalog package. Host verification authenticates its complete payload
 against shipped Ed25519 public keys before parsing or execution; primary downloads
 and existing installations keep their original format. Identical payloads across
-formats retain the same immutable plugin identity. This prepares portable delivery;
-it does not make older downloads signed or publish a file-installing desktop.
+formats retain the same immutable plugin identity. **Install from file** reviews a verified portable package without GitHub access.
+Complete cached packages have a separate exact-version path; dated catalog
+metadata does not imply downloaded bytes. Review receipts expire and pin the
+verified archive, while confirmation binds the candidate and current active work.
+File, cache and catalog installation share cleanup, activation, recovery and
+idempotency. Older downloads are not retroactively signed; a later desktop and
+compatible plugin publication are still required to deliver these source features.
 
 Application shutdown rejects new requests immediately and waits for every owned
 cleanup to finish, including environment comparisons that open a separate saved
@@ -72,8 +77,8 @@ independent of unrelated group-member/assignment omissions. Record sampling uses
 bounded adaptive windows; incomplete coverage does not qualify key or size
 inference. Existing schema-1 history remains readable.
 
-The desktop host protocol advances to 50 for explicit observation coverage,
-recovery errors, cache-only plugin catalog reads and local activation retry.
+The desktop host protocol advances to 51 for explicit observation coverage,
+recovery errors, cache-only plugin catalog reads, local activation retry and reviewed package delivery.
 Development renderer and host builds must be updated together;
 the desktop installer includes both. This does not change the plugin API.
 

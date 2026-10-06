@@ -10,6 +10,7 @@ import { createNatsBackend } from "../../node/nats-backend";
 import { createNatsProviderEndpoint } from "../../node/nats-provider";
 
 import { confirmPluginExit } from "./plugin-exit";
+import { createPluginPackageFilePicker } from "./plugin-file-picker";
 import { createElectronKafkaBackend } from "./electron-kafka-backend";
 import { createElectronShell, type RunningElectronShell } from "./electron-shell";
 import { createKafkaElectronDeliveryBinding } from "./kafka-provider-delivery";
@@ -106,6 +107,11 @@ async function start(): Promise<void> {
   const developmentRendererUrl = process.env.STREAMSKOPE_RENDERER_URL;
   const plugins = new PluginRuntime({
     store: new PluginStore(join(app.getPath("userData"), "plugins")),
+    choosePackageFile: createPluginPackageFilePicker((options) =>
+      runningShell === undefined
+        ? dialog.showOpenDialog(options)
+        : dialog.showOpenDialog(runningShell.window, options),
+    ),
     restart: (): void => {
       if (exitPending || shutdownPromise !== undefined) return;
       restartRequested = true;

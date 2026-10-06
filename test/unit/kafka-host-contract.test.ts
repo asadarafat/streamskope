@@ -43,7 +43,7 @@ const zeroRuleEvaluation = {
 
 describe("Kafka host contract", () => {
   it("declares the complete current command and event vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(50);
+    expect(HOST_PROTOCOL_VERSION).toBe(51);
     expect(HOST_COMMANDS).toEqual([
       "relationships.capture",
       "relationships.cancel",
@@ -148,6 +148,11 @@ describe("Kafka host contract", () => {
       "trustAcquisition.cancel",
       "plugins.list",
       "plugins.catalog",
+      "plugins.delivery",
+      "plugins.package.inspect",
+      "plugins.package.change.prepare",
+      "plugins.package.install",
+      "plugins.package.discard",
       "plugins.change.prepare",
       "plugins.renderer.failed",
       "plugins.install",
@@ -191,31 +196,31 @@ describe("Kafka host contract", () => {
     ]);
   });
 
-  it("rejects protocol-48 renderer traffic at every current host boundary", () => {
+  it("rejects protocol-50 renderer traffic at every current host boundary", () => {
     const command = {
       command: "observations.cancel",
       id: "previous-renderer",
       payload: {},
-      version: 48,
+      version: 50,
     };
-    expect(() => parseHostCommand(command)).toThrow("command.version: must equal 50");
+    expect(() => parseHostCommand(command)).toThrow("command.version: must equal 51");
     expect(() =>
       parseHostCommandResponse({
         command: command.command,
         id: command.id,
         ok: true,
         result: { correlationId: "previous-renderer" },
-        version: 48,
+        version: 50,
       }),
-    ).toThrow("response.version: must equal 50");
+    ).toThrow("response.version: must equal 51");
     expect(() =>
       parseHostEvent({
         event: "connection.state",
         payload: { connectionName: "Local validation", state: "connected" },
         sequence: 1,
-        version: 48,
+        version: 50,
       }),
-    ).toThrow("event.version: must equal 50");
+    ).toThrow("event.version: must equal 51");
   });
 
   it("keeps unimplemented integration names outside the public host vocabulary", () => {

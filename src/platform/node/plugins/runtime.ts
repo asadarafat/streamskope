@@ -17,6 +17,9 @@ import type {
 import type {
   JsonValue,
   PluginCatalogSnapshot,
+  PluginDeliverySnapshot,
+  PluginPackageInspection,
+  PluginPackageInspectInput,
   PluginChangeOperation,
   PluginChangePrompt,
   PluginEvent,
@@ -28,7 +31,6 @@ import type {
   PluginSnapshot,
 } from "../../../plugins/contracts";
 import {
-  comparePluginManifests,
   isPluginCompatibleWithHost,
   parsePluginId,
   parsePluginJson,
@@ -36,8 +38,11 @@ import {
 import { STREAMSKOPE_RELEASE } from "../../../plugins/host-release";
 import { readBoundedFile } from "../bounded-file";
 
-import { OfficialPluginCatalog } from "./catalog";
+import { OfficialPluginCatalog, type PluginCatalogSource } from "./catalog";
 import { PluginCatalogDiscovery } from "./catalog-discovery";
+import { PluginDeliveryController, type InstalledPluginReview } from "./delivery";
+import { PluginInstaller, type PluginCandidateAuthority } from "./installer";
+import { pluginProblem as problem } from "./problem";
 import { PluginStore, type ActivePlugin } from "./store";
 
 interface LoadedPlugin {
@@ -55,34 +60,25 @@ interface ChangeConfirmation {
   readonly activationId: string;
   readonly fingerprint: string;
   readonly expires: number;
+  readonly candidateId?: string;
+  readonly candidateSha256?: string;
 }
 
 export interface PluginRuntimeOptions {
   readonly store: PluginStore;
-  readonly catalog?: Pick<OfficialPluginCatalog, "list" | "download">;
+  readonly catalog?: PluginCatalogSource;
   readonly loadModule?: (path: string) => Promise<PluginBackendModule>;
   readonly probeTopics?: PluginBackendHost["probeTopics"];
   readonly restart?: () => void | Promise<void>;
   readonly hostRelease?: string;
   /** Development catalog URLs have no official release provenance and stay in memory only. */
   readonly persistCatalog?: boolean;
+  readonly choosePackageFile?: (signal: AbortSignal) => Promise<Uint8Array | null>;
 }
 
 export interface PluginRendererAsset {
   readonly content: Uint8Array;
   readonly contentType: string;
-}
-
-function problem(
-  summary: string,
-  recovery = "Open Preferences > Plugins to install or repair the plugin.",
-): Error {
-  return Object.assign(new Error(summary), {
-    code: "BACKEND_UNAVAILABLE",
-    stage: "backend",
-    retryable: false,
-    recovery,
-  });
 }
 
 function summary(error: unknown): string {
@@ -155,12 +151,14 @@ export class PluginRuntime implements PluginRuntimePort {
   private readonly mutationIntents = new Map<string, symbol>();
   private mutations: Promise<unknown> = Promise.resolve();
   private revision = 0;
-  private readonly catalogSource: Pick<OfficialPluginCatalog, "list" | "download">;
+  private readonly catalogSource: PluginCatalogSource;
   private bindings: PluginHostBindings | undefined;
   private starting: Promise<void> | undefined;
   private closing: Promise<void> | undefined;
   private startupError: string | undefined;
   private readonly catalogDiscovery: PluginCatalogDiscovery;
+  private readonly installer: PluginInstaller<LoadedPlugin>;
+  private readonly deliveryController: PluginDeliveryController;
 
   constructor(private readonly options: PluginRuntimeOptions) {
     this.catalogSource =
@@ -172,6 +170,42 @@ export class PluginRuntime implements PluginRuntimePort {
       hostRelease: options.hostRelease ?? STREAMSKOPE_RELEASE,
       assertOpen: (): void => this.assertOpen(),
       ...(options.persistCatalog === undefined ? {} : { persist: options.persistCatalog }),
+    });
+    this.installer = new PluginInstaller({
+      store: options.store,
+      compatible: this.assertCompatible.bind(this),
+      current: (id): LoadedPlugin | undefined => this.modules.get(id),
+      healthy: (id): boolean => !this.errors.has(id),
+      enter: (id): void => {
+        this.changing.add(id);
+      },
+      leave: (id): void => {
+        this.changing.delete(id);
+      },
+      serial: <T>(operation: () => Promise<T>): Promise<T> => this.serial(operation),
+      snapshot: this.snapshot.bind(this),
+      changed: this.changed.bind(this),
+      confirm: (id, loaded, token, candidate): Promise<void> =>
+        this.confirmChange(id, "install", loaded, token, candidate),
+      replace: this.replaceInstalled.bind(this),
+    });
+    this.deliveryController = new PluginDeliveryController({
+      store: options.store,
+      catalog: this.catalogSource,
+      discovery: this.catalogDiscovery,
+      hostRelease: options.hostRelease ?? STREAMSKOPE_RELEASE,
+      development: options.persistCatalog === false,
+      assertOpen: this.assertOpen.bind(this),
+      installed: this.installedReview.bind(this),
+      prepare: (id, candidate): Promise<PluginChangePrompt | null> =>
+        this.prepareChangeAuthority(id, "install", candidate),
+      install: (id, bytes, sha256, token, candidate): Promise<PluginSnapshot> =>
+        this.withMutationIntent(id, async (assertCurrent) => {
+          await this.start();
+          assertCurrent();
+          return this.installer.apply(id, bytes, sha256, token, assertCurrent, candidate);
+        }),
+      ...(options.choosePackageFile === undefined ? {} : { chooseFile: options.choosePackageFile }),
     });
   }
 
@@ -561,18 +595,63 @@ export class PluginRuntime implements PluginRuntimePort {
     return this.catalogDiscovery.catalog(refresh);
   }
 
+  delivery(): Promise<PluginDeliverySnapshot> {
+    return this.deliveryController.delivery();
+  }
+  inspectPackage(input: PluginPackageInspectInput): Promise<PluginPackageInspection | null> {
+    return this.deliveryController.inspectPackage(input);
+  }
+  preparePackageChange(candidateId: string): Promise<PluginChangePrompt | null> {
+    return this.deliveryController.preparePackageChange(candidateId);
+  }
+  installPackage(candidateId: string, confirmationToken?: string): Promise<PluginSnapshot> {
+    return this.deliveryController.installPackage(candidateId, confirmationToken);
+  }
+  discardPackage(candidateId: string): Promise<void> {
+    this.deliveryController.discardPackage(candidateId);
+    return Promise.resolve();
+  }
+
+  private async installedReview(pluginId: string): Promise<InstalledPluginReview> {
+    const installation = (await this.list()).plugins.find((value) => value.id === pluginId);
+    const loaded = this.modules.get(pluginId);
+    let healthy = loaded !== undefined && !this.errors.has(pluginId);
+    try {
+      healthy &&=
+        (await this.options.store.getInstalled(pluginId))?.sha256 === loaded?.installation.sha256;
+    } catch {
+      healthy = false;
+    }
+    const manifest = installation?.active ?? installation?.installed;
+    return {
+      healthy,
+      ...(manifest === undefined ? {} : { manifest }),
+      ...(loaded === undefined ? {} : { contentSha256: loaded.installation.contentSha256 }),
+    };
+  }
+
   async prepareChange(
     pluginId: string,
     operation: PluginChangeOperation,
   ): Promise<PluginChangePrompt | null> {
+    return this.prepareChangeAuthority(pluginId, operation);
+  }
+
+  private async prepareChangeAuthority(
+    pluginId: string,
+    operation: PluginChangeOperation,
+    candidate?: PluginCandidateAuthority,
+  ): Promise<PluginChangePrompt | null> {
     parsePluginId(pluginId);
     await this.start();
     return this.serial(async () => {
+      candidate?.assertCurrent();
       const loaded = this.modules.get(pluginId);
       if (loaded === undefined) return null;
       // A healthy backend only needs a renderer retry; it will not stop active work.
       if (operation === "retry" && !this.errors.has(pluginId)) return null;
       const warning = await loaded.backend.beforeChange();
+      candidate?.assertCurrent();
       if (warning === undefined) return null;
       const now = Date.now();
       for (const [token, entry] of this.confirmations) {
@@ -587,6 +666,9 @@ export class PluginRuntime implements PluginRuntimePort {
         activationId: loaded.activationId,
         fingerprint: JSON.stringify(warning),
         expires: now + 5 * 60_000,
+        ...(candidate === undefined
+          ? {}
+          : { candidateId: candidate.candidateId, candidateSha256: candidate.sha256 }),
       });
       return {
         pluginId,
@@ -614,6 +696,7 @@ export class PluginRuntime implements PluginRuntimePort {
     operation: PluginChangeOperation,
     loaded: LoadedPlugin | undefined,
     token?: string,
+    candidate?: PluginCandidateAuthority,
   ): Promise<void> {
     const confirmation = token === undefined ? undefined : this.confirmations.get(token);
     if (token !== undefined) this.confirmations.delete(token);
@@ -626,7 +709,9 @@ export class PluginRuntime implements PluginRuntimePort {
       confirmation.operation !== operation ||
       confirmation.activationId !== loaded.activationId ||
       confirmation.expires <= Date.now() ||
-      confirmation.fingerprint !== JSON.stringify(warning)
+      confirmation.fingerprint !== JSON.stringify(warning) ||
+      confirmation.candidateId !== candidate?.candidateId ||
+      confirmation.candidateSha256 !== candidate?.sha256
     ) {
       throw problem(
         "Plugin work changed or requires confirmation. Review the change again before continuing.",
@@ -637,9 +722,19 @@ export class PluginRuntime implements PluginRuntimePort {
 
   async install(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot> {
     parsePluginId(pluginId);
-    return this.withMutationIntent(pluginId, (assertCurrent) =>
-      this.installCurrent(pluginId, confirmationToken, assertCurrent),
-    );
+    return this.withMutationIntent(pluginId, async (assertCurrent) => {
+      await this.start();
+      assertCurrent();
+      const downloaded = await this.catalogSource.download(pluginId);
+      assertCurrent();
+      return this.installer.apply(
+        pluginId,
+        downloaded.bytes,
+        downloaded.sha256,
+        confirmationToken,
+        assertCurrent,
+      );
+    });
   }
 
   async retryActivation(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot> {
@@ -712,75 +807,6 @@ export class PluginRuntime implements PluginRuntimePort {
     } finally {
       if (candidate !== undefined) await this.retire(candidate).catch(() => undefined);
     }
-  }
-
-  private async installCurrent(
-    pluginId: string,
-    confirmationToken: string | undefined,
-    assertCurrent: () => void,
-  ): Promise<PluginSnapshot> {
-    await this.start();
-    assertCurrent();
-    // Downloads do not hold the lifecycle queue or delay shutdown.
-    const download = await this.catalogSource.download(pluginId);
-    assertCurrent();
-    const verified = this.options.store.verifyPackage(download.bytes, download.sha256);
-    const manifest = verified.manifest;
-    this.assertCompatible(manifest);
-    if (manifest.id !== pluginId)
-      throw problem("The downloaded plugin identity does not match the selection.");
-    return this.serial(async () => {
-      assertCurrent();
-      this.changing.add(pluginId);
-      const previous = this.modules.get(pluginId);
-      let installation: ActivePlugin | undefined;
-      try {
-        if (
-          manifest.apiVersion >= 3 &&
-          previous !== undefined &&
-          comparePluginManifests(previous.installation.manifest, manifest) === 0 &&
-          previous.installation.contentSha256 !== verified.contentSha256
-        )
-          throw problem(
-            "This plugin version has different content from the installed package.",
-            "Refresh the catalog after a new plugin version is published. The current installation is retained.",
-          );
-        const stored = (await this.options.store.list()).find((entry) => entry.id === pluginId);
-        for (const current of [previous?.installation.manifest, stored?.installed]) {
-          if (current !== undefined && comparePluginManifests(manifest, current) < 0)
-            throw problem(
-              `The available plugin version ${manifest.version} is older than installed version ${current.version}.`,
-              "Refresh the plugin catalog and wait for a compatible update.",
-            );
-        }
-        assertCurrent();
-        installation = await this.options.store.prepareInstall(download.bytes, download.sha256);
-        assertCurrent();
-        if (
-          previous !== undefined &&
-          !this.errors.has(pluginId) &&
-          installation.sha256 === previous.installation.sha256 &&
-          installation.contentSha256 === previous.installation.contentSha256
-        ) {
-          this.changing.delete(pluginId);
-          return this.snapshot();
-        }
-        if (previous !== undefined) await Promise.allSettled([...previous.connections]);
-        await this.confirmChange(pluginId, "install", previous, confirmationToken);
-        assertCurrent();
-        await this.replaceInstalled(installation, previous, assertCurrent);
-        this.changing.delete(pluginId);
-        return await this.changed();
-      } catch (error) {
-        if (installation !== undefined)
-          await this.options.store
-            .discardInstall(pluginId, installation.sha256)
-            .catch(() => undefined);
-        throw error;
-      } finally {
-        this.changing.delete(pluginId);
-      }
-    });
   }
 
   async remove(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot> {
@@ -961,6 +987,7 @@ export class PluginRuntime implements PluginRuntimePort {
   }
 
   close(): Promise<void> {
+    this.deliveryController.close();
     this.closing ??= (async (): Promise<void> => {
       if (this.starting !== undefined) await this.starting;
       await this.mutations;

@@ -459,6 +459,29 @@ describe("official plugin downloads", () => {
     expect(await catalog.list()).toEqual([]);
     await expect(catalog.download(manifest.id)).rejects.toThrow("not been published");
   });
+  it("downloads the exact reviewed asset without discovering a newer release", async () => {
+    const { catalog, fetcher } = fixture();
+    const entry = (await catalog.list())[0]!;
+    fetcher.mockClear();
+    expect(await catalog.downloadPinned(entry)).toEqual({
+      bytes: Buffer.from(bytes),
+      sha256: entry.sha256,
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(requestUrl(fetcher.mock.calls[0]![0])).toBe(entry.downloadUrl);
+    await expect(
+      catalog.downloadPinned({ ...entry, downloadUrl: "https://attacker.example/package" }),
+    ).rejects.toThrow(/known official/u);
+    await expect(
+      catalog.downloadPinned({ ...entry, downloadUrl: `${entry.downloadUrl}\n` }),
+    ).rejects.toThrow(/known official/u);
+    const cancelled = new AbortController();
+    cancelled.abort();
+    await expect(catalog.downloadPinned(entry, cancelled.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
 
   it("rejects missing GitHub digests and changed downloaded package bytes", async () => {
     const metadata = release();

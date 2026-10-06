@@ -10,7 +10,6 @@ import {
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
 import type {
-  PluginChangePrompt,
   PluginCatalogSnapshot,
   PluginManifest,
   PluginSnapshot,
@@ -21,119 +20,14 @@ import type { PluginRenderer, PluginViewMount } from "../../src/plugins/renderer
 import { OperationalPreferencesDialog } from "../../src/features/kafka/ui/OperationalPreferencesDialog";
 import { testHostExecute } from "../support/host-response";
 import { formatPluginVersion } from "../../src/plugins/validation";
+import {
+  fixture,
+  manifest,
+  catalogGate,
+  approvePackage,
+} from "../support/plugin-management-fixture";
 
 afterEach(cleanup);
-const manifest: PluginManifest = {
-  id: "sample.connection",
-  name: "Sample connection",
-  version: "2.0.0",
-  apiVersion: 2,
-  backend: "backend.cjs",
-  renderer: "renderer.js",
-};
-
-function fixture(
-  options: {
-    snapshot?: PluginSnapshot;
-    offline?: boolean;
-    failInstall?: boolean;
-    prompt?: PluginChangePrompt;
-    manifest?: PluginManifest;
-    catalog?: (refresh: boolean) => Promise<PluginCatalogSnapshot>;
-  } = {},
-): {
-  host: StreamSkopeHost;
-  commands: HostCommand[];
-} {
-  const availableManifest = options.manifest ?? manifest;
-  let snapshot = options.snapshot ?? { revision: 0, plugins: [] };
-  const commands: HostCommand[] = [];
-  const host: StreamSkopeHost = {
-    openExternalUrl: vi.fn(),
-    subscribe: () => () => undefined,
-    execute: testHostExecute(async (command) => {
-      commands.push(command);
-      let result: object = { correlationId: command.id };
-      switch (command.command) {
-        case "plugins.catalog":
-          if (command.payload.refresh !== false && options.offline)
-            throw new Error("Network unavailable.");
-          result = {
-            ...result,
-            pluginCatalog:
-              options.catalog === undefined
-                ? options.offline
-                  ? { plugins: [], source: "unavailable" }
-                  : {
-                      plugins: [availableManifest],
-                      source: command.payload.refresh === false ? "cache" : "live",
-                      checkedAt: "2026-10-05T14:00:00.000Z",
-                    }
-                : await options.catalog(command.payload.refresh !== false),
-          };
-          break;
-        case "plugins.change.prepare":
-          result = { ...result, pluginChange: options.prompt ?? null };
-          break;
-        case "plugins.install":
-        case "plugins.retry": {
-          if (options.failInstall) throw new Error("The downloaded package failed verification.");
-          const activated =
-            command.command === "plugins.retry"
-              ? snapshot.plugins.find((entry) => entry.id === command.payload.pluginId)?.installed
-              : availableManifest;
-          if (activated === undefined) throw new Error("No installed package is available.");
-          snapshot = {
-            revision: snapshot.revision + 1,
-            plugins: [
-              {
-                id: activated.id,
-                installed: activated,
-                active: activated,
-                activationId: "new",
-                pending: null,
-                restartRequired: false,
-              },
-            ],
-          };
-          result = { ...result, pluginSnapshot: snapshot };
-          break;
-        }
-        case "plugins.remove":
-          snapshot = { revision: snapshot.revision + 1, plugins: [] };
-          result = { ...result, pluginSnapshot: snapshot };
-          break;
-        case "plugins.list":
-          result = { ...result, pluginSnapshot: snapshot };
-          break;
-        case "plugins.restart":
-          break;
-        default:
-          throw new Error(`Unexpected ${command.command}`);
-      }
-      return Promise.resolve({
-        command: command.command,
-        id: command.id,
-        ok: true,
-        version: HOST_PROTOCOL_VERSION,
-        result,
-      });
-    }),
-  };
-  return { host, commands };
-}
-
-function catalogGate(): {
-  promise: Promise<PluginCatalogSnapshot>;
-  resolve: (snapshot: PluginCatalogSnapshot) => void;
-} {
-  let resolve!: (snapshot: PluginCatalogSnapshot) => void;
-  const promise = new Promise<PluginCatalogSnapshot>((complete) => {
-    resolve = complete;
-  });
-  return { promise, resolve };
-}
-
 it("shows installed plugins and completes removal while a network refresh is still pending", async () => {
   const remote = catalogGate();
   const { host, commands } = fixture({
@@ -191,6 +85,7 @@ it("retries installed controls before a pending network refresh completes", asyn
     },
   });
   render(<PluginsPanel host={host} />);
+  await act((): Promise<void> => Promise.resolve());
   const retry = await screen.findByRole("button", { name: "Retry activation" });
   expect(retry).toBeEnabled();
   await userEvent.setup().click(retry);
@@ -202,7 +97,7 @@ it("retries installed controls before a pending network refresh completes", asyn
       operation: "retry",
     },
   );
-  expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
+  expect(commands.some((command) => command.command === "plugins.package.install")).toBe(false);
   await act((): Promise<void> => {
     remote.resolve({ plugins: [], source: "unavailable" });
     return Promise.resolve();
@@ -241,11 +136,13 @@ it("explicitly reloads rejected renderer controls after a healthy backend retry 
         ok: true,
         result: {
           correlationId: command.id,
-          ...(command.command === "plugins.catalog"
-            ? { pluginCatalog: { plugins: [], source: "unavailable" } }
-            : command.command === "plugins.change.prepare"
-              ? { pluginChange: null }
-              : { pluginSnapshot: snapshot }),
+          ...(command.command === "plugins.delivery"
+            ? { pluginDelivery: { fileInstallationAvailable: false, cachedPackages: [] } }
+            : command.command === "plugins.catalog"
+              ? { pluginCatalog: { plugins: [], source: "unavailable" } }
+              : command.command === "plugins.change.prepare"
+                ? { pluginChange: null }
+                : { pluginSnapshot: snapshot }),
         },
       });
     }),
@@ -297,7 +194,7 @@ it("explicitly reloads rejected renderer controls after a healthy backend retry 
   expect(screen.getByText("Sample connection 2.0.0 is active.")).toBeVisible();
   expect(screen.queryByText("The plugin controls failed to load.")).not.toBeInTheDocument();
   expect(commands.some((command) => command.command === "plugins.retry")).toBe(true);
-  expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
+  expect(commands.some((command) => command.command === "plugins.package.install")).toBe(false);
   expect(commands.filter((command) => command.command === "plugins.catalog")).toHaveLength(
     catalogCalls,
   );
@@ -424,13 +321,20 @@ it("installs only on request and immediately activates the plugin", async () => 
   expect(commands.map((command) => command.command)).toEqual([
     "plugins.list",
     "plugins.catalog",
+    "plugins.delivery",
     "plugins.catalog",
   ]);
   await user.click(screen.getByRole("button", { name: "Install" }));
+  const review = await screen.findByRole("dialog", { name: "Review plugin" });
+  expect(review).toHaveTextContent(/Selected version\s*2\.0\.0/u);
+  expect(commands.some((command) => command.command === "plugins.package.install")).toBe(false);
+  await user.click(within(review).getByRole("button", { name: "Install plugin" }));
   expect(await screen.findByText("Active version 2.0.0")).toBeVisible();
   expect(screen.getByText("Sample connection 2.0.0 is installed.")).toBeVisible();
-  expect(commands.find((command) => command.command === "plugins.install")?.payload).toEqual({
-    pluginId: manifest.id,
+  expect(
+    commands.find((command) => command.command === "plugins.package.install")?.payload,
+  ).toEqual({
+    candidateId: "review-sample",
   });
   expect(screen.queryByRole("button", { name: "Restart StreamSkope" })).not.toBeInTheDocument();
 });
@@ -478,8 +382,9 @@ it.each([2, 3] as const)(
       screen.getByText(/Requires StreamSkope 0.2.0 up to, but excluding, 0.3.0/u),
     ).toHaveTextContent("Supports EDA 26.8.2–26.8.2 (inclusive) · Plugin API 4");
     await userEvent.setup().click(update);
+    await approvePackage("Update plugin");
     expect(await screen.findByText("Active version 0.1.0")).toBeVisible();
-    expect(commands.some((command) => command.command === "plugins.install")).toBe(true);
+    expect(commands.some((command) => command.command === "plugins.package.install")).toBe(true);
   },
 );
 
@@ -547,6 +452,7 @@ it("keeps the active version visible and offers retry when an update fails verif
   });
   render(<PluginsPanel host={host} />);
   await userEvent.setup().click(await screen.findByRole("button", { name: "Update to 2.0.0" }));
+  await approvePackage("Update plugin");
   expect(await screen.findByRole("alert")).toHaveTextContent("failed verification");
   expect(screen.getByText("Active version 1.0.0")).toBeVisible();
   expect(screen.getByRole("button", { name: "Update to 2.0.0" })).toBeEnabled();
@@ -579,7 +485,7 @@ it.each([false, true])(
     expect(screen.queryByRole("button", { name: /Update to/u })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
-    expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
+    expect(commands.some((command) => command.command === "plugins.package.install")).toBe(false);
   },
 );
 
@@ -670,17 +576,21 @@ it("requires explicit confirmation to stop active work for an update and leaves 
   const user = userEvent.setup();
   render(<PluginsPanel host={host} />);
   await user.click(await screen.findByRole("button", { name: "Update to 2.0.0" }));
+  await approvePackage("Update plugin");
   let dialog = await screen.findByRole("dialog", { name: "Stop capture and update?" });
   expect(dialog).toHaveTextContent("Temporary resources will be cleaned up");
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
+  expect(commands.some((command) => command.command === "plugins.package.install")).toBe(false);
   expect(screen.getByText("Active version 1.0.0")).toBeVisible();
   await user.click(await screen.findByRole("button", { name: "Update to 2.0.0" }));
+  await approvePackage("Update plugin");
   dialog = await screen.findByRole("dialog", { name: "Stop capture and update?" });
   await user.click(within(dialog).getByRole("button", { name: "Stop and update" }));
   expect(await screen.findByText("Active version 2.0.0")).toBeVisible();
-  expect(commands.find((command) => command.command === "plugins.install")?.payload).toEqual({
-    pluginId: manifest.id,
+  expect(
+    commands.find((command) => command.command === "plugins.package.install")?.payload,
+  ).toEqual({
+    candidateId: "review-sample",
     confirmationToken: "confirm-active-capture",
   });
 });
@@ -707,7 +617,7 @@ it.each([false, true])(
     await userEvent.setup().click(await screen.findByRole("button", { name: "Retry activation" }));
     expect(await screen.findByText("Active version 2.0.0")).toBeVisible();
     expect(commands.some((command) => command.command === "plugins.retry")).toBe(true);
-    expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
+    expect(commands.some((command) => command.command === "plugins.package.install")).toBe(false);
   },
 );
 
@@ -821,6 +731,6 @@ it.each(["both", "installed", "active"] as const)(
     expect(screen.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Update to/u })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
-    expect(commands.some((command) => command.command === "plugins.install")).toBe(false);
+    expect(commands.some((command) => command.command === "plugins.package.install")).toBe(false);
   },
 );

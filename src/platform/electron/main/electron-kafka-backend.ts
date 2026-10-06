@@ -14,6 +14,7 @@ import { DesktopOperationalPreferenceStore } from "../../node/desktop-operationa
 import { AtomicKafkaRuleFileStore } from "../../node/kafka-rule-file-store";
 import { AtomicKafkaTopicConfigurationHistoryFileStore } from "../../node/kafka-topic-configuration-history-file-store";
 
+import type { PluginPackageFilePicker } from "./plugin-file-picker";
 import {
   initializeElectronProfileProtection,
   type ElectronProfileProtection,
@@ -26,6 +27,7 @@ export interface ElectronKafkaBackendOptions {
   readonly userDataPath: string;
   readonly plugins?: PluginRuntime;
   readonly profileProtection?: ElectronProfileProtection;
+  readonly choosePackageFile?: PluginPackageFilePicker;
 }
 
 export async function createElectronKafkaBackend(
@@ -56,6 +58,9 @@ export async function createElectronKafkaBackend(
     options.plugins ??
     new PluginRuntime({
       store: new PluginStore(join(options.userDataPath, "plugins")),
+      ...(options.choosePackageFile === undefined
+        ? {}
+        : { choosePackageFile: options.choosePackageFile }),
     });
   const backend = createKafkaBackend({
     profileStore,

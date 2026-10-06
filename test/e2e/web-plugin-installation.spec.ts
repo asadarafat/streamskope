@@ -15,8 +15,10 @@ import {
 import { PluginRuntime } from "../../src/platform/node/plugins/runtime";
 import type { OfficialPluginEntry } from "../../src/platform/node/plugins/catalog";
 import { PluginStore } from "../../src/platform/node/plugins/store";
+import { signPortablePluginPackage } from "../../src/platform/node/plugins/package";
 import { expectWorkbenchReady } from "../support/workbench-browser";
 import { pluginPackageFixtures } from "../support/plugin-package-fixture";
+import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
 async function port(): Promise<number> {
   const server = createServer();
@@ -36,6 +38,18 @@ async function openPlugins(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Preferences", exact: true }).click();
   await page.getByRole("tab", { name: "Plugins", exact: true }).click();
   await expect(page.getByRole("region", { name: "EDA Capture", exact: true })).toBeVisible();
+}
+
+async function approvePlugin(
+  page: Page,
+  action: "Install plugin" | "Update plugin",
+  screenshot?: string,
+): Promise<void> {
+  const review = page.getByRole("dialog", { name: "Review plugin", exact: true });
+  await expect(review).toBeVisible();
+  if (screenshot !== undefined) await page.screenshot({ path: screenshot, animations: "disabled" });
+  await review.getByRole("button", { name: action, exact: true }).click();
+  await expect(review).toHaveCount(0);
 }
 
 async function expectDialogControlOwnership(dialog: Locator): Promise<void> {
@@ -133,6 +147,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await openPlugins(page);
     const card = page.getByRole("region", { name: "EDA Capture", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
+    await approvePlugin(page, "Install plugin", info.outputPath("plugin-package-review.png"));
     await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
     expect(downloads).toBe(1);
     await page.screenshot({ path: info.outputPath("plugin-installed.png") });
@@ -152,12 +167,14 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await card
       .getByRole("button", { name: `Update to ${available.manifest.version}`, exact: true })
       .click();
+    await approvePlugin(page, "Update plugin");
     await expect(card).toContainText(`Active version ${available.manifest.version}`);
     available = fixtures.broken;
     await page.getByRole("button", { name: "Check for updates", exact: true }).click();
     await card
       .getByRole("button", { name: `Update to ${available.manifest.version}`, exact: true })
       .click();
+    await approvePlugin(page, "Update plugin");
     await expect(card).toContainText("previous version was restored");
     await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
     await page.screenshot({ path: info.outputPath("plugin-update-recovered.png") });
@@ -209,6 +226,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
       page.getByRole("button", { name: "Check for updates", exact: true }),
     ).toBeEnabled();
     await card.getByRole("button", { name: "Install", exact: true }).click();
+    await approvePlugin(page, "Install plugin");
     await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
@@ -226,6 +244,141 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     expect(errors).toEqual([]);
   } finally {
     completeCatalog?.();
+    await page.goto("about:blank");
+    await launch?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reviews signed files, preserves a working plugin after a failed update, and reinstalls from cache offline", async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  if (process.env.STREAMSKOPE_PLUGIN_PACKAGE_READY !== "1") {
+    await promisify(execFile)(process.execPath, ["--import", "tsx", "tools/package.ts", "plugin"], {
+      maxBuffer: 4 * 1_048_576,
+    });
+  }
+  const fixtures = await pluginPackageFixtures();
+  const publisher = pluginPublisherFixture();
+  const portable = (bytes: Uint8Array): Uint8Array =>
+    signPortablePluginPackage(
+      bytes,
+      publisher.publishers[0]!.keyId,
+      Buffer.from(publisher.encodedKey, "base64").toString(),
+    );
+  let selected = portable(fixtures.current.bytes);
+  const root = await mkdtemp(join(tmpdir(), "streamskope-offline-plugin-"));
+  let launch: RunningWebDevelopment | undefined;
+  let catalogLookups = 0;
+  let downloads = 0;
+  let restarts = 0;
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // A test-only chooser and public registry exercise the actual typed host and
+  // signature verifier. This does not claim to exercise an operating-system dialog.
+  const plugins = new PluginRuntime({
+    store: new PluginStore(root, { trustedPublishers: publisher.publishers }),
+    choosePackageFile: (): Promise<Uint8Array> => Promise.resolve(selected),
+    catalog: {
+      list: (): Promise<readonly OfficialPluginEntry[]> => {
+        catalogLookups++;
+        return Promise.reject(new Error("GitHub is unavailable in this fixture."));
+      },
+      download: (): Promise<{ bytes: Uint8Array; sha256: string }> => {
+        downloads++;
+        return Promise.reject(new Error("No remote package download is allowed."));
+      },
+    },
+    restart: (): void => {
+      restarts++;
+    },
+  });
+  try {
+    await plugins.start();
+    const backend = createKafkaBackend({ profileStore: createBrowserKafkaProfileStore(), plugins });
+    launch = await launchWebDevelopment({
+      backend: Object.assign(backend, { pluginAsset: plugins.rendererAsset.bind(plugins) }),
+      hostPort: await port(),
+      rendererPort: await port(),
+      rendererRoot: resolve(process.cwd()),
+    });
+    await page.goto(launch.browserUrl);
+    await expectWorkbenchReady(page);
+    const documentId = await page.evaluate(() => {
+      const id = crypto.randomUUID();
+      (globalThis as typeof globalThis & { lifecycleDocument: string }).lifecycleDocument = id;
+      return id;
+    });
+    await page.getByRole("button", { name: "Preferences", exact: true }).click();
+    await page.getByRole("tab", { name: "Plugins", exact: true }).click();
+    await expect(page.getByText(/The plugin catalog is unavailable/u)).toBeVisible();
+    const lookups = catalogLookups;
+    const file = page.getByRole("button", { name: "Install from file", exact: true });
+    await expect(file).toBeEnabled();
+    await file.click();
+    const review = page.getByRole("dialog", { name: "Review plugin", exact: true });
+    await expect(review).toContainText("Signed local file");
+    await expect(review).toContainText(publisher.publishers[0]!.name);
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect((await plugins.list()).plugins).toEqual([]);
+    await file.click();
+    await approvePlugin(page, "Install plugin", info.outputPath("plugin-file-review.png"));
+    const card = page.getByRole("region", { name: "EDA Capture", exact: true });
+    await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
+    const installed = (await plugins.list()).plugins[0]!.activationId;
+
+    await file.click();
+    await expect(review).toContainText("version and content are already installed");
+    await expect(review.getByRole("button", { name: "Install plugin", exact: true })).toHaveCount(
+      0,
+    );
+    await review.getByRole("button", { name: "Close", exact: true }).click();
+    expect((await plugins.list()).plugins[0]!.activationId).toBe(installed);
+
+    selected = portable(fixtures.broken.bytes);
+    await file.click();
+    await approvePlugin(page, "Update plugin");
+    await expect(card).toContainText("previous version was restored");
+    await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
+    await card.getByRole("button", { name: "Remove", exact: true }).click();
+    await page.getByRole("button", { name: "Remove plugin", exact: true }).click();
+    await expect(card).toHaveCount(0);
+    const cached = page.getByRole("region", {
+      name: `Cached EDA Capture ${fixtures.current.manifest.version}`,
+      exact: true,
+    });
+    await expect(cached).toBeVisible();
+    await page.screenshot({
+      path: info.outputPath("plugin-offline-cache.png"),
+      animations: "disabled",
+    });
+    await cached.getByRole("button", { name: "Use cached package", exact: true }).click();
+    await expect(review).toContainText("Verified local cache");
+    await expect(review).toContainText(fixtures.current.manifest.version);
+    await approvePlugin(page, "Install plugin");
+    await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
+    expect(catalogLookups).toBe(lookups);
+    expect(downloads).toBe(0);
+    await expect(
+      page.locator('[role="dialog"][aria-labelledby="change-plugin-title"]'),
+    ).toHaveCount(0);
+    const preferences = page.getByRole("dialog", { name: "Workbench Preferences" });
+    await preferences.press("Escape");
+    await expect(preferences).toHaveCount(0);
+    await page.getByRole("button", { name: "Add connection", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Capture from EDA", exact: true }).click();
+    await expectDialogControlOwnership(
+      page.getByRole("dialog", { name: "Capture Nokia EDA streams" }),
+    );
+    expect(
+      await page.evaluate(
+        () => (globalThis as typeof globalThis & { lifecycleDocument: string }).lifecycleDocument,
+      ),
+    ).toBe(documentId);
+    expect(restarts).toBe(0);
+    expect(errors).toEqual([]);
+  } finally {
     await page.goto("about:blank");
     await launch?.close();
     await rm(root, { recursive: true, force: true });

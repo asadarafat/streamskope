@@ -34,6 +34,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/ui/RelationshipsPage.tsx",
     "src/features/kafka/ui/OperationalPreferencesDialog.tsx",
     "src/features/kafka/ui/TrustRecipeManager.tsx",
+    // One idle package-review deadline, cleared on replacement, installation or unmount.
+    "src/features/kafka/ui/usePluginChanges.ts",
     "src/features/kafka/ui/stream-monitor-observer.ts",
     "src/platform/electron/main/electron-profile-protection.ts",
     // Shared provider delivery owns a 30-second ACK deadline, cleared on ACK or close.
@@ -41,6 +43,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     // Each SSE client owns one local-write deadline, cleared on completion or retirement.
     "src/platform/dev-host/provider-sse-delivery.ts",
     "src/platform/electron/main/electron-entry.ts",
+    // At most eight review-expiry deadlines release cache pins; suspended while installing.
+    "src/platform/node/plugins/package-candidates.ts",
     "plugins/eda/backend/eda-api-client.ts",
     "plugins/eda/backend/eda-agent-capture.ts",
     "plugins/nsp/backend/api-client.ts",

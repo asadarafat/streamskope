@@ -22,6 +22,8 @@ export interface OfficialPluginEntry {
   readonly sha256: string;
   readonly downloadUrl: string;
 }
+export type PluginCatalogSource = Pick<OfficialPluginCatalog, "list" | "download"> &
+  Partial<Pick<OfficialPluginCatalog, "downloadPinned">>;
 
 interface ReleaseAsset {
   readonly id: number;
@@ -297,6 +299,32 @@ export class OfficialPluginCatalog {
     const signal = AbortSignal.timeout(30_000);
     const [entry] = await this.#list(signal, [pluginInfo]);
     if (!entry) throw new Error("This plugin has not been published yet.");
+    return this.#downloadPinned(entry, signal);
+  }
+
+  async downloadPinned(
+    entry: OfficialPluginEntry,
+    callerSignal?: AbortSignal,
+  ): Promise<{ readonly bytes: Uint8Array; readonly sha256: string }> {
+    const deadline = AbortSignal.timeout(30_000);
+    const signal =
+      callerSignal === undefined ? deadline : AbortSignal.any([callerSignal, deadline]);
+    return this.#downloadPinned(entry, signal);
+  }
+
+  async #downloadPinned(
+    entry: OfficialPluginEntry,
+    signal: AbortSignal,
+  ): Promise<{ readonly bytes: Uint8Array; readonly sha256: string }> {
+    if (
+      !OFFICIAL_PLUGINS.some((plugin) => plugin.id === entry.manifest.id) ||
+      !/^[a-f0-9]{64}$/u.test(entry.sha256) ||
+      !new RegExp(`^${API_ROOT.replaceAll(".", "\\.")}/releases/assets/[1-9][0-9]*$`, "u").test(
+        entry.downloadUrl,
+      ) ||
+      new URL(entry.downloadUrl).href !== entry.downloadUrl
+    )
+      throw new Error("The selected package is not a known official plugin asset.");
     const bytes = await this.#download(entry.downloadUrl, MAX_PLUGIN_PACKAGE_BYTES, true, signal);
     const plugin = parsePluginPackage(bytes, entry.sha256);
     if (JSON.stringify(plugin.manifest) !== JSON.stringify(entry.manifest))
