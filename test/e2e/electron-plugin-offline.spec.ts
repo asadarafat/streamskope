@@ -21,10 +21,11 @@ test("installs a reviewed signed file and cached copy in the native host while G
 }, info) => {
   test.setTimeout(180_000);
   test.skip(!electronPluginStorageAvailable, "A native protected credential service is required.");
-  await run(process.execPath, ["--import", "tsx", "tools/package.ts", "plugin", "eda"], {
-    timeout: 90_000,
-    maxBuffer: 2 * 1024 * 1024,
-  });
+  if (process.env.STREAMSKOPE_PLUGIN_PACKAGE_READY !== "1")
+    await run(process.execPath, ["--import", "tsx", "tools/package.ts", "plugin", "eda"], {
+      timeout: 90_000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
   const fixture = await pluginPackageFixtures("eda");
   const primary = fixture.current.bytes;
   const publisher = pluginPublisherFixture();

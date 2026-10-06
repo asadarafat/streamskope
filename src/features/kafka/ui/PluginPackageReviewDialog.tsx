@@ -9,6 +9,7 @@ import {
   StudioDialogContent as DialogContent,
   StudioDialogTitle as DialogTitle,
 } from "../../../platform/ui/controls";
+import { StudioTechnicalText } from "../../../platform/ui/StudioCodeBlock";
 
 import type { PluginPackageReview } from "./usePluginChanges";
 
@@ -117,9 +118,7 @@ export function PluginPackageReviewDialog({
               <Typography component="dt" variant="body2">
                 SHA256
               </Typography>
-              <Typography component="dd" variant="body2" sx={{ fontFamily: "monospace" }}>
-                {review.sha256}
-              </Typography>
+              <StudioTechnicalText component="dd">{review.sha256}</StudioTechnicalText>
             </Box>
             <PluginCompatibility manifest={review.manifest} />
             {review.status === "blocked" ? (
