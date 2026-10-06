@@ -10,6 +10,7 @@ import {
   startElectronPluginFixture,
 } from "../support/electron-plugin";
 import { pluginPackageFixtures } from "../support/plugin-package-fixture";
+import { approvePluginReview } from "../support/workbench-browser";
 
 const run = promisify(execFile);
 
@@ -17,16 +18,6 @@ async function openPlugins(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Preferences", exact: true }).click();
   await page.getByRole("tab", { name: "Plugins", exact: true }).click();
   await expect(page.getByRole("region", { name: "EDA Capture", exact: true })).toBeVisible();
-}
-
-async function approvePlugin(
-  page: Page,
-  action: "Install plugin" | "Update plugin",
-): Promise<void> {
-  const review = page.getByRole("dialog", { name: "Review plugin", exact: true });
-  await expect(review).toBeVisible();
-  await review.getByRole("button", { name: action, exact: true }).click();
-  await expect(review).toHaveCount(0);
 }
 
 async function closePreferences(page: Page): Promise<void> {
@@ -104,7 +95,7 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
     await openPlugins(page);
     const card = page.getByRole("region", { name: "EDA Capture", exact: true });
     await card.getByRole("button", { name: "Install", exact: true }).click();
-    await approvePlugin(page, "Install plugin");
+    await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${original.manifest.version}`);
     const installed = await pluginInstallation(page);
     expect(installed?.activationId).toBeTruthy();
@@ -114,7 +105,7 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
     await writeFile(catalogPath, update.bytes);
     await openPlugins(page);
     await card.getByRole("button", { name: `Update to ${updateVersion}`, exact: true }).click();
-    await approvePlugin(page, "Update plugin");
+    await approvePluginReview(page, "Update plugin");
     await expect(card).toContainText(`Active version ${updateVersion}`);
     const replacement = await pluginInstallation(page);
     expect(replacement?.activationId).not.toBe(installed?.activationId);
@@ -138,7 +129,7 @@ test("installs, updates, removes and reinstalls EDA in one production Electron w
 
     await openPlugins(page);
     await card.getByRole("button", { name: "Install", exact: true }).click();
-    await approvePlugin(page, "Install plugin");
+    await approvePluginReview(page, "Install plugin");
     await expect(card).toContainText(`Active version ${updateVersion}`);
     const reinstalled = await pluginInstallation(page);
     expect(reinstalled?.activationId).not.toBe(replacement?.activationId);

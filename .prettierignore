@@ -1,6 +1,7 @@
 .codex/
 .git/
 aio-kafka/
+aio-nats/ownership/
 coverage/
 dist/
 node_modules/

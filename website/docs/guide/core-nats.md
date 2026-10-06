@@ -20,6 +20,13 @@ partitions/offsets, publish/replay messages or manage JetStream.
 
 ## Save and connect a profile
 
+For a source checkout, the [local development walkthrough](../start/development.md#try-local-core-nats)
+provides an owned token/TLS server and **Local AIO NATS** profile. Subscribe to
+`streamskope.fixture.>` before running `npm run dev -- nats publish` in a second
+terminal. Each invocation sends a finite generated sample batch; it does not seed
+retained history. This developer command is separate from the desktop's read-only
+NATS workspace.
+
 1. Open **Connection Profiles**, then **Add NATS profile**.
 2. Enter **Profile name** and **NATS servers** using the endpoints supplied by
    your server operator. Credentials belong in the authentication fields, never

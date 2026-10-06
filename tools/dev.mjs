@@ -9,13 +9,17 @@ import process from "node:process";
 import { applyForgePatch } from "./check/forge-patch.ts";
 
 // Native health runs in an isolated child before loading tsx or the application.
-if (["cli", "sandbox"].includes(process.argv[2])) {
+if (["cli", "sandbox", "nats"].includes(process.argv[2])) {
   const child = spawn(
     process.execPath,
     [
       "--import",
       "tsx",
-      process.argv[2] === "cli" ? "tools/cli.ts" : "tools/sandbox.ts",
+      process.argv[2] === "cli"
+        ? "tools/cli.ts"
+        : process.argv[2] === "nats"
+          ? "tools/dev/nats-fixture/cli.ts"
+          : "tools/sandbox.ts",
       ...process.argv.slice(3),
     ],
     { stdio: "inherit" },

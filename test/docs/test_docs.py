@@ -340,7 +340,10 @@ class DocumentationArtifactTests(unittest.TestCase):
     def test_accepts_only_named_public_qualification_summary(self):
         directory = self.root / "assets/qualification"
         directory.mkdir(parents=True)
-        names = ("lifecycle-2026-10-04.json", "topic-monitor-2026-10-04.json")
+        names = (
+            "lifecycle-2026-10-04.json", "topic-monitor-2026-10-04.json",
+            "pre-release-2026-10-06.json",
+        )
         for name in names:
             (directory / name).write_text('{"schemaVersion":1}')
         (self.root / "index.html").write_text(

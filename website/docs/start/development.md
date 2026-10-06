@@ -15,7 +15,7 @@ Already running StreamSkope with your own cluster? Go to
 ## Before you start
 
 Use a local checkout of StreamSkope with **Node 24.x**, npm, Docker,
-Containerlab and Java `keytool` available in the environment where you run the
+Containerlab, Java `keytool` and OpenSSL available where you run the
 commands. Docker must be running. The first launch builds or downloads the
 fixture images and can take several minutes.
 
@@ -81,6 +81,43 @@ filters and check the selected read mode before retrying.
 [Filter a message and inspect its details →](../guide/messages.md)
 
 To connect a different broker, follow [Connect your Kafka](../guide/connections.md).
+
+## Try local Core NATS
+
+The launcher also prepares the private `aio-nats` lab and a **Local AIO NATS**
+session profile. Select **Core NATS** with **Messaging provider**, connect that
+profile and open **Live Subscription**. Enter `streamskope.fixture.>` and select
+**Start subscription** before publishing a sample batch:
+
+```sh
+npm run dev -- nats publish
+```
+
+**You should see:** generated records in **NATS records**, with their original
+payloads and headers available in **Record inspector**. Core NATS receives future
+traffic only; publishing before subscribing leaves no historical records to read.
+Repeat the command to send another bounded batch. These are local generated
+fixtures, separate from live EDA or NSP traffic.
+
+The default batch publishes two records per second for 60 seconds. For a shorter
+run, use `npm run dev -- nats publish --seconds 5 --rate 2`.
+
+The lab uses verified TLS and a private generated token. Startup loads both into
+the development host without printing the token. Browser profiles stay in memory;
+the lab's credentials and ownership record stay under `aio-nats/ownership/`, which
+Git ignores. See [Core NATS](../guide/core-nats.md) for subscription and recovery
+semantics.
+
+To operate the lab independently:
+
+```sh
+npm run dev -- nats start
+npm run dev -- nats status
+npm run dev -- nats stop
+```
+
+Repeated startup reuses the owned server. Stop removes that lab and its private
+configuration; it does not stop unrelated NATS, Kafka or Containerlab workloads.
 
 ## Test a development plugin
 

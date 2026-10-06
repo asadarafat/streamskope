@@ -58,6 +58,13 @@ only; it does not provide Kafka offsets, subject inventory or historical replay.
 These source changes do not alter published v0.8.0 installers or Pages; publication
 of a later desktop release is required for a new immutable documentation snapshot.
 
+The source launcher prepares a private, digest-pinned `aio-nats` lab alongside
+`aio-kafka`, with token authentication, verified TLS and a session-only profile.
+Start a subscription before publishing bounded generated samples. Persistent and
+disposable NATS tests share one server definition while retaining separate
+ownership and cleanup. A standalone real-server 60-second soak supplements the
+existing pipeline soak; neither measures renderer interaction or native IPC latency.
+
 The product shell now owns shared navigation presentation and layout. Provider
 switching waits for confirmed stream stop and disconnect, retains the current
 workspace after a cleanup failure, and blocks new commands from retired views
