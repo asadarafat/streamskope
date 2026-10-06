@@ -25,6 +25,7 @@ import {
 } from "../../src/features/nats/contracts";
 import { buildRenderer } from "../support/electron-application";
 import { startNatsFixture, type NatsFixture } from "../support/nats-fixture";
+import { expectProductionProfileStorage } from "../support/profile-storage";
 import {
   protectedStorageSessionAvailable,
   startProtectedStorageSession,
@@ -59,6 +60,7 @@ async function observeNats(page: Page, fixture: NatsFixture): Promise<void> {
     timeout: 20_000,
   });
   await expect(page.getByRole("combobox", { name: "Messaging provider" })).toHaveCount(0);
+  await expectProductionProfileStorage(page);
   await page.evaluate(
     (secrets): void => {
       const target = window as unknown as NativeNatsWindow;

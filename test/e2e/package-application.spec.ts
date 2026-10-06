@@ -18,6 +18,7 @@ import {
 import { summarizeElectronProcessEvidence } from "../support/electron-runtime-evidence";
 import { createPerformanceEvidence } from "../support/performance-evidence";
 import { sampleElectronProcesses } from "../support/electron-runtime";
+import { expectProductionProfileStorage } from "../support/profile-storage";
 
 interface VerificationPackage {
   readonly applicationFileCount: number;
@@ -112,7 +113,7 @@ test("launches and measures the inspected production package", async () => {
     const page = warm.page;
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     await expect(page.getByRole("button", { name: "Configure ad hoc connection" })).toHaveCount(0);
-    await expect(page.getByText(/OS-protected profiles|Profile storage unavailable/)).toBeVisible();
+    await expectProductionProfileStorage(page);
     expect(await page.evaluate(() => globalThis.location.href)).toBe("streamskope://app/");
     const contentManifest = JSON.parse(
       await readFile(packaged.applicationManifestPath, "utf8"),

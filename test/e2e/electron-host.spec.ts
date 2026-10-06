@@ -528,8 +528,10 @@ test("keeps the header status-only when protected profile storage is unavailable
     );
     const page = await application.firstWindow();
 
-    await expect(page.getByText("Profile storage unavailable", { exact: true })).toBeVisible();
-    await expect(page.getByText("Existing connection state was not changed.")).toBeVisible();
+    const unavailable = page.getByRole("alert").filter({ hasText: /^Kafka:/u });
+    await expect(unavailable).toContainText("Profile storage unavailable");
+    await expect(unavailable).toContainText("credential service");
+    await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     await page.getByRole("button", { name: "Add connection" }).click();
     await expect(page.getByRole("menuitem", { name: "Kafka broker", exact: true })).toBeDisabled();
     await page.keyboard.press("Escape");
