@@ -254,7 +254,7 @@ try {
   await page.goto(base + "guide/connections/");
   await page
     .locator(".md-content__inner")
-    .getByRole("link", { name: "Capture from EDA", exact: true })
+    .getByRole("link", { name: "Connect via EDA", exact: true })
     .click();
   await page.waitForURL(/\/plugins\/eda\//);
   await page
@@ -263,8 +263,8 @@ try {
     .click();
   await page.waitForURL(/\/guide\/security\/#eda-authorization$/);
   for (const [plugin, heading] of [
-    ["eda", "EDA Capture"],
-    ["nsp", "NSP Capture"],
+    ["eda", "EDA Connector"],
+    ["nsp", "NSP Connector"],
   ]) {
     await page.goto(base + "plugins/");
     await page

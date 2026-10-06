@@ -229,8 +229,8 @@ export async function checkNavigation(page, base, evidence, accessible) {
             "Plugin overview",
             "Versioning and compatibility",
             "Install without GitHub",
-            "EDA Capture",
-            "NSP Capture",
+            "EDA Connector",
+            "NSP Connector",
           ],
         ],
         [
