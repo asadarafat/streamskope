@@ -441,7 +441,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     const captureProfile = (await profiles(page)).find((p) => p.id === captureProfileId)!;
     await page
       .getByRole("button", {
-        name: `Disconnect insecure plaintext profile ${captureProfile.name}`,
+        name: `Disconnect profile ${captureProfile.name}`,
         exact: true,
       })
       .click();
@@ -510,7 +510,7 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     await openWorkbenchResource(page, "Connection Profiles");
     await page
       .getByRole("button", {
-        name: `Disconnect insecure plaintext profile ${captureProfile.name}`,
+        name: `Disconnect profile ${captureProfile.name}`,
         exact: true,
       })
       .click();
