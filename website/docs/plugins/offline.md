@@ -124,7 +124,7 @@ Connected computer             Desktop with no GitHub access
 
 The Plugins page lists complete verified packages retained in its bounded local
 cache separately from the last-known catalog. Select the exact cached version
-you intend to use and review it before installation. Its download date and trust
+you intend to use and review it before installation. Its cache date and trust
 source describe the retained copy, not the latest release available online.
 
 A cached catalog is only metadata. Seeing a version there does not mean its bytes
