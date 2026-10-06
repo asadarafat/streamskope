@@ -1,0 +1,31 @@
+<div class="sk-release-history" role="region" aria-label="Release history">
+  <table>
+    <thead>
+      <tr>
+        <th>Version</th>
+        <th>Published</th>
+        <th>Highlights</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for release in config.extra.release_navigation.releases %}
+      <tr>
+        <td>
+          <a href="{{ (release.path | replace('.md', '/')) | url }}">{{ release.tag }}</a>
+          {% if release.tag == 'Unreleased' %}
+          <small>Development</small>
+          {% elif release.pending %}
+          <small>Preview</small>
+          {% elif release.prerelease %}
+          <small>Prerelease</small>
+          {% elif release.tag == config.extra.desktop_release %}
+          <small>Current</small>
+          {% endif %}
+        </td>
+        <td>{{ release.date or '—' }}</td>
+        <td>{{ release.summary }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

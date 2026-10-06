@@ -5,7 +5,8 @@
   <p>{{ config.extra.documentation.status }}</p>
   {% if page.meta.release_tag %}
   <p>
-    {% if page.meta.release_tag != config.extra.desktop_release %}Historical release notes:{% else
+    {% if page.meta.release_tag in config.extra.release_navigation.pending_tags %}Release preview:{%
+    elif page.meta.release_tag != config.extra.desktop_release %}Historical release notes:{% else
     %}Release notes:{% endif %}
     <strong>{{ page.meta.release_tag }}</strong>.
     <a href="{{ 'releases/' | url }}">Compare desktop releases</a>.
@@ -35,7 +36,9 @@
   {% endif %}
 </aside>
 {% if page.meta.plugin_scope %}{% include "partials/plugin-availability.html" %}{% endif %} {% set
-content = super() %} {% if page.meta.desktop_downloads %} {% set downloads %}{% include
-"partials/desktop-downloads.html" %}{% endset %} {{ content | replace("<!-- desktop-downloads -->",
+content = super() %} {% if config.extra.release_navigation and page.url == 'releases/' %}{% set
+history %}{% include "partials/release-history.html" %}{% endset %}{% set content = content |
+replace("<!-- release-history -->", history) %}{% endif %} {% if page.meta.desktop_downloads %} {%
+set downloads %}{% include "partials/desktop-downloads.html" %}{% endset %} {{ content | replace("<!-- desktop-downloads -->",
 downloads) }} {% else %}{{ content }}{% endif %} {% if page.meta.plugin_compatibility %} {% include
 "partials/plugin-compatibility.html" %} {% endif %} {% endblock %}

@@ -31,13 +31,12 @@ This checkout is development source, not an assigned release. See the
 [unreleased changes](website/docs/releases/unreleased.md). A maintainer chooses the
 version when starting release CI; PR checks only qualify changes for `main`.
 
-Development source also includes **Core NATS** as a built-in messaging provider.
+This checkout also includes **Core NATS** as a built-in messaging provider.
 Choose it in **Messaging provider** to save token/verified-TLS profiles, subscribe
 to a known subject or wildcard, and inspect live records. Read the
 [Core NATS guide](website/docs/guide/core-nats.md) for storage, receipt and omission
-limits. This unreleased workspace is
-absent from the published v0.8.0 installers and documentation; merging source
-does not replace that immutable release snapshot.
+limits. Check your desktop release notes for provider availability; merging source
+does not replace a published installer or its documentation snapshot.
 
 ## What you can do
 

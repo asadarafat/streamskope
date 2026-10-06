@@ -18,6 +18,7 @@ from docs.media import media_inputs, media_selection
 from docs.downloads import desktop_downloads
 from docs.plugins import SNAPSHOT, capture_publications, plugin_context
 from docs.procedures import inspect_retrieval_procedure
+from docs.releases import configure_release_navigation
 
 ROOT = Path(__file__).resolve().parents[1]
 WEBSITE = ROOT / "website"
@@ -198,6 +199,8 @@ def setup():
 def prepare(url, serving=False):
     publication.inspect_release_content(ROOT, published=os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1")
     source = (WEBSITE / "zensical.toml").read_text()
+    source = configure_release_navigation(
+        source, ROOT, published=os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1")
     source = re.sub(r'^site_url = .*$', f"site_url = {json.dumps(url)}", source, flags=re.M)
     if serving:
         source = source.replace('site_dir = ".site"', 'site_dir = ".preview"')

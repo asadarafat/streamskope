@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { checkNavigation } from "./navigation.mjs";
+import { checkNavigation, isReleasePreview } from "./navigation.mjs";
 import { serveSite } from "./server.mjs";
 import { checkMedia } from "./media.mjs";
 import { prepareSearchAudit, checkSearchKeyboard } from "./accessibility.mjs";
@@ -87,8 +87,11 @@ try {
     const unreleased = /^unreleased:\s*true\s*$/mu.test(metadata);
     const pluginScope = /^plugin_scope:\s*(all|eda|nsp)\s*$/mu.exec(metadata)?.[1];
     const releaseTag = /^releases\/(v[^/]+)\/$/u.exec(route)?.[1];
-    const expectedRelease =
-      !unreleased && releaseTag !== undefined && releaseTag !== desktopRelease
+    const previewRelease =
+      releaseTag !== undefined && isReleasePreview(releaseTag, desktopRelease, metadata);
+    const expectedRelease = previewRelease
+      ? `Release preview: ${releaseTag}`
+      : !unreleased && releaseTag !== undefined && releaseTag !== desktopRelease
         ? `Historical release notes: ${releaseTag}`
         : desktopRelease;
     assert((await versionNotice.innerText()).includes(expectedRelease), route);

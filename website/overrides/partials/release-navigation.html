@@ -1,0 +1,60 @@
+{% set releases = config.extra.release_navigation %} {% set state = namespace(index = none) %} {%
+for child in nav_item.children %} {% if child.title == "See all releases" %} {% set state.index =
+child %} {% endif %} {% endfor %}
+<li
+  class="md-nav__item md-nav__item--nested{% if nav_item.active %} md-nav__item--active{% endif %}"
+  data-sk-releases
+>
+  <input
+    class="md-nav__toggle md-toggle"
+    type="checkbox"
+    id="{{ path }}"
+    {%
+    if
+    nav_item.active
+    %}checked{%
+    endif
+    %}
+  />
+  <div class="md-nav__link md-nav__container">
+    <a
+      href="{{ state.index.url | url }}"
+      class="md-nav__link{% if state.index.active %} md-nav__link--active{% endif %}"
+      id="{{ path }}_title"
+    >
+      {{ item.render_content(state.index, nav_item) }}
+    </a>
+    <label
+      class="md-nav__link"
+      for="{{ path }}"
+      id="{{ path }}_label"
+      tabindex="0"
+      role="button"
+      aria-label="Releases"
+      title="Toggle Releases"
+      aria-controls="{{ path }}_nav"
+      aria-expanded="{{ nav_item.active | tojson }}"
+      data-sk-release-toggle
+    >
+      <span class="md-nav__icon md-icon"></span>
+    </label>
+  </div>
+  <nav
+    class="md-nav"
+    id="{{ path }}_nav"
+    data-md-level="1"
+    aria-labelledby="{{ path }}_label"
+    aria-expanded="{{ nav_item.active | tojson }}"
+  >
+    <label class="md-nav__title" for="{{ path }}">
+      <span class="md-nav__icon md-icon"></span>
+      {{ item.render_title(nav_item) }}
+    </label>
+    <ul class="md-nav__list" data-md-scrollfix>
+      {% for child in nav_item.children %} {% if child.title in releases.recent_tags or
+      (releases.preview_path and child.title == "Unreleased") %} {{ item.render(child, path ~ "_" ~
+      loop.index, 2, nav_item) }} {% endif %} {% endfor %} {{ item.render(state.index, path ~
+      "_all", 2, nav_item) }}
+    </ul>
+  </nav>
+</li>

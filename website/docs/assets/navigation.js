@@ -7,8 +7,29 @@
     // Keep Zensical's single navigation tree and native drawer/overlay behavior.
     const mobile = matchMedia("(max-width: 76.234375em)");
     sidebar.id = "documentation-navigation";
-    const current = sidebar.querySelector("a.md-nav__link--active");
+    const activeLinks = [...sidebar.querySelectorAll("a.md-nav__link--active")];
+    const current =
+      activeLinks.find((link) => !link.closest(".md-nav__container")) || activeLinks[0];
     current?.setAttribute("aria-current", "page");
+    const releaseSection = sidebar.querySelector("[data-sk-releases]");
+    if (releaseSection) {
+      const sectionState = releaseSection.querySelector(".md-nav__toggle");
+      const sectionToggle = releaseSection.querySelector("[data-sk-release-toggle]");
+      const section = releaseSection.querySelector("nav");
+      function syncReleases() {
+        const expanded = String(sectionState.checked);
+        sectionToggle.setAttribute("aria-expanded", expanded);
+        section.setAttribute("aria-expanded", expanded);
+      }
+      sectionState.addEventListener("change", syncReleases);
+      sectionToggle.addEventListener("keydown", (event) => {
+        if (event.key === " ") {
+          event.preventDefault();
+          sectionState.click();
+        }
+      });
+      syncReleases();
+    }
     const close = document.createElement("button");
     close.type = "button";
     close.className = "sk-nav-close";
@@ -33,7 +54,9 @@
       if (focusWasInSidebar) {
         const target = mobile.matches
           ? trigger
-          : current || sidebar.querySelector(".md-nav__list a");
+          : current ||
+            sidebar.querySelector(".md-nav__item--active .md-nav__container a") ||
+            sidebar.querySelector(".md-nav__list a");
         target?.focus();
       }
     });
