@@ -95,6 +95,9 @@ export async function startReplicationFixture(): Promise<{
         KAFKA_REPLICA_LAG_TIME_MAX_MS: "3000",
         KAFKA_BROKER_SESSION_TIMEOUT_MS: "6000",
         KAFKA_HEAP_OPTS: "-Xms128m -Xmx256m",
+        // These few test records do not need Kafka's default 128 MiB cleaner map.
+        // Bound it explicitly so three nodes can start within their fixture heaps.
+        KAFKA_LOG_CLEANER_DEDUPE_BUFFER_SIZE: String(8 * 1024 * 1024),
         KAFKA_NUM_NETWORK_THREADS: "2",
         KAFKA_NUM_IO_THREADS: "2",
       };

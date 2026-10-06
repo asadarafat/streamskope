@@ -20,6 +20,10 @@ import { expectWorkbenchReady } from "../support/workbench-browser";
 import { pluginPackageFixtures } from "../support/plugin-package-fixture";
 import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
 
+// Exercise transactional controls through the supported reduced-motion UI.
+// Accordion scrolling must not move a pointer target during a settings action.
+test.use({ reducedMotion: "reduce" });
+
 async function port(): Promise<number> {
   const server = createServer();
   await new Promise<void>((done, reject) => {
