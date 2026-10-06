@@ -1,7 +1,6 @@
 import { Box, Stack, Typography } from "@mui/material";
 
 import type { PluginChangePrompt, PluginManifest } from "../../../plugins/contracts";
-
 import {
   StudioAlert as Alert,
   StudioButton as Button,
@@ -10,6 +9,7 @@ import {
   StudioDialogContent as DialogContent,
   StudioDialogTitle as DialogTitle,
 } from "../../../platform/ui/controls";
+
 import type { PluginPackageReview } from "./usePluginChanges";
 
 export function PluginCompatibility({

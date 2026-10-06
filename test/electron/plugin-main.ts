@@ -25,6 +25,12 @@ let backend: KafkaBackendFacade | undefined;
 let runningShell: RunningElectronShell | undefined;
 let closing = false;
 registerPackagedRendererScheme();
+// Capture startup failures before Playwright can attach to the first window.
+app.on("web-contents-created", (_event, contents) => {
+  contents.on("console-message", (details) => {
+    if (details.level === "error") process.stderr.write(`${details.message}\n`);
+  });
+});
 
 async function shutdown(exitCode: number): Promise<void> {
   if (closing) return;

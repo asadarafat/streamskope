@@ -7,7 +7,6 @@ import {
   type HostCommand,
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
-
 import type {
   PluginChangePrompt,
   PluginCatalogSnapshot,
@@ -16,6 +15,7 @@ import type {
   PluginDeliverySnapshot,
   PluginPackageInspection,
 } from "../../src/plugins/contracts";
+
 import { testHostExecute } from "./host-response";
 
 export const manifest: PluginManifest = {

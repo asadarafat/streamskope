@@ -5,9 +5,9 @@ import type {
   PluginInstallation,
   PluginManifest,
 } from "../../../plugins/contracts";
-
 import { comparePluginManifests } from "../../../plugins/validation";
 import { StudioAlert as Alert, StudioButton as Button } from "../../../platform/ui/controls";
+
 import { PluginCompatibility } from "./PluginPackageReviewDialog";
 import type {
   PluginActionTarget,

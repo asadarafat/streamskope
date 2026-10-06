@@ -6,8 +6,8 @@ import {
   type HostCommandResultMap,
   type StreamSkopeHost,
 } from "../contracts";
-
 import type { PluginChangePrompt, PluginManifest } from "../../../plugins/contracts";
+
 import { pluginFailureMessage, type PluginInventory } from "./usePluginInventory";
 
 export type PluginPackageReview = NonNullable<
