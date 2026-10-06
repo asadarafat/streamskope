@@ -1,4 +1,9 @@
-import type { JsonValue, PluginEvent, PluginSnapshot } from "../../../plugins/contracts";
+import type {
+  JsonValue,
+  PluginEvent,
+  PluginSnapshot,
+  PluginPackageInspectInput,
+} from "../../../plugins/contracts";
 import type { ProviderHostPort } from "../../../platform/providers/host";
 
 import type { HostError } from "./host-errors";
@@ -76,7 +81,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 50 as const;
+export const HOST_PROTOCOL_VERSION = 51 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -182,6 +187,11 @@ export const HOST_COMMANDS = [
   "trustAcquisition.cancel",
   "plugins.list",
   "plugins.catalog",
+  "plugins.delivery",
+  "plugins.package.inspect",
+  "plugins.package.change.prepare",
+  "plugins.package.install",
+  "plugins.package.discard",
   "plugins.change.prepare",
   "plugins.renderer.failed",
   "plugins.install",
@@ -395,12 +405,25 @@ type HostCommandDefinition =
       readonly payload: { readonly id: string };
     })
   | (HostCommandBase & {
-      readonly command: "plugins.list" | "plugins.restart" | "plugins.exit.prepare";
+      readonly command:
+        "plugins.list" | "plugins.delivery" | "plugins.restart" | "plugins.exit.prepare";
       readonly payload: Record<string, never>;
     })
   | (HostCommandBase & {
       readonly command: "plugins.catalog";
       readonly payload: { readonly refresh?: boolean };
+    })
+  | (HostCommandBase & {
+      readonly command: "plugins.package.inspect";
+      readonly payload: PluginPackageInspectInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "plugins.package.change.prepare" | "plugins.package.discard";
+      readonly payload: { readonly candidateId: string };
+    })
+  | (HostCommandBase & {
+      readonly command: "plugins.package.install";
+      readonly payload: { readonly candidateId: string; readonly confirmationToken?: string };
     })
   | (HostCommandBase & {
       readonly command: "plugins.install" | "plugins.remove" | "plugins.retry";

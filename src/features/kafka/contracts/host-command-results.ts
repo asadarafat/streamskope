@@ -2,6 +2,8 @@ import type {
   JsonValue,
   PluginSnapshot,
   PluginCatalogSnapshot,
+  PluginDeliverySnapshot,
+  PluginPackageInspection,
   PluginExitPrompt,
   PluginChangePrompt,
 } from "../../../plugins/contracts";
@@ -141,6 +143,16 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
     readonly correlationId: string;
     readonly pluginCatalog: PluginCatalogSnapshot;
   };
+  readonly "plugins.delivery": {
+    readonly correlationId: string;
+    readonly pluginDelivery: PluginDeliverySnapshot;
+  };
+  readonly "plugins.package.inspect": {
+    readonly correlationId: string;
+    readonly pluginPackage: PluginPackageInspection | null;
+  };
+  readonly "plugins.package.change.prepare": SpecificCommandResults["plugins.change.prepare"];
+  readonly "plugins.package.install": SpecificCommandResults["plugins.list"];
   readonly "plugins.change.prepare": {
     readonly correlationId: string;
     readonly pluginChange: PluginChangePrompt | null;
@@ -201,6 +213,10 @@ const structuredResults = {
   "plugin.execute": true,
   "plugins.list": true,
   "plugins.catalog": true,
+  "plugins.delivery": true,
+  "plugins.package.inspect": true,
+  "plugins.package.change.prepare": true,
+  "plugins.package.install": true,
   "plugins.change.prepare": true,
   "plugins.renderer.failed": true,
   "plugins.install": true,

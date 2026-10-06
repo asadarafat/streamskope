@@ -1,7 +1,7 @@
-import type { PluginCatalogSnapshot } from "../../../plugins/contracts";
+import type { PluginCatalogSnapshot, PluginPackageReference } from "../../../plugins/contracts";
 import { isPluginCompatibleWithHost, isPrereleaseVersion } from "../../../plugins/validation";
 
-import type { OfficialPluginCatalog } from "./catalog";
+import type { OfficialPluginCatalog, OfficialPluginEntry } from "./catalog";
 import type { PluginCatalogCache, StoredPluginCatalog } from "./catalog-cache";
 
 export interface PluginCatalogDiscoveryOptions {
@@ -24,21 +24,42 @@ export class PluginCatalogDiscovery {
   constructor(private readonly options: PluginCatalogDiscoveryOptions) {}
 
   private snapshot(catalog: StoredPluginCatalog, source: "live" | "cache"): PluginCatalogSnapshot {
-    return {
-      plugins: catalog.entries
-        .map((entry) => entry.manifest)
-        .filter(
-          (manifest) =>
-            isPluginCompatibleWithHost(manifest, this.options.hostRelease) &&
-            !(
-              manifest.apiVersion === 4 &&
-              isPrereleaseVersion(manifest.version) &&
-              !isPrereleaseVersion(this.options.hostRelease.replace(/^v/u, ""))
-            ),
+    const entries = catalog.entries.filter(
+      ({ manifest }) =>
+        isPluginCompatibleWithHost(manifest, this.options.hostRelease) &&
+        !(
+          manifest.apiVersion === 4 &&
+          isPrereleaseVersion(manifest.version) &&
+          !isPrereleaseVersion(this.options.hostRelease.replace(/^v/u, ""))
         ),
+    );
+    return {
+      plugins: entries.map((entry) => entry.manifest),
+      packages: entries.map((entry) => ({
+        pluginId: entry.manifest.id,
+        version: entry.manifest.version,
+        sha256: entry.sha256,
+      })),
       source,
       checkedAt: catalog.checkedAt,
     };
+  }
+
+  async resolve(reference: PluginPackageReference): Promise<OfficialPluginEntry> {
+    this.options.assertOpen();
+    const catalog =
+      this.memory ?? (this.options.persist === false ? undefined : await this.options.cache.read());
+    const entry = catalog?.entries.find(
+      (value) =>
+        value.manifest.id === reference.pluginId &&
+        value.manifest.version === reference.version &&
+        value.sha256 === reference.sha256,
+    );
+    if (entry === undefined)
+      throw new Error(
+        "The selected catalog package changed or is unavailable. Refresh the catalog and review the package again.",
+      );
+    return entry;
   }
 
   private async cached(): Promise<PluginCatalogSnapshot> {

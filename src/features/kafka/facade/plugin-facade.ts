@@ -128,6 +128,47 @@ export class PluginFacadeController {
       if (runtime === undefined)
         throw unavailable("pluginId" in command.payload ? command.payload.pluginId : undefined);
       switch (command.command) {
+        case "plugins.delivery":
+          if (runtime.delivery === undefined) throw unavailable();
+          return {
+            ...base,
+            command: command.command,
+            result: { correlationId, pluginDelivery: await runtime.delivery() },
+          };
+        case "plugins.package.inspect":
+          if (runtime.inspectPackage === undefined) throw unavailable();
+          return {
+            ...base,
+            command: command.command,
+            result: { correlationId, pluginPackage: await runtime.inspectPackage(command.payload) },
+          };
+        case "plugins.package.change.prepare":
+          if (runtime.preparePackageChange === undefined) throw unavailable();
+          return {
+            ...base,
+            command: command.command,
+            result: {
+              correlationId,
+              pluginChange: await runtime.preparePackageChange(command.payload.candidateId),
+            },
+          };
+        case "plugins.package.install":
+          if (runtime.installPackage === undefined) throw unavailable();
+          return {
+            ...base,
+            command: command.command,
+            result: {
+              correlationId,
+              pluginSnapshot: await runtime.installPackage(
+                command.payload.candidateId,
+                command.payload.confirmationToken,
+              ),
+            },
+          };
+        case "plugins.package.discard":
+          if (runtime.discardPackage === undefined) throw unavailable();
+          await runtime.discardPackage(command.payload.candidateId);
+          return successResponse(command, correlationId);
         case "plugin.execute":
           return {
             ...base,

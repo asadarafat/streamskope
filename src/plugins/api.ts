@@ -12,9 +12,12 @@ import type {
   PluginChangeOperation,
   PluginChangePrompt,
   PluginChangeWarning,
+  PluginDeliverySnapshot,
   PluginEvent,
   PluginExitPrompt,
   PluginProfileSource,
+  PluginPackageInspectInput,
+  PluginPackageInspection,
   PluginRequest,
   PluginSnapshot,
 } from "./contracts";
@@ -81,6 +84,11 @@ export interface PluginRuntimePort {
   subscribeChanges(listener: (snapshot: PluginSnapshot) => void): () => void;
   list(): Promise<PluginSnapshot>;
   catalog(refresh?: boolean): Promise<PluginCatalogSnapshot>;
+  delivery?(): Promise<PluginDeliverySnapshot>;
+  inspectPackage?(input: PluginPackageInspectInput): Promise<PluginPackageInspection | null>;
+  preparePackageChange?(candidateId: string): Promise<PluginChangePrompt | null>;
+  installPackage?(candidateId: string, confirmationToken?: string): Promise<PluginSnapshot>;
+  discardPackage?(candidateId: string): Promise<void>;
   prepareChange(
     pluginId: string,
     operation: PluginChangeOperation,

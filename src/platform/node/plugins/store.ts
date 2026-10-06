@@ -12,10 +12,12 @@ import { readBoundedFile } from "../bounded-file";
 import {
   MAX_PLUGIN_ARCHIVE_BYTES,
   parsePluginPackage,
+  parsePortablePluginPackage,
   type VerifiedPluginPackage,
 } from "./package";
 import { PluginCatalogCache } from "./catalog-cache";
 import { TRUSTED_PLUGIN_PUBLISHERS, type TrustedPluginPublisher } from "./publishers";
+import { PluginPackageCache } from "./package-cache";
 
 export interface PluginStoreOptions {
   /** Host composition only; package files and renderer requests cannot grant publisher trust. */
@@ -119,6 +121,7 @@ function parseState(bytes: Uint8Array): StoreState {
 export class PluginStore {
   readonly #root: string;
   readonly catalogCache: PluginCatalogCache;
+  readonly packageCache: PluginPackageCache;
   readonly #trustedPublishers: readonly TrustedPluginPublisher[];
   #queue: Promise<unknown> = Promise.resolve();
 
@@ -130,11 +133,18 @@ export class PluginStore {
         Object.freeze({ ...publisher, pluginIds: Object.freeze([...publisher.pluginIds]) }),
       ),
     );
+    this.packageCache = new PluginPackageCache(
+      join(this.#root, ".packages"),
+      this.verifyPackage.bind(this),
+    );
   }
 
   /** One sealed host verification authority is shared by downloads, storage and lifecycle changes. */
   verifyPackage(bytes: Uint8Array, expectedSha256?: string): VerifiedPluginPackage {
     return parsePluginPackage(bytes, expectedSha256, this.#trustedPublishers);
+  }
+  verifyPortablePackage(bytes: Uint8Array, expectedSha256?: string): VerifiedPluginPackage {
+    return parsePortablePluginPackage(bytes, expectedSha256, this.#trustedPublishers);
   }
 
   /** Recovery survives package replacement/removal; the plugin clears it after remote cleanup. */

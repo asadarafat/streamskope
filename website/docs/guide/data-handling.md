@@ -20,6 +20,7 @@ Paths below are relative to the [application-data directory](recovery.md#find-yo
 | Relationship graphs                         | Workbench page memory                            | Bounded identities and timestamped evidence; no saved graph, raw records, schema definitions or connector credentials                                                                                                                     |
 | Operational preferences                     | `workbench/kafka-operational-preferences.json`   | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
 | Installed plugins                           | `plugins/`                                       | Verified code, manifests and selection state; removed through Preferences → Plugins                                                                                                                                                       |
+| Cached plugin packages                      | `plugins/.packages/`                             | Verified original archives and provenance; private file permissions, not encrypted. Up to four archives of 48 MiB each; unused copies may be evicted. Removing a plugin retains cached delivery bytes for offline reinstallation          |
 | NSP recovery identifiers                    | `plugins/.recovery/streamskope.nsp.json`         | Non-secret API/account and request/execution identifiers; survive restart and plugin version changes until confirmed cleanup clears them                                                                                                  |
 | Browser-engine state                        | Other Electron files under application data      | Runtime caches/state; include in a same-machine full backup, but do not treat them as a message archive                                                                                                                                   |
 | Read messages and activity history          | Bounded workbench memory                         | No durable message archive; closing/replacing a view or process can discard it                                                                                                                                                            |
@@ -37,6 +38,8 @@ preferences remain ordinary JSON, separate from OS-backed credential encryption.
 
 Browser development profiles are session-only. Its installed plugins live in
 `.cache/development-plugins`; a development checkout is not a desktop backup.
+Keep approved portable files separately from the plugin cache. Cache metadata alone
+does not authorize executable code; retained archives are verified again before use.
 Browser observation history also lasts only for the host session. Desktop
 observation history is limited to eight identities, 240 samples per identity,
 24 hours and 4 MiB; retention is enforced when the store is used, not by a

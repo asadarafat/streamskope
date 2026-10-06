@@ -28,6 +28,7 @@ nav = [
   { "Plugins" = [
     { "Plugin overview" = "plugins/index.md" },
     { "Versioning and compatibility" = "plugins/versioning.md" },
+    { "Install without GitHub" = "plugins/offline.md" },
     { "EDA Capture" = "plugins/eda.md" },
     { "NSP Capture" = "plugins/nsp.md" }
   ] },

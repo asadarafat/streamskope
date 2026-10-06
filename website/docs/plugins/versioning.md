@@ -81,8 +81,8 @@ for example `streamskope-nsp-portable-v0.1.0.skope-plugin`. It encloses the exac
 bytes of the primary package and uses the same manifest and plugin version; it is
 not another release or another compatibility declaration. The primary asset stays
 available for desktops using the existing GitHub catalog. Older plugin releases
-are not retroactively signed. Desktop file installation is a separate capability;
-consult the documented desktop's availability notice before using an offline path.
+are not retroactively signed. The [offline installation guide](offline.md) describes the desktop file path.
+Consult the documented desktop's availability notice before using an older installer.
 
 A signature authenticates the publisher and complete package, including bundled
 resources. It does not widen compatibility or prove live target qualification.
@@ -122,7 +122,8 @@ to establish which live environments were actually tested.
 ```text
 Preferences -> Plugins
   -> require supported API + desktop inside host interval
-  -> verify package and declared resource digests
+  -> review the exact package source, version and requirements
+  -> verify publisher for file imports + package/resource digests
   -> install or update without restarting the desktop
 
 Create or refresh a connection

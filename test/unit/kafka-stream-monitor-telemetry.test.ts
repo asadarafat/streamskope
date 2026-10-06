@@ -404,7 +404,7 @@ describe("Kafka monitor measurement semantics", () => {
       expect(rateSamples()).toHaveLength(before + 1);
       expect(f.snapshot().operationId).toBe("operation-two");
       expect(f.snapshot().delivery?.rateWindowMs).toBe(1_000);
-      expect(HOST_PROTOCOL_VERSION).toBe(50);
+      expect(HOST_PROTOCOL_VERSION).toBe(51);
     } finally {
       await f.facade.shutdown();
     }

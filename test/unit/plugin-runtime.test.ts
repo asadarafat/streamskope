@@ -289,12 +289,14 @@ describe("optional installed plugin runtime", () => {
     runtimes.push(reopened);
     expect(await reopened.catalog(false)).toEqual({
       plugins: [official],
+      packages: [{ pluginId: official.id, version: official.version, sha256: entry.sha256 }],
       source: "cache",
       checkedAt: live.checkedAt,
     });
     expect(catalog.list).toHaveBeenCalledTimes(1);
     expect(await reopened.catalog()).toEqual({
       plugins: [official],
+      packages: [{ pluginId: official.id, version: official.version, sha256: entry.sha256 }],
       source: "cache",
       checkedAt: live.checkedAt,
       error: "GitHub could not be reached",

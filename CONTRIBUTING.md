@@ -701,8 +701,12 @@ Release users install through **Preferences → Plugins**, using published asset
 the manifest/API contract and supported desktop interval, then writes immutable files
 and atomically selects the active version. This verifies official repository
 provenance and integrity; it does not
-claim publisher cryptographic signing. Installed plugins work offline; catalog
-refresh and download require GitHub access. Installation, updates and removal
+claim publisher cryptographic signing. Installed plugins work offline. Catalog refresh and downloads require GitHub;
+native file inspection accepts only signed portable packages, and cached archives
+are selected explicitly by ID, version and digest. Opaque review receipts pin
+verified bytes and expire; cleanup consent is bound to the candidate and current
+activation/work state. Cancellation discards a review without replacing code.
+See [offline installation](website/docs/plugins/offline.md). Installation, updates and removal
 apply immediately in the running application. Each activation has its own request
 identity and renderer assets; callbacks from retired views cannot operate the new
 instance. Changes serialize with shutdown and owned profile connections.
@@ -715,7 +719,7 @@ available; a stopped capture must be resumed explicitly. Unrelated Kafka session
 remain available. API 2 introduced these lifecycle hooks; API 3 added explicit
 compatibility identities and resources. API 4 uses independent SemVer and an
 inclusive minimum/exclusive maximum desktop interval. Host protocol 28 introduced
-activation identities and versioned snapshots; the current paired host protocol is 50. Existing API 2 and API 3 packages
+activation identities and versioned snapshots; the current paired host protocol is 51. Existing API 2 and API 3 packages
 retain their legacy versions and asset names and remain loadable on the new host.
 A compatible API 4 package supersedes either legacy generation; within API 4,
 updates follow SemVer precedence. Earlier unreleased API 1 packages

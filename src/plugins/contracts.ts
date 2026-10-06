@@ -84,10 +84,54 @@ export interface PluginChangePrompt extends PluginChangeWarning {
 
 export interface PluginCatalogSnapshot {
   readonly plugins: readonly PluginManifest[];
+  /** Exact host-known packages; a renderer cannot select a download URL or different bytes. */
+  readonly packages?: readonly PluginPackageReference[];
   readonly source?: "live" | "cache" | "unavailable";
   /** Last successful remote check; cached entries never imply current availability. */
   readonly checkedAt?: string;
   readonly error?: string;
+}
+
+export interface PluginPackageReference {
+  readonly pluginId: string;
+  readonly version: string;
+  readonly sha256: string;
+}
+
+export type PluginPackageInspectInput =
+  { readonly source: "file" } | (PluginPackageReference & { readonly source: "catalog" | "cache" });
+
+export type PluginPackageTrust = "publisher" | "official" | "development";
+
+export interface PluginPackagePublisher {
+  readonly keyId: string;
+  readonly name: string;
+}
+
+export interface PluginPackageInspection {
+  readonly candidateId: string;
+  readonly manifest: PluginManifest;
+  readonly sha256: string;
+  readonly source: "file" | "catalog" | "cache";
+  readonly publisher?: PluginPackagePublisher;
+  readonly trust: PluginPackageTrust;
+  readonly expiresAt: string;
+  readonly installedVersion?: string;
+  readonly status: "install" | "update" | "already-installed" | "blocked";
+  readonly reason?: string;
+}
+
+export interface PluginCachedPackage {
+  readonly manifest: PluginManifest;
+  readonly sha256: string;
+  readonly cachedAt: string;
+  readonly publisher?: PluginPackagePublisher;
+  readonly trust: PluginPackageTrust;
+}
+
+export interface PluginDeliverySnapshot {
+  readonly fileInstallationAvailable: boolean;
+  readonly cachedPackages: readonly PluginCachedPackage[];
 }
 
 export interface PluginExitPrompt {
