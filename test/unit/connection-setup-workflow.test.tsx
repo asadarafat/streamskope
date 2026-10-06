@@ -83,11 +83,9 @@ describe("connection setup", () => {
         store={{ state: "ready", durability: "session", protection: "memory" }}
       />,
     );
-    expect(
-      screen.queryByRole("button", { name: "Capture Nokia EDA streams" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect via EDA" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add connection" }));
-    expect(screen.queryByRole("menuitem", { name: "Capture from EDA" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Connect via EDA" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Existing Kafka cluster" }));
     expect(screen.getByRole("dialog", { name: "Add Kafka profile" })).toBeVisible();
   });

@@ -446,7 +446,7 @@ export class NspApiClient {
         cleanup || !this.signal ? {} : { signal: this.signal },
       );
     } catch {
-      throw new NspApiError("NSP capture was cancelled.", "CANCELLED");
+      throw new NspApiError("NSP connection setup was cancelled.", "CANCELLED");
     }
   }
 
@@ -459,7 +459,7 @@ export class NspApiClient {
     form = false,
   ): Promise<unknown> {
     if (!cleanup && this.signal?.aborted)
-      throw new NspApiError("NSP capture was cancelled.", "CANCELLED");
+      throw new NspApiError("NSP connection setup was cancelled.", "CANCELLED");
     const payload =
       body === undefined
         ? undefined
@@ -515,7 +515,7 @@ export class NspApiClient {
                 status === 401
                   ? "NSP authentication failed."
                   : status === 403
-                    ? "This NSP account cannot manage or execute the capture workflow."
+                    ? "This NSP account cannot manage or execute the connection helper workflow."
                     : status === 404
                       ? "The NSP API resource was not found."
                       : "NSP rejected the workflow request.";
@@ -541,7 +541,7 @@ export class NspApiClient {
         reject(
           new NspApiError(
             !cleanup && this.signal?.aborted
-              ? "NSP capture was cancelled."
+              ? "NSP connection setup was cancelled."
               : "The NSP API connection failed. Check its address and certificate trust.",
             !cleanup && this.signal?.aborted ? "CANCELLED" : "NETWORK",
           ),

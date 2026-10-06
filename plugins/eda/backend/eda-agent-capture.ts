@@ -45,10 +45,10 @@ async function requireTargetVersion(client: EdaApiClient): Promise<void> {
   const observed = await client.clusterVersion();
   if (observed.releaseVersion !== EDA_TARGET_VERSION)
     throw new EdaApiError(
-      `This EDA Capture plugin targets ${EDA_TARGET_VERSION}, but the running cluster reports ${observed.releaseVersion}.`,
+      `This EDA Connector plugin targets ${EDA_TARGET_VERSION}, but the running cluster reports ${observed.releaseVersion}.`,
       {
         code: "VALIDATION",
-        recovery: `Connect to EDA ${EDA_TARGET_VERSION}, or install the EDA Capture plugin for ${observed.releaseVersion} in Preferences > Plugins. No capture resources were changed.`,
+        recovery: `Connect to EDA ${EDA_TARGET_VERSION}, or install the EDA Connector plugin for ${observed.releaseVersion} in Preferences > Plugins. No capture resources were changed.`,
         retryable: false,
         stage: "validation",
         target: "EDA version",

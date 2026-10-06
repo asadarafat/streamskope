@@ -475,7 +475,7 @@ test.describe("StreamSkope Redpanda-style responsive workbench", () => {
     const provider = page.getByRole("combobox", { name: "Messaging provider" });
     await expect(provider).toContainText("Kafka");
     await provider.click();
-    await expect(page.getByRole("option")).toHaveText(["Kafka", "Core NATS"]);
+    await expect(page.getByRole("option")).toHaveText(["Kafka", "NATS"]);
     await page.getByRole("option", { name: "Kafka", exact: true }).click();
     expect(
       backend.commands.filter(

@@ -229,8 +229,8 @@ describe("EDA capture workflow", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Add connection" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Capture from EDA" }));
-    const dialog = screen.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+    await user.click(await screen.findByRole("menuitem", { name: "Connect via EDA" }));
+    const dialog = screen.getByRole("dialog", { name: "Connect via EDA" });
     expect(within(dialog).getByLabelText("EDA API URL")).toHaveValue("");
     expect(within(dialog).getByLabelText("EDA username")).toBeVisible();
     expect(within(dialog).getByLabelText("EDA password")).toBeVisible();
@@ -267,7 +267,7 @@ describe("EDA capture workflow", () => {
     await user.click(within(dialog).getByRole("button", { name: "Start capture" }));
 
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Capture Nokia EDA streams" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: "Connect via EDA" })).toBeNull(),
     );
     expect(
       screen.getByRole("button", {
@@ -374,8 +374,8 @@ describe("EDA capture workflow", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Add connection" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Capture from EDA" }));
-    const dialog = screen.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+    await user.click(await screen.findByRole("menuitem", { name: "Connect via EDA" }));
+    const dialog = screen.getByRole("dialog", { name: "Connect via EDA" });
     await user.type(within(dialog).getByLabelText("EDA API URL"), "https://eda.example.test:9443");
     await user.type(within(dialog).getByLabelText("EDA username"), "admin");
     await user.type(within(dialog).getByLabelText("EDA password"), "password");
@@ -392,7 +392,7 @@ describe("EDA capture workflow", () => {
     await user.click(within(dialog).getByRole("button", { name: "Start capture" }));
 
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Capture Nokia EDA streams" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: "Connect via EDA" })).toBeNull(),
     );
     expect(
       host.commands.filter((command) => command.command === "edaCapture.deploy").at(-1),
@@ -422,8 +422,8 @@ describe("EDA capture workflow", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Add connection" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Capture from EDA" }));
-    const dialog = screen.getByRole("dialog", { name: "Capture Nokia EDA streams" });
+    await user.click(await screen.findByRole("menuitem", { name: "Connect via EDA" }));
+    const dialog = screen.getByRole("dialog", { name: "Connect via EDA" });
     const apiUrl = within(dialog).getByLabelText("EDA API URL");
     await user.type(apiUrl, "https://eda-one.example.test:9443");
     await user.type(within(dialog).getByLabelText("EDA username"), "admin");
@@ -449,7 +449,7 @@ describe("EDA capture workflow", () => {
       ).toHaveLength(2),
     );
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Capture Nokia EDA streams" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: "Connect via EDA" })).toBeNull(),
     );
     expect(
       host.commands.filter((command) => command.command === "edaCapture.deploy").at(-1),

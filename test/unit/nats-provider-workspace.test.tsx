@@ -106,7 +106,7 @@ const stop = {
   version: NATS_PROTOCOL_VERSION,
 } as const;
 
-describe("Core NATS workspace ownership", () => {
+describe("NATS workspace ownership", () => {
   it("preserves admitted receipts and cleanup events while revoking new requests and listeners", async () => {
     const completion = deferred<unknown>();
     const original = fixture(() => completion.promise);
@@ -225,7 +225,7 @@ describe("Core NATS workspace ownership", () => {
     const result = await registration.deactivate();
     expect(result).toMatchObject({
       state: "blocked",
-      summary: "Core NATS subscription could not be stopped.",
+      summary: "NATS subscription could not be stopped.",
     });
     expect(JSON.stringify(result)).not.toContain("private-token-or-certificate");
     expect(original.commands.map((command) => command.command)).toEqual(["subscription.stop"]);

@@ -32,7 +32,7 @@ Ask your administrator for [inspection permissions](../guide/security.md#kafka-a
 4. Choose **Save profile**, then its connect/play button. Wait for **Connected**.
 
 **You should see:** the topics visible to your account. Testing a draft does not
-save or connect it. For Nokia EDA, use [Capture from EDA](../plugins/eda.md) to install
+save or connect it. For Nokia EDA, use [Connect via EDA](../plugins/eda.md) to install
 the optional plugin and prepare a capture profile.
 
 ## 3. Open a record

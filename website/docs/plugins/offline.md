@@ -25,7 +25,7 @@ address. Enter proxy credentials in the separate fields; do not put credentials
 in the address. Save settings, then test the applied connection.
 
 Proxy settings apply only to plugin catalog and package downloads. They do not
-change Kafka, Core NATS, EDA or NSP connections. An authenticated HTTP CONNECT
+change Kafka, NATS, EDA or NSP connections. An authenticated HTTP CONNECT
 proxy is supported; SOCKS, NTLM and every organization's automatic proxy policy
 are not individually qualified. Corporate certificate validation remains enabled.
 Install the organization's approved CA in the operating system when required;

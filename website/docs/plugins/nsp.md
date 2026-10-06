@@ -2,15 +2,15 @@
 plugin_scope: nsp
 ---
 
-# NSP Capture
+# NSP Connector
 
 <span id="connect-to-nsp-kafka"></span>
 
-NSP Capture creates a Kafka connection profile using your NSP API URL, username
+NSP Connector creates a Kafka connection profile using your NSP API URL, username
 and password. It retrieves the broker's CA truststore and matching password through
 an NSP workflow, tests the connection, then saves the profile.
 
-It is an optional [connection plugin](index.md), adding **Connect to NSP** under
+It is an optional [connection plugin](index.md), adding **Connect via NSP** under
 **Add connection** and **Refresh NSP credentials** to its saved profiles. The
 workflow is a reusable helper inside NSP; the plugin does not deploy a broker or
 keep a tunnel running after setup.
@@ -38,9 +38,9 @@ inside NSP using the workflow service's existing access to the mounted trust fil
 
 ## Create the connection profile
 
-1. Open **Preferences → Plugins** and install **NSP Capture**. Activation is
+1. Open **Preferences → Plugins** and install **NSP Connector**. Activation is
    immediate. The catalog must contain a published compatible package.
-2. Open **Add connection → Connect to NSP**.
+2. Open **Add connection → Connect via NSP**.
 3. Enter the **NSP API URL** as an HTTPS origin, such as
    `https://nsp.example.com`, plus **NSP username** and **NSP password**.
 4. Keep **Verify NSP API certificate** enabled. Only for a trusted development
@@ -65,17 +65,17 @@ addresses that also need to be reachable and match their certificates.
 
 ## Refresh, cancel and recover
 
-| Action                                      | Result                                                                                                                                 |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Repeat setup for the same API               | Reuses the existing NSP profile instead of creating a duplicate; multiple matching profiles require selecting one explicitly           |
-| Refresh after certificate/password rotation | Disconnect the profile, open **Refresh NSP credentials**, enter API credentials again, then choose **Refresh credentials**             |
-| Cancel an operation                         | Cancels owned work and waits for execution cleanup; an already committed profile save remains successful                               |
-| Cleanup cannot be confirmed                 | Retains non-secret API/account and request/execution identifiers across restart; blocks new work until cleanup succeeds                |
-| Recover pending cleanup                     | Reopen NSP capture, use the same API URL and account, then choose **Retry cleanup**; use **Refresh status** to check the current state |
-| NSP upgraded beyond the declared target     | New retrieval stops; pending cleanup is still permitted without a version check                                                        |
-| Update or remove the plugin                 | Cancels active work when confirmed and requires cleanup to succeed; failure leaves the plugin available for retry                      |
-| Successful removal                          | Disconnects its active connection and removes plugin code; saved profiles and the shared helper workflow remain                        |
-| Reinstall                                   | Restores the NSP UI for retained profiles; it does not create another helper with the same definition                                  |
+| Action                                      | Result                                                                                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repeat setup for the same API               | Reuses the existing NSP profile instead of creating a duplicate; multiple matching profiles require selecting one explicitly                   |
+| Refresh after certificate/password rotation | Disconnect the profile, open **Refresh NSP credentials**, enter API credentials again, then choose **Refresh credentials**                     |
+| Cancel an operation                         | Cancels owned work and waits for execution cleanup; an already committed profile save remains successful                                       |
+| Cleanup cannot be confirmed                 | Retains non-secret API/account and request/execution identifiers across restart; blocks new work until cleanup succeeds                        |
+| Recover pending cleanup                     | Reopen **Connect via NSP**, use the same API URL and account, then choose **Retry cleanup**; use **Refresh status** to check the current state |
+| NSP upgraded beyond the declared target     | New retrieval stops; pending cleanup is still permitted without a version check                                                                |
+| Update or remove the plugin                 | Cancels active work when confirmed and requires cleanup to succeed; failure leaves the plugin available for retry                              |
+| Successful removal                          | Disconnects its active connection and removes plugin code; saved profiles and the shared helper workflow remain                                |
+| Reinstall                                   | Restores the NSP UI for retained profiles; it does not create another helper with the same definition                                          |
 
 Saved profiles use the core [credential protection](../guide/data-handling.md#stored-data).
 API credentials used only for retrieval are not stored in the recovery journal.
@@ -93,7 +93,7 @@ confirming no clients depend on it.
 
 | Failure                                | Next check                                                                                                  |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| NSP Capture absent from the catalog    | Check the supported desktop interval, then refresh the official catalog                                     |
+| NSP Connector absent from the catalog  | Check the supported desktop interval, then refresh the official catalog                                     |
 | API sign-in or certificate failure     | Verify the HTTPS origin, account permissions and API CA trust                                               |
 | Target version unknown or unsupported  | Check `/sdn/api/v4/system/version` and the manifest's inclusive target range; cleanup is still available    |
 | Helper name conflict                   | Have the administrator inspect the existing definition; do not overwrite it to bypass the ownership check   |
@@ -163,7 +163,7 @@ not a separate publisher signature.
 
 The downloadable workflow has the same bytes and fingerprint as the installed
 resource. An already-created matching `streamskopeNspCaptureV1` is reused. **No manual workflow upload is required:** install the
-desktop plugin, then use **Connect to NSP**; the plugin creates, verifies and
+desktop plugin, then use **Connect via NSP**; the plugin creates, verifies and
 publishes the helper through the API as needed. Editing the review copy does not
 customize the installed plugin. A different remote definition under the owned
 name remains a conflict.

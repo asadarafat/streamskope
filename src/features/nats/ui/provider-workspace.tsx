@@ -23,7 +23,7 @@ export function createInteractiveNatsHost(host: NatsHost, isInteractive: () => b
     ): Promise<NatsCommandResponse<Command["command"]>> => {
       if (!isInteractive()) {
         throw new Error(
-          "This Core NATS workspace is inactive. Finish the provider switch before submitting another request.",
+          "This NATS workspace is inactive. Finish the provider switch before submitting another request.",
         );
       }
       return host.execute(command);
@@ -70,19 +70,18 @@ export function createNatsWorkspaceRegistration({
     phase === "stop"
       ? {
           state: "blocked",
-          summary: "Core NATS subscription could not be stopped.",
+          summary: "NATS subscription could not be stopped.",
           recovery:
-            "Keep Core NATS selected, stop the subscription successfully, then retry the provider switch.",
+            "Keep NATS selected, stop the subscription successfully, then retry the provider switch.",
         }
       : {
           state: "blocked",
-          summary: "Core NATS could not be disconnected.",
-          recovery:
-            "Keep Core NATS selected, disconnect successfully, then retry the provider switch.",
+          summary: "NATS could not be disconnected.",
+          recovery: "Keep NATS selected, disconnect successfully, then retry the provider switch.",
         };
   return {
     id: "nats",
-    label: "Core NATS",
+    label: "NATS",
     render: (controls): React.JSX.Element => <RegisteredNatsWorkspace controls={controls} />,
     deactivate: async (): Promise<ProviderDeactivationResult> => {
       // A never-rendered or unavailable workspace owns no host resources.

@@ -65,7 +65,7 @@ function EdaPluginView({
 const renderer: PluginRenderer = {
   apiVersion: 4,
   id: EDA_PLUGIN_ID,
-  connectionActions: [{ id: "capture", label: "Capture from EDA" }],
+  connectionActions: [{ id: "capture", label: "Connect via EDA" }],
   profileLabel: (source) =>
     fromPluginProfileSource(source) === undefined ? undefined : "EDA capture profile",
   profileSummary: (source) => {

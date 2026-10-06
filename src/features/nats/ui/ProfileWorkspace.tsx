@@ -177,7 +177,7 @@ export function ProfileWorkspace({
               Connection Profiles
             </Typography>
             <Typography color="text.secondary" variant="body2">
-              Connect to Core NATS using a reusable profile.
+              Connect to your NATS server using a reusable profile.
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>

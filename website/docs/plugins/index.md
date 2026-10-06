@@ -20,15 +20,24 @@ message reader, consumer lag and other workbench views as any Kafka connection.
 
 ## Choose a plugin
 
-| Plugin                | What you supply                                                 | What it creates                                                                                                       | Where Kafka traffic goes                                                                              |
-| --------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [EDA Capture](eda.md) | EDA API URL and credentials, then a Producer or ClusterProducer | A temporary capture profile backed by a separate broker and exporter, or a normal profile for an existing destination | Temporary capture: through an authenticated EDA tunnel; existing destination: directly to its brokers |
-| [NSP Capture](nsp.md) | NSP API URL and credentials                                     | A reusable profile with the retrieved Kafka CA truststore and, when required, NSP OAuth settings                      | Directly to the existing NSP Kafka brokers                                                            |
+| Plugin                  | What you supply                                                 | What it creates                                                                                                       | Where Kafka traffic goes                                                                              |
+| ----------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [EDA Connector](eda.md) | EDA API URL and credentials, then a Producer or ClusterProducer | A temporary capture profile backed by a separate broker and exporter, or a normal profile for an existing destination | Temporary capture: through an authenticated EDA tunnel; existing destination: directly to its brokers |
+| [NSP Connector](nsp.md) | NSP API URL and credentials                                     | A reusable profile with the retrieved Kafka CA truststore and, when required, NSP OAuth settings                      | Directly to the existing NSP Kafka brokers                                                            |
 
 The individual guides include prerequisites, call flows, installation steps and
-cleanup/recovery behavior. **Capture** does not mean that both plugins create a
-broker: EDA can create a temporary destination, while NSP connects to an existing
-one. Neither plugin creates source events for you.
+cleanup/recovery behavior. Both connectors set up Kafka access through a platform
+API. EDA additionally offers **Temporary capture**, which creates a separate
+destination; NSP connects to its existing Kafka broker. Neither connector creates
+source events for you.
+
+Connector names describe the setup experience. Temporary capture, credential
+refresh and resource removal retain their specific labels because they have
+different effects. Existing installations and older releases may still show
+**EDA Capture**, **NSP Capture**, **Capture from EDA** or **Connect to NSP**.
+Display-name changes keep the same plugin identities, saved profiles and recovery
+records; they require a compatible plugin update rather than reinstalling under
+a new identity.
 
 ## How a plugin extends a connection profile
 

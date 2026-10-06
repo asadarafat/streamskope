@@ -280,7 +280,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PLUGIN_TITLE: ${{ inputs.component == 'eda' && 'EDA Capture' || 'NSP Capture' }} ${{ needs.prepare.outputs.version }}
+          PLUGIN_TITLE: ${{ inputs.component == 'eda' && 'EDA Connector' || 'NSP Connector' }} ${{ needs.prepare.outputs.version }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \

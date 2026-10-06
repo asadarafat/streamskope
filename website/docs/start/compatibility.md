@@ -28,8 +28,8 @@ See [qualification evidence](../guide/qualification.md) for what was actually ex
 | Consumer sandbox         | Owned Docker Compose Kafka/Connect with deterministic seeds and bounded Node 24 consumer/transform batch | Loopback plaintext, no Registry/OAuth, no Kafka Streams/Flink runtime, disposable data                                                                                 |
 | Observed health          | Bounded local offset/health history, thresholds, backtested lag scenarios and diagnostic hints           | Client observations only; no broker CPU/disk, processing-latency measurement or closed-app monitoring; optional protected record sampling is bounded and can be biased |
 | Relationships and impact | Timestamped topic/group/Connect evidence and partial exact-version schema impact                         | Three topics; bounded API-visible coverage; inferred framing/naming links remain distinct; no exhaustive producer inventory or safe-change guarantee                   |
-| EDA capture              | EDA Capture, API 3 published packages and API 4 development packages                                     | Requires exactly EDA 26.8.2 and the separate matching cluster app                                                                                                      |
-| NSP capture              | NSP Capture, API 3 published packages and API 4 development packages                                     | Requires exactly NSP 26.4.0 and the workflow/mounted-trust layout                                                                                                      |
+| EDA connection           | Optional EDA Connector with declared desktop and plugin API requirements                                 | Requires exactly EDA 26.8.2 and the separate matching cluster app                                                                                                      |
+| NSP connection           | Optional NSP Connector with declared desktop and plugin API requirements                                 | Requires exactly NSP 26.4.0 and the workflow/mounted-trust layout                                                                                                      |
 
 TLS failures do not fall back to plaintext. HTTP service authentication and Kafka
 broker authentication must each be accepted by their destination. A valid Kafka
@@ -73,7 +73,7 @@ support claim or an automatic promise for later patch releases. The host checks
 desktop compatibility when selecting/installing/loading a package; each plugin
 checks the target through its platform API before setup work.
 
-[EDA Capture](../plugins/eda.md#compatibility-package) needs the matching EDA
-cluster app for temporary capture. [NSP Capture](../plugins/nsp.md#compatibility-package)
+[EDA Connector](../plugins/eda.md#compatibility-package) needs the matching EDA
+cluster app for temporary capture. [NSP Connector](../plugins/nsp.md#compatibility-package)
 needs the workflow service, permissions and mounted truststore layout described
 in its guide. Version matching does not replace these prerequisites.

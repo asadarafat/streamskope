@@ -33,7 +33,7 @@ test("boots the production renderer with both provider choices and no module ini
     await expect(provider).toContainText("Kafka");
     await expect(page.getByRole("banner", { name: "StreamSkope application bar" })).toBeVisible();
     await provider.click();
-    await expect(page.getByRole("option", { name: "Core NATS", exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "NATS", exact: true })).toBeVisible();
     await expect(page.getByRole("option", { name: "Kafka", exact: true })).toBeVisible();
     // This smoke owns no messaging host. Real provider-switch cleanup is qualified separately.
     await page.keyboard.press("Escape");

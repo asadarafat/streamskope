@@ -208,7 +208,7 @@ provider-backend qualification took about 12.5 minutes before adding actual NATS
 browser workflows. Existing test/global deadlines remain unchanged. Record
 executed browser and server results for the exact revision; backend-only checks
 do not qualify the workspace or native operating-system credential storage.
-The operator guide is [Core NATS live subscriptions](website/docs/guide/core-nats.md).
+The operator guide is [NATS live subscriptions](website/docs/guide/core-nats.md).
 
 `AccountedProviderEventQueue` owns pending and in-flight event costs. Provider
 policies define record projection, generation changes, omission reporting and
@@ -506,8 +506,8 @@ Review component labels before merging:
 | Label                | Include the PR in                             |
 | -------------------- | --------------------------------------------- |
 | `component:desktop`  | Desktop releases                              |
-| `component:eda`      | EDA Capture plugin releases                   |
-| `component:nsp`      | NSP Capture plugin releases                   |
+| `component:eda`      | EDA Connector plugin releases                 |
+| `component:nsp`      | NSP Connector plugin releases                 |
 | `component:shared`   | All three release families                    |
 | `release-notes:skip` | None; deliberately omit it from the changelog |
 

@@ -13,7 +13,7 @@ import {
 const directories: string[] = [];
 const manifest: PluginManifest = {
   id: "streamskope.eda",
-  name: "EDA Capture",
+  name: "EDA Connector",
   version: "0.1.0",
   apiVersion: 4,
   compatibility: {

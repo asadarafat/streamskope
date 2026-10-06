@@ -62,7 +62,7 @@ function NspPluginView({
 const renderer: PluginRenderer = {
   apiVersion: 4,
   id: NSP_PLUGIN_ID,
-  connectionActions: [{ id: "capture", label: "Connect to NSP" }],
+  connectionActions: [{ id: "capture", label: "Connect via NSP" }],
   profileLabel: (source) =>
     fromPluginProfileSource(source) === undefined ? undefined : "NSP connection profile",
   profileSummary: (source) => {

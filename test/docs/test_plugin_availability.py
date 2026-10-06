@@ -22,7 +22,7 @@ class PluginAvailabilityTests(unittest.TestCase):
         file = self.root / "plugins/eda/manifest.json"
         file.parent.mkdir(parents=True)
         file.write_text(json.dumps({
-            "id": "streamskope.eda", "name": "EDA Capture", "version": "0.0.0-dev", "apiVersion": 4,
+            "id": "streamskope.eda", "name": "EDA Connector", "version": "0.0.0-dev", "apiVersion": 4,
             "compatibility": {"streamskope": {"minimum": "0.4.0", "maximumExclusive": "0.8.0"},
                               "target": {"system": "eda", "minimum": "26.8.2", "maximum": "26.8.2"}},
         }))

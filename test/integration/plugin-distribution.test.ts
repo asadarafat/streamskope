@@ -64,6 +64,13 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
+it("uses connector display names while preserving installed plugin and archive identities", async () => {
+  expect(plugin.manifest).toMatchObject({ id: "streamskope.eda", name: "EDA Connector" });
+  expect(nspPlugin.manifest).toMatchObject({ id: "streamskope.nsp", name: "NSP Connector" });
+  expect((await builtPluginAssets("eda")).prefix).toMatch(/^streamskope-eda-/u);
+  expect((await builtPluginAssets("nsp")).prefix).toMatch(/^streamskope-nsp-/u);
+});
+
 it("publishes matching package metadata and loads the backend without the repository or node_modules", async () => {
   expect(
     JSON.parse(
@@ -307,7 +314,7 @@ it("loads the packaged renderer in a browser and renders capture through the gen
         });
         return { id: renderer.id, action: renderer.connectionActions[0]?.label };
       });
-      expect(identity).toEqual({ id: "streamskope.eda", action: "Capture from EDA" });
+      expect(identity).toEqual({ id: "streamskope.eda", action: "Connect via EDA" });
       await page.getByRole("dialog").waitFor();
       expect(await page.getByLabel("EDA API URL").isVisible()).toBe(true);
       expect(await page.getByRole("button", { name: "Discover sources" }).isVisible()).toBe(true);
@@ -415,8 +422,8 @@ it("renders the packaged NSP onboarding with only the generic plugin bridge", as
         });
         return { id: renderer.id, action: renderer.connectionActions[0]?.label };
       });
-      expect(identity).toEqual({ id: "streamskope.nsp", action: "Connect to NSP" });
-      const dialog = page.getByRole("dialog", { name: "Connect to NSP" });
+      expect(identity).toEqual({ id: "streamskope.nsp", action: "Connect via NSP" });
+      const dialog = page.getByRole("dialog", { name: "Connect via NSP" });
       await dialog.waitFor();
       expect(await dialog.getByLabel("NSP API URL").isVisible()).toBe(true);
       expect(await dialog.getByLabel("NSP username").isVisible()).toBe(true);
