@@ -205,8 +205,8 @@ development identity, desktop bounds and inclusive target range. The official
 release catalog establishes which packages are available to install.
 
 A desktop plugin version does not rename the running EDA product or cluster
-app. A compatible desktop plugin still requires the matching signed cluster app
-and its readiness check.
+app. Temporary capture requires the matching signed cluster app and its readiness
+check. Connecting to an existing Kafka destination does not require that app.
 
 The [source-bound rehearsal record](../guide/qualification.md#current-source-qualification)
 describes the installed API 4 lifecycle exercised on Linux ARM64 against an

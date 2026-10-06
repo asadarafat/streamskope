@@ -517,6 +517,8 @@ test("qualifies live EDA capture through an installed plugin in one protected El
     await expect
       .poll(async () => (await profiles(page)).find((p) => p.id === captureProfileId)?.active)
       .toBe(false);
+    await expect(page.getByTestId("provider-workspace")).toHaveAttribute("aria-busy", "false");
+    await openWorkbenchResource(page, "Connection Profiles");
     await page
       .getByRole("button", { name: `Select profile ${captureProfile.name}`, exact: true })
       .click();
