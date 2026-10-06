@@ -18,8 +18,14 @@ import {
   NatsFixtureError,
   type NatsFixtureRecord,
   type NatsFixtureIntent,
+  natsContainerlabPaths,
+  parseNatsFixtureRecord,
+  parseNatsFixtureIntent,
+  type NatsContainerlabFixtureIntent,
+  type NatsContainerlabFixtureRecord,
 } from "./ownership";
-import { startNatsServer, NatsServerCleanedFailure } from "./server";
+import { ContainerlabNatsRuntime } from "./containerlab-runtime";
+import type { NatsPersistentRuntime } from "./persistent-runtime";
 import { NATS_SERVER_IMAGES } from "./definition";
 import { boundedNatsOperation } from "./client";
 
@@ -69,7 +75,7 @@ export async function loadNatsFixtureConfig(repositoryRoot: string): Promise<Nat
 }
 
 export interface NatsFixtureStatus {
-  readonly name: typeof NATS_FIXTURE_NAME;
+  readonly name: string;
   readonly status: "ready" | "absent";
   readonly server?: string;
   readonly caPath?: string;
@@ -79,10 +85,15 @@ export interface NatsFixtureStatus {
 
 /** Persistent lab ownership is separate from disposable qualification ownership. */
 export class NatsFixtureLifecycle {
+  private readonly runtime: NatsPersistentRuntime;
+
   constructor(
     private readonly repositoryRoot: string,
     private readonly docker: NatsDockerCommand = runDocker,
-  ) {}
+    runtime?: NatsPersistentRuntime,
+  ) {
+    this.runtime = runtime ?? new ContainerlabNatsRuntime(repositoryRoot, docker);
+  }
 
   async ensure(signal?: AbortSignal): Promise<NatsFixtureStatus> {
     return this.exclusive(async () => {
@@ -97,11 +108,13 @@ export class NatsFixtureLifecycle {
           );
         const status = await this.verifyOwnership(existing);
         if (status === "absent") {
+          if (existing.format === 2) await this.runtime.stop(existing);
           await this.removeLocalRecord(existing);
         } else {
-          if (status === "exited" || status === "created")
-            await this.docker(["start", existing.container], 30_000);
-          else if (status !== "running")
+          if (status === "exited" || status === "created") {
+            if (existing.format === 2) await this.runtime.resume(existing, signal);
+            else await this.docker(["start", existing.container], 30_000);
+          } else if (status !== "running")
             throw new NatsFixtureError(
               "Local AIO NATS is not resumable; explicit recovery is required.",
             );
@@ -126,69 +139,85 @@ export class NatsFixtureLifecycle {
       await mkdir(instances, { recursive: true, mode: 0o700 });
       await chmod(instances, 0o700);
       const directory = await mkdtemp(join(instances, "server-"));
-      if (process.arch !== "arm64" && process.arch !== "x64")
-        throw new NatsFixtureError("Local AIO NATS requires Linux arm64 or amd64 Docker.");
-      const intent: NatsFixtureIntent = {
-        format: 1,
-        name: NATS_FIXTURE_NAME,
-        identity: randomUUID(),
+      if (process.platform !== "linux" || (process.arch !== "arm64" && process.arch !== "x64")) {
+        await rm(directory, { recursive: true, force: true });
+        throw new NatsFixtureError(
+          "Local AIO NATS requires Linux arm64 or amd64 Docker and Containerlab.",
+        );
+      }
+      const identity = randomUUID();
+      const intent: NatsContainerlabFixtureIntent = {
+        format: 2,
+        identity,
         directory,
         image: NATS_SERVER_IMAGES[process.arch],
         port: config.port,
+        ...natsContainerlabPaths(identity, directory),
         creationStarted: false,
+        mutationsSettled: true,
       };
       await this.saveStartIntent(intent);
       let progressIntent = intent;
-      let server: Awaited<ReturnType<typeof startNatsServer>> | undefined;
+      let record: NatsContainerlabFixtureRecord | undefined;
       try {
-        server = await startNatsServer({
-          directory,
-          name: NATS_FIXTURE_NAME,
-          port: config.port,
-          certificateDays: 365,
-          identity: intent.identity,
-          ...(signal === undefined ? {} : { signal }),
-          onCreating: async () => {
-            progressIntent = { ...progressIntent, creationStarted: true };
-            await this.saveStartIntent(progressIntent);
+        const candidate = await this.runtime.start(
+          intent,
+          async (progress) => {
+            const parsed = parseNatsFixtureIntent(progress, this.repositoryRoot);
+            if (
+              parsed.format !== 2 ||
+              parsed.identity !== intent.identity ||
+              parsed.directory !== intent.directory ||
+              parsed.image !== intent.image ||
+              parsed.port !== intent.port ||
+              (progressIntent.daemon !== undefined && parsed.daemon !== progressIntent.daemon)
+            )
+              throw new NatsFixtureError(
+                "Local AIO NATS deployment changed its ownership identity.",
+              );
+            await this.saveStartIntent(parsed);
+            progressIntent = parsed;
           },
-          onCreated: async (container) => {
-            progressIntent = { ...progressIntent, container };
-            await this.saveStartIntent(progressIntent);
-          },
-        });
-        await writeFile(join(directory, "token"), server.token, { mode: 0o600 });
-        const record: NatsFixtureRecord = {
-          format: 1,
-          ...server.ownership,
-          name: NATS_FIXTURE_NAME,
-        };
-        await this.verifyReady(record, signal);
-        const staging = join(
-          natsOwnershipRoot(this.repositoryRoot),
-          `.record-${randomUUID()}.json`,
+          signal,
         );
-        try {
-          await writeFile(staging, `${JSON.stringify(record)}\n`, { mode: 0o600, flag: "wx" });
-          await rename(staging, natsRecordPath(this.repositoryRoot));
-        } finally {
-          await rm(staging, { force: true });
-        }
+        const validated = parseNatsFixtureRecord(candidate, this.repositoryRoot);
+        if (
+          validated.format !== 2 ||
+          validated.identity !== intent.identity ||
+          validated.directory !== intent.directory ||
+          validated.image !== intent.image ||
+          validated.port !== intent.port ||
+          progressIntent.daemon !== validated.daemon ||
+          progressIntent.container !== validated.container ||
+          progressIntent.network !== validated.network ||
+          progressIntent.volume !== validated.volume ||
+          !progressIntent.mutationsSettled
+        )
+          throw new NatsFixtureError(
+            "Local AIO NATS deployment did not confirm its complete ownership journal.",
+          );
+        record = validated;
+        await this.verifyReady(record, signal);
+        await this.saveRecord(record);
         await rm(natsIntentPath(this.repositoryRoot), { force: true });
         return this.summary(record, config.subject);
-      } catch (error) {
-        if (server !== undefined) await server.dispose();
-        else if (!(error instanceof NatsServerCleanedFailure))
+      } catch {
+        // Preserve all private evidence until the daemon-resource owner confirms cleanup.
+        try {
+          if (record !== undefined) await this.runtime.stop(record);
+          else await this.runtime.recover(progressIntent);
+        } catch {
           throw new NatsFixtureError(
-            "Local AIO NATS startup completion is unconfirmed. Private ownership evidence was retained; follow the recovery instructions before retrying.",
+            "Local AIO NATS startup completion or cleanup is unconfirmed. Private ownership evidence was retained; follow the recovery instructions before retrying.",
           );
+        }
         const committed = await loadNatsFixtureRecord(this.repositoryRoot);
         if (committed !== undefined && committed.identity === intent.identity)
           await this.removeLocalRecord(committed);
         await rm(directory, { recursive: true, force: true });
         await rm(natsIntentPath(this.repositoryRoot), { force: true });
         throw new NatsFixtureError(
-          "Local AIO NATS startup qualification failed; only the new owned server was removed.",
+          "Local AIO NATS startup qualification failed; only the new owned resources were removed.",
         );
       }
     });
@@ -210,7 +239,8 @@ export class NatsFixtureLifecycle {
       await this.recoverInterruptedStart();
       const record = await loadNatsFixtureRecord(this.repositoryRoot);
       if (record === undefined) return;
-      if ((await this.verifyOwnership(record)) !== "absent")
+      if (record.format === 2) await this.runtime.stop(record);
+      else if ((await this.verifyOwnership(record)) !== "absent")
         await this.docker(["rm", "--force", "--volumes", record.container], 30_000);
       await this.removeLocalRecord(record);
     });
@@ -274,7 +304,7 @@ export class NatsFixtureLifecycle {
 
   private summary(record: NatsFixtureRecord, subject: string): NatsFixtureStatus {
     return {
-      name: NATS_FIXTURE_NAME,
+      name: record.name,
       status: "ready",
       server: `nats://127.0.0.1:${record.port}`,
       caPath: join(record.directory, "ca.pem"),
@@ -303,6 +333,7 @@ export class NatsFixtureLifecycle {
   }
 
   private async verifyOwnership(record: NatsFixtureRecord): Promise<string> {
+    if (record.format === 2) return this.runtime.status(record);
     const found = await this.docker([
       "ps",
       "--all",
@@ -362,6 +393,16 @@ export class NatsFixtureLifecycle {
     await rm(natsRecordPath(this.repositoryRoot), { force: true });
   }
 
+  private async saveRecord(record: NatsFixtureRecord): Promise<void> {
+    const staging = join(natsOwnershipRoot(this.repositoryRoot), `.record-${randomUUID()}.json`);
+    try {
+      await writeFile(staging, `${JSON.stringify(record)}\n`, { mode: 0o600, flag: "wx" });
+      await rename(staging, natsRecordPath(this.repositoryRoot));
+    } finally {
+      await rm(staging, { force: true });
+    }
+  }
+
   private async saveStartIntent(intent: NatsFixtureIntent): Promise<void> {
     const staging = join(natsOwnershipRoot(this.repositoryRoot), `.intent-${randomUUID()}.json`);
     try {
@@ -376,8 +417,34 @@ export class NatsFixtureLifecycle {
     const intent = await loadNatsFixtureIntent(this.repositoryRoot);
     if (intent === undefined) return;
     const record = await loadNatsFixtureRecord(this.repositoryRoot);
+    if (intent.format === 2) {
+      if (record !== undefined) {
+        if (
+          record.format !== 2 ||
+          record.identity !== intent.identity ||
+          record.directory !== intent.directory ||
+          record.image !== intent.image ||
+          record.port !== intent.port ||
+          !intent.mutationsSettled ||
+          record.daemon !== intent.daemon ||
+          (intent.container !== undefined && record.container !== intent.container) ||
+          (intent.network !== undefined && record.network !== intent.network) ||
+          (intent.volume !== undefined && record.volume !== intent.volume)
+        )
+          throw new NatsFixtureError(
+            "Local AIO NATS start intent conflicts with committed ownership; no resource was changed.",
+          );
+        await rm(natsIntentPath(this.repositoryRoot), { force: true });
+        return;
+      }
+      await this.runtime.recover(intent);
+      await rm(intent.directory, { recursive: true, force: true });
+      await rm(natsIntentPath(this.repositoryRoot), { force: true });
+      return;
+    }
     if (record !== undefined) {
       if (
+        record.format !== 1 ||
         record.identity !== intent.identity ||
         record.directory !== intent.directory ||
         record.image !== intent.image ||

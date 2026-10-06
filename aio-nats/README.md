@@ -1,8 +1,8 @@
 # StreamSkope secure NATS fixture
 
 This persistent development lab is a sibling of `aio-kafka`. It runs one
-digest-pinned Core NATS server with verified TLS and a generated token. The
-same server definition powers disposable real-provider and browser tests;
+digest-pinned NATS server with verified TLS and a generated token. The
+pinned server definition also powers disposable real-provider and browser tests;
 those tests create separate containers and never remove this lab.
 
 This fixture is development infrastructure. It is excluded from desktop
@@ -12,9 +12,12 @@ packages. Keep it on loopback and do not reuse its credentials for production.
 
 - Linux arm64 or amd64, including an OrbStack guest
 - Node.js 24 and `npm ci`
-- Docker and OpenSSL
+- Docker, OpenSSL and Containerlab (verified with 0.79.0) with permission to manage labs
 
-Run commands from the repository root. No Containerlab or JetStream is needed.
+Run commands from the repository root. The persistent lab is deployed from
+`topology.clab.yml` through Containerlab. Disposable qualification servers use
+separate Docker containers. JetStream is not enabled. The fixture requires a
+local Unix Docker endpoint; remote Docker contexts are rejected before deployment.
 
 ## Start and connect
 
@@ -24,8 +27,8 @@ npm run dev
 
 The web-development launcher ensures both AIO labs are healthy and seeds an
 empty, host-owned NATS profile store with a session-only **Local AIO NATS**
-profile. Select the **NATS** provider, connect that profile, and subscribe
-to `streamskope.fixture.>`.
+profile. Open **Connection Profiles**, connect its NATS row, open
+**Live Subscription** and subscribe to `streamskope.fixture.>`.
 
 The NATS lab can also run without the workbench:
 
@@ -42,7 +45,9 @@ on the same Linux host. An app on another host needs an explicitly configured
 secure tunnel: the fixture is intentionally not exposed beyond loopback.
 
 Repeat `start` to reuse the verified owned server and certificates. It resumes
-stopped containers without deleting data or rotating credentials. Generated
+stopped containers without replacing their container, network or private volume IDs
+or rotating credentials. An existing legacy Docker fixture remains usable;
+explicitly stop it and start again to migrate to Containerlab. Generated
 certificates last one year. Change the port in `fixture.config.json` only after
 stopping the owned fixture; an occupied port or foreign container is never
 automatically removed.
@@ -93,27 +98,38 @@ sample configuration.
 npm run dev -- nats stop
 ```
 
-Stop requires the stored container ID, name, pinned image and UUID labels to
-match the daemon. It removes only that server, its anonymous private volume,
-generated certificate directory and ownership record. Repeat stop is harmless.
+Stop verifies the recorded Docker daemon identity, full resource IDs, names,
+pinned image and UUID labels. Switching to a different Docker daemon blocks
+resource reconciliation and private-file cleanup. Legacy Docker-only ownership
+records must be used with their original Docker context until migrated.
+It uses Containerlab to remove its server, then independently checks its private
+volume and management network are absent. A volume used by another container
+or a foreign endpoint on that network blocks cleanup. Private certificates and
+ownership files are erased only after resource cleanup is confirmed. Repeat stop
+is harmless. Existing legacy Docker fixtures retain their original owned-container
+cleanup path until explicitly migrated.
 
 If startup fails, check Docker/OpenSSL, the configured port and the private
-ownership directory. Do not delete a conflicting container that belongs to
+ownership directory. Do not delete a conflicting resource that belongs to
 another project. Interrupted startup has a private UUID intent written before
-container creation; retry compensates only a matching owned container. If stop
-already removed the container, retry finishes private file cleanup after successful
-daemon queries confirm that its full ID and name are absent. A failed daemon
+deployment; retry compensates only matching owned resources. If stop
+already removed the container, retry checks remaining volume and network resources
+before finishing private file cleanup. A failed daemon
 query or foreign name is never treated as successful cleanup. Changed configuration
 requires explicit stop; the launcher refuses to claim an unverified resource.
 Expired certificates can be renewed by stopping a verified
 owned fixture and starting it again.
 
-If a Docker create call fails or times out without returning a container ID,
+If a Docker resource-create call fails or times out without returning a full ID,
 its daemon-side completion may still be pending. The private intent and files
-remain available; a single empty container listing cannot establish cleanup.
-Retry `stop` once the matching UUID container appears. If it never appears,
-establish that the original daemon request has quiesced before manually clearing
-that intent and its preparation directory. Preserve the evidence when that
+remain available; a single empty resource listing cannot establish cleanup.
+Normal cancellation seals the private deployment adapter and waits for begun
+mutations to settle before recording completion. After forced termination, retry
+`stop` only when the recorded operation is confirmed to have quiesced. If its
+completion is unknown,
+establish that the original daemon request has quiesced and independently verify
+that all matching owned resources are absent before manually clearing that intent
+and its preparation directory. Preserve the evidence when that
 cannot be confirmed, and account for other labs before performing Docker recovery.
 The launcher never starts a second competing creation request in this state.
 
@@ -174,4 +190,7 @@ automatic 60-second pipeline soak.
 
 All content under `ownership/` is private and Git-ignored. Do not commit token
 files, server configuration, certificates, signing keys, ownership records or
-Docker runtime output. Published product documentation belongs in `website/docs`.
+generated topology, Containerlab runtime output or Docker runtime output.
+The source topology contains placeholders, not credentials. Each deployment uses
+a unique UUID lab and a daemon-assigned subnet; its full UUID labels and resource
+IDs establish ownership. Published product documentation belongs in `website/docs`.

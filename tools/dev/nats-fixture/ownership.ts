@@ -15,7 +15,7 @@ export class NatsFixtureError extends Error {
 
 export const NATS_FIXTURE_NAME = "streamskope-nats";
 
-export interface NatsFixtureRecord {
+export interface NatsLegacyFixtureRecord {
   readonly format: 1;
   readonly name: typeof NATS_FIXTURE_NAME;
   readonly identity: string;
@@ -25,9 +25,60 @@ export interface NatsFixtureRecord {
   readonly port: number;
 }
 
-export interface NatsFixtureIntent extends Omit<NatsFixtureRecord, "container"> {
+export interface NatsLegacyFixtureIntent extends Omit<NatsLegacyFixtureRecord, "container"> {
   readonly creationStarted: boolean;
   readonly container?: string;
+}
+
+export interface NatsContainerlabFixtureIdentity {
+  readonly format: 2;
+  readonly name: string;
+  readonly lab: string;
+  readonly identity: string;
+  readonly directory: string;
+  readonly image: string;
+  readonly port: number;
+  readonly topologyPath: string;
+  readonly runtimeDirectory: string;
+  readonly networkName: string;
+}
+
+export interface NatsContainerlabFixtureRecord extends NatsContainerlabFixtureIdentity {
+  readonly daemon: string;
+  readonly container: string;
+  readonly network: string;
+  readonly volume: string;
+}
+
+export interface NatsContainerlabFixtureIntent extends NatsContainerlabFixtureIdentity {
+  readonly creationStarted: boolean;
+  /** True after deployment ended, its adapter sealed, and every begun mutation settled. */
+  readonly mutationsSettled: boolean;
+  readonly daemon?: string;
+  readonly container?: string;
+  readonly network?: string;
+  readonly volume?: string;
+}
+
+export type NatsFixtureRecord = NatsLegacyFixtureRecord | NatsContainerlabFixtureRecord;
+export type NatsFixtureIntent = NatsLegacyFixtureIntent | NatsContainerlabFixtureIntent;
+
+export function natsContainerlabPaths(
+  identity: string,
+  directory: string,
+): Pick<
+  NatsContainerlabFixtureIdentity,
+  "name" | "lab" | "topologyPath" | "runtimeDirectory" | "networkName"
+> {
+  const lab = `sk-nats-${identity}`;
+  return {
+    lab,
+    name: `clab-${lab}-server`,
+    topologyPath: join(directory, "topology.clab.yml"),
+    runtimeDirectory: join(directory, `clab-${lab}`),
+    // Also fits a Linux bridge name; full UUID labels and daemon ID establish ownership.
+    networkName: `skn-${identity.replaceAll("-", "").slice(0, 10)}`,
+  };
 }
 
 export function natsOwnershipRoot(repositoryRoot: string): string {
@@ -49,10 +100,10 @@ export async function readPrivateFixtureFile(path: string, limit: number): Promi
   return readFile(path, "utf8");
 }
 
-export function parseNatsFixtureRecord(value: unknown, repositoryRoot: string): NatsFixtureRecord {
+function parseLegacyFixtureRecord(value: unknown, repositoryRoot: string): NatsLegacyFixtureRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new NatsFixtureError("Local AIO NATS ownership record is invalid.");
-  const record = value as Partial<NatsFixtureRecord>;
+  const record = value as Partial<NatsLegacyFixtureRecord>;
   if (
     record.format !== 1 ||
     record.name !== NATS_FIXTURE_NAME ||
@@ -76,7 +127,122 @@ export function parseNatsFixtureRecord(value: unknown, repositoryRoot: string): 
     throw new NatsFixtureError(
       "Local AIO NATS ownership record is invalid; no resource was changed.",
     );
-  return record as NatsFixtureRecord;
+  return record as NatsLegacyFixtureRecord;
+}
+
+function containerlabIdentity(
+  value: unknown,
+  repositoryRoot: string,
+): NatsContainerlabFixtureIdentity {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new NatsFixtureError("Local AIO NATS Containerlab ownership is invalid.");
+  const candidate = value as Record<string, unknown>;
+  // Reuse the established UUID, image, port and private instance-directory checks.
+  const base = parseLegacyFixtureRecord(
+    { ...candidate, format: 1, name: NATS_FIXTURE_NAME, container: "0".repeat(64) },
+    repositoryRoot,
+  );
+  const paths = natsContainerlabPaths(base.identity, base.directory);
+  if (
+    candidate.format !== 2 ||
+    Object.entries(paths).some(([key, expected]) => candidate[key] !== expected)
+  )
+    throw new NatsFixtureError(
+      "Local AIO NATS Containerlab paths or names are invalid; no resource was changed.",
+    );
+  return {
+    format: 2,
+    identity: base.identity,
+    directory: base.directory,
+    image: base.image,
+    port: base.port,
+    ...paths,
+  };
+}
+
+export function validNatsDaemonIdentity(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9:._-]{7,127}$/u.test(value);
+}
+
+function daemonId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+}
+
+export function parseNatsFixtureRecord(value: unknown, repositoryRoot: string): NatsFixtureRecord {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    (value as { format?: unknown }).format !== 2
+  )
+    return parseLegacyFixtureRecord(value, repositoryRoot);
+  const base = containerlabIdentity(value, repositoryRoot);
+  const candidate = value as Record<string, unknown>;
+  if (
+    !validNatsDaemonIdentity(candidate.daemon) ||
+    !daemonId(candidate.container) ||
+    !daemonId(candidate.network) ||
+    !daemonId(candidate.volume)
+  )
+    throw new NatsFixtureError(
+      "Local AIO NATS Containerlab resource identities are invalid; no resource was changed.",
+    );
+  return {
+    ...base,
+    daemon: candidate.daemon,
+    container: candidate.container,
+    network: candidate.network,
+    volume: candidate.volume,
+  };
+}
+
+export function parseNatsFixtureIntent(value: unknown, repositoryRoot: string): NatsFixtureIntent {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new NatsFixtureError("Local AIO NATS start intent is invalid.");
+  const candidate = value as Record<string, unknown>;
+  if (candidate.format === 2) {
+    const base = containerlabIdentity(value, repositoryRoot);
+    if (
+      typeof candidate.creationStarted !== "boolean" ||
+      typeof candidate.mutationsSettled !== "boolean" ||
+      (candidate.daemon !== undefined && !validNatsDaemonIdentity(candidate.daemon)) ||
+      (candidate.creationStarted && !validNatsDaemonIdentity(candidate.daemon)) ||
+      ["container", "network", "volume"].some(
+        (key) => candidate[key] !== undefined && !daemonId(candidate[key]),
+      ) ||
+      (!candidate.creationStarted &&
+        ["container", "network", "volume"].some((key) => candidate[key] !== undefined))
+    )
+      throw new NatsFixtureError("Local AIO NATS Containerlab start intent is invalid.");
+    return {
+      ...base,
+      creationStarted: candidate.creationStarted,
+      mutationsSettled: candidate.mutationsSettled,
+      ...(typeof candidate.daemon === "string" ? { daemon: candidate.daemon } : {}),
+      ...(typeof candidate.container === "string" ? { container: candidate.container } : {}),
+      ...(typeof candidate.network === "string" ? { network: candidate.network } : {}),
+      ...(typeof candidate.volume === "string" ? { volume: candidate.volume } : {}),
+    };
+  }
+  const record = parseLegacyFixtureRecord(
+    { ...candidate, container: "0".repeat(64) },
+    repositoryRoot,
+  );
+  if (
+    (candidate.creationStarted !== undefined && typeof candidate.creationStarted !== "boolean") ||
+    (candidate.container !== undefined && !daemonId(candidate.container))
+  )
+    throw new NatsFixtureError("Local AIO NATS start intent is invalid.");
+  return {
+    format: 1,
+    name: record.name,
+    identity: record.identity,
+    directory: record.directory,
+    image: record.image,
+    port: record.port,
+    creationStarted: candidate.creationStarted ?? true,
+    ...(typeof candidate.container === "string" ? { container: candidate.container } : {}),
+  };
 }
 
 export async function loadNatsFixtureRecord(
@@ -102,27 +268,7 @@ export async function loadNatsFixtureIntent(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-  const value: unknown = JSON.parse(bytes);
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    throw new NatsFixtureError("Local AIO NATS start intent is invalid.");
-  const record = parseNatsFixtureRecord({ ...value, container: "0".repeat(64) }, repositoryRoot);
-  const metadata = value as { readonly creationStarted?: unknown; readonly container?: unknown };
-  if (
-    (metadata.creationStarted !== undefined && typeof metadata.creationStarted !== "boolean") ||
-    (metadata.container !== undefined &&
-      (typeof metadata.container !== "string" || !/^[a-f0-9]{64}$/u.test(metadata.container)))
-  )
-    throw new NatsFixtureError("Local AIO NATS start intent is invalid.");
-  return {
-    format: record.format,
-    name: record.name,
-    identity: record.identity,
-    directory: record.directory,
-    image: record.image,
-    port: record.port,
-    creationStarted: metadata.creationStarted ?? true,
-    ...(typeof metadata.container === "string" ? { container: metadata.container } : {}),
-  };
+  return parseNatsFixtureIntent(JSON.parse(bytes) as unknown, repositoryRoot);
 }
 
 export async function natsFixtureConnection(
