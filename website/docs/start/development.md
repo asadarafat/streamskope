@@ -104,7 +104,10 @@ fixtures, separate from live EDA or NSP traffic.
 The default batch publishes two records per second for 60 seconds. For a shorter
 run, use `npm run dev -- nats publish --seconds 5 --rate 2`.
 
-The lab uses verified TLS and a private generated token. Startup loads both into
+Like `aio-kafka`, the persistent `aio-nats` lab uses Containerlab. Its source
+topology is `aio-nats/topology.clab.yml`; startup gives each instance a unique
+lab name and a daemon-assigned management subnet. The lab uses verified TLS and
+a private generated token. Startup loads both into
 the development host without printing the token. Browser profiles stay in memory;
 the lab's credentials and ownership record stay under `aio-nats/ownership/`, which
 Git ignores. See [NATS live subscriptions](../guide/core-nats.md) for subscription and recovery
@@ -118,8 +121,13 @@ npm run dev -- nats status
 npm run dev -- nats stop
 ```
 
-Repeated startup reuses the owned server. Stop removes that lab and its private
-configuration; it does not stop unrelated NATS, Kafka or Containerlab workloads.
+Repeated startup reuses the owned server and credentials. Stop checks the
+server, private volume and management network before erasing private files; it
+preserves ownership evidence if cleanup is unconfirmed. Existing Docker-only
+NATS fixtures keep working until an explicit stop/start migrates them. This
+fixture uses a local Unix Docker endpoint. See the checkout
+[`aio-nats/README.md`](https://github.com/asadarafat/streamskope/blob/main/aio-nats/README.md)
+for prerequisites and interrupted-deployment recovery.
 
 ## Test a development plugin
 

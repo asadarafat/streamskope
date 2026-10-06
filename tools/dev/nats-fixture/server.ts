@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ import type { NatsConnectionInput } from "../../../src/features/nats/application
 
 import { NATS_SERVER_IMAGES } from "./definition";
 import { boundedNatsOperation } from "./client";
+import { prepareNatsMaterial, writeNatsMaterialConfig } from "./materials";
 
 const execute = promisify(execFile);
 
@@ -86,7 +87,6 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
   if (!Number.isSafeInteger(certificateDays) || certificateDays < 1 || certificateDays > 365)
     throw new Error("NATS fixture certificate lifetime is invalid.");
   const directory = options.directory ?? (await mkdtemp(join(tmpdir(), "streamskope-nats-")));
-  const token = randomBytes(32).toString("hex");
   const anonymous = options.authentication === "anonymous-restricted";
   const hostLoopback = options.network === "host-loopback";
   const clients = new Set<NatsConnection>();
@@ -198,113 +198,13 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
 
   try {
     options.signal?.throwIfAborted();
-    await chmod(directory, 0o700);
-    await run(
-      "openssl",
-      [
-        "req",
-        "-x509",
-        "-newkey",
-        "rsa:2048",
-        "-nodes",
-        "-keyout",
-        join(directory, "ca-key.pem"),
-        "-out",
-        join(directory, "ca.pem"),
-        "-days",
-        String(certificateDays),
-        "-subj",
-        "/CN=StreamSkope isolated NATS CA",
-        "-addext",
-        "basicConstraints=critical,CA:TRUE",
-      ],
-      { timeout: 30_000 },
-    );
-    await run(
-      "openssl",
-      [
-        "req",
-        "-new",
-        "-newkey",
-        "rsa:2048",
-        "-nodes",
-        "-keyout",
-        join(directory, "server-key.pem"),
-        "-out",
-        join(directory, "server.csr"),
-        "-subj",
-        "/CN=localhost",
-      ],
-      { timeout: 30_000 },
-    );
-    await run(
-      "openssl",
-      [
-        "req",
-        "-x509",
-        "-newkey",
-        "rsa:2048",
-        "-nodes",
-        "-keyout",
-        join(directory, "untrusted-ca-key.pem"),
-        "-out",
-        join(directory, "untrusted-ca.pem"),
-        "-days",
-        String(certificateDays),
-        "-subj",
-        "/CN=StreamSkope unrelated NATS CA",
-        "-addext",
-        "basicConstraints=critical,CA:TRUE",
-      ],
-      { timeout: 30_000 },
-    );
-    await writeFile(
-      join(directory, "server.ext"),
-      [
-        "basicConstraints=critical,CA:FALSE",
-        "keyUsage=critical,digitalSignature,keyEncipherment",
-        "extendedKeyUsage=serverAuth",
-        options.certificate === "dns-only"
-          ? "subjectAltName=DNS:localhost"
-          : "subjectAltName=DNS:localhost,IP:127.0.0.1",
-        "",
-      ].join("\n"),
-      { mode: 0o600 },
-    );
-    await run(
-      "openssl",
-      [
-        "x509",
-        "-req",
-        "-in",
-        join(directory, "server.csr"),
-        "-CA",
-        join(directory, "ca.pem"),
-        "-CAkey",
-        join(directory, "ca-key.pem"),
-        "-CAcreateserial",
-        "-out",
-        join(directory, "server.pem"),
-        "-days",
-        String(certificateDays),
-        "-sha256",
-        "-extfile",
-        join(directory, "server.ext"),
-      ],
-      { timeout: 30_000 },
-    );
-    await Promise.all(
-      [
-        "ca-key.pem",
-        "ca.pem",
-        "untrusted-ca-key.pem",
-        "untrusted-ca.pem",
-        "server-key.pem",
-        "server.csr",
-        "server.pem",
-        "ca.srl",
-      ].map((file) => chmod(join(directory, file), 0o600)),
-    );
+    const material = await prepareNatsMaterial({
+      directory,
+      certificateDays,
+      certificate: options.certificate,
+      signal: options.signal,
+    });
+    const token = material.token;
     let configuredPort = 4222;
     if (hostLoopback) {
       phase = "owned loopback port reservation";
@@ -323,27 +223,12 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
         throw new Error("The owned NATS loopback port reservation was invalid.");
       configuredPort = address.port;
     }
-    await writeFile(
-      join(directory, "nats.conf"),
-      [
-        `server_name: "${name}"`,
-        `host: "${hostLoopback ? "127.0.0.1" : "0.0.0.0"}"`,
-        `port: ${configuredPort}`,
-        "max_payload: 1048576",
-        'write_deadline: "2s"',
-        "debug: false",
-        "trace: false",
-        ...(anonymous
-          ? [
-              'no_auth_user: "fixture-anonymous"',
-              'authorization { users: [{user: "fixture-anonymous", permissions: {publish: ">", subscribe: "qualification.allowed"}}], timeout: 2 }',
-            ]
-          : [`authorization { token: "${token}", timeout: 2 }`]),
-        'tls { cert_file: "/fixture/server.pem", key_file: "/fixture/server-key.pem", timeout: 2 }',
-        "",
-      ].join("\n"),
-      { mode: 0o600 },
-    );
+    await writeNatsMaterialConfig(material, {
+      name,
+      host: hostLoopback ? "127.0.0.1" : "0.0.0.0",
+      port: configuredPort,
+      authentication: options.authentication,
+    });
     phase = "pinned image availability";
     try {
       await run("docker", ["image", "inspect", image], { timeout: 10_000 });
@@ -431,8 +316,8 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
       throw new Error("Owned NATS fixture port is invalid.");
     const server = `nats://localhost:${port}`;
     const ipServer = `nats://127.0.0.1:${port}`;
-    const caPem = await readFile(join(directory, "ca.pem"), "utf8");
-    const untrustedCaPem = await readFile(join(directory, "untrusted-ca.pem"), "utf8");
+    const caPem = material.caPem;
+    const untrustedCaPem = material.untrustedCaPem;
     const publisher = (): Promise<NatsConnection> => {
       if (closing) return Promise.reject(new Error("The owned NATS fixture is already closing."));
       const opening = connect({

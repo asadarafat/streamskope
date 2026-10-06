@@ -1,0 +1,25 @@
+name: ${STREAMSKOPE_NATS_LAB}
+mgmt:
+  network: ${STREAMSKOPE_NATS_NETWORK}
+  ipv4-subnet: auto
+  ipv6-subnet: ""
+  external-access: false
+topology:
+  nodes:
+    server:
+      kind: linux
+      image: ${STREAMSKOPE_NATS_IMAGE}
+      image-pull-policy: Never
+      user: "0:0"
+      entrypoint: nats-server
+      cmd: --config /fixture/nats.conf
+      privileged: false
+      memory: 128MiB
+      cpu: 0.5
+      security-opts:
+        - no-new-privileges:true
+      ports:
+        - 127.0.0.1:${STREAMSKOPE_NATS_PORT}:4222/tcp
+      labels:
+        io.streamskope.fixture: nats
+        io.streamskope.fixture.id: ${STREAMSKOPE_NATS_IDENTITY}
