@@ -249,7 +249,9 @@ it("does not expire or discard a reviewed package while its admitted installatio
       fireEvent.click(within(review).getByRole("button", { name: "Install plugin" }));
       return Promise.resolve();
     });
-    await act((): Promise<void> => vi.advanceTimersByTimeAsync(5_001));
+    await act(async (): Promise<void> => {
+      await vi.advanceTimersByTimeAsync(5_001);
+    });
     expect(within(review).getByRole("button", { name: "Applying change…" })).toBeDisabled();
     expect(review).not.toHaveTextContent("This review expired");
     expect(commands.some((command) => command.command === "plugins.package.discard")).toBe(false);
@@ -287,7 +289,9 @@ it("expires a reviewed package without starting installation and releases its re
     });
     const review = screen.getByRole("dialog", { name: "Review plugin" });
     expect(within(review).getByRole("button", { name: "Install plugin" })).toBeEnabled();
-    await act((): Promise<void> => vi.advanceTimersByTimeAsync(5_001));
+    await act(async (): Promise<void> => {
+      await vi.advanceTimersByTimeAsync(5_001);
+    });
     expect(review).toHaveTextContent("This review expired");
     expect(
       within(review).queryByRole("button", { name: "Install plugin" }),
