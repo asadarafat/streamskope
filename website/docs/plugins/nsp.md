@@ -119,9 +119,8 @@ establish qualification of a published plugin upgrade or NSP Kafka OAuth.
 
 ### Compatibility package
 
-The development API 4 package targets **NSP 26.4.0** and declares desktop
-**>=0.4.0, <0.8.0**. These are compatibility bounds, not a promised release
-number; the plugin version is assigned when its release workflow starts. See
+The source API 4 package targets **NSP 26.4.0**. Its version is assigned when
+the plugin release workflow starts. See
 the [manifest-derived declarations](versioning.md#declared-packages) for its
 development identity, desktop bounds and inclusive target range. The official
 release catalog establishes which packages are available to install.
