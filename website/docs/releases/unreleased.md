@@ -22,6 +22,10 @@ list them. Existing immutable plugin packages keep their original requirements.
 
 ## Upgrade and qualification
 
+Transactional plugin browser checks use the supported reduced-motion interface,
+and disposable Kafka replication brokers bound their log-cleaner buffers within
+the fixture heap. These qualification changes preserve the exercised workflows.
+
 Host protocol 52 and plugin API 4 remain unchanged. Installer upgrades and
 rollback are not qualified by documentation checks. The qualification report
 records actual package, native file-import and live target evidence separately.

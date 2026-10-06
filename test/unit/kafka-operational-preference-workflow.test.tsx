@@ -133,7 +133,13 @@ describe("Kafka operational-preference Material UI workflow", () => {
     render(<StreamSkopeWorkbench host={host} />);
 
     await user.click(screen.getByRole("button", { name: "Preferences" }));
-    const dialog = await screen.findByRole("dialog", { name: "Workbench Preferences" });
+    // The first opening loads the preferences surface lazily; retain the pending
+    // host state while awaiting that cold module on a busy qualification worker.
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Workbench Preferences" },
+      { timeout: 5_000 },
+    );
     expect(
       within(dialog).getByText(
         "Defaults and limits for message reads, monitoring, latency probes, and rule output.",
