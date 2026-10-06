@@ -492,6 +492,8 @@ export class Ssh2KafkaSshConnector implements KafkaSshConnector {
         signal?.removeEventListener("abort", abort);
         client.removeListener("error", error);
         client.removeListener("close", close);
+        // Destroying a connected client before its handshake can emit a late protocol error.
+        client.on("error", () => undefined);
         complete();
       };
       const abort = (): void => {
@@ -525,7 +527,6 @@ export class Ssh2KafkaSshConnector implements KafkaSshConnector {
       }, REMOTE_TRUST_ACQUISITION_LIMITS.readyMs);
       client.once("ready", () => {
         finish(() => {
-          client.on("error", () => undefined);
           resolve(new Ssh2KafkaSshSession(client, targetName));
         });
       });
