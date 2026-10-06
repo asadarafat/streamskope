@@ -314,11 +314,12 @@ describe("plugin shutdown and profile boundaries", () => {
       },
     });
     const pending = runtime.install(manifest.id);
-    const rejected = expect(pending).rejects.toThrow(/closing/u);
+    const rejected = expect(pending).rejects.toThrow("Plugin acquisition was cancelled.");
     await entered.promise;
     await runtime.close();
     download.resolve({ bytes, sha256 });
     await rejected;
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(await store.list()).toMatchObject([{ pending: null, restartRequired: false }]);
   });
 

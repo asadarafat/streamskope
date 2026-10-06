@@ -22,6 +22,8 @@ const native = vi.hoisted(() => {
     protectionReceipts,
     providerIds: [] as string[],
     bindingIds: [] as string[],
+    pluginSessions: [] as { partition: string; cache: boolean }[],
+    pluginTransport: undefined as { readonly nativeAvailable: boolean } | undefined,
     natsCreateFailure: undefined as Error | undefined,
     shellCreated: 0,
     restart: undefined as (() => void) | undefined,
@@ -55,11 +57,30 @@ vi.mock("electron", () => ({
   app: native.app,
   dialog: { showMessageBox: (): Promise<{ response: number }> => Promise.resolve({ response: 0 }) },
   safeStorage: {},
+  session: {
+    fromPartition: (partition: string, options: { cache: boolean }): object => {
+      native.pluginSessions.push({ partition, cache: options.cache });
+      return {
+        setProxy: (): Promise<void> => Promise.resolve(),
+        closeAllConnections: (): Promise<void> => Promise.resolve(),
+        clearAuthCache: (): Promise<void> => Promise.resolve(),
+      };
+    },
+  },
+  net: {
+    request: (): never => {
+      throw new Error("Unexpected entry fixture download.");
+    },
+  },
 }));
 vi.mock("../../src/platform/node/plugins/runtime", () => ({
   PluginRuntime: class {
-    constructor(options: { readonly restart: () => void }) {
+    constructor(options: {
+      readonly restart: () => void;
+      readonly networkTransport: { readonly nativeAvailable: boolean };
+    }) {
       native.restart = options.restart;
+      native.pluginTransport = options.networkTransport;
     }
   },
 }));
@@ -143,6 +164,8 @@ beforeEach(() => {
   native.protectionReceipts.nats = undefined;
   native.providerIds = [];
   native.bindingIds = [];
+  native.pluginSessions = [];
+  native.pluginTransport = undefined;
   native.natsCreateFailure = undefined;
   native.shellCreated = 0;
   native.restart = undefined;
@@ -170,6 +193,10 @@ describe("Electron entry cleanup ownership", () => {
     expect(native.protectionReceipts.nats).toBe(native.profileProtection);
     expect(native.providerIds).toEqual(["kafka", "nats"]);
     expect(native.bindingIds).toEqual(["kafka", "nats"]);
+    expect(native.pluginSessions).toEqual([
+      { partition: "streamskope-plugin-downloads", cache: false },
+    ]);
+    expect(native.pluginTransport?.nativeAvailable).toBe(true);
     closeWindows();
     await vi.waitFor(() => expect(native.exitCodes).toEqual([0]));
     expect(native.shutdownCalls).toBe(1);

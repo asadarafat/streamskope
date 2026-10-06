@@ -36,6 +36,11 @@ import {
   text,
   truth,
 } from "./validation-primitives";
+import {
+  parsePluginNetworkCommand,
+  parsePluginNetworkEvent,
+  parsePluginNetworkResponse,
+} from "./plugin-network-protocol";
 
 function pluginValue<T>(parse: () => T, path: string): T {
   try {
@@ -373,6 +378,8 @@ export function parsePluginHostCommand(
   value: unknown,
   version: typeof HOST_PROTOCOL_VERSION,
 ): HostCommand | undefined {
+  const networkCommand = parsePluginNetworkCommand(command, requestId, value, version);
+  if (networkCommand !== undefined) return networkCommand;
   if (command !== "plugin.execute" && !command.startsWith("plugins.")) return undefined;
   const payload = record(value, "command.payload");
   switch (command) {
@@ -522,10 +529,13 @@ export function parsePluginHostResponse(
   value: unknown,
   version: typeof HOST_PROTOCOL_VERSION,
 ): HostCommandResponse | undefined {
+  const networkResponse = parsePluginNetworkResponse(command, requestId, value, version);
+  if (networkResponse !== undefined) return networkResponse;
   if (
     command !== "plugin.execute" &&
     (!command.startsWith("plugins.") ||
       command === "plugins.restart" ||
+      command === "plugins.network.cancel" ||
       command === "plugins.package.discard")
   )
     return undefined;
@@ -607,6 +617,8 @@ export function parsePluginHostEvent(
   sequence: number,
   version: typeof HOST_PROTOCOL_VERSION,
 ): HostEvent | undefined {
+  const networkEvent = parsePluginNetworkEvent(event, value, sequence, version);
+  if (networkEvent !== undefined) return networkEvent;
   if (event === "plugins.changed") return { event, sequence, version, payload: snapshot(value) };
   if (event !== "plugin.event") return undefined;
   const payload = record(value, "event.payload");

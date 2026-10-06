@@ -134,6 +134,53 @@ export interface PluginDeliverySnapshot {
   readonly cachedPackages: readonly PluginCachedPackage[];
 }
 
+export interface PluginNetworkConfiguration {
+  readonly mode: "system" | "custom";
+  readonly offline: boolean;
+  /** Remembered HTTP/HTTPS proxy origin, without credentials, path, query or fragment. */
+  readonly proxyUrl: string | null;
+}
+
+export type PluginProxyCredentialsChange =
+  | { readonly action: "unchanged" }
+  | { readonly action: "clear" }
+  | { readonly action: "replace"; readonly username: string; readonly password: string };
+
+export interface PluginNetworkUpdateInput {
+  readonly configuration: PluginNetworkConfiguration;
+  /** Credentials are write-only and are scoped to the remembered proxy origin. */
+  readonly credentials: PluginProxyCredentialsChange;
+}
+
+export interface PluginNetworkSnapshot {
+  readonly revision: number;
+  /** Null means saved settings cannot be read safely; remote acquisition remains blocked. */
+  readonly configuration: PluginNetworkConfiguration | null;
+  readonly credentialsConfigured: boolean;
+  readonly credentialStorage: "encrypted" | "session" | "unavailable";
+  readonly nativeAvailable: boolean;
+  readonly supportedProxyProtocols: readonly ("http" | "https")[];
+  readonly error?: string;
+}
+
+export interface PluginNetworkTestResult {
+  readonly settingsRevision: number;
+  readonly checkedAt: string;
+  readonly scope: "catalog-only" | "catalog-and-assets";
+  /** Required for catalog-only results so an untested asset route is never implied. */
+  readonly detail?: string;
+}
+
+export interface PluginAcquisitionProgress {
+  readonly requestId: string;
+  readonly operation: "catalog" | "inspect" | "test";
+  readonly phase: "catalog" | "download" | "verify";
+  readonly state: "running" | "succeeded" | "cancelled" | "failed";
+  /** Bounded counts for the current transfer; unknown totals are omitted. */
+  readonly receivedBytes?: number;
+  readonly totalBytes?: number;
+}
+
 export interface PluginExitPrompt {
   readonly pluginId: string;
   readonly title: string;

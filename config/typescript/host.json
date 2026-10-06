@@ -27,6 +27,7 @@
     "../../src/plugins/contracts.ts",
     "../../src/plugins/api.ts",
     "../../src/plugins/validation.ts",
+    "../../src/plugins/network-validation.ts",
     "../../src/plugins/compatibility.ts",
     "../../src/plugins/host-release.ts",
     "../../package.json",

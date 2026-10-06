@@ -387,6 +387,7 @@ export type {
   HostCommandFailure,
   HostCommandName,
   HostCommandResponse,
+  KafkaHostExecute,
   HostError,
   HostErrorCode,
   HostErrorStage,

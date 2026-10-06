@@ -13,6 +13,7 @@ import { AtomicKafkaProfileFileStore } from "../../node/kafka-profile-file-store
 import { DesktopOperationalPreferenceStore } from "../../node/desktop-operational-preference-store";
 import { AtomicKafkaRuleFileStore } from "../../node/kafka-rule-file-store";
 import { AtomicKafkaTopicConfigurationHistoryFileStore } from "../../node/kafka-topic-configuration-history-file-store";
+import type { PluginNetworkTransport } from "../../node/plugins/network-transport";
 
 import type { PluginPackageFilePicker } from "./plugin-file-picker";
 import {
@@ -28,6 +29,7 @@ export interface ElectronKafkaBackendOptions {
   readonly plugins?: PluginRuntime;
   readonly profileProtection?: ElectronProfileProtection;
   readonly choosePackageFile?: PluginPackageFilePicker;
+  readonly networkTransport?: PluginNetworkTransport;
 }
 
 export async function createElectronKafkaBackend(
@@ -58,6 +60,10 @@ export async function createElectronKafkaBackend(
     options.plugins ??
     new PluginRuntime({
       store: new PluginStore(join(options.userDataPath, "plugins")),
+      ...(options.networkTransport === undefined
+        ? {}
+        : { networkTransport: options.networkTransport }),
+      ...(protection.protector === undefined ? {} : { networkProtector: protection.protector }),
       ...(options.choosePackageFile === undefined
         ? {}
         : { choosePackageFile: options.choosePackageFile }),

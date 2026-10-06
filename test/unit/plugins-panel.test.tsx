@@ -322,6 +322,7 @@ it("installs only on request and immediately activates the plugin", async () => 
     "plugins.list",
     "plugins.catalog",
     "plugins.delivery",
+    "plugins.network.get",
     "plugins.catalog",
   ]);
   await user.click(screen.getByRole("button", { name: "Install" }));

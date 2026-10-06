@@ -1,8 +1,9 @@
 import type { PluginCatalogSnapshot, PluginPackageReference } from "../../../plugins/contracts";
 import { isPluginCompatibleWithHost, isPrereleaseVersion } from "../../../plugins/validation";
 
-import type { OfficialPluginCatalog, OfficialPluginEntry } from "./catalog";
+import type { OfficialPluginCatalog, OfficialPluginEntry, PluginCatalogRequest } from "./catalog";
 import type { PluginCatalogCache, StoredPluginCatalog } from "./catalog-cache";
+import { pluginNetworkProblem } from "./network-errors";
 
 export interface PluginCatalogDiscoveryOptions {
   readonly source: Pick<OfficialPluginCatalog, "list">;
@@ -11,15 +12,25 @@ export interface PluginCatalogDiscoveryOptions {
   readonly assertOpen: () => void;
   readonly persist?: boolean;
 }
+interface Refresh {
+  readonly controller: AbortController;
+  readonly generation: number;
+  readonly owners: Map<symbol, PluginCatalogRequest["onProgress"]>;
+  readonly result: Promise<PluginCatalogSnapshot>;
+}
+interface DiscoveryRequest extends PluginCatalogRequest {
+  readonly throwOnFailure?: boolean;
+}
 
-function summary(error: unknown): string {
-  return error instanceof Error ? error.message.slice(0, 1_024) : "The plugin could not be loaded.";
+function summary(): string {
+  return "Plugin catalog is unavailable. Check plugin download settings, refresh online, or install a signed file.";
 }
 
 /** Discovery has its own queue: a slow remote catalog never blocks installed plugin lifecycle work. */
 export class PluginCatalogDiscovery {
-  private refreshing: Promise<PluginCatalogSnapshot> | undefined;
+  private refreshing: Refresh | undefined;
   private memory: StoredPluginCatalog | undefined;
+  private generation = 0;
 
   constructor(private readonly options: PluginCatalogDiscoveryOptions) {}
 
@@ -70,43 +81,107 @@ export class PluginCatalogDiscovery {
       return cached === undefined
         ? { plugins: [], source: "unavailable" }
         : this.snapshot(cached, "cache");
-    } catch (error) {
-      return { plugins: [], source: "unavailable", error: summary(error) };
+    } catch {
+      return { plugins: [], source: "unavailable", error: summary() };
     }
   }
 
-  async catalog(refresh = true): Promise<PluginCatalogSnapshot> {
+  invalidateRemote(): void {
+    this.generation += 1;
+    this.refreshing?.controller.abort();
+    this.refreshing = undefined;
+  }
+
+  async catalog(refresh = true, request: DiscoveryRequest = {}): Promise<PluginCatalogSnapshot> {
     this.options.assertOpen();
     if (!refresh) return this.cached();
-    if (this.refreshing !== undefined) return this.refreshing;
-    const current = this.refresh();
-    this.refreshing = current;
+    request.signal?.throwIfAborted();
+    if (this.refreshing === undefined || this.refreshing.controller.signal.aborted) {
+      const controller = new AbortController();
+      const generation = this.generation;
+      const owners = new Map<symbol, PluginCatalogRequest["onProgress"]>();
+      const result = Promise.resolve().then(() => this.refresh(controller, generation, owners));
+      const current = { controller, generation, owners, result };
+      this.refreshing = current;
+      void result.then(
+        () => {
+          if (this.refreshing === current) this.refreshing = undefined;
+        },
+        () => {
+          if (this.refreshing === current) this.refreshing = undefined;
+        },
+      );
+    }
+    const current = this.refreshing;
+    const owner = Symbol();
+    current.owners.set(owner, request.onProgress);
     try {
-      return await current;
+      return await new Promise<PluginCatalogSnapshot>((resolve, reject) => {
+        const abort = (): void => {
+          current.owners.delete(owner);
+          if (current.owners.size === 0) current.controller.abort();
+          reject(pluginNetworkProblem(request.signal?.reason, request.signal));
+        };
+        request.signal?.addEventListener("abort", abort, { once: true });
+        void current.result.then(
+          (value) => {
+            request.signal?.removeEventListener("abort", abort);
+            if (request.signal?.aborted) {
+              reject(pluginNetworkProblem(request.signal.reason, request.signal));
+              return;
+            }
+            resolve(value);
+          },
+          (error: unknown) => {
+            request.signal?.removeEventListener("abort", abort);
+            reject(pluginNetworkProblem(error));
+          },
+        );
+        if (request.signal?.aborted) abort();
+      });
+    } catch (error) {
+      if (request.throwOnFailure || request.signal?.aborted) throw error;
+      return { ...(await this.cached()), error: summary() };
     } finally {
-      if (this.refreshing === current) this.refreshing = undefined;
+      current.owners.delete(owner);
     }
   }
 
-  private async refresh(): Promise<PluginCatalogSnapshot> {
-    try {
-      const entries = await this.options.source.list();
+  private async refresh(
+    controller: AbortController,
+    generation: number,
+    owners: Map<symbol, PluginCatalogRequest["onProgress"]>,
+  ): Promise<PluginCatalogSnapshot> {
+    const assertCurrent = (): void => {
       this.options.assertOpen();
-      const catalog = { entries, checkedAt: new Date().toISOString() };
-      const snapshot = this.snapshot(catalog, "live");
+      controller.signal.throwIfAborted();
+      if (generation !== this.generation) throw new Error("Plugin catalog refresh was superseded.");
+    };
+    const entries = await this.options.source.list({
+      signal: controller.signal,
+      onProgress: (phase, received, total): void => {
+        for (const progress of owners.values()) progress?.(phase, received, total);
+      },
+    });
+    assertCurrent();
+    const catalog = { entries, checkedAt: new Date().toISOString() };
+    const snapshot = this.snapshot(catalog, "live");
+    if (this.options.persist === false) {
       this.memory = catalog;
-      if (this.options.persist === false) return snapshot;
-      try {
-        await this.options.cache.save(catalog);
-        return snapshot;
-      } catch (error) {
-        return {
-          ...snapshot,
-          error: `Plugin catalog was refreshed but could not be saved. ${summary(error)}`,
-        };
-      }
-    } catch (error) {
-      return { ...(await this.cached()), error: summary(error) };
+      return snapshot;
+    }
+    try {
+      await this.options.cache.save(catalog, controller.signal);
+      assertCurrent();
+      this.memory = catalog;
+      return snapshot;
+    } catch {
+      assertCurrent();
+      this.memory = catalog;
+      return {
+        ...snapshot,
+        error: "Plugin catalog was refreshed but could not be saved. Check desktop storage access.",
+      };
     }
   }
 }

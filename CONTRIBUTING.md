@@ -719,7 +719,7 @@ available; a stopped capture must be resumed explicitly. Unrelated Kafka session
 remain available. API 2 introduced these lifecycle hooks; API 3 added explicit
 compatibility identities and resources. API 4 uses independent SemVer and an
 inclusive minimum/exclusive maximum desktop interval. Host protocol 28 introduced
-activation identities and versioned snapshots; the current paired host protocol is 51. Existing API 2 and API 3 packages
+activation identities and versioned snapshots; the current paired host protocol is 52. Existing API 2 and API 3 packages
 retain their legacy versions and asset names and remain loadable on the new host.
 A compatible API 4 package supersedes either legacy generation; within API 4,
 updates follow SemVer precedence. Earlier unreleased API 1 packages

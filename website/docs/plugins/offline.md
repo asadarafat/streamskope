@@ -15,6 +15,60 @@ does not require internet access when its complete package is available locally.
 Connecting afterward still requires access to your Kafka brokers and the relevant
 EDA or NSP API.
 
+## Configure plugin downloads
+
+Open **Preferences → Plugins → Plugin download settings**. The desktop uses the
+operating system's proxy configuration by default. If your network requires an
+explicit proxy, select the custom proxy option and supply an HTTP or HTTPS proxy
+address. Enter proxy credentials in the separate fields; do not put credentials
+in the address. Save settings, then test the applied connection.
+
+Proxy settings apply only to plugin catalog and package downloads. They do not
+change Kafka, Core NATS, EDA or NSP connections. An authenticated HTTP CONNECT
+proxy is supported; SOCKS, NTLM and every organization's automatic proxy policy
+are not individually qualified. Corporate certificate validation remains enabled.
+Install the organization's approved CA in the operating system when required;
+there is no plugin-download switch to bypass TLS verification.
+
+The connection test checks the official catalog and, when available, a release
+asset route. A catalog-only result describes its remaining limitation; it does
+not establish that a complete plugin package can be downloaded. Successful tests
+apply to the saved settings revision, not an unsaved form or a later proxy change.
+
+**Offline plugin downloads** blocks catalog refresh, remote package download and
+connection tests before they access the network. You can still install signed
+files, use verified cached packages, retry or remove installed plugins, and
+connect to locally reachable systems. Turn it off when you intend to download
+again. This option does not make the whole workbench offline.
+
+Proxy credentials never return to the renderer. When OS-backed protection is
+available, the host saves them encrypted. Otherwise they remain in memory for
+the current session and must be entered again after restart. Unreadable saved
+settings block remote acquisition until explicitly reset; they do not block
+local plugin management. Browser development hosts do not provide native proxy
+configuration.
+
+## Cancel a stalled download
+
+Catalog refresh, package download and connection tests show their current phase.
+Downloads show bytes received and, when supplied by the server, total size. Use
+the cancellation action while an operation is running. Cancelling acquisition
+cannot install its late result. Changing saved network settings also cancels
+remote operations admitted under the previous settings.
+
+Installed-plugin management and file/cache installation remain usable during a
+remote download. A completed package review pins verified local bytes; changing
+the network afterward does not replace or invalidate that selected package.
+Installation and confirmed owned-work cleanup use their existing lifecycle rules.
+
+| Download failure                    | Next action                                                                                           |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Proxy authentication                | Check the separately supplied proxy credentials and supported authentication method.                  |
+| Proxy connection or tunnel          | Check proxy host, port and permission to reach GitHub release assets.                                 |
+| Certificate validation              | Install the organization's trusted CA through its OS administration process.                          |
+| GitHub rate limit or timeout        | Retry later or transfer an approved signed portable package.                                          |
+| Offline mode or unreadable settings | Disable offline mode or explicitly reset the download settings; local installation remains available. |
+
 ## Prepare the file on a connected computer
 
 1. Open the chosen plugin release in the
@@ -70,7 +124,7 @@ Connected computer             Desktop with no GitHub access
 
 The Plugins page lists complete verified packages retained in its bounded local
 cache separately from the last-known catalog. Select the exact cached version
-you intend to use and review it before installation. Its download date and trust
+you intend to use and review it before installation. Its cache date and trust
 source describe the retained copy, not the latest release available online.
 
 A cached catalog is only metadata. Seeing a version there does not mean its bytes

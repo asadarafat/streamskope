@@ -9,6 +9,7 @@ import {
 import type { PluginChangePrompt, PluginManifest } from "../../../plugins/contracts";
 
 import { pluginFailureMessage, type PluginInventory } from "./usePluginInventory";
+import { PluginAcquisitionCancelled, type PluginAcquisitions } from "./usePluginAcquisitions";
 
 export type PluginPackageReview = NonNullable<
   HostCommandResultMap["plugins.package.inspect"]["pluginPackage"]
@@ -28,6 +29,8 @@ export interface PluginLocalConfirmation {
 }
 export interface PluginChanges {
   readonly pending: string | undefined;
+  readonly inspectionPending: PluginInspectionInput["source"] | undefined;
+  readonly inspectionStatus: string;
   readonly failure: string | undefined;
   readonly status: string;
   readonly completed: { readonly id: string; readonly version: string | undefined } | undefined;
@@ -38,6 +41,7 @@ export interface PluginChanges {
   readonly confirmLocal: () => Promise<void>;
   readonly cancelLocal: () => void;
   readonly inspect: (input: PluginInspectionInput) => Promise<void>;
+  readonly cancelInspection: () => Promise<void>;
   readonly applyReview: () => Promise<void>;
   readonly closeReview: () => Promise<void>;
 }
@@ -47,8 +51,11 @@ export function usePluginChanges(
   host: StreamSkopeHost,
   inventory: PluginInventory,
   refreshRenderers: () => Promise<void>,
+  acquisitions: PluginAcquisitions,
 ): PluginChanges {
   const [pending, setPending] = useState<string>();
+  const [inspectionPending, setInspectionPending] = useState<PluginInspectionInput["source"]>();
+  const [inspectionStatus, setInspectionStatus] = useState("");
   const [failure, setFailure] = useState<string>();
   const [status, setStatus] = useState("");
   const [completed, setCompleted] = useState<PluginChanges["completed"]>();
@@ -58,6 +65,8 @@ export function usePluginChanges(
   const lifetime = useRef({
     active: false,
     operation: 0,
+    inspection: 0,
+    inspectionRequestId: undefined as string | undefined,
     candidateId: undefined as string | undefined,
   });
   const discard = useCallback(
@@ -77,6 +86,7 @@ export function usePluginChanges(
     return (): void => {
       lifetime.current.active = false;
       lifetime.current.operation++;
+      lifetime.current.inspection++;
       const candidateId = lifetime.current.candidateId;
       lifetime.current.candidateId = undefined;
       if (candidateId !== undefined) void discard(candidateId).catch((): void => undefined);
@@ -138,6 +148,7 @@ export function usePluginChanges(
     command: PluginLocalCommand,
     plugin: PluginActionTarget,
   ): Promise<void> {
+    void cancelInspection();
     const operation = begin(plugin.id, `Checking ${plugin.name}…`);
     try {
       const response = await host.execute({
@@ -179,9 +190,28 @@ export function usePluginChanges(
       if (current(operation)) setPending(undefined);
     }
   }
+  async function cancelInspection(): Promise<void> {
+    lifetime.current.inspection++;
+    const requestId = lifetime.current.inspectionRequestId;
+    lifetime.current.inspectionRequestId = undefined;
+    setInspectionPending(undefined);
+    setInspectionStatus("");
+    if (requestId !== undefined)
+      await acquisitions.cancel(requestId).catch((error: unknown): void => {
+        if (lifetime.current.active) setFailure(pluginFailureMessage(error));
+      });
+  }
   async function inspect(input: PluginInspectionInput): Promise<void> {
-    const operation = begin(
-      input.source === "file" ? "file" : input.pluginId,
+    const cancelling = cancelInspection();
+    const operation = ++lifetime.current.inspection;
+    const inspecting = (): boolean =>
+      lifetime.current.active && operation === lifetime.current.inspection;
+    await cancelling;
+    if (!inspecting()) return;
+    setInspectionPending(input.source);
+    setFailure(undefined);
+    setCompleted(undefined);
+    setInspectionStatus(
       input.source === "file"
         ? "Choose a signed plugin package…"
         : "Retrieving and verifying the selected plugin package…",
@@ -189,36 +219,42 @@ export function usePluginChanges(
     try {
       const previous = lifetime.current.candidateId;
       if (previous !== undefined) await discard(previous);
-      if (!current(operation)) return;
+      if (!inspecting()) return;
       lifetime.current.candidateId = undefined;
       setReview(undefined);
       setReviewPrompt(undefined);
-      if (!current(operation)) return;
-      const response = await host.execute({
+      if (!inspecting()) return;
+      const requestId = crypto.randomUUID();
+      lifetime.current.inspectionRequestId = requestId;
+      const response = await acquisitions.execute({
         command: "plugins.package.inspect",
-        id: crypto.randomUUID(),
+        id: requestId,
         payload: input,
         version: HOST_PROTOCOL_VERSION,
       });
       if (!response.ok) throw new Error(`${response.error.summary} ${response.error.recovery}`);
       const candidate = response.result.pluginPackage;
-      if (!current(operation)) {
+      if (!inspecting()) {
         if (candidate !== null) await discard(candidate.candidateId);
         return;
       }
-      setStatus("");
+      setInspectionStatus("");
       if (candidate !== null) {
         lifetime.current.candidateId = candidate.candidateId;
         setReview(candidate);
         void inventory.refreshDelivery();
       }
     } catch (error) {
-      if (current(operation)) {
+      if (inspecting() && !(error instanceof PluginAcquisitionCancelled)) {
         setFailure(pluginFailureMessage(error));
-        setStatus("");
+        setInspectionStatus("");
       }
     } finally {
-      if (current(operation)) setPending(undefined);
+      if (inspecting()) {
+        lifetime.current.inspectionRequestId = undefined;
+        setInspectionPending(undefined);
+        setInspectionStatus("");
+      }
     }
   }
   async function closeReview(): Promise<void> {
@@ -324,6 +360,8 @@ export function usePluginChanges(
   }, [review, pending, discard]);
   return {
     pending,
+    inspectionPending,
+    inspectionStatus,
     failure,
     status,
     completed,
@@ -334,6 +372,7 @@ export function usePluginChanges(
     confirmLocal,
     cancelLocal: (): void => setConfirmation(undefined),
     inspect,
+    cancelInspection,
     applyReview,
     closeReview,
   };

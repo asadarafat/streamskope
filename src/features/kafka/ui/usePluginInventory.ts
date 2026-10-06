@@ -3,9 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   HOST_PROTOCOL_VERSION,
   type HostCommandResultMap,
+  type KafkaHostExecute,
   type StreamSkopeHost,
 } from "../contracts";
 import type { PluginCatalogSnapshot, PluginSnapshot } from "../../../plugins/contracts";
+
+import { PluginAcquisitionCancelled } from "./usePluginAcquisitions";
 
 export type PluginDelivery = HostCommandResultMap["plugins.delivery"]["pluginDelivery"];
 
@@ -28,7 +31,10 @@ export interface PluginInventory {
 }
 
 /** Installed state and local delivery are never held behind the optional remote lookup. */
-export function usePluginInventory(host: StreamSkopeHost): PluginInventory {
+export function usePluginInventory(
+  host: StreamSkopeHost,
+  acquire: KafkaHostExecute,
+): PluginInventory {
   const [snapshot, setSnapshot] = useState<PluginSnapshot>({ revision: 0, plugins: [] });
   const [catalog, setCatalog] = useState<PluginCatalogSnapshot>({ plugins: [] });
   const [delivery, setDelivery] = useState<PluginDelivery>();
@@ -67,7 +73,7 @@ export function usePluginInventory(host: StreamSkopeHost): PluginInventory {
     setCatalogLoading(true);
     for (const refresh of [false, true]) {
       try {
-        const response = await host.execute({
+        const response = await acquire({
           command: "plugins.catalog",
           id: crypto.randomUUID(),
           payload: { refresh },
@@ -86,6 +92,7 @@ export function usePluginInventory(host: StreamSkopeHost): PluginInventory {
         );
       } catch (error) {
         if (request !== catalogRequest.current) return;
+        if (error instanceof PluginAcquisitionCancelled) break;
         if (refresh)
           setCatalog((current) => ({
             ...current,
@@ -95,7 +102,7 @@ export function usePluginInventory(host: StreamSkopeHost): PluginInventory {
       }
     }
     if (request === catalogRequest.current) setCatalogLoading(false);
-  }, [host]);
+  }, [acquire]);
   const refreshDelivery = useCallback(async (): Promise<void> => {
     const request = ++deliveryRequest.current;
     setDeliveryLoading(true);

@@ -6,7 +6,6 @@ import {
   type HostCommand,
   type HostCommandResponse,
 } from "../../../features/kafka/contracts";
-import { PlatformaticAdminFactory } from "../../../features/kafka/engine/platformatic-admin";
 import type {
   PluginBackend,
   PluginBackendHost,
@@ -29,6 +28,10 @@ import type {
   PluginProfileSource,
   PluginRequest,
   PluginSnapshot,
+  PluginAcquisitionProgress,
+  PluginNetworkSnapshot,
+  PluginNetworkUpdateInput,
+  PluginNetworkTestResult,
 } from "../../../plugins/contracts";
 import {
   isPluginCompatibleWithHost,
@@ -37,6 +40,7 @@ import {
 } from "../../../plugins/validation";
 import { STREAMSKOPE_RELEASE } from "../../../plugins/host-release";
 import { readBoundedFile } from "../bounded-file";
+import type { ProfileProtector } from "../profile-protector";
 
 import { OfficialPluginCatalog, type PluginCatalogSource } from "./catalog";
 import { PluginCatalogDiscovery } from "./catalog-discovery";
@@ -44,6 +48,9 @@ import { PluginDeliveryController, type InstalledPluginReview } from "./delivery
 import { PluginInstaller, type PluginCandidateAuthority } from "./installer";
 import { pluginProblem as problem } from "./problem";
 import { PluginStore, type ActivePlugin } from "./store";
+import { PluginNetworkController } from "./network";
+import type { PluginNetworkTransport } from "./network-transport";
+import { assertPluginBackend, loadPluginBackendModule, probePluginTopics } from "./backend-loader";
 
 interface LoadedPlugin {
   readonly installation: ActivePlugin;
@@ -74,6 +81,8 @@ export interface PluginRuntimeOptions {
   /** Development catalog URLs have no official release provenance and stay in memory only. */
   readonly persistCatalog?: boolean;
   readonly choosePackageFile?: (signal: AbortSignal) => Promise<Uint8Array | null>;
+  readonly networkTransport?: PluginNetworkTransport;
+  readonly networkProtector?: ProfileProtector;
 }
 
 export interface PluginRendererAsset {
@@ -83,59 +92,6 @@ export interface PluginRendererAsset {
 
 function summary(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 1_024) : "The plugin could not be loaded.";
-}
-
-function loadModule(path: string): Promise<PluginBackendModule> {
-  const require = createRequire(path);
-  delete require.cache[require.resolve(path)];
-  const value: unknown = require(path);
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    !("activate" in value) ||
-    typeof value.activate !== "function"
-  ) {
-    throw new Error("The plugin does not export its backend activation function.");
-  }
-  return Promise.resolve(value as PluginBackendModule);
-}
-
-function assertBackend(value: PluginBackend): void {
-  for (const name of [
-    "execute",
-    "validateProfile",
-    "beforeExit",
-    "resolveExit",
-    "close",
-    "beforeChange",
-    "prepareUnload",
-  ] as const) {
-    if (typeof value?.[name] !== "function") throw new Error(`Plugin backend is missing ${name}.`);
-  }
-}
-
-async function probeTopics(
-  brokers: readonly string[],
-  signal?: AbortSignal,
-): Promise<readonly string[]> {
-  signal?.throwIfAborted();
-  const admin = new PlatformaticAdminFactory().create({
-    brokers,
-    tlsEnabled: false,
-    operationTimeoutMs: 10_000,
-  });
-  const abort = (): void => {
-    void admin.close().catch(() => undefined);
-  };
-  signal?.addEventListener("abort", abort, { once: true });
-  try {
-    const topics = await admin.listTopics();
-    signal?.throwIfAborted();
-    return topics;
-  } finally {
-    signal?.removeEventListener("abort", abort);
-    await admin.close();
-  }
 }
 
 /** Only explicitly installed, verified first-party packages are loaded into this trusted host. */
@@ -159,17 +115,27 @@ export class PluginRuntime implements PluginRuntimePort {
   private readonly catalogDiscovery: PluginCatalogDiscovery;
   private readonly installer: PluginInstaller<LoadedPlugin>;
   private readonly deliveryController: PluginDeliveryController;
+  private readonly network: PluginNetworkController;
 
   constructor(private readonly options: PluginRuntimeOptions) {
     this.catalogSource =
       options.catalog ??
-      new OfficialPluginCatalog(undefined, options.hostRelease ?? STREAMSKOPE_RELEASE);
+      new OfficialPluginCatalog(
+        options.networkTransport?.fetch,
+        options.hostRelease ?? STREAMSKOPE_RELEASE,
+      );
     this.catalogDiscovery = new PluginCatalogDiscovery({
       source: this.catalogSource,
       cache: options.store.catalogCache,
       hostRelease: options.hostRelease ?? STREAMSKOPE_RELEASE,
       assertOpen: (): void => this.assertOpen(),
       ...(options.persistCatalog === undefined ? {} : { persist: options.persistCatalog }),
+    });
+    this.network = new PluginNetworkController({
+      path: options.store.networkSettingsPath(),
+      ...(options.networkTransport === undefined ? {} : { transport: options.networkTransport }),
+      ...(options.networkProtector === undefined ? {} : { protector: options.networkProtector }),
+      changed: (): void => this.catalogDiscovery.invalidateRemote(),
     });
     this.installer = new PluginInstaller({
       store: options.store,
@@ -305,19 +271,21 @@ export class PluginRuntime implements PluginRuntimePort {
       },
       probeTopics: (brokers, signal): Promise<readonly string[]> => {
         assertCurrent();
-        return (this.options.probeTopics ?? probeTopics)(brokers, signal);
+        return (this.options.probeTopics ?? probePluginTopics)(brokers, signal);
       },
     };
   }
 
   private async load(installation: ActivePlugin): Promise<LoadedPlugin> {
     this.assertCompatible(installation.manifest);
-    const module = await (this.options.loadModule ?? loadModule)(installation.backendPath);
+    const module = await (this.options.loadModule ?? loadPluginBackendModule)(
+      installation.backendPath,
+    );
     const authority = { active: false, retired: false, draining: false };
     let backend: PluginBackend | undefined;
     try {
       backend = await module.activate(this.hostFor(installation.manifest.id, authority));
-      assertBackend(backend);
+      assertPluginBackend(backend);
     } catch (error) {
       authority.retired = true;
       if (typeof backend?.close === "function") await backend.close().catch(() => undefined);
@@ -591,15 +559,44 @@ export class PluginRuntime implements PluginRuntimePort {
     }
   }
 
-  catalog(refresh = true): Promise<PluginCatalogSnapshot> {
-    return this.catalogDiscovery.catalog(refresh);
+  catalog(refresh = true, requestId?: string): Promise<PluginCatalogSnapshot> {
+    return refresh
+      ? this.network.catalog(requestId, this.catalogDiscovery)
+      : this.catalogDiscovery.catalog(false);
   }
 
   delivery(): Promise<PluginDeliverySnapshot> {
     return this.deliveryController.delivery();
   }
-  inspectPackage(input: PluginPackageInspectInput): Promise<PluginPackageInspection | null> {
-    return this.deliveryController.inspectPackage(input);
+  inspectPackage(
+    input: PluginPackageInspectInput,
+    requestId?: string,
+  ): Promise<PluginPackageInspection | null> {
+    return this.network.acquire(
+      requestId,
+      "inspect",
+      input.source === "catalog",
+      (context) => this.deliveryController.inspectPackage(input, context.signal, context.progress),
+      (value): void => {
+        if (value !== null) this.deliveryController.discardPackage(value.candidateId);
+      },
+    );
+  }
+  networkSettings(): Promise<PluginNetworkSnapshot> {
+    return this.network.snapshot();
+  }
+  updateNetwork(input: PluginNetworkUpdateInput): Promise<PluginNetworkSnapshot> {
+    return this.network.update(input);
+  }
+  testNetwork(requestId: string): Promise<PluginNetworkTestResult> {
+    return this.network.test(requestId, this.catalogSource);
+  }
+  cancelAcquisition(requestId: string): Promise<void> {
+    this.network.cancel(requestId);
+    return Promise.resolve();
+  }
+  subscribeAcquisition(listener: (progress: PluginAcquisitionProgress) => void): () => void {
+    return this.network.subscribe(listener);
   }
   preparePackageChange(candidateId: string): Promise<PluginChangePrompt | null> {
     return this.deliveryController.preparePackageChange(candidateId);
@@ -725,7 +722,12 @@ export class PluginRuntime implements PluginRuntimePort {
     return this.withMutationIntent(pluginId, async (assertCurrent) => {
       await this.start();
       assertCurrent();
-      const downloaded = await this.catalogSource.download(pluginId);
+      const downloaded = await this.network.acquire(undefined, "inspect", true, (context) =>
+        this.catalogSource.download(pluginId, {
+          signal: context.signal,
+          onProgress: context.progress,
+        }),
+      );
       assertCurrent();
       return this.installer.apply(
         pluginId,
@@ -989,11 +991,14 @@ export class PluginRuntime implements PluginRuntimePort {
   close(): Promise<void> {
     this.deliveryController.close();
     this.closing ??= (async (): Promise<void> => {
+      const networkClosing = this.network.close();
+      void networkClosing.catch(() => undefined);
       if (this.starting !== undefined) await this.starting;
       await this.mutations;
-      const results = await Promise.allSettled(
-        [...this.modules.values()].map((loaded) => this.retire(loaded)),
-      );
+      const results = await Promise.allSettled([
+        networkClosing,
+        ...[...this.modules.values()].map((loaded) => this.retire(loaded)),
+      ]);
       this.modules.clear();
       this.listeners.clear();
       this.changeListeners.clear();

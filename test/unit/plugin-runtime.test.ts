@@ -299,7 +299,8 @@ describe("optional installed plugin runtime", () => {
       packages: [{ pluginId: official.id, version: official.version, sha256: entry.sha256 }],
       source: "cache",
       checkedAt: live.checkedAt,
-      error: "GitHub could not be reached",
+      error:
+        "Plugin download connection failed. Check system or custom proxy settings, retry, or install a signed file or cached package.",
     });
     expect((await reopened.catalog(false)).checkedAt).toBe(live.checkedAt);
     expect(catalog.download).not.toHaveBeenCalled();
@@ -382,7 +383,8 @@ describe("optional installed plugin runtime", () => {
     expect(await host.catalog()).toEqual({
       plugins: [],
       source: "unavailable",
-      error: "Network timeout",
+      error:
+        "Plugin download connection failed. Check system or custom proxy settings, retry, or install a signed file or cached package.",
     });
     expect((await host.catalog(false)).error).toEqual(expect.any(String));
     expect((await host.list()).plugins[0]?.active).toEqual(manifest);
