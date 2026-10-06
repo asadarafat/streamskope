@@ -10,6 +10,7 @@ import {
   expect,
   test,
   type ElectronApplication,
+  type Locator,
   type Page,
 } from "@playwright/test";
 import { build } from "vite";
@@ -122,9 +123,9 @@ async function records(page: Page): Promise<readonly NatsRecord[]> {
   });
 }
 
-async function privateField(page: Page, label: string, value: string): Promise<void> {
+async function privateField(field: Locator, value: string): Promise<void> {
   try {
-    await page.getByLabel(label, { exact: true }).fill(value);
+    await field.fill(value);
   } catch {
     throw new Error("The native NATS private profile field could not be filled.");
   }
@@ -261,16 +262,19 @@ test("restores a genuine protected Core NATS profile across restart and confirms
     const editor = page.getByRole("dialog", { name: "Create NATS profile" });
     const name = "Native verified NATS";
     phase = "native NATS public profile fields";
-    await editor.getByLabel("Profile name", { exact: true }).fill(name);
-    await editor.getByLabel("NATS servers", { exact: true }).fill(fixture.server);
+    await editor.getByRole("textbox", { name: "Profile name", exact: true }).fill(name);
+    await editor.getByRole("textbox", { name: "NATS servers", exact: true }).fill(fixture.server);
     await editor.getByRole("combobox", { name: "Authentication", exact: true }).click();
     await page.getByRole("option", { name: "Token", exact: true }).click();
     phase = "native NATS private token field";
-    await privateField(page, "Token", fixture.token);
+    await privateField(editor.getByLabel("Token", { exact: true }), fixture.token);
     phase = "native NATS verified TLS selection";
     await editor.getByRole("radio", { name: "Verified TLS", exact: true }).check();
     phase = "native NATS private CA field";
-    await privateField(page, "CA certificate PEM", fixture.caPem);
+    await privateField(
+      editor.getByRole("textbox", { name: "CA certificate PEM", exact: true }),
+      fixture.caPem,
+    );
     phase = "native NATS profile save";
     await editor.getByRole("button", { name: "Save profile", exact: true }).click();
     await expect(editor).toHaveCount(0);
@@ -308,15 +312,16 @@ test("restores a genuine protected Core NATS profile across restart and confirms
     expect(restored.profiles.profiles).toEqual([original]);
     await page.getByRole("button", { name: `Edit profile ${name}`, exact: true }).click();
     const restoredEditor = page.getByRole("dialog", { name: "Edit NATS profile" });
-    for (const label of ["Token", "CA certificate PEM"]) {
+    for (const field of [
+      restoredEditor.getByLabel("Token", { exact: true }),
+      restoredEditor.getByRole("textbox", { name: "CA certificate PEM", exact: true }),
+    ]) {
       expect(
-        await restoredEditor
-          .getByLabel(label, { exact: true })
-          .evaluate(
-            (element) =>
-              (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
-              element.value === "",
-          ),
+        await field.evaluate(
+          (element) =>
+            (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
+            element.value === "",
+        ),
       ).toBe(true);
     }
     await restoredEditor.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -474,7 +479,7 @@ test("restores a genuine protected Core NATS profile across restart and confirms
         /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/gu,
         "[certificate redacted]",
       )
-      .replace(/\/(?:Users|home|tmp)\/[^\s\"'<>]+/gu, "[private path]")
+      .replace(/\/(?:Users|home|tmp)\/[^\s"'<>]+/gu, "[private path]")
       .slice(0, 4096);
   }
 });
