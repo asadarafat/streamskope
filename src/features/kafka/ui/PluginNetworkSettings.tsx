@@ -1,5 +1,5 @@
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { FormControlLabel, MenuItem, Stack, Typography } from "@mui/material";
+import { Stack, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
 
 import type {
@@ -14,6 +14,8 @@ import {
   StudioAlert as Alert,
   StudioButton as Button,
   StudioCheckbox as Checkbox,
+  StudioLabeledControl as FormControlLabel,
+  StudioMenuItem as MenuItem,
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
