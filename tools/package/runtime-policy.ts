@@ -45,6 +45,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/platform/electron/main/electron-entry.ts",
     // At most eight review-expiry deadlines release cache pins; suspended while installing.
     "src/platform/node/plugins/package-candidates.ts",
+    // At most sixteen remote acquisition deadlines, cleared on cancellation or settlement.
+    "src/platform/node/plugins/acquisition.ts",
     "plugins/eda/backend/eda-api-client.ts",
     "plugins/eda/backend/eda-agent-capture.ts",
     "plugins/nsp/backend/api-client.ts",

@@ -139,6 +139,11 @@ export class PluginStore {
     );
   }
 
+  /** Host-only path for protected settings of the dedicated plugin download transport. */
+  networkSettingsPath(): string {
+    return join(this.#root, "network.json");
+  }
+
   /** One sealed host verification authority is shared by downloads, storage and lifecycle changes. */
   verifyPackage(bytes: Uint8Array, expectedSha256?: string): VerifiedPluginPackage {
     return parsePluginPackage(bytes, expectedSha256, this.#trustedPublishers);

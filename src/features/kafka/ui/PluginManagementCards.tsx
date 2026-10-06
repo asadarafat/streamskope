@@ -18,6 +18,7 @@ import type { PluginDelivery } from "./usePluginInventory";
 
 interface CardActions {
   readonly disabled: boolean;
+  readonly remoteDisabled: boolean;
   readonly onInspect: (input: PluginInspectionInput) => Promise<void>;
   readonly onLocal: (command: PluginLocalCommand, plugin: PluginActionTarget) => Promise<void>;
 }
@@ -29,6 +30,7 @@ function PluginCard({
   reference,
   error,
   disabled,
+  remoteDisabled,
   onInspect,
   onLocal,
 }: CardActions & {
@@ -95,7 +97,7 @@ function PluginCard({
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
           {!remoteAction ? null : (
             <Button
-              disabled={disabled || reference === undefined}
+              disabled={disabled || remoteDisabled || reference === undefined}
               variant="contained"
               onClick={(): void => {
                 if (reference !== undefined) void onInspect({ source: "catalog", ...reference });
@@ -145,6 +147,7 @@ export function PluginManagementCards({
   rendererErrors,
   installedLoading,
   disabled,
+  remoteDisabled,
   onInspect,
   onLocal,
 }: CardActions & {
@@ -201,6 +204,7 @@ export function PluginManagementCards({
                   }
                   error={installation?.error ?? rendererErrors[manifest.id]}
                   disabled={disabled}
+                  remoteDisabled={remoteDisabled}
                   onInspect={onInspect}
                   onLocal={onLocal}
                 />

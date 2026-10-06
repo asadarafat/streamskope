@@ -54,6 +54,7 @@ function unavailable(pluginId?: string): Error {
 export class PluginFacadeController {
   private readonly unsubscribe: (() => void) | undefined;
   private readonly unsubscribeChanges: (() => void) | undefined;
+  private readonly unsubscribeAcquisition: (() => void) | undefined;
   constructor(private readonly bindings: Bindings) {
     const runtime = bindings.runtime;
     if (runtime === undefined) return;
@@ -92,6 +93,14 @@ export class PluginFacadeController {
         version: HOST_PROTOCOL_VERSION,
       }),
     );
+    this.unsubscribeAcquisition = runtime.subscribeAcquisition?.((payload) =>
+      bindings.publish({
+        event: "plugins.network.progress",
+        payload,
+        sequence: bindings.nextSequence(),
+        version: HOST_PROTOCOL_VERSION,
+      }),
+    );
   }
   async execute(command: PluginHostCommand, correlationId: string): Promise<HostCommandResponse> {
     const runtime = this.bindings.runtime;
@@ -112,7 +121,7 @@ export class PluginFacadeController {
           command: command.command,
           result: {
             correlationId,
-            pluginCatalog: (await runtime?.catalog(command.payload.refresh)) ?? {
+            pluginCatalog: (await runtime?.catalog(command.payload.refresh, command.id)) ?? {
               plugins: [],
               source: "unavailable",
               error: "Plugins are unavailable on this host.",
@@ -128,6 +137,31 @@ export class PluginFacadeController {
       if (runtime === undefined)
         throw unavailable("pluginId" in command.payload ? command.payload.pluginId : undefined);
       switch (command.command) {
+        case "plugins.network.get":
+          if (runtime.networkSettings === undefined) throw unavailable();
+          return {
+            ...base,
+            command: command.command,
+            result: { correlationId, pluginNetwork: await runtime.networkSettings() },
+          };
+        case "plugins.network.update":
+          if (runtime.updateNetwork === undefined) throw unavailable();
+          return {
+            ...base,
+            command: command.command,
+            result: { correlationId, pluginNetwork: await runtime.updateNetwork(command.payload) },
+          };
+        case "plugins.network.test":
+          if (runtime.testNetwork === undefined) throw unavailable();
+          return {
+            ...base,
+            command: command.command,
+            result: { correlationId, pluginNetworkTest: await runtime.testNetwork(command.id) },
+          };
+        case "plugins.network.cancel":
+          if (runtime.cancelAcquisition === undefined) throw unavailable();
+          await runtime.cancelAcquisition(command.payload.requestId);
+          return successResponse(command, correlationId);
         case "plugins.delivery":
           if (runtime.delivery === undefined) throw unavailable();
           return {
@@ -140,7 +174,10 @@ export class PluginFacadeController {
           return {
             ...base,
             command: command.command,
-            result: { correlationId, pluginPackage: await runtime.inspectPackage(command.payload) },
+            result: {
+              correlationId,
+              pluginPackage: await runtime.inspectPackage(command.payload, command.id),
+            },
           };
         case "plugins.package.change.prepare":
           if (runtime.preparePackageChange === undefined) throw unavailable();
@@ -244,7 +281,20 @@ export class PluginFacadeController {
         command,
         translateFacadeFailure(
           error,
-          { activeStateChanged: false, connection: undefined, correlationId },
+          {
+            activeStateChanged: false,
+            connection: undefined,
+            correlationId,
+            ...(command.command === "plugins.network.update" &&
+            command.payload.credentials.action === "replace"
+              ? {
+                  sensitiveValues: [
+                    command.payload.credentials.username,
+                    command.payload.credentials.password,
+                  ],
+                }
+              : {}),
+          },
           true,
         ).error,
       );
@@ -270,6 +320,7 @@ export class PluginFacadeController {
     } finally {
       this.unsubscribe?.();
       this.unsubscribeChanges?.();
+      this.unsubscribeAcquisition?.();
     }
   }
   async hasPendingWork(): Promise<boolean> {

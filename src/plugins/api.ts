@@ -8,6 +8,7 @@ import type {
 import type {
   JsonObject,
   JsonValue,
+  PluginAcquisitionProgress,
   PluginCatalogSnapshot,
   PluginChangeOperation,
   PluginChangePrompt,
@@ -15,6 +16,9 @@ import type {
   PluginDeliverySnapshot,
   PluginEvent,
   PluginExitPrompt,
+  PluginNetworkSnapshot,
+  PluginNetworkTestResult,
+  PluginNetworkUpdateInput,
   PluginProfileSource,
   PluginPackageInspectInput,
   PluginPackageInspection,
@@ -83,9 +87,17 @@ export interface PluginRuntimePort {
   subscribe(listener: (event: PluginEvent) => void): () => void;
   subscribeChanges(listener: (snapshot: PluginSnapshot) => void): () => void;
   list(): Promise<PluginSnapshot>;
-  catalog(refresh?: boolean): Promise<PluginCatalogSnapshot>;
+  catalog(refresh?: boolean, requestId?: string): Promise<PluginCatalogSnapshot>;
+  networkSettings?(): Promise<PluginNetworkSnapshot>;
+  updateNetwork?(input: PluginNetworkUpdateInput): Promise<PluginNetworkSnapshot>;
+  testNetwork?(requestId: string): Promise<PluginNetworkTestResult>;
+  cancelAcquisition?(requestId: string): Promise<void>;
+  subscribeAcquisition?(listener: (progress: PluginAcquisitionProgress) => void): () => void;
   delivery?(): Promise<PluginDeliverySnapshot>;
-  inspectPackage?(input: PluginPackageInspectInput): Promise<PluginPackageInspection | null>;
+  inspectPackage?(
+    input: PluginPackageInspectInput,
+    requestId?: string,
+  ): Promise<PluginPackageInspection | null>;
   preparePackageChange?(candidateId: string): Promise<PluginChangePrompt | null>;
   installPackage?(candidateId: string, confirmationToken?: string): Promise<PluginSnapshot>;
   discardPackage?(candidateId: string): Promise<void>;

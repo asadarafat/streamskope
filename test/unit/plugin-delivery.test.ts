@@ -211,7 +211,11 @@ describe("offline reviewed plugin delivery", () => {
     ]);
     const candidate = (await host.inspectPackage({ source: "catalog", ...catalog.packages![0]! }))!;
     expect(candidate.manifest.version).toBe("0.1.0");
-    expect(downloadPinned).toHaveBeenCalledWith(entry, expect.any(AbortSignal));
+    expect(downloadPinned).toHaveBeenCalledWith(
+      entry,
+      expect.any(AbortSignal),
+      expect.any(Function),
+    );
     await host.installPackage(candidate.candidateId);
     downloaded = primary("0.2.0");
     await expect(
@@ -377,6 +381,21 @@ describe("offline reviewed plugin delivery", () => {
     await expect(brokenChooser.inspectPackage({ source: "file" })).rejects.toMatchObject({
       code: "BACKEND_UNAVAILABLE",
       message: "The selected plugin file could not be read.",
+    });
+    const forgedChooser = (
+      await setup({
+        choosePackageFile: (): Promise<never> =>
+          Promise.reject(
+            Object.assign(new Error(`private-password ${root}/private-file`), {
+              code: "BACKEND_UNAVAILABLE",
+              recovery: "private-password",
+            }),
+          ),
+      })
+    ).host;
+    await expect(forgedChooser.inspectPackage({ source: "file" })).rejects.toMatchObject({
+      message: "The selected plugin file could not be read.",
+      recovery: "Choose a readable signed portable package and retry.",
     });
   });
   it("offers repair when a healthy running plugin has lost its retained archive", async () => {

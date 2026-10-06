@@ -9,12 +9,13 @@ import type {
 } from "../../../plugins/contracts";
 import { comparePluginManifests, isPluginCompatibleWithHost } from "../../../plugins/validation";
 
-import type { PluginCatalogSource } from "./catalog";
+import type { PluginCatalogRequest, PluginCatalogSource } from "./catalog";
 import type { PluginCatalogDiscovery } from "./catalog-discovery";
 import { PluginPackageCandidates } from "./package-candidates";
 import type { VerifiedPluginPackage } from "./package";
 import type { PluginCandidateAuthority } from "./installer";
-import { pluginProblem } from "./problem";
+import { isPluginProblem, pluginProblem } from "./problem";
+import { pluginNetworkProblem } from "./network-errors";
 import type { PluginStore } from "./store";
 
 export interface InstalledPluginReview {
@@ -50,8 +51,7 @@ function failure(
   recovery: string,
   validationDetail = false,
 ): Error {
-  if (error instanceof Error && "code" in error && error.code === "BACKEND_UNAVAILABLE")
-    return error;
+  if (isPluginProblem(error)) return error;
   // Filesystem errors contain private host paths. Only deliberately path-free
   // validation errors may contribute detail to a renderer-visible summary.
   const detail =
@@ -127,6 +127,7 @@ export class PluginDeliveryController {
   async inspectPackage(
     input: PluginPackageInspectInput,
     callerSignal?: AbortSignal,
+    onProgress?: PluginCatalogRequest["onProgress"],
   ): Promise<PluginPackageInspection | null> {
     this.options.assertOpen();
     if (this.inspecting >= 2)
@@ -155,8 +156,7 @@ export class PluginDeliveryController {
         try {
           chosen = await this.options.chooseFile(signal);
         } catch (error) {
-          if (error instanceof Error && "code" in error && error.code === "BACKEND_UNAVAILABLE")
-            throw error;
+          if (isPluginProblem(error)) throw error;
           throw pluginProblem(
             "The selected plugin file could not be read.",
             "Choose a readable signed portable package and retry.",
@@ -176,10 +176,18 @@ export class PluginDeliveryController {
         const entry = await this.options.discovery.resolve(input);
         if (entry.downloadUrl === "development" && !this.options.development)
           throw new Error("Development packages are unavailable on this desktop.");
-        const downloaded =
-          this.options.catalog.downloadPinned === undefined
-            ? await this.options.catalog.download(input.pluginId)
-            : await this.options.catalog.downloadPinned(entry, signal);
+        let downloaded: { readonly bytes: Uint8Array; readonly sha256: string };
+        try {
+          downloaded =
+            this.options.catalog.downloadPinned === undefined
+              ? await this.options.catalog.download(input.pluginId, {
+                  signal,
+                  ...(onProgress === undefined ? {} : { onProgress }),
+                })
+              : await this.options.catalog.downloadPinned(entry, signal, onProgress);
+        } catch (error) {
+          throw pluginNetworkProblem(error, signal);
+        }
         signal.throwIfAborted();
         bytes = Uint8Array.from(downloaded.bytes);
         if (downloaded.sha256 !== input.sha256)
@@ -197,6 +205,7 @@ export class PluginDeliveryController {
               : "official";
       }
       signal.throwIfAborted();
+      onProgress?.("verify", bytes.byteLength, bytes.byteLength);
       release = this.options.store.packageCache.pin(verified.sha256);
       await this.options.store.packageCache.put(bytes, verified.sha256, trust);
       const status = await this.status(verified);

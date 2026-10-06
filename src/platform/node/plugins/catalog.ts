@@ -1,4 +1,4 @@
-import type { PluginManifest } from "../../../plugins/contracts";
+import type { PluginAcquisitionProgress, PluginManifest } from "../../../plugins/contracts";
 import { STREAMSKOPE_RELEASE } from "../../../plugins/host-release";
 import {
   comparePluginManifests,
@@ -23,7 +23,15 @@ export interface OfficialPluginEntry {
   readonly downloadUrl: string;
 }
 export type PluginCatalogSource = Pick<OfficialPluginCatalog, "list" | "download"> &
-  Partial<Pick<OfficialPluginCatalog, "downloadPinned">>;
+  Partial<Pick<OfficialPluginCatalog, "downloadPinned" | "probe">>;
+export interface PluginCatalogRequest {
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (
+    phase: PluginAcquisitionProgress["phase"],
+    receivedBytes?: number,
+    totalBytes?: number,
+  ) => void;
+}
 
 interface ReleaseAsset {
   readonly id: number;
@@ -155,6 +163,9 @@ export class OfficialPluginCatalog {
     limit: number,
     binary: boolean,
     signal: AbortSignal,
+    request: PluginCatalogRequest = {},
+    phase: "catalog" | "download" = "download",
+    sample = false,
   ): Promise<Uint8Array> {
     let next = new URL(url);
     for (let redirects = 0; redirects <= 4; redirects += 1) {
@@ -175,6 +186,7 @@ export class OfficialPluginCatalog {
           Accept: binary ? "application/octet-stream" : "application/vnd.github+json",
           "User-Agent": "StreamSkope-plugin-installer",
           ...(next.hostname === "api.github.com" ? { "X-GitHub-Api-Version": "2022-11-28" } : {}),
+          ...(sample ? { Range: `bytes=0-${limit - 1}` } : {}),
         },
       });
       if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -184,23 +196,42 @@ export class OfficialPluginCatalog {
         next = new URL(location, next);
         continue;
       }
-      if (!response.ok || !response.body)
-        throw new Error(`Official plugin download failed (HTTP ${response.status}).`);
+      if (!response.ok || !response.body) {
+        await response.body?.cancel();
+        throw Object.assign(
+          new Error(`Official plugin download failed (HTTP ${response.status}).`),
+          { status: response.status },
+        );
+      }
       const length = response.headers.get("content-length");
-      if (length !== null && (!/^\d+$/u.test(length) || Number(length) > limit)) {
+      if (
+        length !== null &&
+        (!/^\d+$/u.test(length) || Number(length) > (sample ? MAX_PLUGIN_PACKAGE_BYTES : limit))
+      ) {
         await response.body.cancel();
         throw new Error("Official plugin download exceeds its size limit.");
       }
       const reader = (response.body as ReadableStream<Uint8Array>).getReader();
       const chunks: Uint8Array[] = [];
       let size = 0;
+      const total =
+        length === null ? undefined : sample ? Math.min(Number(length), limit) : Number(length);
+      request.onProgress?.(phase, 0, total);
       try {
         while (true) {
           const chunk = await reader.read();
           if (chunk.done) break;
-          size += chunk.value.byteLength;
+          signal.throwIfAborted();
+          const content = sample ? chunk.value.subarray(0, limit - size) : chunk.value;
+          size += content.byteLength;
           if (size > limit) throw new Error("Official plugin download exceeds its size limit.");
-          chunks.push(chunk.value);
+          chunks.push(content);
+          request.onProgress?.(
+            phase,
+            size,
+            total !== undefined && total >= size ? total : undefined,
+          );
+          if (sample && size >= limit) break;
         }
       } finally {
         await reader.cancel();
@@ -211,13 +242,20 @@ export class OfficialPluginCatalog {
     throw new Error("Official plugin download redirected too many times.");
   }
 
-  async #asset(assetInfo: ReleaseAsset, maximum: number, signal: AbortSignal): Promise<Uint8Array> {
+  async #asset(
+    assetInfo: ReleaseAsset,
+    maximum: number,
+    signal: AbortSignal,
+    request: PluginCatalogRequest = {},
+  ): Promise<Uint8Array> {
     if (assetInfo.size > maximum) throw new Error("Official plugin asset exceeds its size limit.");
     const bytes = await this.#download(
       `${API_ROOT}/releases/assets/${assetInfo.id}`,
       maximum,
       true,
       signal,
+      request,
+      "catalog",
     );
     if (bytes.byteLength !== assetInfo.size || pluginPackageSha256(bytes) !== assetInfo.digest)
       throw new Error(
@@ -226,17 +264,30 @@ export class OfficialPluginCatalog {
     return bytes;
   }
 
-  async list(): Promise<readonly OfficialPluginEntry[]> {
-    return this.#list(AbortSignal.timeout(30_000));
+  async list(request: PluginCatalogRequest = {}): Promise<readonly OfficialPluginEntry[]> {
+    const deadline = AbortSignal.timeout(30_000);
+    return this.#list(
+      request.signal === undefined ? deadline : AbortSignal.any([request.signal, deadline]),
+      OFFICIAL_PLUGINS,
+      request,
+    );
   }
 
   async #list(
     signal: AbortSignal,
     plugins: readonly OfficialPlugin[] = OFFICIAL_PLUGINS,
+    request: PluginCatalogRequest = {},
   ): Promise<readonly OfficialPluginEntry[]> {
     const releases: unknown = JSON.parse(
       Buffer.from(
-        await this.#download(`${API_ROOT}/releases?per_page=100`, 2 * 1024 * 1024, false, signal),
+        await this.#download(
+          `${API_ROOT}/releases?per_page=100`,
+          2 * 1024 * 1024,
+          false,
+          signal,
+          request,
+          "catalog",
+        ),
       ).toString("utf8"),
     );
     const entries: OfficialPluginEntry[] = [];
@@ -246,9 +297,9 @@ export class OfficialPluginCatalog {
       for (const release of selectReleases(releases, plugin)) {
         const metadata = record(
           JSON.parse(
-            Buffer.from(await this.#asset(release.manifestAsset, 16 * 1024, signal)).toString(
-              "utf8",
-            ),
+            Buffer.from(
+              await this.#asset(release.manifestAsset, 16 * 1024, signal, request),
+            ).toString("utf8"),
           ),
         );
         if (metadata.id !== plugin.id)
@@ -293,28 +344,35 @@ export class OfficialPluginCatalog {
     return entries;
   }
 
-  async download(id: string): Promise<{ readonly bytes: Uint8Array; readonly sha256: string }> {
+  async download(
+    id: string,
+    request: PluginCatalogRequest = {},
+  ): Promise<{ readonly bytes: Uint8Array; readonly sha256: string }> {
     const pluginInfo = OFFICIAL_PLUGINS.find((plugin) => plugin.id === id);
     if (!pluginInfo) throw new Error("This plugin is not in the official catalog.");
-    const signal = AbortSignal.timeout(30_000);
-    const [entry] = await this.#list(signal, [pluginInfo]);
+    const deadline = AbortSignal.timeout(30_000);
+    const signal =
+      request.signal === undefined ? deadline : AbortSignal.any([request.signal, deadline]);
+    const [entry] = await this.#list(signal, [pluginInfo], request);
     if (!entry) throw new Error("This plugin has not been published yet.");
-    return this.#downloadPinned(entry, signal);
+    return this.#downloadPinned(entry, signal, request);
   }
 
   async downloadPinned(
     entry: OfficialPluginEntry,
     callerSignal?: AbortSignal,
+    onProgress?: PluginCatalogRequest["onProgress"],
   ): Promise<{ readonly bytes: Uint8Array; readonly sha256: string }> {
     const deadline = AbortSignal.timeout(30_000);
     const signal =
       callerSignal === undefined ? deadline : AbortSignal.any([callerSignal, deadline]);
-    return this.#downloadPinned(entry, signal);
+    return this.#downloadPinned(entry, signal, onProgress === undefined ? {} : { onProgress });
   }
 
   async #downloadPinned(
     entry: OfficialPluginEntry,
     signal: AbortSignal,
+    request: PluginCatalogRequest = {},
   ): Promise<{ readonly bytes: Uint8Array; readonly sha256: string }> {
     if (
       !OFFICIAL_PLUGINS.some((plugin) => plugin.id === entry.manifest.id) ||
@@ -325,10 +383,36 @@ export class OfficialPluginCatalog {
       new URL(entry.downloadUrl).href !== entry.downloadUrl
     )
       throw new Error("The selected package is not a known official plugin asset.");
-    const bytes = await this.#download(entry.downloadUrl, MAX_PLUGIN_PACKAGE_BYTES, true, signal);
+    const bytes = await this.#download(
+      entry.downloadUrl,
+      MAX_PLUGIN_PACKAGE_BYTES,
+      true,
+      signal,
+      request,
+    );
+    request.onProgress?.("verify");
     const plugin = parsePluginPackage(bytes, entry.sha256);
     if (JSON.stringify(plugin.manifest) !== JSON.stringify(entry.manifest))
       throw new Error("Plugin package does not match its published manifest.");
     return { bytes, sha256: entry.sha256 };
+  }
+
+  async probe(entry: OfficialPluginEntry, request: PluginCatalogRequest = {}): Promise<void> {
+    if (
+      !OFFICIAL_PLUGINS.some((plugin) => plugin.id === entry.manifest.id) ||
+      !new RegExp(`^${API_ROOT.replaceAll(".", "\\.")}/releases/assets/[1-9][0-9]*$`, "u").test(
+        entry.downloadUrl,
+      ) ||
+      new URL(entry.downloadUrl).href !== entry.downloadUrl
+    )
+      throw new Error("The selected package is not a known official plugin asset.");
+    const deadline = AbortSignal.timeout(30_000);
+    const signal =
+      request.signal === undefined ? deadline : AbortSignal.any([request.signal, deadline]);
+    if (
+      (await this.#download(entry.downloadUrl, 1024, true, signal, request, "download", true))
+        .byteLength === 0
+    )
+      throw new Error("The official package asset returned no data.");
   }
 }

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { app, dialog, safeStorage } from "electron";
+import { app, dialog, net, safeStorage, session } from "electron";
 
 import { PluginRuntime } from "../../node/plugins/runtime";
 import { PluginStore } from "../../node/plugins/store";
@@ -11,6 +11,7 @@ import { createNatsProviderEndpoint } from "../../node/nats-provider";
 
 import { confirmPluginExit } from "./plugin-exit";
 import { createPluginPackageFilePicker } from "./plugin-file-picker";
+import { createPluginNetworkTransport } from "./plugin-network-transport";
 import { createElectronKafkaBackend } from "./electron-kafka-backend";
 import { createElectronShell, type RunningElectronShell } from "./electron-shell";
 import { createKafkaElectronDeliveryBinding } from "./kafka-provider-delivery";
@@ -105,8 +106,20 @@ function shutdown(exitCode: number): Promise<void> {
 async function start(): Promise<void> {
   await app.whenReady();
   const developmentRendererUrl = process.env.STREAMSKOPE_RENDERER_URL;
+  const userDataPath = app.getPath("userData");
+  const profileProtection = await initializeElectronProfileProtection(
+    safeStorage,
+    process.platform,
+  );
   const plugins = new PluginRuntime({
-    store: new PluginStore(join(app.getPath("userData"), "plugins")),
+    store: new PluginStore(join(userDataPath, "plugins")),
+    networkTransport: createPluginNetworkTransport({
+      session: session.fromPartition("streamskope-plugin-downloads", { cache: false }),
+      request: (options) => net.request(options),
+    }),
+    ...(profileProtection.protector === undefined
+      ? {}
+      : { networkProtector: profileProtection.protector }),
     choosePackageFile: createPluginPackageFilePicker((options) =>
       runningShell === undefined
         ? dialog.showOpenDialog(options)
@@ -126,11 +139,6 @@ async function start(): Promise<void> {
       plugins.rendererAsset(path),
     );
   }
-  const userDataPath = app.getPath("userData");
-  const profileProtection = await initializeElectronProfileProtection(
-    safeStorage,
-    process.platform,
-  );
   backend = await createElectronKafkaBackend({
     platform: process.platform,
     safeStorage,

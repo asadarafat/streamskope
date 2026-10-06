@@ -77,10 +77,18 @@ independent of unrelated group-member/assignment omissions. Record sampling uses
 bounded adaptive windows; incomplete coverage does not qualify key or size
 inference. Existing schema-1 history remains readable.
 
-The desktop host protocol advances to 51 for explicit observation coverage,
-recovery errors, cache-only plugin catalog reads, local activation retry and reviewed package delivery.
+The desktop host protocol advances to 52 for explicit observation coverage,
+recovery errors, cache-only plugin catalog reads, local activation retry, reviewed
+package delivery and owned plugin-download networking.
 Development renderer and host builds must be updated together;
 the desktop installer includes both. This does not change the plugin API.
+
+Plugin downloads use the desktop's system proxy or an explicitly configured
+HTTP/HTTPS proxy. Credentials are scoped to that proxy and OS-protected when
+available; otherwise they remain session-only. Download progress and cancellation
+remain separate from installed-plugin lifecycle actions. Explicit offline mode
+blocks plugin acquisition while signed-file/cache installation and local provider
+connections remain available. See [offline plugin installation](../plugins/offline.md).
 
 Focused operator recovery and isolated multi-broker outage/recovery checks cover
 the changed behavior. Executed results and limitations belong to the exact PR

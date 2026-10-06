@@ -92,7 +92,8 @@ export class PluginCatalogCache {
     }
   }
 
-  async save(catalog: StoredPluginCatalog): Promise<void> {
+  async save(catalog: StoredPluginCatalog, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const validated = parse({ formatVersion: 1, ...catalog });
     const contents = JSON.stringify({ formatVersion: 1, ...validated });
     if (Buffer.byteLength(contents) > MAX_CATALOG_BYTES)
@@ -110,6 +111,7 @@ export class PluginCatalogCache {
       path,
       contents,
       createTempId: createAtomicPrivateFileTempId,
+      ...(signal === undefined ? {} : { signal }),
     });
   }
 }

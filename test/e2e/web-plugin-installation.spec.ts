@@ -89,6 +89,8 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
   let catalogUnavailable = false;
   let pendingCatalog: Promise<void> | undefined;
   let completeCatalog: (() => void) | undefined;
+  let pendingDownload: Promise<void> | undefined;
+  let completeDownload: (() => void) | undefined;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
@@ -107,9 +109,10 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
             },
           ];
         },
-        download: (): Promise<{ bytes: Uint8Array; sha256: string }> => {
+        download: async (): Promise<{ bytes: Uint8Array; sha256: string }> => {
           downloads += 1;
-          return Promise.resolve(available);
+          await pendingDownload;
+          return available;
         },
       },
       // A lifecycle operation must never request host restart.
@@ -171,6 +174,23 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await expect(card).toContainText(`Active version ${available.manifest.version}`);
     available = fixtures.broken;
     await page.getByRole("button", { name: "Check for updates", exact: true }).click();
+    pendingDownload = new Promise<void>((complete) => {
+      completeDownload = complete;
+    });
+    await card
+      .getByRole("button", { name: `Update to ${available.manifest.version}`, exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Cancel package acquisition", exact: true }),
+    ).toBeVisible();
+    await expect.poll(() => downloads).toBe(3);
+    await expect(card.getByRole("button", { name: "Remove", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Cancel package acquisition", exact: true }).click();
+    await expect(page.getByText(/Package acquisition:.*cancelled/u)).toBeVisible();
+    completeDownload?.();
+    pendingDownload = undefined;
+    await expect(page.getByRole("dialog", { name: "Review plugin", exact: true })).toHaveCount(0);
+    await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
     await card
       .getByRole("button", { name: `Update to ${available.manifest.version}`, exact: true })
       .click();
@@ -194,7 +214,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await page.getByRole("button", { name: "Remove plugin", exact: true }).click();
     await expect(card).toContainText("Not installed");
     await expect(page.getByText("Checking for plugin updates…", { exact: true })).toBeVisible();
-    expect(downloads).toBe(3);
+    expect(downloads).toBe(4);
     catalogUnavailable = true;
     completeCatalog?.();
     await expect(page.getByText(/The plugin catalog is unavailable/u)).toBeVisible();
@@ -240,10 +260,11 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
       ),
     ).toBe(documentId);
     expect(restarts).toBe(0);
-    expect(downloads).toBe(4);
+    expect(downloads).toBe(5);
     expect(errors).toEqual([]);
   } finally {
     completeCatalog?.();
+    completeDownload?.();
     await page.goto("about:blank");
     await launch?.close();
     await rm(root, { recursive: true, force: true });
@@ -327,6 +348,22 @@ test("reviews signed files, preserves a working plugin after a failed update, an
     const card = page.getByRole("region", { name: "EDA Capture", exact: true });
     await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
     const installed = (await plugins.list()).plugins[0]!.activationId;
+    await page.getByRole("button", { name: /^Plugin download settings/u }).click();
+    await expect(
+      page.getByText(/System proxy discovery and custom proxies require the desktop app/u),
+    ).toBeVisible();
+    await page.getByRole("checkbox", { name: "Offline plugin downloads", exact: true }).click();
+    await page.getByRole("button", { name: "Save settings", exact: true }).click();
+    await expect(page.getByText(/Plugin downloads are offline/u)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Check for updates", exact: true }),
+    ).toBeDisabled();
+    await expect(file).toBeEnabled();
+    await page.screenshot({
+      path: info.outputPath("plugin-offline-settings.png"),
+      animations: "disabled",
+    });
+    await page.getByRole("button", { name: /^Plugin download settings/u }).click();
 
     await file.click();
     await expect(review).toContainText("version and content are already installed");
@@ -349,6 +386,7 @@ test("reviews signed files, preserves a working plugin after a failed update, an
       exact: true,
     });
     await expect(cached).toBeVisible();
+    await cached.scrollIntoViewIfNeeded();
     await page.screenshot({
       path: info.outputPath("plugin-offline-cache.png"),
       animations: "disabled",

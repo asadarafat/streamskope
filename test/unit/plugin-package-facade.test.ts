@@ -15,6 +15,9 @@ import {
 import type { PluginRuntimePort } from "../../src/plugins/api";
 import type {
   PluginDeliverySnapshot,
+  PluginAcquisitionProgress,
+  PluginNetworkSnapshot,
+  PluginNetworkUpdateInput,
   PluginPackageInspection,
   PluginSnapshot,
 } from "../../src/plugins/contracts";
@@ -128,7 +131,10 @@ describe("plugin package host facade", () => {
       expect(parseHostCommandResponse(reply)).toEqual(reply);
     }
     expect(runtime.delivery).toHaveBeenCalledOnce();
-    expect(runtime.inspectPackage).toHaveBeenCalledWith({ source: "file" });
+    expect(runtime.inspectPackage).toHaveBeenCalledWith(
+      { source: "file" },
+      "plugins.package.inspect",
+    );
     expect(runtime.preparePackageChange).toHaveBeenCalledWith(inspection.candidateId);
     expect(runtime.installPackage).toHaveBeenCalledWith(inspection.candidateId, "consent");
     expect(runtime.discardPackage).toHaveBeenCalledWith(inspection.candidateId);
@@ -181,6 +187,130 @@ describe("plugin package host facade", () => {
     expect(runtime.discardPackage).toHaveBeenCalledOnce();
     expect(runtime.installPackage).not.toHaveBeenCalled();
     expect(runtime.preparePackageChange).not.toHaveBeenCalled();
+    await backend.shutdown();
+  });
+});
+
+const network: PluginNetworkSnapshot = {
+  revision: 1,
+  configuration: { mode: "custom", offline: false, proxyUrl: "http://proxy.example:8080" },
+  credentialsConfigured: true,
+  credentialStorage: "encrypted",
+  nativeAvailable: true,
+  supportedProxyProtocols: ["http", "https"],
+};
+const networkUpdate: PluginNetworkUpdateInput = {
+  configuration: network.configuration!,
+  credentials: {
+    action: "replace",
+    username: "fixture-proxy-user",
+    password: "fixture-proxy-password",
+  },
+};
+const networkOperations = [
+  ["plugins.network.get", {}, "networkSettings"],
+  ["plugins.network.update", networkUpdate, "updateNetwork"],
+  ["plugins.network.test", {}, "testNetwork"],
+  ["plugins.network.cancel", { requestId: "owned-download" }, "cancelAcquisition"],
+] as const;
+
+describe("plugin acquisition networking facade", () => {
+  it("routes local settings, connectivity tests and cancellation using actual host command IDs", async () => {
+    const connectivity = {
+      settingsRevision: 1,
+      checkedAt: "2026-10-06T12:00:00.000Z",
+      scope: "catalog-and-assets" as const,
+    };
+    const runtime = {
+      ...pluginRuntime(),
+      networkSettings: vi.fn(() => Promise.resolve(network)),
+      updateNetwork: vi.fn(() => Promise.resolve(network)),
+      testNetwork: vi.fn(() => Promise.resolve(connectivity)),
+      cancelAcquisition: vi.fn(() => Promise.resolve()),
+      catalog: vi.fn(() => Promise.resolve({ plugins: [] })),
+    };
+    const backend = facade(runtime, true);
+    for (const [name, payload] of networkOperations) {
+      const reply = await backend.execute(request(name, payload));
+      expect(reply.ok).toBe(true);
+      expect(parseHostCommandResponse(reply)).toEqual(reply);
+    }
+    expect(runtime.networkSettings).toHaveBeenCalledOnce();
+    expect(runtime.updateNetwork).toHaveBeenCalledWith(networkUpdate);
+    expect(runtime.testNetwork).toHaveBeenCalledWith("plugins.network.test");
+    expect(runtime.cancelAcquisition).toHaveBeenCalledWith("owned-download");
+    await backend.execute(request("plugins.catalog", { refresh: true }));
+    expect(runtime.catalog).toHaveBeenCalledWith(true, "plugins.catalog");
+    await backend.shutdown();
+  });
+
+  it.each(networkOperations)(
+    "reports %s unavailable for older runtime ports",
+    async (name, payload, method) => {
+      for (const runtime of [pluginRuntime(), undefined]) {
+        expect(runtime?.[method] === undefined).toBe(true);
+        const backend = facade(runtime);
+        expect(await backend.execute(request(name, payload))).toMatchObject({
+          ok: false,
+          error: { code: "BACKEND_UNAVAILABLE" },
+        });
+        await backend.shutdown();
+      }
+    },
+  );
+
+  it("forwards correlated acquisition progress and releases its subscription on shutdown", async () => {
+    let progress!: (payload: PluginAcquisitionProgress) => void;
+    const unsubscribe = vi.fn();
+    const runtime = {
+      ...pluginRuntime(),
+      subscribeAcquisition: vi.fn((listener: typeof progress): (() => void) => {
+        progress = listener;
+        return unsubscribe;
+      }),
+    };
+    const backend = facade(runtime);
+    const events: import("../../src/features/kafka/contracts").HostEvent[] = [];
+    backend.subscribe((event) => events.push(event));
+    const payload: PluginAcquisitionProgress = {
+      requestId: "owned-download",
+      operation: "inspect",
+      phase: "download",
+      state: "running",
+      receivedBytes: 42,
+      totalBytes: 100,
+    };
+    progress(payload);
+    expect(events.find((event) => event.event === "plugins.network.progress")).toMatchObject({
+      version: HOST_PROTOCOL_VERSION,
+      payload,
+    });
+    await backend.shutdown();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("redacts write-only proxy credentials from structured failure summaries and recovery", async () => {
+    const credentials = networkUpdate.credentials;
+    if (credentials.action !== "replace") throw new Error("Expected fixture credentials.");
+    const sensitive = `${credentials.username} ${credentials.password}`;
+    const runtime = {
+      ...pluginRuntime(),
+      updateNetwork: vi.fn(() =>
+        Promise.reject(
+          Object.assign(new Error(`Proxy authentication rejected ${sensitive}`), {
+            code: "BACKEND_UNAVAILABLE",
+            stage: "backend",
+            retryable: false,
+            recovery: `Check credentials ${sensitive}`,
+          }),
+        ),
+      ),
+    };
+    const backend = facade(runtime);
+    const reply = await backend.execute(request("plugins.network.update", networkUpdate));
+    expect(reply).toMatchObject({ ok: false, error: { code: "BACKEND_UNAVAILABLE" } });
+    expect(JSON.stringify(reply)).not.toContain(credentials.username);
+    expect(JSON.stringify(reply)).not.toContain(credentials.password);
     await backend.shutdown();
   });
 });

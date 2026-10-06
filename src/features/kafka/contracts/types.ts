@@ -1,8 +1,10 @@
 import type {
   JsonValue,
+  PluginAcquisitionProgress,
   PluginEvent,
   PluginSnapshot,
   PluginPackageInspectInput,
+  PluginNetworkUpdateInput,
 } from "../../../plugins/contracts";
 import type { ProviderHostPort } from "../../../platform/providers/host";
 
@@ -81,7 +83,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 51 as const;
+export const HOST_PROTOCOL_VERSION = 52 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -188,6 +190,10 @@ export const HOST_COMMANDS = [
   "plugins.list",
   "plugins.catalog",
   "plugins.delivery",
+  "plugins.network.get",
+  "plugins.network.update",
+  "plugins.network.test",
+  "plugins.network.cancel",
   "plugins.package.inspect",
   "plugins.package.change.prepare",
   "plugins.package.install",
@@ -207,6 +213,7 @@ export const HOST_EVENTS = [
   "backend.availability",
   "plugin.event",
   "plugins.changed",
+  "plugins.network.progress",
   "connection.state",
   "topics.changed",
   "consumerGroups.changed",
@@ -406,8 +413,21 @@ type HostCommandDefinition =
     })
   | (HostCommandBase & {
       readonly command:
-        "plugins.list" | "plugins.delivery" | "plugins.restart" | "plugins.exit.prepare";
+        | "plugins.list"
+        | "plugins.delivery"
+        | "plugins.network.get"
+        | "plugins.network.test"
+        | "plugins.restart"
+        | "plugins.exit.prepare";
       readonly payload: Record<string, never>;
+    })
+  | (HostCommandBase & {
+      readonly command: "plugins.network.update";
+      readonly payload: PluginNetworkUpdateInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "plugins.network.cancel";
+      readonly payload: { readonly requestId: string };
     })
   | (HostCommandBase & {
       readonly command: "plugins.catalog";
@@ -819,6 +839,10 @@ interface HostEventBase {
 }
 
 export type HostEvent =
+  | (HostEventBase & {
+      readonly event: "plugins.network.progress";
+      readonly payload: PluginAcquisitionProgress;
+    })
   | (HostEventBase & {
       readonly event: "plugins.changed";
       readonly payload: PluginSnapshot;

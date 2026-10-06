@@ -5,6 +5,7 @@ import { vi } from "vitest";
 import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
+  type HostEventListener,
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
 import type {
@@ -14,6 +15,10 @@ import type {
   PluginSnapshot,
   PluginDeliverySnapshot,
   PluginPackageInspection,
+  PluginPackageInspectInput,
+  PluginNetworkSnapshot,
+  PluginNetworkTestResult,
+  PluginAcquisitionProgress,
 } from "../../src/plugins/contracts";
 
 import { testHostExecute } from "./host-response";
@@ -27,6 +32,15 @@ export const manifest: PluginManifest = {
   renderer: "renderer.js",
 };
 
+export const networkSnapshot: PluginNetworkSnapshot = {
+  revision: 0,
+  configuration: { mode: "system", offline: false, proxyUrl: null },
+  credentialsConfigured: false,
+  credentialStorage: "session",
+  nativeAvailable: false,
+  supportedProxyProtocols: [],
+};
+
 export function fixture(
   options: {
     snapshot?: PluginSnapshot;
@@ -37,21 +51,33 @@ export function fixture(
     catalog?: (refresh: boolean) => Promise<PluginCatalogSnapshot>;
     delivery?: PluginDeliverySnapshot;
     inspection?: PluginPackageInspection | null;
-    inspectDeferred?: () => Promise<PluginPackageInspection | null>;
+    inspectDeferred?: (input: PluginPackageInspectInput) => Promise<PluginPackageInspection | null>;
     inspectFailure?: string;
     installDeferred?: () => Promise<void>;
+    network?: PluginNetworkSnapshot;
+    networkFailure?: string;
+    networkTest?: (revision: number) => Promise<PluginNetworkTestResult>;
   } = {},
 ): {
   host: StreamSkopeHost;
   commands: HostCommand[];
+  emitProgress: (progress: PluginAcquisitionProgress) => void;
 } {
   const availableManifest = options.manifest ?? manifest;
   let snapshot = options.snapshot ?? { revision: 0, plugins: [] };
   const commands: HostCommand[] = [];
   let candidate: PluginPackageInspection | null = null;
+  let network = options.network ?? networkSnapshot;
+  const listeners = new Set<HostEventListener>();
+  let sequence = 0;
   const host: StreamSkopeHost = {
     openExternalUrl: vi.fn(),
-    subscribe: () => () => undefined,
+    subscribe: (listener): (() => void) => {
+      listeners.add(listener);
+      return (): void => {
+        listeners.delete(listener);
+      };
+    },
     execute: testHostExecute(async (command) => {
       commands.push(command);
       let result: object = { correlationId: command.id };
@@ -110,7 +136,7 @@ export function fixture(
           )?.installed;
           candidate =
             options.inspectDeferred !== undefined
-              ? await options.inspectDeferred()
+              ? await options.inspectDeferred(input)
               : options.inspection !== undefined
                 ? options.inspection
                 : {
@@ -175,6 +201,39 @@ export function fixture(
         case "plugins.list":
           result = { ...result, pluginSnapshot: snapshot };
           break;
+        case "plugins.network.get":
+          if (options.networkFailure !== undefined) throw new Error(options.networkFailure);
+          result = { ...result, pluginNetwork: network };
+          break;
+        case "plugins.network.update":
+          network = {
+            revision: network.revision + 1,
+            configuration: command.payload.configuration,
+            credentialsConfigured:
+              command.payload.credentials.action === "replace" ||
+              (command.payload.credentials.action === "unchanged" && network.credentialsConfigured),
+            credentialStorage: network.credentialStorage,
+            nativeAvailable: network.nativeAvailable,
+            supportedProxyProtocols: network.supportedProxyProtocols,
+          };
+          result = { ...result, pluginNetwork: network };
+          break;
+        case "plugins.network.test":
+          result = {
+            ...result,
+            pluginNetworkTest:
+              options.networkTest === undefined
+                ? {
+                    settingsRevision: network.revision,
+                    checkedAt: "2026-10-06T12:00:00.000Z",
+                    scope: "catalog-only",
+                    detail: "This test did not inspect a release asset.",
+                  }
+                : await options.networkTest(network.revision),
+          };
+          break;
+        case "plugins.network.cancel":
+          break;
         case "plugins.restart":
           break;
         default:
@@ -189,7 +248,19 @@ export function fixture(
       });
     }),
   };
-  return { host, commands };
+  return {
+    host,
+    commands,
+    emitProgress: (progress): void => {
+      for (const listener of listeners)
+        listener({
+          version: HOST_PROTOCOL_VERSION,
+          sequence: ++sequence,
+          event: "plugins.network.progress",
+          payload: progress,
+        });
+    },
+  };
 }
 
 export function catalogGate(): {

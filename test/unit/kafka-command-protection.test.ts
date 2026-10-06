@@ -64,7 +64,15 @@ const writes = [
 ] as const;
 
 describe("host record protection", () => {
-  it.each(["plugins.delivery", "plugins.package.inspect", "plugins.package.discard"] as const)(
+  it.each([
+    "plugins.delivery",
+    "plugins.package.inspect",
+    "plugins.package.discard",
+    "plugins.network.get",
+    "plugins.network.update",
+    "plugins.network.test",
+    "plugins.network.cancel",
+  ] as const)(
     "allows local %s without waiting for protection or invoking remote work",
     async (operation) => {
       const service = preferences();

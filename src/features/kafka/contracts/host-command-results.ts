@@ -4,6 +4,8 @@ import type {
   PluginCatalogSnapshot,
   PluginDeliverySnapshot,
   PluginPackageInspection,
+  PluginNetworkSnapshot,
+  PluginNetworkTestResult,
   PluginExitPrompt,
   PluginChangePrompt,
 } from "../../../plugins/contracts";
@@ -147,6 +149,15 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
     readonly correlationId: string;
     readonly pluginDelivery: PluginDeliverySnapshot;
   };
+  readonly "plugins.network.get": {
+    readonly correlationId: string;
+    readonly pluginNetwork: PluginNetworkSnapshot;
+  };
+  readonly "plugins.network.update": SpecificCommandResults["plugins.network.get"];
+  readonly "plugins.network.test": {
+    readonly correlationId: string;
+    readonly pluginNetworkTest: PluginNetworkTestResult;
+  };
   readonly "plugins.package.inspect": {
     readonly correlationId: string;
     readonly pluginPackage: PluginPackageInspection | null;
@@ -214,6 +225,9 @@ const structuredResults = {
   "plugins.list": true,
   "plugins.catalog": true,
   "plugins.delivery": true,
+  "plugins.network.get": true,
+  "plugins.network.update": true,
+  "plugins.network.test": true,
   "plugins.package.inspect": true,
   "plugins.package.change.prepare": true,
   "plugins.package.install": true,

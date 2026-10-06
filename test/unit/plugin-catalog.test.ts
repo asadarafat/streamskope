@@ -482,6 +482,36 @@ describe("official plugin downloads", () => {
     });
     expect(fetcher).toHaveBeenCalledOnce();
   });
+  it("probes only a bounded sample of a known asset and reports transfer counts without claiming integrity", async () => {
+    const { catalog, fetcher } = fixture();
+    const entry = (await catalog.list())[0]!;
+    fetcher.mockClear();
+    const cancel = vi.fn();
+    fetcher.mockResolvedValueOnce(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (controller): void => {
+            controller.enqueue(new Uint8Array(2048));
+          },
+          cancel,
+        }),
+        { headers: { "content-length": "2048" } },
+      ),
+    );
+    const counts: number[] = [];
+    await catalog.probe(entry, {
+      onProgress: (_phase, received): void => {
+        if (received !== undefined) counts.push(received);
+      },
+    });
+    expect(counts).toEqual([0, 1024]);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(new Headers(fetcher.mock.calls[0]![1]?.headers).get("Range")).toBe("bytes=0-1023");
+    await expect(
+      catalog.probe({ ...entry, downloadUrl: "https://untrusted.example/file" }),
+    ).rejects.toThrow(/known official/u);
+  });
 
   it("rejects missing GitHub digests and changed downloaded package bytes", async () => {
     const metadata = release();
