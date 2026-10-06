@@ -19,26 +19,8 @@ export default defineConfig({
   base: "./",
   build: {
     outDir: "dist/renderer",
-    rolldownOptions: {
-      output: {
-        codeSplitting: {
-          groups: [
-            {
-              includeDependenciesRecursively: false,
-              name: "react-dom",
-              priority: 2,
-              test: /node_modules[\\/]react-dom/u,
-            },
-            {
-              includeDependenciesRecursively: false,
-              name: "mui-data-grid",
-              priority: 1,
-              test: /node_modules[\\/]@mui[\\/]x-data-grid/u,
-            },
-          ],
-        },
-      },
-    },
+    // Let the bundler preserve dependency initialization order across lazy workspaces.
+    // Forced partial React/MUI groups can place a styled component on both sides of a chunk cycle.
   },
   optimizeDeps: {
     include: ["@mui/x-data-grid"],
