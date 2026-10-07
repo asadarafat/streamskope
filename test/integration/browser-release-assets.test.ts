@@ -553,7 +553,7 @@ it.each(["registry-first", "archives-first"] as const)(
     expect(lines).toHaveLength(8);
     const checksums = new Map(
       lines.map((line) => {
-        const match = /^([a-f0-9]{64})  (.+)$/u.exec(line);
+        const match = /^([a-f0-9]{64}) {2}(.+)$/u.exec(line);
         expect(match).not.toBeNull();
         return [match![2]!, match![1]!] as const;
       }),
