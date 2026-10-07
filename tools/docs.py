@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from urllib.parse import unquote, urlsplit
 
 from docs import publication
@@ -276,7 +277,8 @@ def prepare(url, serving=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["setup", "prepare", "build", "serve", "check", "qualify", "verify", "guard"])
+    parser.add_argument("action", choices=["setup", "prepare", "build", "serve", "check", "qualify", "verify", "guard", "pending"])
+    parser.add_argument("--component", choices=["desktop", "eda", "nsp", "all"], default="all")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8002)
     parser.add_argument("--media", action="store_true", help="Force full intro playback qualification")
@@ -284,6 +286,9 @@ def main():
     parser.add_argument("--revision")
     parser.add_argument("--release")
     args = parser.parse_args()
+    if args.action == "pending":
+        pending_changes(args.component)
+        return
     if args.action == "guard":
         publication.guard_publication()
         return
@@ -342,6 +347,42 @@ def main():
         if os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1":
             shutil.copyfile(ROOT / SNAPSHOT, SITE / "plugin-publications.json")
         inspect_site(SITE, urlsplit(url).path)
+
+
+def pending_changes(component):
+    """Generate a fresh committed-source inventory; ordinary docs checks stay offline."""
+    environment = dict(os.environ)
+    if not environment.get("GH_TOKEN"):
+        environment["GH_TOKEN"] = subprocess.check_output(
+            ["gh", "auth", "token"], cwd=ROOT, text=True).strip()
+    if not environment.get("GITHUB_REPOSITORY"):
+        environment["GITHUB_REPOSITORY"] = subprocess.check_output(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+            cwd=ROOT, env=environment, text=True).strip()
+    # Fetch without --force: a rewritten local release tag must fail visibly.
+    subprocess.run(["git", "fetch", "origin", "--tags"], cwd=ROOT, check=True)
+    environment["GITHUB_SHA"] = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    directory = ROOT / ".artifacts/release-pending"
+    directory.mkdir(parents=True, exist_ok=True)
+    # A unique directory keeps concurrent Markdown/evidence pairs together.
+    snapshot = Path(tempfile.mkdtemp(prefix=f"{component}-", dir=directory))
+    output = snapshot / "pending.md"
+    subprocess.run([
+        "node", "--import", "tsx", "tools/package/release-changelog.ts",
+        "pending", component, str(output),
+    ], cwd=ROOT, env=environment, check=True)
+    evidence = json.loads(Path(str(output) + ".json").read_text(encoding="utf8"))
+    markdown = output.read_text(encoding="utf8")
+    selected = {"desktop", "eda", "nsp"} if component == "all" else {component}
+    if (evidence.get("sourceSha") != environment["GITHUB_SHA"]
+            or evidence.get("repository") != environment["GITHUB_REPOSITORY"]
+            or evidence.get("mode") != "pending"
+            or {item["component"] for item in evidence.get("components", [])} != selected
+            or evidence.get("markdownSha256") != hashlib.sha256(markdown.encode("utf8")).hexdigest()):
+        raise ValueError("Pending inventory does not match this committed source")
+    print(markdown, flush=True)
+    print(f"Markdown and selection evidence: {snapshot.relative_to(ROOT)}", flush=True)
 
 
 if __name__ == "__main__":

@@ -76,6 +76,10 @@ jobs:
             if (response.status !== 404) throw new Error(`Cannot establish whether ${RELEASE_TAG} is unused: GitHub returned HTTP ${response.status}.`);
           }
           NODE
+      - name: Require completed archival of the previous component release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --import tsx tools/package/release-documentation.ts check "$RELEASE_COMPONENT"
       - name: Collect changes for the selected component and source
         env:
           GH_TOKEN: ${{ github.token }}

@@ -8,10 +8,96 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
+  # Plugin archival must never replace a queued desktop Pages publication.
+  group: pages-${{ startsWith(github.event.release.tag_name, 'v') && 'desktop' || github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
+  records:
+    name: Finalize release documentation
+    if: github.event_name == 'release' && !github.event.release.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    concurrency:
+      group: release-documentation
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - name: Select release documentation credentials
+        id: credentials
+        env:
+          APP_CLIENT_ID: ${{ vars.STREAMSKOPE_RELEASE_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.STREAMSKOPE_RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -n "$APP_CLIENT_ID" && -n "$APP_PRIVATE_KEY" ]]; then
+            echo "use_app=true" >> "$GITHUB_OUTPUT"
+          elif [[ -z "$APP_CLIENT_ID" && -z "$APP_PRIVATE_KEY" ]]; then
+            echo "use_app=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Configure both the release App client ID and private key, or neither." >&2
+            exit 1
+          fi
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: steps.credentials.outputs.use_app == 'true'
+        id: app
+        with:
+          client-id: ${{ vars.STREAMSKOPE_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.STREAMSKOPE_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-actions: write
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          # Archival advances main; deployment below remains pinned to the release.
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || github.token }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Archive publications and qualify the generated PR
+        id: records
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          RELEASE_DOCS_AUTOMATIC_CI: ${{ steps.credentials.outputs.use_app }}
+        run: node --import tsx tools/package/release-documentation.ts reconcile
+      - name: Require the documentation PR to merge
+        if: steps.records.outputs.pull_request != '' && steps.records.outputs.review_required != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          RELEASE_DOCS_AUTOMATIC_CI: ${{ steps.credentials.outputs.use_app }}
+          RELEASE_DOCS_PR: ${{ steps.records.outputs.pull_request }}
+        run: |
+          for attempt in {1..150}; do
+            state=$(gh pr view "$RELEASE_DOCS_PR" --repo "$GITHUB_REPOSITORY" --json state --jq .state)
+            if [[ "$state" == MERGED ]]; then
+              printf 'Release documentation PR #%s merged after required CI.\n' "$RELEASE_DOCS_PR" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [[ "$state" == CLOSED ]]; then
+              echo "Release documentation PR closed without merging; finalization is incomplete." >&2
+              exit 1
+            fi
+            merge_state=$(gh pr view "$RELEASE_DOCS_PR" --repo "$GITHUB_REPOSITORY" --json mergeStateStatus --jq .mergeStateStatus)
+            if [[ "$merge_state" == BEHIND ]]; then
+              git fetch origin main --tags
+              git switch main
+              git reset --hard origin/main
+              npm ci --ignore-scripts --no-audit --no-fund
+              node --import tsx tools/package/release-documentation.ts reconcile
+            fi
+            sleep 10
+          done
+          echo "Release documentation PR is still pending; inspect its CI and merge requirements." >&2
+          exit 1
+
   select:
     if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.draft && !github.event.release.prerelease
     runs-on: ubuntu-24.04

@@ -50,13 +50,35 @@ export interface ReleaseChangelog {
     changes: Change[];
   };
 }
-export interface ChangelogOptions {
+interface SelectionOptions {
   root: string;
   repository: string;
   sourceSha: string;
   component: ReleaseComponent;
-  version: string;
   readGithub: GithubRead;
+}
+export interface ChangelogOptions extends SelectionOptions {
+  version: string;
+}
+export interface PendingChangesOptions extends Omit<SelectionOptions, "component"> {
+  component: ReleaseComponent | "all";
+}
+interface Selection {
+  baseline: Baseline | null;
+  commits: string[];
+  changes: Change[];
+}
+export interface PendingChanges {
+  markdown: string;
+  evidence: {
+    schemaVersion: 1;
+    mode: "pending";
+    repository: string;
+    sourceSha: string;
+    markdownSha256: string;
+    baselinePolicy: "published-stable-ancestor";
+    components: Array<Selection & { component: ReleaseComponent }>;
+  };
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -95,7 +117,7 @@ async function pages(read: GithubRead, path: string): Promise<unknown[]> {
   throw new Error(`GitHub pagination exceeded its safety limit for ${path}.`);
 }
 
-async function baseline(options: ChangelogOptions, prerelease: boolean): Promise<Baseline | null> {
+async function baseline(options: SelectionOptions, prerelease: boolean): Promise<Baseline | null> {
   const { root, repository, component, sourceSha, readGithub } = options;
   const prefix = component === "desktop" ? "v" : `plugins/${component}/v`;
   const candidates: Array<Baseline & { distance: number }> = [];
@@ -196,12 +218,11 @@ function escapeMarkdown(text: string): string {
   }).join("");
 }
 
-/** Read exact Git ancestry and GitHub metadata; no tags, releases or repository files are changed. */
-export async function generateReleaseChangelog(
-  options: ChangelogOptions,
-): Promise<ReleaseChangelog> {
-  const { root, repository, sourceSha, component, version, readGithub } = options;
-  const identity = releaseIdentity(component, version);
+async function collectSelection(
+  options: SelectionOptions,
+  prerelease: boolean,
+): Promise<Selection> {
+  const { root, repository, sourceSha, component, readGithub } = options;
   if (
     !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9_][A-Za-z0-9_.-]*$/u.test(repository) ||
     !SHA.test(sourceSha)
@@ -211,7 +232,7 @@ export async function generateReleaseChangelog(
     throw new Error("Release notes require complete Git history and fetched release tags.");
   if ((await git(root, "rev-parse", "--verify", `${sourceSha}^{commit}`)) !== sourceSha)
     throw new Error("Release source must identify an available commit.");
-  const previous = await baseline(options, identity.prerelease);
+  const previous = await baseline(options, prerelease);
   const history = await git(
     root,
     "rev-list",
@@ -311,21 +332,17 @@ export async function generateReleaseChangelog(
       });
     }
   }
+  return { baseline: previous, commits, changes };
+}
+
+function renderSelectedChanges(changes: Change[], url: string, heading = "###"): string[] {
   const included = changes.filter((change) => change.included);
-  const url = `https://github.com/${repository}`;
-  const lines = [
-    "## Changes from merged pull requests",
-    "",
-    previous
-      ? `Since [${escapeMarkdown(previous.tag)}](${url}/releases/tag/${encodeURIComponent(previous.tag)}), through [${sourceSha.slice(0, 7)}](${url}/commit/${sourceSha}).`
-      : `No eligible prior ${component} release; full reachable history through [${sourceSha.slice(0, 7)}](${url}/commit/${sourceSha}).`,
-    "",
-  ];
+  const lines: string[] = [];
   for (const group of CATEGORIES) {
     const items = included.filter((change) => change.kind === "pr" && change.category === group);
     if (items.length)
       lines.push(
-        `### ${group}`,
+        `${heading} ${group}`,
         "",
         ...items.map(
           (change) =>
@@ -339,7 +356,7 @@ export async function generateReleaseChangelog(
   const direct = included.filter((change) => change.kind === "commit");
   if (direct.length)
     lines.push(
-      "### Direct commits",
+      `${heading} Direct commits`,
       "",
       ...direct.map(
         (change) =>
@@ -347,6 +364,30 @@ export async function generateReleaseChangelog(
       ),
       "",
     );
+  return lines;
+}
+
+/** Read exact Git ancestry and GitHub metadata; no tags, releases or repository files are changed. */
+export async function generateReleaseChangelog(
+  options: ChangelogOptions,
+): Promise<ReleaseChangelog> {
+  const { repository, sourceSha, component, version } = options;
+  const identity = releaseIdentity(component, version);
+  const {
+    baseline: previous,
+    commits,
+    changes,
+  } = await collectSelection(options, identity.prerelease);
+  const url = `https://github.com/${repository}`;
+  const lines = [
+    "## Changes from merged pull requests",
+    "",
+    previous
+      ? `Since [${escapeMarkdown(previous.tag)}](${url}/releases/tag/${encodeURIComponent(previous.tag)}), through [${sourceSha.slice(0, 7)}](${url}/commit/${sourceSha}).`
+      : `No eligible prior ${component} release; full reachable history through [${sourceSha.slice(0, 7)}](${url}/commit/${sourceSha}).`,
+    "",
+  ];
+  lines.push(...renderSelectedChanges(changes, url));
   lines.push(
     "Component labels select changes when present. Otherwise paths infer plugin-only changes; shared or unknown paths are included conservatively. Review this changelog and the workflow selection evidence before publishing.",
     "",
@@ -378,6 +419,81 @@ export async function generateReleaseChangelog(
   };
 }
 
+/** Derive pending work independently for each component without assigning a release identity. */
+export async function generatePendingChanges(
+  options: PendingChangesOptions,
+): Promise<PendingChanges> {
+  const { repository, sourceSha, component, readGithub } = options;
+  if (component !== "all" && !COMPONENTS.includes(component))
+    throw new Error("Pending changes require desktop, eda, nsp or all.");
+  // Reuse a single metadata snapshot across components, including skipped PR evidence.
+  const snapshot = new Map<string, Promise<unknown>>();
+  const readSnapshot: GithubRead = (path) => {
+    let request = snapshot.get(path);
+    if (!request) {
+      request = readGithub(path);
+      snapshot.set(path, request);
+    }
+    return request;
+  };
+  const selections: PendingChanges["evidence"]["components"] = [];
+  for (const selected of component === "all" ? COMPONENTS : [component])
+    selections.push({
+      component: selected,
+      ...(await collectSelection(
+        { ...options, component: selected, readGithub: readSnapshot },
+        false,
+      )),
+    });
+  const url = `https://github.com/${repository}`;
+  const lines = [
+    "# Unreleased changes",
+    "",
+    `Generated from published release records and merged source changes through [${sourceSha.slice(0, 7)}](${url}/commit/${sourceSha}). No upcoming version is assigned.`,
+    "",
+    "Each component uses its nearest ancestral published stable release. Prerelease changes remain pending until a stable release includes them; publication order and unrelated component releases do not move that baseline.",
+    "",
+  ];
+  for (const selection of selections) {
+    const { component: selected, baseline: previous, changes } = selection;
+    lines.push(
+      `## ${selected === "desktop" ? "Desktop" : `${selected.toUpperCase()} Connector`}`,
+      "",
+      previous
+        ? `Since [${escapeMarkdown(previous.tag)}](${url}/releases/tag/${encodeURIComponent(previous.tag)}).`
+        : `No eligible prior ${selected} stable release; full reachable history is considered.`,
+      "",
+    );
+    if (changes.some((change) => change.included))
+      lines.push(...renderSelectedChanges(changes, url));
+    else lines.push(`No ${selected} changes are pending release.`, "");
+    if (previous)
+      lines.push(
+        `[Repository-wide comparison](${url}/compare/${previous.commit}...${sourceSha}) includes all components.`,
+        "",
+      );
+  }
+  lines.push(
+    "Component labels select changes when present. Otherwise paths infer plugin-only changes; shared or unknown paths are included conservatively. Changes marked release-notes:skip remain in the selection evidence and are omitted from this inventory.",
+    "",
+    "This inventory records source changes, not test or environment qualification results. Maintainer highlights explain the changes separately and do not determine which changes are pending.",
+    "",
+  );
+  const markdown = lines.join("\n");
+  return {
+    markdown,
+    evidence: {
+      schemaVersion: 1,
+      mode: "pending",
+      repository,
+      sourceSha,
+      markdownSha256: createHash("sha256").update(markdown).digest("hex"),
+      baselinePolicy: "published-stable-ancestor",
+      components: selections,
+    },
+  };
+}
+
 export function githubReader(token: string, apiUrl = "https://api.github.com"): GithubRead {
   const api = new URL(apiUrl);
   if (api.protocol !== "https:" || api.username || api.password || api.search || api.hash)
@@ -400,10 +516,14 @@ export function githubReader(token: string, apiUrl = "https://api.github.com"): 
 }
 
 async function main(): Promise<void> {
-  const [component, version, output, ...extra] = process.argv.slice(2);
-  if (!component || !version || !output || extra.length)
-    throw new Error("Usage: release-changelog.ts <desktop|eda|nsp> <version> <output-file>");
-  const identity = releaseIdentity(component, version);
+  const [command, argument, output, ...extra] = process.argv.slice(2);
+  if (!command || !argument || !output || extra.length)
+    throw new Error(
+      "Usage: release-changelog.ts <desktop|eda|nsp> <version> <output-file> or pending <desktop|eda|nsp|all> <output-file>",
+    );
+  const identity = command === "pending" ? null : releaseIdentity(command, argument);
+  if (command === "pending" && ![...COMPONENTS, "all"].includes(argument))
+    throw new Error("Pending changes require desktop, eda, nsp or all.");
   const { GITHUB_REPOSITORY: repository, GITHUB_SHA: sourceSha, GH_TOKEN: token } = process.env;
   if (!repository || !sourceSha || !token)
     throw new Error("Set GITHUB_REPOSITORY, GITHUB_SHA and GH_TOKEN to generate release notes.");
@@ -418,20 +538,32 @@ async function main(): Promise<void> {
     }
     throw new Error(`Refusing to overwrite release-note evidence: ${file}.`);
   }
-  const result = await generateReleaseChangelog({
+  const selection = {
     root: process.cwd(),
     repository,
     sourceSha,
-    component: identity.component,
-    version,
     readGithub: githubReader(token, process.env.GITHUB_API_URL),
-  });
+  };
+  const result = identity
+    ? await generateReleaseChangelog({
+        ...selection,
+        component: identity.component,
+        version: argument,
+      })
+    : await generatePendingChanges({
+        ...selection,
+        component: argument as PendingChangesOptions["component"],
+      });
   await writeFile(`${output}.json`, `${JSON.stringify(result.evidence, null, 2)}\n`, {
     flag: "wx",
   });
   await writeFile(output, result.markdown, { flag: "wx" });
+  const changes =
+    "changes" in result.evidence
+      ? result.evidence.changes
+      : result.evidence.components.flatMap((item) => item.changes);
   process.stdout.write(
-    `Generated ${identity.tag} changelog from ${result.evidence.changes.filter((change) => change.included).length} selected changes.\n`,
+    `Generated ${identity ? `${identity.tag} changelog` : `${argument} pending inventory`} from ${changes.filter((change) => change.included).length} selected ${identity ? "changes" : "component changes"}.\n`,
   );
 }
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

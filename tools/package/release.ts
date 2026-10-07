@@ -20,7 +20,11 @@ import {
   type TrustedPluginPublisher,
 } from "../../src/platform/node/plugins/publishers";
 
-import { prepareUnsignedRelease, releaseNotesBody } from "./release-policy";
+import {
+  prepareUnsignedRelease,
+  releaseNotesBody,
+  reviewedReleaseCommentary,
+} from "./release-policy";
 import { prepareBrowserReleaseAssets } from "./browser-release";
 import { releaseIdentity, type ReleaseComponent } from "./release-version";
 
@@ -141,15 +145,16 @@ export async function preparePluginReleaseNotes(
   if (identity.component === "desktop" || !/^[a-f0-9]{40}$/u.test(commit))
     throw new Error("Plugin notes require a plugin component and exact source commit.");
   const manifest = await validatePluginReleaseAssets(directory, component, version, publishers);
-  const reviewed = await readFile(reviewedPath, "utf8");
-  if (!reviewed.trim() || !/^##\s+\S/mu.test(reviewed))
+  const commentary = await readFile(reviewedPath, "utf8");
+  const reviewed = reviewedReleaseCommentary(commentary);
+  if (!commentary.trim() || (reviewed && !/^##\s+\S/mu.test(reviewed)))
     throw new Error("Plugin release needs reviewed upgrade and limitation notes.");
   const changelog = await readReleaseChangelog(changelogPath, identity.component, version, commit);
   const compatibility = manifest.compatibility!;
   return (
     [
       `# ${manifest.name} ${version}`,
-      reviewed.trim(),
+      ...(reviewed ? [reviewed] : []),
       "## Installation and compatibility",
       `Install from StreamSkope Preferences > Plugins; activation is immediate. Requires plugin API ${manifest.apiVersion}.`,
       `The primary package remains compatible with existing clients. The separate portable download is publisher-signed and requires a StreamSkope build with signed portable package support; it contains the identical plugin code and resources.`,

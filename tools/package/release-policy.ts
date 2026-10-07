@@ -22,6 +22,30 @@ export function isDesktopReleaseTag(tag: string | undefined, version: string): b
   }
 }
 
+/** Development status instructions and empty highlights are never published notes. */
+export function reviewedReleaseCommentary(source: string): string {
+  const opening = "<!-- development-release-status -->";
+  const closing = "<!-- /development-release-status -->";
+  const openings = source.split(opening).length - 1;
+  const closings = source.split(closing).length - 1;
+  if (
+    openings !== closings ||
+    openings > 1 ||
+    (openings && source.indexOf(opening) > source.indexOf(closing))
+  )
+    throw new Error("Development release status needs one complete bounded block.");
+  return source
+    .replace(
+      /<!-- development-release-status -->[\s\S]*?<!-- \/development-release-status -->\s*/u,
+      "",
+    )
+    .replace(
+      /^## Release highlights\r?\n\s*No additional release highlights recorded\.\s*(?=^## |$(?![\s\S]))/mu,
+      "",
+    )
+    .trim();
+}
+
 export async function prepareUnsignedRelease(
   directory: string,
   version: string,

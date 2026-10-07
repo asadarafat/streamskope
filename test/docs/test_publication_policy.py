@@ -96,5 +96,80 @@ class StablePublicationTests(unittest.TestCase):
             self.assertFalse(output.exists())
 
 
+class ArchivedQualificationTests(unittest.TestCase):
+    revision = "b" * 40
+
+    def plan(self):
+        tag = "v0.11.0"
+        return {"latestStableDesktop": {
+            "tag": tag, "sourceSha": self.revision,
+            "release": {"tag_name": tag, "draft": False, "prerelease": False,
+                        "immutable": True, "assets": []}}}
+
+    def page(self, root):
+        page = root / "website/docs/guide/qualification.md"
+        page.parent.mkdir(parents=True)
+        page.write_text(
+            "# Qualification evidence\n\n"
+            "<!-- publication-qualification -->\n## Published release: v0.10.0\n\n"
+            "A reviewed report records a blocked live NSP test.\n"
+            "<!-- /publication-qualification -->\n\n"
+            "## Historical qualification: v0.9.2\n\nEarlier retained limits.\n")
+        return page
+
+    def test_requires_archive_before_next_release_and_preserves_prior_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            page = self.page(root)
+            before = page.read_text()
+            with patch.object(publication.subprocess, "check_output", return_value=self.revision):
+                with self.assertRaisesRegex(ValueError, "need archival"):
+                    publication.archived_qualification(root, self.plan(), check=True)
+                self.assertEqual(page.read_text(), before)
+                publication.archived_qualification(root, self.plan())
+                updated = page.read_text()
+                self.assertIn("## Published release: v0.11.0", updated)
+                self.assertIn(f"/commit/{self.revision}", updated)
+                self.assertIn("No source-specific qualification report", updated)
+                self.assertIn("## Historical qualification: v0.10.0", updated)
+                self.assertIn("A reviewed report records a blocked live NSP test.", updated)
+                self.assertIn("Earlier retained limits.", updated)
+                publication.archived_qualification(root, self.plan(), check=True)
+                publication.archived_qualification(root, self.plan())
+                self.assertEqual(page.read_text(), updated)
+
+    def test_preserves_reviewed_current_report_and_links_only_recorded_asset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            page = self.page(root)
+            plan = self.plan()
+            asset = {"name": "qualification-v0.11.0.json", "state": "uploaded", "size": 10,
+                     "browser_download_url": "https://github.com/asadarafat/streamskope/releases/download/v0.11.0/qualification-v0.11.0.json"}
+            plan["latestStableDesktop"]["release"]["assets"] = [asset]
+            with patch.object(publication.subprocess, "check_output", return_value=self.revision):
+                publication.archived_qualification(root, plan)
+                self.assertIn(asset["browser_download_url"], page.read_text())
+                self.assertIn("the link alone does not establish", page.read_text())
+                page.write_text(page.read_text().replace(
+                    "<!-- /publication-qualification -->", "A reviewed failed test remains recorded.\n<!-- /publication-qualification -->"))
+                reviewed = page.read_text()
+                publication.archived_qualification(root, plan)
+                self.assertEqual(page.read_text(), reviewed)
+
+    def test_rejects_mutable_release_or_different_tag_source_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            page = self.page(root)
+            before = page.read_text()
+            plan = self.plan()
+            plan["latestStableDesktop"]["release"]["immutable"] = False
+            with self.assertRaisesRegex(ValueError, "immutable"):
+                publication.archived_qualification(root, plan)
+            with patch.object(publication.subprocess, "check_output", return_value="c" * 40):
+                with self.assertRaisesRegex(ValueError, "source differs"):
+                    publication.archived_qualification(root, self.plan())
+            self.assertEqual(page.read_text(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

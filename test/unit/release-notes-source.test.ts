@@ -2,9 +2,21 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { releaseNotesBody } from "../../tools/package/release-policy";
+import { releaseNotesBody, reviewedReleaseCommentary } from "../../tools/package/release-policy";
 
 describe("versioned release notes source", () => {
+  it("preserves real upgrade guidance and rejects malformed development-only blocks", () => {
+    const reviewed = "## Release highlights\n\nBack up your profiles before upgrading.\n";
+    expect(reviewedReleaseCommentary(reviewed)).toBe(reviewed.trim());
+    expect(() =>
+      reviewedReleaseCommentary("<!-- development-release-status -->\nsecret preview\n"),
+    ).toThrow(/bounded block/);
+    expect(() =>
+      reviewedReleaseCommentary(
+        "<!-- /development-release-status --><!-- development-release-status -->",
+      ),
+    ).toThrow(/bounded block/);
+  });
   it("extracts the reviewed body for the matching release version without rewriting it", () => {
     const body = "# StreamSkope 1.2.3\n\n- Clear connection diagnostics.\n";
     expect(
