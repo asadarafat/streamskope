@@ -46,6 +46,19 @@ async function occupiedPort(port = 0): Promise<number> {
 }
 
 describe.skipIf(process.platform !== "linux")("released browser installer", () => {
+  it("waits for the Docker API after asynchronous daemon startup before deploying", async () => {
+    const host = await fixture({ dockerInfoFailures: 2 });
+    const installer = await host.installer();
+    const result = await host.run(installer.file);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(
+      (await host.calls()).filter(
+        (call) => call.command === "docker" && call.args.includes("info"),
+      ),
+    ).toHaveLength(3);
+    expect(deployments(await host.calls())).toHaveLength(1);
+  });
+
   it("rejects missing Docker on an unsupported OS before package or deployment changes", async () => {
     const host = await fixture({ missingDocker: true });
     await writeFile(join(host.root, "os-release"), 'ID=alpine\nVERSION_ID="3.20"\n');

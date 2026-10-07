@@ -26,6 +26,7 @@ export interface InstallerControl {
   firstPort?: number;
   missingDocker?: boolean;
   installedPackages?: string[];
+  dockerInfoFailures?: number;
 }
 
 interface InstallerArtifact {
@@ -97,7 +98,14 @@ if (command === "id") {
 } else if (command === "docker") {
   if (args[0] === "--host" || args[0] === "-H") args = args.slice(2);
   if (args[0] === "context") out("\"unix:///var/run/docker.sock\"");
-  else if (args[0] === "info") out({ OSType: "linux", Architecture: control.architecture === "aarch64" ? "aarch64" : "x86_64", ServerVersion: "29.0.1" });
+  else if (args[0] === "info") {
+    if (control.dockerInfoFailures > 0) {
+      control.dockerInfoFailures -= 1;
+      save();
+      fail("Fixture Docker daemon is still starting.");
+    }
+    out({ OSType: "linux", Architecture: control.architecture === "aarch64" ? "aarch64" : "x86_64", ServerVersion: "29.0.1" });
+  }
   else if (args[0] === "version" || args.includes("--version")) out("Docker version 29.0.1");
   else if (args[0] === "image" && args[1] === "inspect") {
     const version = args.at(-1).match(/streamskope:([^@]+)/)?.[1];

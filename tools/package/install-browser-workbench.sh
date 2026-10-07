@@ -265,7 +265,15 @@ endpoint=$(docker context inspect --format '{{json .Endpoints.docker.Host}}')
 export DOCKER_HOST=unix:///var/run/docker.sock
 export DOCKER_CONTEXT=default
 docker_local() { docker --host unix:///var/run/docker.sock "$@"; }
-docker_local info --format '{{json .}}' >"$STAGING/daemon.json" || fail 'The local Docker daemon is unavailable. Start it, then retry; the installer will not replace an existing Docker installation.'
+daemon_ready=false
+for _ in {1..30}; do
+  if docker_local info --format '{{json .}}' >"$STAGING/daemon.json" 2>"$STAGING/daemon-error.log"; then
+    daemon_ready=true
+    break
+  fi
+  sleep 1
+done
+[[ "$daemon_ready" == true ]] || fail 'The local Docker daemon did not become available within 30 seconds. Start it, then retry; the installer will not replace an existing Docker installation.'
 python3 - "$STAGING/daemon.json" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1],encoding='utf8'))
