@@ -6,7 +6,7 @@
 [![PR CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml?query=event%3Apull_request)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/asadarafat/streamskope)
 
-A desktop workbench for exploring and troubleshooting Kafka.
+A workbench for exploring and troubleshooting Kafka and NATS.
 
 Inspect messages, investigate consumer lag, and manage cluster resources from
 one application.
@@ -18,8 +18,8 @@ one application.
 
 ## Download
 
-Download StreamSkope for macOS **ARM64**, Windows **x64** or Linux **x64** from
-[GitHub releases](https://github.com/asadarafat/streamskope/releases). Each release
+Download StreamSkope for macOS **ARM64**, Windows **x64** or Linux **x64** from the
+[latest published release](https://github.com/asadarafat/streamskope/releases/latest). Each release
 identifies its version, source revision and automated qualification evidence.
 Desktop packages are **unsigned**. Verify the installer against its release's
 `SHA256SUMS` and follow the [platform installation instructions](website/docs/start/installation.md).
@@ -27,27 +27,21 @@ Kafka is a separate service; the desktop installer does not require Node or Dock
 The [qualification record](website/docs/guide/qualification.md) links the release's
 automated checks and identifies workflows that still need recorded evidence.
 
-Prefer a browser workbench on a Linux Docker host? This checkout can build and
-run StreamSkope with [Containerlab](website/docs/start/containerlab.md), with saved
-connection credentials protected by a browser-unlocked vault. Core release CI
-prepares a public multi-platform GHCR image and a topology pinned to its version
-and digest. Offline delivery includes Docker save archives and a separate local
-image topology.
-Check the guide's availability notice and your chosen release assets; source
-implementation alone does not establish a published browser package.
+Prefer a browser workbench on a Linux Docker host? Follow
+[Run with Containerlab](https://asadarafat.github.io/streamskope/start/containerlab/).
+The latest release provides a public AMD64/ARM64 GHCR image and a Containerlab
+topology pinned to its version and digest. Saved connection credentials are
+protected by a browser-unlocked vault. Offline delivery includes Docker save
+archives and a separate local-image topology.
 
-This checkout is development source, not an assigned release. See the
-[unreleased changes](website/docs/releases/unreleased.md). A maintainer chooses the
-version when starting release CI; PR checks only qualify changes for `main`.
-
-This checkout also includes **NATS** as a built-in messaging provider.
+StreamSkope also includes **NATS** as a built-in messaging provider.
 Open **Connection Profiles → Add connection → NATS server** to save a
 token/verified-TLS profile, connect it, subscribe to a known subject or wildcard,
 and inspect live records. Read the
 [NATS guide](website/docs/guide/core-nats.md) for storage, receipt and omission
 limits. The desktop connects to the NATS server you supply; it does not embed
-one or require the development fixture. Check your desktop release notes for provider availability; merging source
-does not replace a published installer or its documentation snapshot.
+one or require the development fixture. Check your chosen release notes for its
+supported provider capabilities.
 
 ## What you can do
 
@@ -105,6 +99,11 @@ Installer availability is verified before the site is published.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the five project commands, checks and
 release process. The [source workbench](website/docs/start/development.md)
 provides disposable local Kafka and requires Node, Docker, Containerlab and Java.
+
+Development builds use the neutral `0.0.0-dev` version. Release CI assigns the
+selected version to its build checkout; PR checks qualify changes for `main`.
+This placeholder does not indicate pending product changes. Changes awaiting a
+future release are recorded in [unreleased changes](website/docs/releases/unreleased.md).
 
 ## Fund development
 
