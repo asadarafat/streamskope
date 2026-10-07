@@ -33,6 +33,32 @@ installers. Results from an earlier revision do not qualify changed source.
 
 <span id="current-source-qualification"></span>
 
+## Unpublished Containerlab rehearsal: 2026-10-07
+
+The [sanitized browser-host qualification report](../assets/qualification/containerlab-2026-10-07.json)
+records source `1d10ac2` on Linux ARM64. Its disposable image was stamped `0.9.3`
+to exercise unchanged publisher-signed EDA and NSP plugin 0.1.1 packages. That
+stamp is not a published release; main remains `0.0.0-dev`. The report records
+the tested source identity, image digest, archive checksum and remaining limits.
+
+| Check                           | Executed result                                                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared checks and documentation | 375 test files, 3,249 tests, static/types/dependency checks and 57 documentation browser routes passed                                            |
+| 60-second pipeline soak         | 59,997 generated records admitted and published, zero host display drops; bounded retention of 1,000 records                                      |
+| Native ARM64 browser archive    | Build, Docker save/load identity, authentication, encrypted profiles, compiled workers and graceful restart passed                                |
+| Containerlab lifecycle          | Non-root, no-new-privileges, one CPU, 1 GiB, loopback publication and NAT inspected; graceful exit and owned cleanup passed                       |
+| Signed portable plugins         | Real browser upload, signature review, idempotent import, hot removal, cache reinstall and restoration after vault unlock passed for both plugins |
+| Compiled Kafka/NATS connections | Real TLS/OAuth Kafka and TLS/token NATS profiles, record fidelity, HTTP/SSE and stop/disconnect passed using host-network fixtures                |
+| Live EDA                        | Discovery, capture, record receipt, source preservation and owned-resource cleanup passed through the source host                                 |
+| Live NSP                        | Blocked: the configured API timed out before any completed live checks; the full local command exited unsuccessfully                              |
+
+The pipeline soak measures application ingestion, not broker fetch, browser
+interaction or native IPC. Signed-file tests do not establish live target access
+from the container. Native AMD64 acceptance is configured in Release CI but was
+not run locally; Mac browser reachability and native installers were not tested.
+The vault encrypts protected credentials and trust material, not the whole data
+directory. Required PR CI qualifies the final head separately.
+
 ## Pre-release source qualification: 2026-10-06
 
 The [sanitized local qualification report](../assets/qualification/pre-release-2026-10-06.json)

@@ -10,13 +10,13 @@ in `tools/`; helpers live under `tools/dev/`, `tools/build/`, `tools/check/`, `t
 and `tools/docs/`. The `dev` entry also dispatches the source CLI (`tools/cli.ts`) and owned consumer sandbox (`tools/sandbox.ts`) without adding npm commands. Manual source exports and icon regeneration live in
 `tools/maintenance/`; evidence helpers live in `test/support/`.
 
-| Command                 | Purpose                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `npm run dev`           | Start the browser workbench and local Kafka development fixture                                  |
-| `npm run build`         | Check TypeScript and build the renderer and Electron host                                        |
-| `npm run check`         | Run all local CI qualification                                                                   |
-| `npm run package`       | Desktop packaging; `-- plugin [eda\|nsp]` builds optional plugins, `-- eda` builds local EDA OCI |
-| `npm run docs -- serve` | Serve docs locally; use `build` to build them                                                    |
+| Command                 | Purpose                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| `npm run dev`           | Start the browser workbench and local Kafka development fixture                                        |
+| `npm run build`         | Check TypeScript and build the renderer and Electron host; `-- web` builds the production browser host |
+| `npm run check`         | Run all local CI qualification                                                                         |
+| `npm run package`       | Package desktop installers, browser images, optional plugins or the EDA application                    |
+| `npm run docs -- serve` | Serve docs locally; use `build` to build them                                                          |
 
 The source distribution also supports `npm run dev -- cli --help` for bounded inspect/query/export and `npm run dev -- sandbox up|status|consume|transform|down` for an owned local consumer environment. See [CLI behavior and protection](website/docs/guide/read-only-cli.md) and [sandbox lifecycle](website/docs/guide/developer-sandbox.md). Real-system developer qualification lives in `test/kafka/developer-real.test.ts` and `test/kafka/sandbox-real.test.ts`; it is run explicitly, not inferred from shared CI.
 
@@ -432,10 +432,14 @@ selected source again before stamping a
 disposable build checkout. It does not commit a version bump to `main`. Tag pushes
 do not trigger a release.
 
-For desktop releases, native and cluster packaging follow qualification. The
-native runners build, launch and package installers for Linux x64, macOS ARM64
-and Windows x64. A Linux runner builds the complete unsigned EDA OCI application
-with EDABuilder v26.8.2 and uploads it separately. Desktop installer packaging
+For desktop releases, desktop, browser and cluster packaging follow qualification.
+Three native runners build, launch and package installers for Linux x64, macOS
+ARM64 and Windows x64. Two additional native Linux jobs build AMD64 and ARM64
+browser images, save gzip-compressed Docker save archives, reload them and check
+their image identity. Each exercises an authenticated gateway, encrypted profile
+persistence, native workers, vault lock/unlock and graceful restart with disposable
+data. A Linux runner builds the complete unsigned EDA OCI application with
+EDABuilder v26.8.2 and retains it as a separate Actions artifact. Desktop installer packaging
 belongs to the release runners; local Linux development uses `dev` and `build`.
 Local EDA OCI packaging remains available through `npm run package -- eda`.
 Before a local EDA build, packaging authenticates using the EDA API settings above
@@ -448,11 +452,11 @@ successful packages include a copy in `dist/eda-package/eda-version.json`.
 GitHub builds use the declared target and record `not-checked` for the cluster;
 they cannot verify your local EDA. Configured live qualification also checks
 the cluster version before starting a capture.
-EDA packaging needs Linux and Docker; native desktop packaging needs its matching OS.
+EDA and browser image packaging need Linux and Docker; native desktop packaging needs its matching OS.
 Local soak and live EDA/NSP results should be reported in the PR, including skips.
 
-The version entered in **Run workflow** becomes the desktop app and installer
-version, or the selected plugin's manifest version. Desktop drafts use `vVERSION`;
+The version entered in **Run workflow** becomes the desktop app, installer and
+browser image version, or the selected plugin's manifest version. Desktop drafts use `vVERSION`;
 plugin drafts use `plugins/NAME/vVERSION`. The tag identifies the qualified source
 commit; release CI stamps its build checkout from the recorded workflow input.
 Source archives at that tag retain the neutral development identity. To reproduce
@@ -467,9 +471,16 @@ inspect the existing tag/draft before retrying: an ordinary retry rejects the us
 identity. Choose an unused version or explicitly resolve the unpublished failed
 identity; the workflow never overwrites or deletes it automatically.
 
-After qualification and native/unsigned EDA packaging pass, a desktop release
-creates a **draft** with three unsigned installers, `SHA256SUMS` and reviewed
-content from `website/docs/releases/unreleased.md`, plus a generated changelog.
+After qualification, native desktop, both browser archive jobs and unsigned EDA
+packaging pass, a desktop release creates a **draft** with exactly three unsigned
+installers and four browser assets: AMD64 and ARM64 Docker save archives, a
+version-matched Containerlab topology and a combined image/archive manifest.
+One `SHA256SUMS` covers all seven files. Release assembly independently inspects
+each archive and checks its version, source, architecture and image identity;
+both builds must supply the identical reviewed topology. No registry is required.
+The draft includes reviewed content from `website/docs/releases/unreleased.md`
+and a generated changelog. The unsigned EDA application remains a separate
+Actions artifact.
 CI assigns the title and exact
 version metadata in the build checkout. A SemVer prerelease marks the draft as a
 prerelease; an ordinary version does not. Signing is a separate property: these
@@ -601,8 +612,11 @@ label source guides as unreleased rather than claiming they apply to the last
 published desktop; stamped release previews remain explicitly labeled previews.
 
 Publication refuses a non-release event, prerelease, mutable release, wrong source
-commit, mismatched version or incomplete notes. The build also verifies that the exact three installers and
-`SHA256SUMS` exist in the published release, qualifies the site and then verifies
+commit, mismatched version or incomplete notes. The build verifies that the three
+installers and `SHA256SUMS` exist in the published release. Browser download links
+require all four version-matched, uploaded browser assets from that same
+publication event; a partial set fails the docs build. Historical desktop-only
+releases leave browser downloads unavailable. Pages qualifies the site and verifies
 its public revision, key pages and bookmark redirects. Docs changes become public
 with the next desktop release. To recover a failed deployment, rerun that release's
 Pages run after inspecting its failure, provided it is still the latest stable desktop; never build newer main under an older
@@ -877,9 +891,13 @@ GitHub repository replacement. Exporting leaves development history intact.
 
 `npm run build -- web` produces the shared renderer and compiled Node host with
 its two sibling worker bundles. `npm run package -- container` builds the native
-Linux browser image; append `--archive` to create its Docker-save distribution.
-These targets use the existing five scripts. They do not create a personal vault,
-deploy a lab, start brokers or publish an image.
+Linux browser image; append `--archive` to write a gzip-compressed Docker save
+archive, a native build receipt and the version-matched topology under
+`dist/container-package/`. Archive mode reloads the image and rehearses the gateway
+and vault lifecycle with disposable data. Local results qualify the tested native
+architecture; release CI uses a separate native runner for each architecture.
+These targets use the existing five scripts. Follow the operator guide to deploy
+the image with Containerlab; release publication remains a separate workflow.
 
 The production host stores credentials through an explicitly unlocked passphrase
 vault and serves authenticated provider commands. The Vite development host has

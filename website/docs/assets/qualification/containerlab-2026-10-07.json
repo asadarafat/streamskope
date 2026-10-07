@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-07",
+  "scope": "Unpublished source and Linux ARM64 Containerlab rehearsal. This report does not assign or publish a product version.",
+  "sourceCommit": "1d10ac22b12aa3e1d0b888aee03777154a9d16a5",
+  "sourceIdentity": {
+    "method": "SHA256 of git ls-tree -r SOURCE -- listed paths",
+    "paths": [
+      "src",
+      "plugins",
+      "tools",
+      "test",
+      "config",
+      "deployment",
+      "package.json",
+      "package-lock.json",
+      "index.html",
+      "tsconfig.json",
+      "eslint.config.mjs",
+      "streamskope.clab.yml",
+      ".github/workflows"
+    ],
+    "sha256": "b66d8b8f315dfb58b8d4fbef8f4f7ba1fcf4b2f7b24cc2b3762b5235ea592776"
+  },
+  "environment": {
+    "host": "Linux ARM64 OrbStack VM",
+    "node": "24.21.0",
+    "docker": "27.5.1",
+    "containerlab": "0.79.0"
+  },
+  "sharedQualification": {
+    "testFiles": 375,
+    "testsPassed": 3249,
+    "staticTypesAndDependencyChecks": "passed",
+    "documentation": {
+      "pythonTests": 90,
+      "htmlPages": 62,
+      "browserRoutes": 57,
+      "searchThemesMobileAccessibilityMedia": "passed"
+    },
+    "fullLocalCommandExitCode": 1,
+    "failure": "Configured NSP API request timed out before any completed live checks."
+  },
+  "pipelineSoak": {
+    "outcome": "passed",
+    "durationMs": 60104.515827999996,
+    "generated": 59997,
+    "accepted": 59997,
+    "published": 59997,
+    "hostDisplayDrops": 0,
+    "retained": 1000,
+    "peakQueue": 149,
+    "peakRssBytes": 721448960,
+    "cpuPercentOneCore": 26.429438422661345,
+    "scope": "Deterministic application-ingestion replay: production session, facade, live-rule evaluation and reducer in one Node process. Not Kafka fetch, actual IPC, React rendering or interaction latency.",
+    "receiptSha256": "c4900d71ccb019d879fe75e38819e4b735844e406900ac9a32d800387c26ac4f"
+  },
+  "liveEda": {
+    "outcome": "passed",
+    "checks": [
+      "cluster-version",
+      "application-version",
+      "source-discovery",
+      "capture-ready",
+      "lease-renewal",
+      "kafka-record-receipt",
+      "observed-health",
+      "relationship-discovery",
+      "source-preserved",
+      "stop",
+      "owned-resource-cleanup",
+      "repeat-stop"
+    ],
+    "scope": "Existing local cluster through source production loader; not EDA capture from the browser container.",
+    "receiptSha256": "bb38f5d15b1a310766eda6340f32f1ab6f326f28b9757c726386e98a42d374e0"
+  },
+  "liveNsp": {
+    "outcome": "blocked",
+    "completedChecks": 0,
+    "reason": "API request timed out; TCP and HTTPS probes also timed out.",
+    "receiptSha256": "56b47525317813c0f9b28d6d81b85a42a59b8591cd92e78ae8b95ba431f4a582"
+  },
+  "browserImage": {
+    "version": "0.9.3",
+    "sourceRevision": "1d10ac22b12aa3e1d0b888aee03777154a9d16a5",
+    "image": "streamskope:0.9.3",
+    "imageId": "sha256:bbbf29e3f1597dc5b9c4aa6b6a72786db5f1831964f4acbfd9e2cd8c936034fa",
+    "platform": "linux/arm64",
+    "archive": "StreamSkope-0.9.3-container-linux-arm64.tar.gz",
+    "bytes": 89378138,
+    "sha256": "d809114b3250b4aa62c69e7e79a7fe5d86e40a802a38e85dfbbf3c6cd63b613c"
+  },
+  "archiveLifecycle": {
+    "outcome": "passed",
+    "checks": [
+      "docker save/load identity",
+      "authenticated gateway",
+      "encrypted Kafka/NATS profiles",
+      "wrong passphrase preserves data",
+      "JKS trust worker",
+      "JSON/Avro/Protobuf codec worker",
+      "graceful process exit",
+      "restart and protected profile restoration"
+    ]
+  },
+  "containerlab": {
+    "imageId": "sha256:bbbf29e3f1597dc5b9c4aa6b6a72786db5f1831964f4acbfd9e2cd8c936034fa",
+    "nonRoot": true,
+    "nonPrivileged": true,
+    "noNewPrivileges": true,
+    "cpuQuota": 100000,
+    "cpuPeriod": 100000,
+    "memoryBytes": 1073741824,
+    "portsBoundToLoopback": true,
+    "ipv4GatewayMode": "nat",
+    "ipv6GatewayMode": "nat",
+    "gracefulContainerExitCode": 0,
+    "ownedContainerAndNetworkRemoved": true,
+    "vaultPreservedAfterDestroy": true
+  },
+  "signedPortableBrowser": {
+    "outcome": "passed",
+    "plugins": [
+      {
+        "pluginId": "streamskope.eda",
+        "version": "0.1.1",
+        "portableFileSha256": "115ccca9b7ed50bdf260141451a31d07414907d0a12ec41cf6c17e8dd028cadb",
+        "selectedPackageSha256": "115ccca9b7ed50bdf260141451a31d07414907d0a12ec41cf6c17e8dd028cadb",
+        "signedUIInstall": true,
+        "idempotentNoActivationChange": true,
+        "hotRemoval": true,
+        "pluginConnectionUIRemoved": true,
+        "verifiedCacheReinstallation": true,
+        "noRendererReloadDuringLifecycle": true
+      },
+      {
+        "pluginId": "streamskope.nsp",
+        "version": "0.1.1",
+        "portableFileSha256": "762a03ba7b34fd7893de720d25db8011b67e9d9af8659d870c65ca6ddd3e9717",
+        "selectedPackageSha256": "762a03ba7b34fd7893de720d25db8011b67e9d9af8659d870c65ca6ddd3e9717",
+        "signedUIInstall": true,
+        "idempotentNoActivationChange": true,
+        "hotRemoval": true,
+        "pluginConnectionUIRemoved": true,
+        "verifiedCacheReinstallation": true,
+        "noRendererReloadDuringLifecycle": true
+      }
+    ],
+    "offlinePolicyRestored": true,
+    "pluginsAndCacheRestored": true,
+    "pageErrorCount": 0,
+    "pluginAssetFailureCount": 0,
+    "receiptSha256": "2dde0cdcc1d0f261e025a6f1a392ae5e2ca0292c10807806146eed3a374c6ab6"
+  },
+  "limits": [
+    "0.9.3 is only a disposable compatible stable SemVer stamp for unchanged publisher-signed plugin testing; no public 0.9.3 release or tag was created.",
+    "Working source remains 0.0.0-dev and correctly rejects incompatible published plugins.",
+    "Native AMD64 archive acceptance is configured in Release CI but was not executed locally.",
+    "Mac browser reachability, native installers and public or multiuser deployment were not qualified.",
+    "The signed browser plugin rehearsal did not connect live EDA or NSP or qualify a newer signed plugin update.",
+    "Whole-directory encryption is not provided; only protected credentials and trust material are encrypted.",
+    "Compiled Kafka/NATS protocol checks used host networking for generated loopback TLS identities; they do not establish Containerlab bridge access to any operator broker."
+  ],
+  "implementationPrCI": {
+    "sourceCommit": "1d10ac22b12aa3e1d0b888aee03777154a9d16a5",
+    "run": "https://github.com/asadarafat/streamskope/actions/runs/37582270781",
+    "conclusion": "passed",
+    "scope": "Exact implementation head; final documentation commit requires its own CI."
+  },
+  "compiledProviderConnections": {
+    "scope": "Unpublished compiled native container; real provider SDKs over public HTTP and SSE",
+    "network": "Docker host network solely for isolated generated loopback TLS fixture identities; not Containerlab bridge qualification",
+    "status": "passed",
+    "nats": {
+      "status": "passed",
+      "transport": "certificate-verified TLS; token authentication",
+      "records": 2,
+      "verified": [
+        "encrypted profile",
+        "typed correlated responses",
+        "wildcard subscription interest",
+        "binary and empty records",
+        "reply and case-sensitive repeated headers",
+        "real SSE",
+        "confirmed stop",
+        "no post-stop delivery",
+        "counter agreement",
+        "disconnect"
+      ]
+    },
+    "kafka": {
+      "status": "passed",
+      "fixture": {
+        "kafkaVersion": "4.3.1",
+        "archiveSha512": "c7d7b2318cb51aa0c61d3246a51c349210073c5c9b754947ef965a439f2f939e8600f204e134a75ac31faf3829c9370960ef7c6a9886c8a1dbf0339a21f4c54c",
+        "transport": "TLS / RS256 OAUTHBEARER; loopback only"
+      },
+      "records": 2,
+      "verified": [
+        "encrypted profile",
+        "certificate-verified TLS",
+        "real RS256 OAuth",
+        "typed correlated responses",
+        "earliest read",
+        "key, value, header, topic, partition and offsets",
+        "empty record",
+        "real SSE",
+        "finite completion",
+        "zero drops",
+        "stop acknowledgement",
+        "disconnect receipt"
+      ]
+    },
+    "cleanup": {
+      "app": "passed",
+      "fixtures": "passed"
+    },
+    "image": {
+      "tag": "streamskope:0.9.3",
+      "id": "sha256:bbbf29e3f1597dc5b9c4aa6b6a72786db5f1831964f4acbfd9e2cd8c936034fa",
+      "version": "0.9.3",
+      "sourceRevision": "1d10ac22b12aa3e1d0b888aee03777154a9d16a5",
+      "platform": "linux/arm64"
+    },
+    "vault": {
+      "status": "passed",
+      "rendererAuthenticated": true,
+      "profileProtection": "passphrase-protected",
+      "publicSecretBoundary": "passed",
+      "persistedSecretBoundary": "passed",
+      "lockRevocation": "passed"
+    },
+    "receiptSha256": "9b73dbb403e7983fa2899e10df837788602f71a5778e895722b7a9aa7709b968"
+  },
+  "qualificationAttempts": [
+    {
+      "outcome": "failed",
+      "phase": "Kafka fixture prerequisite download",
+      "resolution": "Official CDN copy verified against the existing SHA512; full rerun passed."
+    },
+    {
+      "outcome": "failed",
+      "phase": "QA harness Kafka profiles.connect validation",
+      "resolution": "Removed NATS-only expectedRevision from the Kafka command; strict host contract remained unchanged and full rerun passed."
+    }
+  ]
+}
