@@ -151,8 +151,9 @@ def container_downloads(root=ROOT, environment=None):
                    "registry_delivery": registry_delivery})
     if installer_required:
         installer_url = f"{download_root}/{BROWSER_INSTALLER_NAME}"
+        latest_installer_url = f"{base}/latest/download/{BROWSER_INSTALLER_NAME}"
         result.update({"installer_available": True, "installer_url": installer_url,
-                       "install_command": f"curl -fsSL {installer_url} | sudo -E bash"})
+                       "install_command": f"curl -fsSL {latest_installer_url} | sudo -E bash"})
     return result
 
 

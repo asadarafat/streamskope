@@ -127,27 +127,40 @@ class ContainerDownloadTests(unittest.TestCase):
         self.assertIn("source preview does not verify", rendered)
         self.assertNotIn("not published", rendered)
 
-    def test_modern_publication_renders_one_immutable_copyable_command(self):
+    def test_modern_publication_renders_one_latest_copyable_command(self):
         self.modern()
         result = self.published()
         self.assertTrue(result["installer_available"])
         self.assertEqual(len(result["assets"]), 6)
         url = "https://github.com/asadarafat/streamskope/releases/download/" \
               "v0.10.0/install-browser-workbench.sh"
+        latest_url = "https://github.com/asadarafat/streamskope/releases/latest/download/" \
+                     "install-browser-workbench.sh"
         self.assertEqual(result["installer_url"], url)
-        self.assertEqual(result["install_command"], f"curl -fsSL {url} | sudo -E bash")
+        self.assertEqual(result["install_command"], f"curl -fsSL {latest_url} | sudo -E bash")
         rendered = self.render(result)
         parsed = RenderedInstallation(rendered)
-        self.assertEqual(parsed.commands, [f"curl -fsSL {url} | sudo -E bash"])
+        self.assertEqual(parsed.commands, [f"curl -fsSL {latest_url} | sudo -E bash"])
         self.assertEqual(parsed.sections, [{
             "class": "sk-browser-installer", "aria-label": "Browser workbench installation",
             "data-desktop-release": "v0.10.0",
         }])
         self.assertIn('class="highlight"', rendered)
         self.assertNotIn("<table", rendered)
-        self.assertNotIn("latest/download", rendered)
+        self.assertIn("latest stable desktop release", rendered)
         self.assertIn("URL printed by the installer", rendered)
         self.assertIn("/streamskope/guide/browser-host/", parsed.links)
+
+    def test_quick_install_command_stays_the_same_when_publication_advances(self):
+        self.modern()
+        original = self.published()
+        config = self.root / "website/zensical.toml"
+        config.write_text('[project.extra]\ndesktop_release = "v0.10.1"\n')
+        self.release = json.loads(json.dumps(self.release).replace("0.10.0", "0.10.1"))
+        newer = self.published()
+        self.assertEqual(original["install_command"], newer["install_command"])
+        self.assertNotEqual(original["installer_url"], newer["installer_url"])
+        self.assertIn("/download/v0.10.1/", newer["installer_url"])
 
     def test_generated_command_is_escaped_as_text_not_executable_markup(self):
         self.modern()

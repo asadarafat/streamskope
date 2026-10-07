@@ -113,8 +113,8 @@ try {
     } else if ((await installer.locator("code").count()) > 0) {
       assert.equal(
         (await installer.locator("code").innerText()).trim(),
-        `curl -fsSL https://github.com/asadarafat/streamskope/releases/download/${encodeURIComponent(desktopRelease)}/install-browser-workbench.sh | sudo -E bash`,
-        "Published onboarding uses the exact verified release installer",
+        "curl -fsSL https://github.com/asadarafat/streamskope/releases/latest/download/install-browser-workbench.sh | sudo -E bash",
+        "Published onboarding uses the stable latest installer entry point",
       );
     }
     const manual = content.locator('a[href$="/guide/browser-host/"]').first();
@@ -147,7 +147,8 @@ try {
     const fixtureTag = "v0.10.1";
     const releaseRoot = `https://github.com/asadarafat/streamskope/releases/download/${fixtureTag}`;
     const installerUrl = `${releaseRoot}/install-browser-workbench.sh`;
-    const command = `curl -fsSL ${installerUrl} | sudo -E bash`;
+    const command =
+      "curl -fsSL https://github.com/asadarafat/streamskope/releases/latest/download/install-browser-workbench.sh | sudo -E bash";
     const fixture = {
       available: true,
       installer_available: true,
