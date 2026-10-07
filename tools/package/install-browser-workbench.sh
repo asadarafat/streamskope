@@ -11,6 +11,7 @@ STREAMSKOPE_MANIFEST_SHA256='@STREAMSKOPE_MANIFEST_SHA256@'
 INSTALL_ROOT='/var/lib/streamskope/browser'
 STATE_ROOT=$INSTALL_ROOT
 LAB_NAME='streamskope'
+NETWORK_NAME='streamskope-mgmt'
 CONTAINER_NAME='clab-streamskope-app'
 STATE_OWNER_UID=0
 STATE_OWNER_GID=0
@@ -326,7 +327,8 @@ try:
         checks[match[2]]=match[1]
     assert checks.get(topology)==topology_hash and checks.get(manifest)==manifest_hash
     value=json.loads((root/manifest).read_text()); registry=value['registry']
-    assert value['schemaVersion']==2 and value['version']==version and value['sourceRevision']==source
+    assert value['schemaVersion'] in [2,3] and value['version']==version and value['sourceRevision']==source
+    if value['schemaVersion']==3: assert value['installer']=={'file':'install-browser-workbench.sh'}
     assert value['format']=='docker-save-gzip' and value['image']=='streamskope:'+version
     assert value['topology']=={'file':topology,'sha256':topology_hash}
     assert registry['schemaVersion']==1 and registry['version']==version and registry['sourceRevision']==source
@@ -417,7 +419,7 @@ if value.get('Id')!=identity or value.get('Os')!='linux' or value.get('Architect
     sys.exit('The local image does not match the qualified release and architecture; no container was deployed.')
 PY
   if command -v containerlab >/dev/null; then clab=containerlab; else clab=clab; fi
-  (cd "$STATE_ROOT" && "$clab" --runtime docker deploy --topo "$STATE_ROOT/$topology" --name "$LAB_NAME" --max-workers 1) >&2 || fail 'Containerlab could not deploy. Pinned state and private data remain available for a retry; do not remove vault data.'
+  (cd "$STATE_ROOT" && "$clab" --runtime docker deploy --topo "$STATE_ROOT/$topology" --name "$LAB_NAME" --network "$NETWORK_NAME" --max-workers 1) >&2 || fail 'Containerlab could not deploy. Pinned state and private data remain available for a retry; do not remove vault data.'
 fi
 [[ $(inspect_owned_container) == running ]] || fail 'The pinned container is not running; inspect its health and retry without removing data.'
 

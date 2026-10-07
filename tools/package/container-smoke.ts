@@ -12,6 +12,13 @@ interface Reply {
   readonly headers: IncomingHttpHeaders;
   readonly body: string;
 }
+export interface BrowserContainerInstance {
+  readonly container: string;
+  readonly data: string;
+  readonly port: number;
+  /** Lets installer qualification resume the stopped instance through its own lifecycle. */
+  readonly restart?: () => Promise<void>;
+}
 function docker(args: readonly string[], input?: string): string {
   const result = spawnSync("docker", [...args], {
     encoding: "utf8",
@@ -108,42 +115,56 @@ async function ready(port: number): Promise<void> {
   throw new Error("Container qualification listener did not become ready.");
 }
 
-/** Exercises the loaded native image with a fresh disposable vault, never operator data. */
-export async function verifyBrowserContainer(image: string): Promise<void> {
+/**
+ * Exercises a fresh disposable vault, never operator data. Supplied instances remain
+ * caller-owned: qualification restarts them but never removes their container or data.
+ */
+export async function verifyBrowserContainer(
+  image: string,
+  instance?: BrowserContainerInstance,
+): Promise<void> {
   if (process.platform !== "linux" || process.getuid === undefined || process.getgid === undefined)
     throw new Error("Container qualification requires a Linux Docker host.");
-  const data = await mkdtemp(join(tmpdir(), "streamskope-container-qualification-"));
-  await chmod(data, 0o700);
-  const port = await availablePort();
+  if (instance !== undefined) {
+    assert.ok(instance.container.length > 0 && instance.data.startsWith("/"));
+    assert.ok(Number.isInteger(instance.port) && instance.port > 0 && instance.port <= 65_535);
+  }
+  const data =
+    instance?.data ?? (await mkdtemp(join(tmpdir(), "streamskope-container-qualification-")));
+  if (instance === undefined) await chmod(data, 0o700);
+  const port = instance?.port ?? (await availablePort());
   const origin = `http://127.0.0.1:${port}`;
   const passphrase = `isolated qualification ${randomUUID()}`;
   const secret = `qualification-${randomUUID()}`;
-  let container: string | undefined;
+  let container: string | undefined = instance?.container;
   try {
-    container = docker([
-      "run",
-      "--detach",
-      "--name",
-      `streamskope-qualification-${randomUUID()}`,
-      "--user",
-      `${process.getuid()}:${process.getgid()}`,
-      "--security-opt",
-      "no-new-privileges:true",
-      "--cap-drop",
-      "ALL",
-      "--memory",
-      "1g",
-      "--cpus",
-      "1",
-      "--publish",
-      `127.0.0.1:${port}:8080`,
-      "--env",
-      `STREAMSKOPE_PUBLIC_ORIGIN=${origin}`,
-      "--mount",
-      `type=bind,src=${data},dst=/data`,
-      image,
-    ]);
-    assert.match(container, /^[0-9a-f]{64}$/u);
+    if (instance === undefined) {
+      container = docker([
+        "run",
+        "--detach",
+        "--name",
+        `streamskope-qualification-${randomUUID()}`,
+        "--user",
+        `${process.getuid()}:${process.getgid()}`,
+        "--security-opt",
+        "no-new-privileges:true",
+        "--cap-drop",
+        "ALL",
+        "--memory",
+        "1g",
+        "--cpus",
+        "1",
+        "--publish",
+        `127.0.0.1:${port}:8080`,
+        "--env",
+        `STREAMSKOPE_PUBLIC_ORIGIN=${origin}`,
+        "--mount",
+        `type=bind,src=${data},dst=/data`,
+        image,
+      ]);
+      assert.match(container, /^[0-9a-f]{64}$/u);
+    }
+    assert.ok(container !== undefined);
     await ready(port);
     assert.equal(record(JSON.parse((await request(port, "/health")).body)).status, "locked");
     assert.equal((await request(port, "/")).status, 303);
@@ -257,7 +278,8 @@ export async function verifyBrowserContainer(image: string): Promise<void> {
       { State: { ExitCode: number } },
     ];
     assert.equal(stopped.State.ExitCode, 0, "Gateway must confirm graceful runtime cleanup.");
-    docker(["start", container]);
+    if (instance?.restart === undefined) docker(["start", container]);
+    else await instance.restart();
     await ready(port);
     assert.equal(record(JSON.parse((await request(port, "/health")).body)).status, "locked");
     const restarted = await request(port, "/__streamskope_session/unlock", { passphrase });
@@ -271,11 +293,11 @@ export async function verifyBrowserContainer(image: string): Promise<void> {
       "Container qualification passed: authenticated gateway, encrypted profile persistence, native workers and graceful restart.\n",
     );
   } finally {
-    if (container !== undefined) {
+    if (instance === undefined && container !== undefined) {
       // Never remove persistent files before their owning process has stopped.
       docker(["stop", "--time", "120", container]);
       docker(["rm", container]);
     }
-    await rm(data, { recursive: true, force: true });
+    if (instance === undefined) await rm(data, { recursive: true, force: true });
   }
 }

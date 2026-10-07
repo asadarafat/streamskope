@@ -26,6 +26,7 @@ import {
   parseBrowserRegistryMetadata,
   type BrowserRegistryMetadata,
 } from "./browser-registry-metadata";
+import { BROWSER_INSTALLER_NAME, renderBrowserWorkbenchInstaller } from "./browser-installer";
 
 const ARCHITECTURES = ["amd64", "arm64"] as const;
 type Architecture = (typeof ARCHITECTURES)[number];
@@ -49,7 +50,7 @@ interface ArchiveRecord extends ImageRecord {
 }
 
 export interface BrowserReleaseManifest {
-  readonly schemaVersion: 1 | 2;
+  readonly schemaVersion: 1 | 2 | 3;
   readonly version: string;
   readonly sourceRevision: string;
   readonly image: string;
@@ -58,15 +59,23 @@ export interface BrowserReleaseManifest {
   readonly archives: readonly ArchiveRecord[];
   readonly registry?: BrowserRegistryMetadata;
   readonly offlineTopology?: { readonly file: string; readonly sha256: string };
+  readonly installer?: { readonly file: typeof BROWSER_INSTALLER_NAME };
 }
 
-export function browserReleaseNames(version: string, registry = false): readonly string[] {
+export function browserReleaseNames(
+  version: string,
+  registry = false,
+  installer = false,
+): readonly string[] {
   parseReleaseVersion(version);
+  if (installer && !registry)
+    throw new Error("Browser installers require public registry delivery.");
   return [
     ...ARCHITECTURES.map((arch) => `StreamSkope-${version}-container-linux-${arch}.tar.gz`),
     `streamskope-${version}-container.json`,
     `streamskope-${version}.clab.yml`,
     ...(registry ? [`streamskope-${version}-offline.clab.yml`] : []),
+    ...(installer ? [BROWSER_INSTALLER_NAME] : []),
   ].sort();
 }
 
@@ -373,7 +382,7 @@ export async function prepareBrowserReleaseAssets(
           sha256: createHash("sha256").update(offline).digest("hex"),
         };
   const manifest: BrowserReleaseManifest = {
-    schemaVersion: registry === undefined ? 1 : 2,
+    schemaVersion: registry === undefined ? 1 : 3,
     version,
     sourceRevision: commit,
     image: `streamskope:${version}`,
@@ -382,8 +391,9 @@ export async function prepareBrowserReleaseAssets(
     archives,
     ...(registry === undefined || offlineTopology === undefined
       ? {}
-      : { registry, offlineTopology }),
+      : { registry, offlineTopology, installer: { file: BROWSER_INSTALLER_NAME } }),
   };
+  const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`;
   try {
     await lstat(output);
     throw new Error("Browser release output already exists.");
@@ -402,11 +412,23 @@ export async function prepareBrowserReleaseAssets(
     await writeFile(join(temporary, topologyFile), topology, { flag: "wx" });
     if (offlineTopology !== undefined)
       await writeFile(join(temporary, offlineTopology.file), offline, { flag: "wx" });
-    await writeFile(
-      join(temporary, `streamskope-${version}-container.json`),
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      { flag: "wx" },
-    );
+    await writeFile(join(temporary, `streamskope-${version}-container.json`), manifestContent, {
+      flag: "wx",
+    });
+    if (registry !== undefined)
+      await writeFile(
+        join(temporary, BROWSER_INSTALLER_NAME),
+        renderBrowserWorkbenchInstaller(
+          {
+            version,
+            sourceRevision: commit,
+            topologySha256: manifest.topology.sha256,
+            manifestSha256: createHash("sha256").update(manifestContent).digest("hex"),
+          },
+          await readFile("tools/package/install-browser-workbench.sh", "utf8"),
+        ),
+        { flag: "wx", mode: 0o755 },
+      );
     await rename(temporary, output);
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -421,21 +443,19 @@ export async function validateBrowserReleaseAssets(
   topologySource = "streamskope.clab.yml",
 ): Promise<readonly string[]> {
   identity(version, commit);
-  const manifest: unknown = JSON.parse(
-    (
-      await readBoundedFile(
-        join(directory, `streamskope-${version}-container.json`),
-        MAX_METADATA_BYTES,
-        { rejectSymlinks: true },
-      )
-    ).toString("utf8"),
+  const manifestBytes = await readBoundedFile(
+    join(directory, `streamskope-${version}-container.json`),
+    MAX_METADATA_BYTES,
+    { rejectSymlinks: true },
   );
+  const manifest: unknown = JSON.parse(manifestBytes.toString("utf8"));
   const input = object(manifest);
   const registry =
-    input.schemaVersion === 2
+    input.schemaVersion === 2 || input.schemaVersion === 3
       ? parseBrowserRegistryMetadata(input.registry, version, commit)
       : undefined;
-  const names = browserReleaseNames(version, registry !== undefined);
+  const hasInstaller = input.schemaVersion === 3;
+  const names = browserReleaseNames(version, registry !== undefined, hasInstaller);
   await directoryNames(directory, names);
   const source = await readFile(topologySource, "utf8");
   const offline = browserReleaseTopology(source, version);
@@ -482,7 +502,7 @@ export async function validateBrowserReleaseAssets(
   )
     throw new Error("Registry native images differ from the qualified offline archives.");
   const expected: BrowserReleaseManifest = {
-    schemaVersion: registry === undefined ? 1 : 2,
+    schemaVersion: hasInstaller ? 3 : registry === undefined ? 1 : 2,
     version,
     sourceRevision: commit,
     image: `streamskope:${version}`,
@@ -495,8 +515,29 @@ export async function validateBrowserReleaseAssets(
     ...(registry === undefined || offlineTopology === undefined
       ? {}
       : { registry, offlineTopology }),
+    ...(hasInstaller ? { installer: { file: BROWSER_INSTALLER_NAME } } : {}),
   };
   if (!isDeepStrictEqual(input, expected))
     throw new Error("Browser release manifest does not match the actual archives and topology.");
+  if (hasInstaller) {
+    const installer = await readBoundedFile(
+      join(directory, BROWSER_INSTALLER_NAME),
+      MAX_METADATA_BYTES,
+      {
+        rejectSymlinks: true,
+      },
+    );
+    const reviewed = renderBrowserWorkbenchInstaller(
+      {
+        version,
+        sourceRevision: commit,
+        topologySha256: expected.topology.sha256,
+        manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
+      },
+      await readFile("tools/package/install-browser-workbench.sh", "utf8"),
+    );
+    if (!installer.equals(Buffer.from(reviewed)))
+      throw new Error("Browser installer does not match the reviewed template and release assets.");
+  }
   return names;
 }
