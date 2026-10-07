@@ -680,10 +680,14 @@ published desktop; stamped release previews remain explicitly labeled previews.
 Publication refuses a non-release event, prerelease, mutable release, wrong source
 commit, mismatched version or incomplete notes. The build verifies that the three
 installers and `SHA256SUMS` exist in the published release. Browser download links
-require all five version-matched, uploaded browser assets for registry delivery
-from that same publication event; a partial set fails the docs build. Historical
-archive-only delivery can retain its four-file asset contract. Desktop-only
-releases leave browser downloads unavailable. Pages qualifies the site and verifies
+require all six uploaded browser assets for source containing the installer
+quickstart marker: the installer, both native archives, both topologies and image
+manifest, together with `SHA256SUMS`. The generated command uses the exact
+publication event's installer URL; missing, duplicate, empty or mismatched assets
+fail the docs build. Historical registry delivery retains its five-file contract
+and archive-only delivery its four-file contract. Development previews never
+invent an installer URL. Historical desktop-only releases leave browser downloads
+unavailable. Pages qualifies the site and verifies
 its public revision, key pages and bookmark redirects. Docs changes become public
 with the next desktop release. To recover a failed deployment, rerun that release's
 Pages run after inspecting its failure, provided it is still the latest stable desktop; never build newer main under an older
@@ -965,25 +969,59 @@ GitHub repository replacement. Exporting leaves development history intact.
 
 ## Production browser and Containerlab delivery
 
-`npm run build -- web` produces the shared renderer and compiled Node host with
-its two sibling worker bundles. `npm run package -- container` builds the native
-Linux browser image; append `--archive` to write a gzip-compressed Docker save
-archive, a native build receipt and the version-matched topology under
-`dist/container-package/`. Archive mode reloads the image and rehearses the gateway
-and vault lifecycle with disposable data. Local results qualify the tested native
-architecture; release CI uses a separate native runner for each architecture.
-These targets use the existing five scripts. Follow the operator guide to deploy
-the image with Containerlab; release publication remains a separate workflow.
+Released installation is covered by the [browser quickstart](website/docs/start/containerlab.md);
+[manual deployment and maintenance](website/docs/guide/browser-host.md) covers
+offline files, origins, ownership and graceful recovery. Source builds use the
+separate procedure below.
 
-The production host stores credentials through an explicitly unlocked passphrase
-vault and serves authenticated provider commands. The Vite development host has
-separate fixture and memory-store behavior. See the [operator deployment guide](website/docs/start/containerlab.md)
-for data ownership, setup, Containerlab deployment and graceful recovery.
+### Build and deploy source
 
-The root topology selects the locally built `streamskope:0.0.0-dev` image with
-pull policy `Never`. Release assembly creates `streamskope-VERSION.clab.yml`
-for the public GHCR index pinned by version and digest, plus
-`streamskope-VERSION-offline.clab.yml` for the archive-loaded local image.
-Both use the same private data bind, numeric owner and browser-unlocked vault.
-Neither a local build nor a successful registry publication establishes live
-EDA/NSP qualification.
+Use a non-root account on a Linux AMD64 or ARM64 Docker host with Containerlab,
+Node 24.21+ in the 24.x line and npm. Building needs access to the pinned base image
+and package registry or approved mirrors and caches. Run from the repository root:
+
+```sh
+ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --ignore-scripts
+npm run package -- container
+mkdir -m 700 streamskope-data
+export STREAMSKOPE_UID="$(id -u)"
+export STREAMSKOPE_GID="$(id -g)"
+clab deploy -t streamskope.clab.yml
+```
+
+Run Containerlab through the host's approved permissions. If sudo is required,
+preserve the exported numeric owner and any configured bind, port and origin;
+do not change the application user to root. The root topology selects the locally
+built `streamskope:0.0.0-dev` image with pull policy `Never`. Its private
+`./streamskope-data` bind is outside Containerlab's generated directory.
+Open the default `http://127.0.0.1:8080` from a browser that can reach Linux loopback,
+then follow the [vault setup](website/docs/start/containerlab.md#2-create-the-vault).
+Source deployments reveal the code through the manual guide's trusted-host
+`docker exec` procedure. For a Mac browser, use VM loopback forwarding or the
+matching-origin [host access procedure](website/docs/guide/browser-host.md#vm-and-remote-host-access).
+
+`npm run build -- web` builds the shared renderer, Node host and two worker bundles
+without an image. Append `--archive` to `npm run package -- container` to write a
+gzip-compressed Docker save archive, native build receipt and matched topology
+under `dist/container-package/`. Archive mode reloads the image and qualifies a
+disposable gateway and vault lifecycle. Local results cover the tested native
+architecture; release CI uses one native runner for each architecture. These
+targets use the existing five npm scripts.
+
+The production browser host serves authenticated commands and stores credentials
+through a browser-unlocked passphrase vault. `npm run dev` starts the separate
+Vite workbench with development fixtures and session-only profiles. Source
+identity remains `0.0.0-dev`; published plugins whose host interval excludes that
+identity are rejected. Build development plugins with `npm run package -- plugin`
+and use the existing [source plugin flow](website/docs/start/development.md#test-a-development-plugin).
+Renaming a released package does not make it compatible. Preserve recovery state
+and finish owned target cleanup before replacing an incompatible installation.
+
+Keep source data separate from installer-managed `/var/lib/streamskope/browser`.
+The installer does not adopt source containers, and its unstamped source template
+refuses execution. Release assembly creates an exact-version installer bound to
+its topology and image-manifest hashes, `streamskope-VERSION.clab.yml` pinned to
+the public GHCR index, and `streamskope-VERSION-offline.clab.yml` for the
+archive-loaded local image. Native release qualification executes that installer
+and verifies its persistent vault/profile lifecycle and graceful resume.
+Neither a source build nor registry publication establishes live EDA/NSP results.

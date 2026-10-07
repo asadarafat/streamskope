@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tomllib
@@ -54,6 +55,41 @@ def desktop_downloads(root=ROOT):
 
 
 CONTAINER_MARKER = "<!-- container-downloads -->"
+BROWSER_INSTALLER_MARKER = "<!-- browser-installer -->"
+BROWSER_INSTALLER_NAME = "install-browser-workbench.sh"
+
+
+def browser_installation_capability(root):
+    """The release's reviewed pages select its installer or historical manual layout."""
+    docs = root / "website/docs"
+    quickstart = docs / "start/containerlab.md"
+    pages = {page: page.read_text() for page in docs.rglob("*.md")}
+    source = pages[quickstart]
+
+    def declares(page_source, name):
+        header = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", page_source, re.S)
+        if header is None:
+            return False
+        values = re.findall(rf"^{name}:\s*(.*?)\s*$", header[1], re.M)
+        return values == ["true"]
+
+    installer_pages = [page for page, text in pages.items()
+                       if BROWSER_INSTALLER_MARKER in text or declares(text, "browser_installer")]
+    containers = [(page, text.count(CONTAINER_MARKER)) for page, text in pages.items()
+                  if CONTAINER_MARKER in text or declares(text, "container_downloads")]
+    if installer_pages:
+        if (installer_pages != [quickstart]
+                or source.count(BROWSER_INSTALLER_MARKER) != 1
+                or not declares(source, "browser_installer")):
+            raise ValueError("Browser quickstart requires one installer marker and browser_installer: true")
+        manual = docs / "guide/browser-host.md"
+        if (containers != [(manual, 1)]
+                or not declares(pages.get(manual, ""), "container_downloads")):
+            raise ValueError("Browser operations guide requires one manual download marker and container_downloads: true")
+        return True
+    if containers != [(quickstart, 1)]:
+        raise ValueError("Historical Containerlab guide requires exactly one browser download marker")
+    return False
 
 
 def container_downloads(root=ROOT, environment=None):
@@ -65,11 +101,10 @@ def container_downloads(root=ROOT, environment=None):
     version = release_version(tag, historical=True)
     if not version:
         raise ValueError("Browser downloads require the documented core release")
-    guide = root / "website/docs/start/containerlab.md"
-    if guide.read_text().count(CONTAINER_MARKER) != 1:
-        raise ValueError("Containerlab guide requires exactly one browser download marker")
+    installer_required = browser_installation_capability(root)
     base = f"https://github.com/{REPOSITORY}/releases"
-    result = {"available": False, "tag": tag, "version": version,
+    result = {"available": False, "installer_available": False,
+              "tag": tag, "version": version,
               "release_url": f"{base}/tag/{quote(tag, safe='')}", "assets": []}
     # A main/source preview never infers publication from source version or filenames.
     if environment.get("STREAMSKOPE_DOCS_PUBLISH") != "1":
@@ -87,13 +122,15 @@ def container_downloads(root=ROOT, environment=None):
     # Registry delivery starts with core 0.10.0. Older archive-only releases retain
     # their original four assets; newer releases must include the offline topology.
     numeric_version = tuple(int(part) for part in version.split("+", 1)[0].split("-", 1)[0].split("."))
-    registry_delivery = numeric_version >= (0, 10, 0)
+    registry_delivery = installer_required or numeric_version >= (0, 10, 0)
     if registry_delivery:
         names.insert(3, ("Offline Containerlab topology", f"streamskope-{version}-offline.clab.yml"))
+    if installer_required:
+        names.insert(0, ("Browser workbench installer", BROWSER_INSTALLER_NAME))
     assets = release.get("assets", [])
     if not isinstance(assets, list):
         raise ValueError("Browser release assets must be a list")
-    if not any(isinstance(asset, dict) and asset.get("name") in
+    if not installer_required and not any(isinstance(asset, dict) and asset.get("name") in
                {name for _, name in names} for asset in assets):
         return result  # Historical releases can legitimately have desktop installers only.
     for label, name in names:
@@ -112,6 +149,10 @@ def container_downloads(root=ROOT, environment=None):
         raise ValueError("Browser release requires its exact published SHA256SUMS")
     result.update({"available": True, "checksum_url": checksum_url,
                    "registry_delivery": registry_delivery})
+    if installer_required:
+        installer_url = f"{download_root}/{BROWSER_INSTALLER_NAME}"
+        result.update({"installer_available": True, "installer_url": installer_url,
+                       "install_command": f"curl -fsSL {installer_url} | sudo -E bash"})
     return result
 
 

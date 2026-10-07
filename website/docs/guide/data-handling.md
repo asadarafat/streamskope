@@ -63,7 +63,7 @@ gone. Do not remove shared OS credential-service files to clean up one applicati
 
 ## Production browser data
 
-The [Containerlab host](../start/containerlab.md) mounts its private data directory
+The [browser host](../start/containerlab.md) mounts its private data directory
 at `/data`. `vault.json` holds authenticated vault metadata; `kafka-profiles.json`
 and `nats-profiles.json` are at this directory's root. Their protected credentials
 and trust values use passphrase-derived authenticated encryption, with the key
@@ -76,9 +76,18 @@ ordinary filesystem data, not an encrypted disk. Browser observation history is
 durable under the same retention bounds as the desktop store. Read messages stay
 in bounded workbench memory; browser downloads remain outside this directory.
 
-Back up the entire locked directory with its ownership and permissions preserved,
-and preserve the passphrase separately. There is no passphrase recovery or
-automatic desktop credential migration. Follow [browser backup and restore](../start/containerlab.md#back-up-and-restore).
+An installer-managed host keeps this data in
+`/var/lib/streamskope/browser/streamskope-data`. Its parent directory also contains
+private deployment records: `installation.json`, the pinned topology, image
+manifest and checksums. These records retain the release, owner and port used to
+resume the installation. They are separate from the vault and must be backed up
+with it. Manual hosts use the directory selected in their release topology.
+
+Back up the complete stopped deployment with its ownership and permissions
+preserved, and preserve the passphrase separately. There is no passphrase recovery
+or automatic desktop credential migration. Follow
+[browser backup and restore](browser-host.md#back-up-and-restore) for the distinct
+installer-managed and manual procedures.
 
 ## Message limits
 

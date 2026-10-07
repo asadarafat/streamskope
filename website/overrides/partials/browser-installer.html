@@ -1,0 +1,29 @@
+{% set downloads = config.extra.container_downloads %}
+<section
+  class="sk-browser-installer"
+  aria-label="Browser workbench installation"
+  data-desktop-release="{{ downloads.tag | e }}"
+>
+  {% if downloads.installer_available %}
+  <div class="highlight">
+    <pre><code>{{ downloads.install_command | e }}</code></pre>
+  </div>
+  <p>
+    Run in your Linux host or VM terminal. Open the URL printed by the installer and use the setup
+    code shown in that terminal to create your vault. An existing vault asks for its passphrase.
+  </p>
+  <p>
+    A new installation uses <strong>{{ downloads.tag | e }}</strong> from its verified release
+    assets. Repeating the command preserves the installed version and private data.
+    <a href="{{ 'guide/browser-host/' | url }}">Manual installation and operations</a>.
+  </p>
+  {% else %}
+  <p>
+    {% if config.extra.documentation.status == 'Published documentation' %}This documented release
+    has no verified one-command installer.{% else %}This source preview does not verify published
+    installer availability.{% endif %} Check
+    <a href="{{ downloads.release_url | e }}">{{ downloads.tag | e }} release assets</a> or use the
+    <a href="{{ 'guide/browser-host/' | url }}">manual installation instructions</a>.
+  </p>
+  {% endif %}
+</section>
