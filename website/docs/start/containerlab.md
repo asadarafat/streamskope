@@ -18,8 +18,8 @@ For a restricted network, another distribution, or custom browser address, use
 
 ## 1. Install
 
-The published release determines the installer command below. Run it in a Linux
-terminal, then keep that terminal open for the first-time setup code.
+The command below installs the latest stable release. Run it in a Linux terminal,
+then keep that terminal open for the first-time setup code.
 
 <!-- browser-installer -->
 

@@ -682,9 +682,13 @@ commit, mismatched version or incomplete notes. The build verifies that the thre
 installers and `SHA256SUMS` exist in the published release. Browser download links
 require all six uploaded browser assets for source containing the installer
 quickstart marker: the installer, both native archives, both topologies and image
-manifest, together with `SHA256SUMS`. The generated command uses the exact
-publication event's installer URL; missing, duplicate, empty or mismatched assets
-fail the docs build. Historical registry delivery retains its five-file contract
+manifest, together with `SHA256SUMS`. Availability requires the exact publication
+event's installer asset; missing, duplicate, empty or mismatched assets fail the
+docs build. The quick-install command uses GitHub's stable
+`releases/latest/download/install-browser-workbench.sh` entry point. The downloaded
+installer uses its matching version, image digest and verified files; reruns retain
+the saved installation. Per-release notes and manual downloads keep exact release
+URLs. Historical registry delivery retains its five-file contract
 and archive-only delivery its four-file contract. Development previews never
 invent an installer URL. Historical desktop-only releases leave browser downloads
 unavailable. Pages qualifies the site and verifies
