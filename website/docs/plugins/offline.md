@@ -11,7 +11,7 @@ Check the site and plugin availability notices before following this procedure.
 
 You can install or update an official connection plugin from a publisher-signed
 `.skope-plugin` file. The app verifies the publisher using public keys shipped with
-the desktop, then checks the plugin's desktop requirements. Installing a plugin
+the application host, then checks the plugin's desktop requirements. Installing a plugin
 does not require internet access when its complete package is available locally.
 Connecting afterward still requires access to your Kafka brokers and the relevant
 EDA or NSP API.
@@ -46,8 +46,10 @@ Proxy credentials never return to the renderer. When OS-backed protection is
 available, the host saves them encrypted. Otherwise they remain in memory for
 the current session and must be entered again after restart. Unreadable saved
 settings block remote acquisition until explicitly reset; they do not block
-local plugin management. Browser development hosts do not provide native proxy
-configuration.
+local plugin management. The production browser host preserves offline settings in its private data
+root across locks and restarts, but currently uses direct plugin networking and
+has no custom native proxy transport. Use signed files or the verified local
+cache behind restricted networks. Vite development settings are session-only.
 
 ## Cancel a stalled download
 
@@ -101,7 +103,7 @@ unknown publisher or an altered file.
 
 ## Review and install
 
-1. Open **Preferences → Plugins → Install from file** in the desktop app.
+1. Open **Preferences → Plugins → Install from file** in a compatible desktop app or unlocked production browser host.
 2. Select the portable file. The host reads a bounded local copy and verifies it;
    it does not send your file or local path to GitHub.
 3. Review its plugin name, version, publisher, source, digest, and desktop/target
@@ -114,8 +116,11 @@ unknown publisher or an altered file.
 The review pins the exact verified package. It does not reread your original file
 or silently select a different catalog version when you confirm. Cancelling the
 review releases that candidate; an expired review must be opened again.
-File selection is a native desktop capability. The browser development host can
-exercise packaged plugins but does not provide the OS file-selection dialog.
+The desktop reads the chosen file locally. The production browser uses its file
+picker and uploads the bounded package to the authenticated host; verification
+and activation occur there. The file's local path and bytes are never sent to
+GitHub. Locking cancels pending selections. The Vite development host does not
+provide this production upload endpoint.
 
 ```text
 Connected computer             Desktop with no GitHub access

@@ -15,7 +15,7 @@ from urllib.parse import unquote, urlsplit
 from docs import publication
 from docs.publication import documentation_context, publication_identity, verify_publication
 from docs.media import media_inputs, media_selection
-from docs.downloads import desktop_downloads
+from docs.downloads import desktop_downloads, container_downloads
 from docs.plugins import SNAPSHOT, capture_publications, plugin_context
 from docs.procedures import inspect_retrieval_procedure
 from docs.releases import configure_release_navigation
@@ -214,6 +214,15 @@ def prepare(url, serving=False):
     )
     for asset in downloads["assets"]:
         source += "\n[[project.extra.desktop_downloads.assets]]\n" + "".join(
+            f"{key} = {json.dumps(value)}\n" for key, value in asset.items()
+        )
+    browser_downloads = container_downloads(ROOT)
+    source += "\n[project.extra.container_downloads]\n" + "".join(
+        f"{key} = {json.dumps(value).lower() if isinstance(value, bool) else json.dumps(value)}\n"
+        for key, value in browser_downloads.items() if key != "assets"
+    )
+    for asset in browser_downloads["assets"]:
+        source += "\n[[project.extra.container_downloads.assets]]\n" + "".join(
             f"{key} = {json.dumps(value)}\n" for key, value in asset.items()
         )
     # Only these public manifest fields enter the rendered compatibility reference.

@@ -37,20 +37,30 @@ OAuth token is not necessarily valid for the Registry, Connect or Redpanda Admin
 
 ## Test baselines and support boundaries
 
-| Component                 | Repository baseline                 | Qualification boundary                                                                                                                    |
-| ------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Apache Kafka              | AIO fixture pins 4.3.1              | Local fixture provides OAuth/TLS; first-release qualification is recorded separately                                                      |
-| Apache Kafka Connect      | Docker fixture pins 4.3.1           | FileStream sink lifecycle, task failure/restart and supported error-context DLQ; not every connector plugin                               |
-| Schema Registry           | Karapace 5.0.3                      | Confluent-compatible fixture; not certification of Confluent Cloud or every Registry vendor                                               |
-| EDA                       | 26.8.2                              | Live tests require the configured local cluster; ordinary GitHub checks cannot establish cluster compatibility                            |
-| NSP                       | 26.4.0                              | Product read through the NSP API; declared target does not qualify every listener, authentication mode or workflow environment            |
-| Temporary EDA broker      | Redpanda v24.3.5                    | Pinned capture broker, not qualification of all Redpanda Admin/transform operations                                                       |
-| Desktop operating systems | macOS ARM64, Windows x64, Linux x64 | See [native release-check environments](installation.md#desktop-prerequisites); other architectures/minimum OS versions are not qualified |
+| Component                 | Repository baseline                              | Qualification boundary                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apache Kafka              | AIO fixture pins 4.3.1                           | Local fixture provides OAuth/TLS; first-release qualification is recorded separately                                                                                             |
+| Apache Kafka Connect      | Docker fixture pins 4.3.1                        | FileStream sink lifecycle, task failure/restart and supported error-context DLQ; not every connector plugin                                                                      |
+| Schema Registry           | Karapace 5.0.3                                   | Confluent-compatible fixture; not certification of Confluent Cloud or every Registry vendor                                                                                      |
+| EDA                       | 26.8.2                                           | Live tests require the configured local cluster; ordinary GitHub checks cannot establish cluster compatibility                                                                   |
+| NSP                       | 26.4.0                                           | Product read through the NSP API; declared target does not qualify every listener, authentication mode or workflow environment                                                   |
+| Temporary EDA broker      | Redpanda v24.3.5                                 | Pinned capture broker, not qualification of all Redpanda Admin/transform operations                                                                                              |
+| Browser host              | Linux Containerlab, single-owner encrypted vault | Native ARM64 source-image lifecycle exercised locally; both image architectures are gated during release packaging. No multiuser authorization or browser custom proxy transport |
+| Desktop operating systems | macOS ARM64, Windows x64, Linux x64              | See [native release-check environments](installation.md#desktop-prerequisites); other architectures/minimum OS versions are not qualified                                        |
 
 Do not infer managed-service support from protocol compatibility alone. Obtain the
 service's required authentication method, endpoints and permissions first. If they
 fall outside the implemented scope, changing broker security to fit this client is
 not part of the installation procedure.
+
+## Browser deployment boundary
+
+The [Containerlab host](containerlab.md) uses the same provider workflows with
+server-side network connections and an encrypted, browser-unlocked profile vault.
+It starts locked, expires sessions after two hours, and disconnects when explicitly
+locked. Its direct plugin networking and signed-file imports are separate from
+Electron's native proxy service. Offline policy is durable; custom proxy mode is
+unavailable. A Linux-host test does not establish Mac browser/VM reachability.
 
 ## Plugin compatibility declarations
 

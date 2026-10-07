@@ -10,22 +10,26 @@ Open the exact desktop version in [release history](../releases/index.md). New
 release notes include a **Build evidence** link to the executed release workflow
 and its source commit. That run records shared CI, each native installer and the
 unsigned EDA application build. Use its job results and the release's `SHA256SUMS`
-to assess the downloaded packages. A published release or a green badge alone
+to assess the downloaded packages. Releases with browser assets also require
+native AMD64 and ARM64 jobs that load the Docker-save archive and exercise
+browser authentication, vault persistence, compiled workers and graceful restart.
+Their metadata records identity and checksums, not live-target success. A published release or a green badge alone
 does not qualify operations outside those checks.
 
 For a development checkout, `0.0.0-dev` is an unassigned version. Use the PR's
 successful CI result for its exact revision; that check does not build native
 installers. Results from an earlier revision do not qualify changed source.
 
-| Check                                                     | Evidence to use                                                                                                     |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Static, unit, architecture, non-live integration and docs | The exact successful PR CI or release CI run                                                                        |
-| Linux, macOS and Windows installers                       | The release's native build/launch jobs and installer checksums                                                      |
-| 60-second performance soak                                | A local report tied to the source revision; release CI does not run it                                              |
-| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal in the exact source-specific report                |
-| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal in the exact source-specific report                  |
-| API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded |
-| Native plugin dialogs and credential-backed restore       | Source-specific candidate lifecycle/recovery evidence, with release-source equivalence and exact artifact limits    |
+| Check                                                     | Evidence to use                                                                                                                                               |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Static, unit, architecture, non-live integration and docs | The exact successful PR CI or release CI run                                                                                                                  |
+| Linux, macOS and Windows installers                       | The release's native build/launch jobs and installer checksums                                                                                                |
+| Linux browser images                                      | Native archive load/lifecycle jobs, matching image metadata and archive/topology checksums; a desktop installer does not establish browser-image availability |
+| 60-second performance soak                                | A local report tied to the source revision; release CI does not run it                                                                                        |
+| EDA 26.8.2 capture and cleanup                            | API version, received record and verified owned-resource removal in the exact source-specific report                                                          |
+| NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal in the exact source-specific report                                                            |
+| API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded                                           |
+| Native plugin dialogs and credential-backed restore       | Source-specific candidate lifecycle/recovery evidence, with release-source equivalence and exact artifact limits                                              |
 
 <span id="current-source-qualification"></span>
 

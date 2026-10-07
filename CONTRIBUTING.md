@@ -1,6 +1,6 @@
 # Development and releases
 
-Use Node 24, `npm ci`, Go 1.24 for the EDA agent, and Python 3.11+ for docs.
+Use Node 24.21+ in the 24.x line, `npm ci`, Go 1.24 for the EDA agent, and Python 3.11+ for docs.
 Install docs browsers once with `npx playwright install chromium firefox`.
 
 ## Commands
@@ -872,3 +872,16 @@ commits, tags or remotes. It excludes ignored files and historical generated
 `apps/` projections, and rejects symlinks/existing destinations. Review for secrets
 before publication. Add the replacement remote and push only after arranging the
 GitHub repository replacement. Exporting leaves development history intact.
+
+## Production browser and Containerlab delivery
+
+`npm run build -- web` produces the shared renderer and compiled Node host with
+its two sibling worker bundles. `npm run package -- container` builds the native
+Linux browser image; append `--archive` to create its Docker-save distribution.
+These targets use the existing five scripts. They do not create a personal vault,
+deploy a lab, start brokers or publish an image.
+
+The production host stores credentials through an explicitly unlocked passphrase
+vault and serves authenticated provider commands. The Vite development host has
+separate fixture and memory-store behavior. See the [operator deployment guide](website/docs/start/containerlab.md)
+for data ownership, setup, Containerlab deployment and graceful recovery.

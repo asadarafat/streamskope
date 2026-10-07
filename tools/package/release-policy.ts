@@ -5,6 +5,8 @@ import { join } from "node:path";
 
 import { parseReleaseVersion } from "../../src/plugins/compatibility";
 
+import { validateBrowserReleaseAssets } from "./browser-release";
+
 export function parsePublicationVersion(version: string): string {
   const parsed = parseReleaseVersion(version);
   if (parsed === "0.0.0" || parsed.startsWith("0.0.0-"))
@@ -25,6 +27,7 @@ export async function prepareUnsignedRelease(
   version: string,
   commit: string,
   tag = `v${version}`,
+  containerDirectory?: string,
 ): Promise<string> {
   if (!isDesktopReleaseTag(tag, version) || !/^[a-f0-9]{40}$/u.test(commit)) {
     throw new Error("Invalid unsigned release tag, version, or source commit.");
@@ -38,16 +41,26 @@ export async function prepareUnsignedRelease(
   if (actual.length !== expected.length || actual.some((name, index) => name !== expected[index])) {
     throw new Error("Unsigned release must contain exactly the three version-matched installers.");
   }
+  const browserNames =
+    containerDirectory === undefined
+      ? []
+      : await validateBrowserReleaseAssets(containerDirectory, version, commit);
   const lines: string[] = [];
-  for (const name of expected) {
-    const path = join(directory, name);
-    const stat = await lstat(path);
-    if (!stat.isFile() || stat.size === 0 || stat.size >= 2 * 1024 ** 3) {
-      throw new Error(`Release asset must be a nonempty regular file under 2 GiB: ${name}`);
+  for (const [assetDirectory, names] of [
+    [directory, expected],
+    [containerDirectory, browserNames],
+  ] as const) {
+    if (assetDirectory === undefined) continue;
+    for (const name of names) {
+      const path = join(assetDirectory, name);
+      const stat = await lstat(path);
+      if (!stat.isFile() || stat.size === 0 || stat.size >= 2 * 1024 ** 3) {
+        throw new Error(`Release asset must be a nonempty regular file under 2 GiB: ${name}`);
+      }
+      const hash = createHash("sha256");
+      for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+      lines.push(`${hash.digest("hex")}  ${name}`);
     }
-    const hash = createHash("sha256");
-    for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-    lines.push(`${hash.digest("hex")}  ${name}`);
   }
   await writeFile(join(directory, "SHA256SUMS"), `${lines.join("\n")}\n`, { flag: "wx" });
   return `# StreamSkope ${version}
@@ -72,6 +85,27 @@ Do not disable operating-system security globally.
 
 [Installation and checksum instructions](https://asadarafat.github.io/streamskope/start/installation/)
 
+${
+  containerDirectory === undefined
+    ? ""
+    : `## Browser with Containerlab
+
+| Linux Docker host | Docker save archive |
+| --- | --- |
+| AMD64 | StreamSkope-${version}-container-linux-amd64.tar.gz |
+| ARM64 | StreamSkope-${version}-container-linux-arm64.tar.gz |
+
+Download the matching archive, streamskope-${version}.clab.yml and
+streamskope-${version}-container.json. Verify all files against SHA256SUMS,
+load the gzip-compressed Docker save archive with Docker, then deploy the topology
+with Containerlab. No image registry or Apple Developer ID certificate is needed.
+The browser stores credentials in an encrypted vault that you unlock with your
+passphrase; protect that passphrase and the private data directory.
+
+[Containerlab installation and backup instructions](https://asadarafat.github.io/streamskope/start/containerlab/)
+
+`
+}
 Source: ${commit} (tag ${tag}). Native packaged-app checks ran during this build.
 Local qualification is a maintainer prerequisite. Kafka is not bundled with the application.
 `;

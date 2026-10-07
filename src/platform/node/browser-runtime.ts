@@ -41,6 +41,7 @@ export async function openBrowserRuntime(
     const plugins = (ownedPlugins = new PluginRuntime({
       store: new PluginStore(join(dataRoot, "plugins")),
       networkProtector: vault.protector,
+      durableSettings: true,
       choosePackageFile: (signal): Promise<Uint8Array | null> => files.chooseFile(signal),
     }));
     const kafka = (ownedKafka = createKafkaBackend({

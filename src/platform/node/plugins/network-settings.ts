@@ -41,6 +41,7 @@ interface Options {
   readonly path: string;
   readonly transport?: PluginNetworkTransport;
   readonly protector?: ProfileProtector;
+  readonly durableSettings?: boolean;
   readonly changing: () => void;
 }
 function missing(error: unknown): boolean {
@@ -61,8 +62,10 @@ export class PluginNetworkSettings {
   private closed = false;
   private readonly lifetime = new AbortController();
   private encryptionAvailable: boolean;
+  private readonly durableSettings: boolean;
   constructor(private readonly options: Options) {
     this.encryptionAvailable = options.protector !== undefined;
+    this.durableSettings = options.durableSettings ?? options.transport?.nativeAvailable === true;
   }
 
   private assertOpen(): void {
@@ -80,6 +83,18 @@ export class PluginNetworkSettings {
           ...(state.credentials === undefined ? {} : { credentials: state.credentials }),
         };
   }
+  private assertSupportedConfiguration(configuration: PluginNetworkConfiguration): void {
+    if (
+      configuration.mode === "custom" &&
+      (this.options.transport?.nativeAvailable !== true ||
+        !this.options.transport.supportedProxyProtocols.includes(
+          new URL(configuration.proxyUrl!).protocol.slice(0, -1) as "http" | "https",
+        ))
+    )
+      throw pluginProblem(
+        "Custom plugin proxies are available in the desktop app with HTTP or HTTPS support.",
+      );
+  }
   private async safePath(create: boolean): Promise<void> {
     if (create) await mkdir(dirname(this.options.path), { mode: 0o700, recursive: true });
     const parent = await lstat(dirname(this.options.path));
@@ -95,7 +110,7 @@ export class PluginNetworkSettings {
   }
   private async save(state: State): Promise<void> {
     this.assertOpen();
-    if (this.options.transport?.nativeAvailable !== true) return;
+    if (!this.durableSettings) return;
     await this.safePath(true);
     const contents = JSON.stringify({
       formatVersion: 1,
@@ -116,7 +131,7 @@ export class PluginNetworkSettings {
   }
   private async load(): Promise<void> {
     try {
-      if (this.options.transport?.nativeAvailable === true) {
+      if (this.durableSettings) {
         try {
           await this.safePath(false);
           const raw = object(
@@ -142,6 +157,7 @@ export class PluginNetworkSettings {
           )
             throw new Error("Invalid plugin network settings metadata.");
           const configuration = parsePluginNetworkConfiguration(raw.configuration);
+          this.assertSupportedConfiguration(configuration);
           let credentials: Credentials | undefined;
           let protectedCredentials: string | undefined;
           if (raw.protectedCredentials !== undefined) {
@@ -268,16 +284,7 @@ export class PluginNetworkSettings {
       this.assertOpen();
       const previous = this.state;
       const configuration = validated.configuration;
-      if (
-        configuration.mode === "custom" &&
-        (this.options.transport?.nativeAvailable !== true ||
-          !this.options.transport.supportedProxyProtocols.includes(
-            new URL(configuration.proxyUrl!).protocol.slice(0, -1) as "http" | "https",
-          ))
-      )
-        throw pluginProblem(
-          "Custom plugin proxies are available in the desktop app with HTTP or HTTPS support.",
-        );
+      this.assertSupportedConfiguration(configuration);
       if (
         validated.credentials.action === "unchanged" &&
         (previous.configuration === null ||

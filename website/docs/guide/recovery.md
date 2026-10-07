@@ -8,6 +8,11 @@ version independently. Record each installed plugin version and its requirements
 The [qualification record](qualification.md) separates recorded results from
 platforms and migration scenarios that still need verification.
 
+For a production browser deployment, use [Containerlab backup and restore](../start/containerlab.md#back-up-and-restore).
+That host uses a complete private data directory and a separate vault passphrase.
+Desktop profile files cannot be copied into it to recover their OS encryption
+keys; re-enter credentials through the browser connection workflow.
+
 ## Find your application data
 
 The current packaged app uses Electron's `userData` directory and the lowercase

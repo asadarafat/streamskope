@@ -18,6 +18,12 @@ The plugin adds its own action under **Add connection**, a setup dialog, and
 actions for its saved profiles. Once connected, you use the same **Topics**,
 message reader, consumer lag and other workbench views as any Kafka connection.
 
+A compatible [Containerlab browser host](../start/containerlab.md) exposes the
+same plugin connection actions and hot lifecycle. Its API and broker traffic
+originate in the container; plugins do not run platform requests in the browser.
+A signed file can be transferred through its authenticated browser picker.
+Development identity and published package compatibility still apply.
+
 ## Choose a plugin
 
 | Plugin                  | What you supply                                                 | What it creates                                                                                                       | Where Kafka traffic goes                                                                              |
@@ -48,7 +54,7 @@ User: Add connection
 Plugin setup dialog
   | URL + API credentials
   v
-Desktop plugin/host
+Application plugin/host
   | Platform API calls
   | Discover or prepare Kafka
   v
@@ -63,7 +69,7 @@ Core Kafka client -> Broker
 Topics, messages, consumer lag
 ```
 
-The desktop host performs the API requests, holds secret connection material and
+The application host performs the API requests, holds secret connection material and
 uses StreamSkope's profile validation and protected storage. Truststores and
 retrieved passwords are not returned to the plugin dialog. The saved profile
 records its plugin owner and platform metadata so that refresh, resume and

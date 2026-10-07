@@ -83,6 +83,8 @@ export interface PluginRuntimeOptions {
   readonly choosePackageFile?: (signal: AbortSignal) => Promise<Uint8Array | null>;
   readonly networkTransport?: PluginNetworkTransport;
   readonly networkProtector?: ProfileProtector;
+  /** Persist plugin download policy independently of native proxy capability. */
+  readonly durableSettings?: boolean;
 }
 
 export interface PluginRendererAsset {
@@ -135,6 +137,9 @@ export class PluginRuntime implements PluginRuntimePort {
       path: options.store.networkSettingsPath(),
       ...(options.networkTransport === undefined ? {} : { transport: options.networkTransport }),
       ...(options.networkProtector === undefined ? {} : { protector: options.networkProtector }),
+      ...(options.durableSettings === undefined
+        ? {}
+        : { durableSettings: options.durableSettings }),
       changed: (): void => this.catalogDiscovery.invalidateRemote(),
     });
     this.installer = new PluginInstaller({

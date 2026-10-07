@@ -21,6 +21,7 @@ import {
 } from "../../src/platform/node/plugins/publishers";
 
 import { prepareUnsignedRelease, releaseNotesBody } from "./release-policy";
+import { prepareBrowserReleaseAssets } from "./browser-release";
 import { releaseIdentity, type ReleaseComponent } from "./release-version";
 
 /** Refuse changes collected for another component, source, or release identity. */
@@ -196,21 +197,33 @@ async function main(): Promise<void> {
     process.stdout.write("Prepared reviewed plugin notes, compatibility and generated changes.\n");
     return;
   }
+  const arguments_ = process.argv.slice(2);
+  const containerOption = arguments_.indexOf("--containers");
+  const containerStaging = containerOption === -1 ? undefined : arguments_[containerOption + 1];
+  if (containerOption !== -1 && (containerOption !== arguments_.length - 2 || !containerStaging))
+    throw new Error(
+      "--containers requires one native-build staging directory as the final argument.",
+    );
   const [directory, version, commit, source, output, tag, changelog, ...extra] =
-    process.argv.slice(2);
+    containerOption === -1 ? arguments_ : arguments_.slice(0, containerOption);
   if (!directory || !version || !commit || !source || !output || extra.length) {
     throw new Error(
-      "Usage: npm run package -- release <assets-directory> <version> <commit> <source-page> <notes-output> [tag] [changelog]",
+      "Usage: npm run package -- release <assets-directory> <version> <commit> <source-page> <notes-output> [tag] [changelog] [--containers <native-build-staging>]",
     );
   }
   const body = releaseNotesBody(await readFile(source, "utf8"), version, tag);
   const changes = changelog
     ? await readReleaseChangelog(changelog, "desktop", version, commit)
     : "";
-  const downloads = (await prepareUnsignedRelease(directory, version, commit, tag)).replace(
-    /^# StreamSkope [^\n]+\n/u,
-    "## Distribution\n",
-  );
+  const containerDirectory =
+    containerStaging === undefined
+      ? undefined
+      : join(resolve(directory), "..", "container-package");
+  if (containerStaging !== undefined && containerDirectory !== undefined)
+    await prepareBrowserReleaseAssets(containerStaging, containerDirectory, version, commit);
+  const downloads = (
+    await prepareUnsignedRelease(directory, version, commit, tag, containerDirectory)
+  ).replace(/^# StreamSkope [^\n]+\n/u, "## Distribution\n");
   await writeFile(output, `${body.trimEnd()}\n\n${downloads}${changes ? `\n${changes}` : ""}`, {
     flag: "wx",
     mode: 0o600,

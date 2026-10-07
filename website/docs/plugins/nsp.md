@@ -262,3 +262,12 @@ is reconciled using the persisted request identity, avoiding a blind second
 execution. The plugin saves no new connection profile until cleanup and the Kafka
 test have succeeded. Cancellation after a completed profile save does not undo
 that save.
+
+## Container-host networking
+
+In a [Containerlab browser deployment](../start/containerlab.md), platform API
+calls and Kafka connections run inside the application container. Supply endpoints
+that resolve and are reachable there; `localhost` refers to that container.
+Both the NSP API and every advertised Kafka broker must be reachable. A signed
+portable connector includes its workflow resource, not the NSP server or its
+Kafka service. Installation does not change those network prerequisites.

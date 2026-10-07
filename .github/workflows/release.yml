@@ -55,7 +55,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 24.12.0
+          node-version: 24.21.0
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - id: identity
@@ -116,7 +116,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 24.12.0
+          node-version: 24.21.0
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
@@ -133,6 +133,42 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  browser:
+    if: needs.prepare.outputs.component == 'desktop'
+    needs: [prepare, checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      EXPECTED_ARCH: ${{ matrix.arch }}
+      STREAMSKOPE_SOURCE_REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
+      - name: Build, reload and qualify the native browser archive
+        run: npm run package -- container --archive
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: browser-linux-${{ matrix.arch }}
+          path: dist/container-package/*
+          if-no-files-found: error
+          retention-days: 7
+
   eda:
     if: needs.prepare.outputs.component == 'desktop'
     needs: [prepare, checks]
@@ -146,7 +182,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 24.12.0
+          node-version: 24.21.0
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
@@ -171,7 +207,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 24.12.0
+          node-version: 24.21.0
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
@@ -188,9 +224,9 @@ jobs:
 
   draft-release:
     if: needs.prepare.outputs.component == 'desktop'
-    needs: [prepare, checks, desktop, eda]
+    needs: [prepare, checks, desktop, eda, browser]
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: write
     env:
@@ -201,7 +237,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 24.12.0
+          node-version: 24.21.0
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --import tsx tools/package/release-version.ts "$RELEASE_COMPONENT" "$RELEASE_VERSION" --stamp
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -211,13 +247,18 @@ jobs:
           path: dist/installers
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
+          pattern: browser-linux-*
+          merge-multiple: false
+          path: dist/container-staging
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
           name: release-changelog
           path: ${{ runner.temp }}/release-changelog
       - name: Assemble checksums and reviewed release notes
-        run: npm run package -- release dist/installers "$RELEASE_VERSION" "$GITHUB_SHA" "website/docs/releases/$RELEASE_TAG.md" "$RUNNER_TEMP/notes.md" "$RELEASE_TAG" "$RUNNER_TEMP/release-changelog/changelog.md"
+        run: npm run package -- release dist/installers "$RELEASE_VERSION" "$GITHUB_SHA" "website/docs/releases/$RELEASE_TAG.md" "$RUNNER_TEMP/notes.md" "$RELEASE_TAG" "$RUNNER_TEMP/release-changelog/changelog.md" --containers dist/container-staging
       - name: Link executed release qualification
         run: |
-          printf '\n## Build evidence\n\n[Release checks and native packaging](%s/%s/actions/runs/%s) passed for `%s`. Live EDA/NSP qualification is recorded separately; this run does not establish it.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_SHA" >> "$RUNNER_TEMP/notes.md"
+          printf '\n## Build evidence\n\n[Release checks, native installers and native AMD64/ARM64 browser archive lifecycle checks](%s/%s/actions/runs/%s) passed for `%s`. Live EDA/NSP qualification is recorded separately; this run does not establish it.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_SHA" >> "$RUNNER_TEMP/notes.md"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: desktop-release-notes
@@ -235,7 +276,7 @@ jobs:
           if [[ "$PRERELEASE" == true ]]; then latest_options+=(--latest=false); fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
             -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" --silent
-          gh release create "$RELEASE_TAG" dist/installers/* --verify-tag --target "$GITHUB_SHA" --draft --prerelease="$PRERELEASE" "${latest_options[@]}" \
+          gh release create "$RELEASE_TAG" dist/installers/* dist/container-package/* --verify-tag --target "$GITHUB_SHA" --draft --prerelease="$PRERELEASE" "${latest_options[@]}" \
             --title "StreamSkope $RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
   plugin-draft-release:
@@ -253,7 +294,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 24.12.0
+          node-version: 24.21.0
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:

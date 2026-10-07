@@ -27,6 +27,12 @@ Kafka is a separate service; the desktop installer does not require Node or Dock
 The [qualification record](website/docs/guide/qualification.md) links the release's
 automated checks and identifies workflows that still need recorded evidence.
 
+Prefer a browser workbench on a Linux Docker host? This checkout can build and
+run StreamSkope with [Containerlab](website/docs/start/containerlab.md), with saved
+connection credentials protected by a browser-unlocked vault. Core release CI packages version-matched browser image archives and topologies.
+Check the guide's availability notice and your chosen release assets; source
+implementation alone does not establish a published browser package.
+
 This checkout is development source, not an assigned release. See the
 [unreleased changes](website/docs/releases/unreleased.md). A maintainer chooses the
 version when starting release CI; PR checks only qualify changes for `main`.

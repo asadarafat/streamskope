@@ -11,6 +11,7 @@ nav = [
   { "Home" = "index.md" },
   { "Start here" = [
     { "Install StreamSkope" = "start/installation.md" },
+    { "Run with Containerlab" = "start/containerlab.md" },
     { "Check compatibility" = "start/compatibility.md" },
     { "Read your first message" = "start/quickstart.md" },
     { "Connect your Kafka" = "guide/connections.md" }

@@ -330,3 +330,12 @@ Repeated removal of a confirmed absent session succeeds. Cleanup never removes
 the original Producer/ClusterProducer. See the [lifecycle table](#stop-update-and-resume)
 for the distinction between disconnecting Kafka, stopping capture and uninstalling
 the plugin.
+
+## Container-host networking
+
+In a [Containerlab browser deployment](../start/containerlab.md), platform API
+calls and Kafka connections run inside the application container. Supply endpoints
+that resolve and are reachable there; `localhost` refers to that container.
+For temporary EDA capture, the authenticated tunnel and Kafka client share the
+container, so no capture Kafka port is published to the browser or Linux host.
+The EDA cluster still needs the approved app and broker images.
