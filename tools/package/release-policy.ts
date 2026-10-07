@@ -69,17 +69,13 @@ export async function prepareUnsignedRelease(
     containerDirectory === undefined
       ? []
       : await validateBrowserReleaseAssets(containerDirectory, version, commit);
-  const registry =
+  const browser =
     containerDirectory === undefined
       ? undefined
-      : (
-          JSON.parse(
-            await readFile(
-              join(containerDirectory, `streamskope-${version}-container.json`),
-              "utf8",
-            ),
-          ) as { registry?: { reference: string } }
-        ).registry;
+      : (JSON.parse(
+          await readFile(join(containerDirectory, `streamskope-${version}-container.json`), "utf8"),
+        ) as { registry?: { reference: string }; installer?: { file: string } });
+  const registry = browser?.registry;
   const lines: string[] = [];
   for (const [assetDirectory, names] of [
     [directory, expected],
@@ -131,12 +127,23 @@ ${
 | ARM64 | StreamSkope-${version}-container-linux-arm64.tar.gz |
 
 ${
-  registry === undefined
-    ? `Download the matching archive, streamskope-${version}.clab.yml and
+  browser?.installer !== undefined
+    ? `Install on your Linux host or Linux VM, then open the URL printed by the installer:
+
+\`\`\`sh
+curl -fsSL https://github.com/asadarafat/streamskope/releases/download/${tag}/${browser.installer.file} | sudo -E bash
+\`\`\`
+
+The installer verifies the matching release metadata, pulls the public version/digest-pinned
+GHCR image, and preserves private vault data on repeat runs. No source build is required.
+Manual and offline delivery remain available through the matching topology and image archives.
+No Apple Developer ID certificate is needed.`
+    : registry === undefined
+      ? `Download the matching archive, streamskope-${version}.clab.yml and
 streamskope-${version}-container.json. Verify all files against SHA256SUMS,
 load the gzip-compressed Docker save archive with Docker, then deploy the topology
 with Containerlab. No image registry or Apple Developer ID certificate is needed.`
-    : `Download streamskope-${version}.clab.yml and verify it against SHA256SUMS, then
+      : `Download streamskope-${version}.clab.yml and verify it against SHA256SUMS, then
 deploy with Containerlab. Its public GHCR image is pinned to ${registry.reference};
 Docker selects AMD64 or ARM64. No registry login is required.
 For offline use, download the matching gzip-compressed Docker save archive,

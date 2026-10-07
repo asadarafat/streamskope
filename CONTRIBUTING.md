@@ -444,6 +444,11 @@ and anonymous pulls before promoting the version tag. Published deployment uses
 the exact version and index digest; no floating `latest` image is used.
 Registry publication requires Actions write access and public package visibility.
 A private or inaccessible candidate fails qualification before promotion.
+After promotion, native AMD64 and ARM64 jobs execute the stamped installer with
+the staged exact release metadata and real anonymous GHCR pulls. Each verifies
+Containerlab deployment, vault creation/unlock, persisted profiles, native workers,
+repeated installation and stopped-instance resume. The checks retain their
+architecture and source evidence; a failure prevents creation of a desktop draft.
 A Linux runner builds the complete unsigned EDA OCI application with
 EDABuilder v26.8.2 and retains it as a separate Actions artifact. Desktop installer packaging
 belongs to the release runners; local Linux development uses `dev` and `build`.
@@ -478,12 +483,15 @@ identity. Choose an unused version or explicitly resolve the unpublished failed
 identity; the workflow never overwrites or deletes it automatically.
 
 After qualification, native desktop, both browser archive jobs, public registry
-delivery and unsigned EDA
+delivery, both native installer lifecycle checks and unsigned EDA
 packaging pass, a desktop release creates a **draft** with exactly three unsigned
-installers and five browser assets: AMD64 and ARM64 Docker save archives, a
-version/digest-pinned online Containerlab topology, a separate offline topology
-and a combined registry/image/archive manifest. One `SHA256SUMS` covers all eight
-files. Release assembly independently inspects
+installers and six browser assets: AMD64 and ARM64 Docker save archives, a
+version/digest-pinned online Containerlab topology, a separate offline topology,
+a combined registry/image/archive manifest and `install-browser-workbench.sh`.
+One `SHA256SUMS` covers all nine files. The schema 3 manifest identifies the
+installer; its script embeds the assigned version, source revision and exact
+manifest/topology hashes. Assembly verifies it against the reviewed template.
+Historical schema 1/2 browser packages remain verifiable without an installer. Release assembly independently inspects
 each archive and checks its version, source, architecture and image identity;
 both builds must supply the identical reviewed topology. Online deployment pulls
 the matching public image without a registry login. Offline deployment loads an

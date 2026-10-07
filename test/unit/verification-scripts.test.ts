@@ -84,7 +84,7 @@ describe("development commands", () => {
     expect(browser).toContain("os: ubuntu-24.04-arm\n            arch: arm64");
     expect(browser).toContain("npm run package -- container --archive");
     expect(browser).toContain("STREAMSKOPE_SOURCE_REVISION: ${{ github.sha }}");
-    expect(draft).toContain("needs: [prepare, checks, desktop, eda, browser, registry]");
+    expect(draft).toContain("needs: [prepare, checks, desktop, eda, browser, registry, installer]");
     expect(draft).toContain("pattern: browser-linux-*\n          merge-multiple: false");
     expect(draft).toContain("--containers dist/container-staging");
     expect(draft).toContain("--registry dist/browser-registry/registry.json");

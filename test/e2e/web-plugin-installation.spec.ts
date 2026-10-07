@@ -47,6 +47,19 @@ async function openPlugins(page: Page): Promise<void> {
   await expect(page.getByRole("region", { name: "EDA Connector", exact: true })).toBeVisible();
 }
 
+async function closePreferences(page: Page): Promise<void> {
+  // Nested dialogs remain mounted while their exit transition restores focus.
+  // Wait for removal, then give Preferences keyboard focus before closing it.
+  await expect(
+    page.locator(
+      '[role="dialog"][aria-labelledby="review-plugin-title"], [role="dialog"][aria-labelledby="change-plugin-title"]',
+    ),
+  ).toHaveCount(0);
+  const preferences = page.getByRole("dialog", { name: "Workbench Preferences" });
+  await preferences.press("Escape");
+  await expect(preferences).toHaveCount(0);
+}
+
 async function approvePlugin(
   page: Page,
   action: "Install plugin" | "Update plugin",
@@ -98,6 +111,9 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
   let completeCatalog: (() => void) | undefined;
   let pendingDownload: Promise<void> | undefined;
   let completeDownload: (() => void) | undefined;
+  let primaryFailure: unknown;
+  let failed = false;
+  const cleanupFailures: unknown[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
@@ -164,7 +180,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await expect(card).toContainText(`Active version ${fixtures.current.manifest.version}`);
     expect(downloads).toBe(1);
     await page.screenshot({ path: info.outputPath("plugin-installed.png") });
-    await page.keyboard.press("Escape");
+    await closePreferences(page);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await page.getByRole("menuitem", { name: "Connect via EDA", exact: true }).click();
     const capture = page.getByRole("dialog", { name: "Connect via EDA" });
@@ -232,16 +248,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await expect(card.getByRole("button", { name: "Install", exact: true })).toBeEnabled();
     catalogUnavailable = false;
     pendingCatalog = undefined;
-    // Wait for the modal itself: its controls disappear before its exit transition
-    // releases the keyboard to Preferences.
-    await expect(
-      page.locator('[role="dialog"][aria-labelledby="change-plugin-title"]'),
-    ).toHaveCount(0);
-    // Removal deletes the button that opened the confirmation. Give the underlying
-    // dialog keyboard focus before Escape rather than racing its focus restoration.
-    const preferences = page.getByRole("dialog", { name: "Workbench Preferences" });
-    await preferences.press("Escape");
-    await expect(preferences).toHaveCount(0);
+    await closePreferences(page);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Connect via EDA", exact: true })).toHaveCount(
       0,
@@ -261,7 +268,7 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     await card.getByRole("button", { name: "Install", exact: true }).click();
     await approvePlugin(page, "Install plugin");
     await expect(card).toContainText(`Active version ${fixtures.update.manifest.version}`);
-    await page.keyboard.press("Escape");
+    await closePreferences(page);
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await page.getByRole("menuitem", { name: "Connect via EDA", exact: true }).click();
     await expectDialogControlOwnership(capture);
@@ -275,13 +282,35 @@ test("installs, updates, rolls back, removes and reinstalls EDA in the same work
     expect(restarts).toBe(0);
     expect(downloads).toBe(5);
     expect(errors).toEqual([]);
+  } catch (error) {
+    primaryFailure = error;
+    failed = true;
   } finally {
     completeCatalog?.();
     completeDownload?.();
-    await page.goto("about:blank");
-    await launch?.close();
-    await rm(root, { recursive: true, force: true });
+    // Playwright may already have closed the page after a test timeout. Navigation
+    // is best effort; it must not replace that failure or prevent host cleanup.
+    if (!page.isClosed()) await page.goto("about:blank", { timeout: 5_000 }).catch(() => undefined);
+    let hostClosed = false;
+    try {
+      await launch?.close();
+      hostClosed = true;
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    // Keep fixture data intact if a host still owns it after unsuccessful cleanup.
+    if (hostClosed)
+      try {
+        await rm(root, { recursive: true, force: true });
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
   }
+  if (cleanupFailures.length > 0)
+    throw new AggregateError(cleanupFailures, "Plugin lifecycle fixture cleanup failed.", {
+      cause: failed ? primaryFailure : cleanupFailures[0],
+    });
+  if (failed) throw primaryFailure;
 });
 
 test("reviews signed files, preserves a working plugin after a failed update, and reinstalls from cache offline", async ({
