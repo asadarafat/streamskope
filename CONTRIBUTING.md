@@ -573,9 +573,22 @@ these bodies also appear on GitHub. Package metadata and workflow evidence links
 accompany the notes. Inspect the retained notes and JSON selection evidence before
 publication; successful packaging does not establish live EDA/NSP qualification.
 
+Pending changes are derived from exact Git history and merged PR metadata after
+each component's nearest ancestral published **stable** release. Run
+`npm run docs -- pending`, or `npm run docs -- pending --component eda`, to inspect
+the committed checkout. The command fetches release tags without rewriting them,
+uses `GH_TOKEN` or your GitHub CLI login, and writes a separate Markdown/JSON pair
+under `.artifacts/release-pending/`. It excludes uncommitted work, records omitted
+PRs as evidence, and keeps prerelease changes pending until a stable publication.
+It assigns no upcoming version. API failures stop generation rather than reporting
+an empty inventory. Normal static, PR and documentation qualification does not
+query GitHub for this inventory. Handwritten commentary supplies reviewed release
+highlights; it is not the authority for what remains unreleased.
+
 The final **published GitHub body** is the authoritative release record, including
-any edits made while reviewing the draft. Copy that body unchanged into Zensical
-through a normal documentation PR. For desktop, use
+any edits made while reviewing the draft. Publication automatically opens or
+updates a normal documentation PR that copies that body unchanged into Zensical.
+For desktop, use
 `website/docs/releases/vVERSION.md` with `title`, `release_version` and
 `release_tag` front matter. Add `release_date` from its GitHub publication timestamp
 and a short `release_summary` for the history overview; do not edit the archived body.
@@ -586,6 +599,33 @@ navigation are generated from the archived pages. Keep its links usable in both 
 site. Pages includes the desktop publication event's body automatically in its
 release snapshot. Keep the archival documentation PR for repository history and
 subsequent snapshots; it does not deploy Pages or change an existing release snapshot.
+The publication job scans all recognized published components, so retried and
+closely spaced desktop/plugin events converge on one managed
+`automation/release-docs` PR. Configure a repository-installed GitHub App for fully
+automatic PR CI: set repository variable `STREAMSKOPE_RELEASE_APP_CLIENT_ID` and
+secret `STREAMSKOPE_RELEASE_APP_PRIVATE_KEY`. Grant the App access only to this
+repository, with Contents, Pull requests and Actions write permissions. The pinned
+token action mints a repository-scoped installation token and revokes it after the
+job. The normal pull-request event qualifies the PR; no dispatched check substitutes
+for protected-branch CI. The job validates the owned PR, exact head, repository,
+branch and permitted documentation paths before allowing automatic merge.
+
+With neither App setting configured, the job can open the PR using the built-in
+token, but GitHub requires maintainer approval before that PR's CI can run. The job
+reports finalization as pending and leaves the PR intact. Approve its workflow in
+GitHub, then rerun the publication job to finish; the built-in token cannot approve
+its own blocked workflows. Partial App configuration fails visibly. Normal PR CI
+remains unchanged. An unchanged generated tree reuses the same
+commit and active/successful check. Archival is serialized separately so plugin
+publications cannot replace a queued desktop Pages deployment.
+The repository must allow Actions to create PRs and enable auto-merge. Auto-merge
+still requires the protected branch's CI and an up-to-date branch. The job waits
+for merge and reports failure if archival remains incomplete. If main advances
+during CI, the job regenerates the same PR against the new main and qualifies
+its new head. A busy main can exhaust the bounded wait; rerun finalization to
+continue. Retrying the
+publication run repairs an interrupted handoff; it does not republish packages.
+
 The sidebar shows only the five newest published stable desktop versions and
 **See all releases**; the overview retains older versions and prereleases. Keep
 one `<!-- release-history -->` marker in the overview rather than a second version
@@ -598,7 +638,15 @@ release identity separate from source plugin guide scope and package availabilit
 preserve notes for work merged after its source commit and other unreleased
 components. Keep historical notes intact. The website's
 `project.extra.desktop_release` identifies an actually published installer;
-starting release CI does not change it. Release qualification can validate the
+starting release CI does not change it. Commentary is cleared automatically only
+when it still matches the released source; edits made afterward are preserved,
+flagged for review, and prevent automatic merging. Prerelease archival preserves
+stable-release highlights. A later event cannot downgrade the stable download
+baseline. Different existing archive bodies require a reviewed correction rather
+than silent replacement; GitHub permits edits to release notes even when its tag
+and assets are immutable. Release preparation blocks incomplete archival of the
+selected component's previous publications. Desktop preparation also checks the
+published baseline and source-specific qualification links. Release qualification can validate the
 stamped notes while downloads still point to the last published desktop.
 
 The **Pages** workflow deploys only the highest published **stable desktop SemVer**.

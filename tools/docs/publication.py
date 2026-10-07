@@ -259,6 +259,40 @@ def publication_qualification(content, release, revision):
                   content, count=1, flags=re.M)
 
 
+def archived_qualification(root, plan, check=False):
+    """Keep main's evidence links aligned without converting publication into a pass."""
+    root = Path(root)
+    latest = plan.get("latestStableDesktop")
+    if latest is None:
+        return
+    tag = latest.get("tag")
+    revision = latest.get("sourceSha")
+    release = latest.get("release", {})
+    if (not release_version(tag) or "-" in tag
+            or not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{40}", revision)
+            or release.get("tag_name") != tag or release.get("draft") is not False
+            or release.get("prerelease") is not False or release.get("immutable") is not True):
+        raise ValueError("Archived qualification requires an immutable stable release identity")
+    resolved = subprocess.check_output(
+        ["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
+        cwd=root, text=True).strip()
+    if resolved != revision:
+        raise ValueError("Archived qualification source differs from the release tag")
+    page = root / "website/docs/guide/qualification.md"
+    content = page.read_text(encoding="utf8")
+    block = re.search(r"<!-- publication-qualification -->[\s\S]*?"
+                      r"<!-- /publication-qualification -->", content)
+    if (block and f"## Published release: {tag}\n" in block[0]
+            and f"https://github.com/asadarafat/streamskope/commit/{revision}" in block[0]):
+        return  # Preserve reviewed, source-specific results already recorded for this identity.
+    if check:
+        raise ValueError("Published qualification links need archival; merge the release documentation PR")
+    # Retain the previous report and all its limitations as historical evidence.
+    content = content.replace("<!-- publication-qualification -->", "")
+    content = content.replace("<!-- /publication-qualification -->", "")
+    page.write_text(publication_qualification(content, release, revision), encoding="utf8")
+
+
 def documentation_context(root=ROOT, environment=None):
     """Keep published downloads separate from development or CI-stamped source."""
     root = Path(root)

@@ -18,6 +18,7 @@ import { encodePluginPackage, parsePluginPackage } from "../../src/platform/node
 import type { TrustedPluginPublisher } from "../../src/platform/node/plugins/publishers";
 import { createPortablePluginRelease } from "../../tools/package/plugin";
 import { pluginPublisherFixture } from "../support/plugin-publisher-fixture";
+import { EMPTY_PLUGIN_COMMENTARY } from "../../tools/package/release-reconciliation";
 
 const execute = promisify(execFile);
 const directories: string[] = [];
@@ -97,6 +98,25 @@ async function fixture(component: "desktop" | "eda" | "nsp" = "eda"): Promise<{
   }
   return { root, directory, changelog, reviewed, output, tag, evidence, ...publisher };
 }
+
+it("publishes plugin changes and compatibility without an empty pending commentary section", async () => {
+  const files = await fixture("nsp");
+  await writeFile(files.reviewed, EMPTY_PLUGIN_COMMENTARY);
+  const notes = await preparePluginReleaseNotes(
+    files.directory,
+    "nsp",
+    "0.2.0",
+    commit,
+    files.reviewed,
+    files.changelog,
+    files.publishers,
+  );
+  expect(notes).toContain(changes.trim());
+  expect(notes).toContain("## Installation and compatibility");
+  expect(notes).not.toContain("## Release highlights");
+  expect(notes).not.toContain("No additional release highlights");
+  expect(notes).not.toContain("Unreleased changes");
+});
 
 it.each(["eda", "nsp"] as const)(
   "assembles %s guidance and compatibility only after verifying matching primary and signed portable artifacts",

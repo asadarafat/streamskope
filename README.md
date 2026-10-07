@@ -102,8 +102,11 @@ provides disposable local Kafka and requires Node, Docker, Containerlab and Java
 
 Development builds use the neutral `0.0.0-dev` version. Release CI assigns the
 selected version to its build checkout; PR checks qualify changes for `main`.
-This placeholder does not indicate pending product changes. Changes awaiting a
-future release are recorded in [unreleased changes](website/docs/releases/unreleased.md).
+This placeholder does not indicate pending product changes. Changes awaiting
+future releases are derived from merged PRs after each component's last published
+stable release. Run `npm run docs -- pending` for the current committed-source
+inventory. [Release highlights](website/docs/releases/unreleased.md) provide
+additional context when an upgrade needs explanation.
 
 ## Fund development
 

@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 
 import {
+  generatePendingChanges,
   generateReleaseChangelog,
   githubReader,
   type GithubRead,
@@ -485,4 +486,174 @@ it("retains both sides of a cross-component rename when inferring affected compo
     components: ["desktop", "eda", "nsp"],
     paths: ["plugins/eda/shared.ts", "src/shared.ts"],
   });
+});
+
+it("pending inventories use independent published component baselines and retain newer merged work", async () => {
+  const repo = await graph();
+  await repo.tag("v0.1.0", repo.initial);
+  await repo.tag("plugins/eda/v0.1.0", repo.initial);
+  await repo.tag("plugins/nsp/v0.1.0", repo.initial);
+  const shippedEda = await repo.commit("plugins/eda/backend/index.ts");
+  await repo.tag("plugins/eda/v0.1.1", shippedEda);
+  const shippedDesktop = await repo.commit("src/workbench.ts");
+  await repo.tag("v0.2.0", shippedDesktop);
+  const archival = await repo.commit("website/docs/releases/v0.2.0.md");
+  const nsp = await repo.commit("plugins/nsp/backend/index.ts");
+  const eda = await repo.commit("plugins/eda/backend/index.ts");
+  const source = await repo.commit("src/shared.ts");
+  const read = api(
+    [
+      release("plugins/nsp/v0.1.0"),
+      release("v0.2.0"),
+      release("plugins/eda/v0.1.1"),
+      release("v0.1.0"),
+      release("plugins/eda/v0.1.0"),
+    ],
+    {
+      [shippedEda]: [pull(1, shippedEda, ["component:eda"], "fix: shipped EDA change")],
+      [shippedDesktop]: [
+        pull(2, shippedDesktop, ["component:desktop"], "feat: shipped desktop change"),
+      ],
+      [archival]: [
+        pull(3, archival, ["component:shared", "release-notes:skip"], "docs: archive release"),
+      ],
+      [nsp]: [pull(4, nsp, ["component:nsp"], "feat: pending NSP change")],
+      [eda]: [pull(5, eda, ["component:eda"], "fix: pending EDA change")],
+      [source]: [pull(6, source, ["component:shared"], "feat: pending shared change")],
+    },
+  );
+  const requests: string[] = [];
+  const result = await generatePendingChanges({
+    root: repo.root,
+    sourceSha: source,
+    repository,
+    component: "all",
+    readGithub: (path) => {
+      requests.push(path);
+      return read(path);
+    },
+  });
+  expect(
+    result.evidence.components.map((item) => ({
+      component: item.component,
+      baseline: item.baseline?.tag,
+      selected: item.changes.filter((change) => change.included).map((change) => change.id),
+    })),
+  ).toEqual([
+    { component: "desktop", baseline: "v0.2.0", selected: [6] },
+    { component: "eda", baseline: "plugins/eda/v0.1.1", selected: [5, 6] },
+    { component: "nsp", baseline: "plugins/nsp/v0.1.0", selected: [4, 6] },
+  ]);
+  expect(result.markdown).not.toContain("shipped EDA change");
+  expect(result.markdown).not.toContain("shipped desktop change");
+  expect(result.markdown).not.toContain("docs: archive release");
+  expect(
+    result.evidence.components.every((item) => item.changes.some((change) => change.skipped)),
+  ).toBe(true);
+  expect(new Set(requests).size).toBe(requests.length);
+  expect(result.evidence).toMatchObject({
+    mode: "pending",
+    sourceSha: source,
+    baselinePolicy: "published-stable-ancestor",
+    markdownSha256: createHash("sha256").update(result.markdown).digest("hex"),
+  });
+  expect(result.evidence).not.toHaveProperty("version");
+  expect(result.evidence).not.toHaveProperty("tag");
+  expect(result.markdown).toContain("No upcoming version is assigned.");
+});
+
+it("archival PRs after publication do not make released product changes appear pending", async () => {
+  const repo = await graph();
+  const shipped = await repo.commit();
+  await repo.tag("v0.2.0", shipped);
+  const archival = await repo.commit("website/docs/releases/v0.2.0.md");
+  const result = await generatePendingChanges({
+    root: repo.root,
+    sourceSha: archival,
+    repository,
+    component: "desktop",
+    readGithub: api([release("v0.2.0")], {
+      [shipped]: [pull(1, shipped, ["component:desktop"])],
+      [archival]: [pull(2, archival, ["component:desktop", "release-notes:skip"])],
+    }),
+  });
+  expect(result.markdown).toContain("No desktop changes are pending release.");
+  expect(result.markdown).not.toContain("/pull/1");
+  expect(result.markdown).not.toContain("/pull/2");
+  expect(result.evidence.components[0]?.changes).toMatchObject([
+    { id: 2, skipped: true, included: false },
+  ]);
+});
+
+it("pending stable-development inventories keep prerelease work pending until stable publication", async () => {
+  const repo = await graph();
+  await repo.tag("v0.1.0", repo.initial);
+  const rc = await repo.commit();
+  await repo.tag("v0.2.0-rc.1", rc);
+  const source = await repo.commit();
+  const result = await generatePendingChanges({
+    root: repo.root,
+    sourceSha: source,
+    repository,
+    component: "desktop",
+    readGithub: api([release("v0.2.0-rc.1", { prerelease: true }), release("v0.1.0")], {
+      [rc]: [pull(1, rc, ["component:desktop"], "feat: RC feature")],
+      [source]: [pull(2, source, ["component:desktop"], "fix: newer fix")],
+    }),
+  });
+  expect(result.evidence.components[0]?.baseline?.tag).toBe("v0.1.0");
+  expect(
+    result.evidence.components[0]?.changes
+      .filter((change) => change.included)
+      .map((item) => item.id),
+  ).toEqual([1, 2]);
+  expect(result.markdown).toContain(
+    "Prerelease changes remain pending until a stable release includes them",
+  );
+});
+
+it("pending inventories ignore publication date order, future source releases and unpublished tags", async () => {
+  const repo = await graph();
+  await repo.tag("v0.1.0", repo.initial);
+  const nearest = await repo.commit();
+  await repo.tag("v0.2.0", nearest);
+  const source = await repo.commit();
+  await repo.tag("v0.99.0", source);
+  const future = await repo.commit();
+  await repo.tag("v0.3.0", future);
+  const result = await generatePendingChanges({
+    root: repo.root,
+    sourceSha: source,
+    repository,
+    component: "desktop",
+    readGithub: api([
+      release("v0.1.0", { published_at: "2026-10-03T00:00:00Z" }),
+      release("v0.3.0", { published_at: "2026-10-04T00:00:00Z" }),
+      release("v0.2.0", { published_at: "2026-10-02T00:00:00Z" }),
+    ]),
+  });
+  expect(result.evidence.components[0]?.baseline?.commit).toBe(nearest);
+  expect(result.evidence.components[0]?.commits).toEqual([source]);
+  expect(result.evidence.components[0]?.changes).toMatchObject([
+    { kind: "commit", id: source, included: true },
+  ]);
+});
+
+it("pending inventories fail closed without published-tag or API evidence", async () => {
+  const repo = await graph();
+  const options = {
+    root: repo.root,
+    sourceSha: repo.initial,
+    repository,
+    component: "desktop" as const,
+  };
+  await expect(
+    generatePendingChanges({ ...options, readGithub: api([release("v0.1.0")]) }),
+  ).rejects.toThrow();
+  await expect(
+    generatePendingChanges({
+      ...options,
+      readGithub: () => Promise.reject(new Error("HTTP 403")),
+    }),
+  ).rejects.toThrow("HTTP 403");
 });

@@ -8,6 +8,7 @@ import { afterEach, expect, it } from "vitest";
 
 import { prepareReleaseVersion, releaseIdentity } from "../../tools/package/release-version";
 import { releaseNotesBody } from "../../tools/package/release-policy";
+import { EMPTY_DESKTOP_COMMENTARY } from "../../tools/package/release-reconciliation";
 
 const execute = promisify(execFile);
 const directories: string[] = [];
@@ -22,6 +23,19 @@ const sourceFiles = [
 ];
 const notes =
   "---\ntitle: Unreleased changes\nunreleased: true\n---\n\n# Unreleased changes\n\nReviewed feature and known qualification gaps.\n";
+
+it("publishes generated changes without development-only pending instructions or empty highlights", async () => {
+  const root = await fixture();
+  await writeFile(join(root, "website/docs/releases/unreleased.md"), EMPTY_DESKTOP_COMMENTARY);
+  await prepareReleaseVersion(root, "desktop", "0.11.0", true);
+  const published = await readFile(join(root, "website/docs/releases/v0.11.0.md"), "utf8");
+  expect(releaseNotesBody(published, "0.11.0")).toContain("# StreamSkope v0.11.0");
+  expect(published).not.toContain("npm run docs -- pending");
+  expect(published).not.toContain("No additional release highlights");
+  expect(await readFile(join(root, "website/docs/releases/unreleased.md"), "utf8")).toBe(
+    EMPTY_DESKTOP_COMMENTARY,
+  );
+});
 
 interface ProjectManifest {
   version: string;

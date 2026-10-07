@@ -1,3 +1,3 @@
-## Unreleased changes
+## Release highlights
 
-No plugin changes are pending release.
+No additional release highlights recorded.

@@ -2,7 +2,7 @@
 
 <!-- State the change and why it matters. For changed behavior, include a concrete acceptance example. -->
 
-<!-- Use a Conventional Commit title that describes the outcome. Review release-note labels: component:desktop, component:eda, component:nsp, or component:shared; multiple are allowed. Without labels, known plugin-owned files select those plugins and other paths count as shared; CONTRIBUTING.md defines the mapping. Use release-notes:skip only for a deliberate changelog omission. Labels never bypass CI or assign versions. Add short upgrade/limitation notes to the relevant component's unreleased commentary when needed. -->
+<!-- Use a Conventional Commit title that describes the outcome. Review release-note labels: component:desktop, component:eda, component:nsp, or component:shared; multiple are allowed. Without labels, known plugin-owned files select those plugins and other paths count as shared; CONTRIBUTING.md defines the mapping. Use release-notes:skip only for a deliberate changelog omission. Labels never bypass CI or assign versions. Pending changes are derived from merged PRs and published component baselines; add short reviewed upgrade/limitation highlights to the relevant component commentary when needed. -->
 
 ## Verification
 

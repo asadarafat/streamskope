@@ -6,7 +6,11 @@ import { DEVELOPMENT_VERSION } from "../../src/plugins/compatibility";
 import { PLUGIN_API_VERSION } from "../../src/plugins/contracts";
 import { parsePluginManifest } from "../../src/plugins/validation";
 
-import { parsePublicationVersion, releaseNotesBody } from "./release-policy";
+import {
+  parsePublicationVersion,
+  releaseNotesBody,
+  reviewedReleaseCommentary,
+} from "./release-policy";
 
 export type ReleaseComponent = "desktop" | "eda" | "nsp";
 
@@ -52,7 +56,10 @@ export function stampReleaseNotes(source: string, identity: ReleaseIdentity): st
     (match[2].match(/^# .+$/gmu) ?? []).length !== 1
   )
     throw new Error("Desktop release needs reviewed unversioned notes with unreleased: true.");
-  const body = match[2].replace(/^# .+$/mu, `# StreamSkope ${identity.tag}`);
+  const body = reviewedReleaseCommentary(match[2]).replace(
+    /^# .+$/mu,
+    `# StreamSkope ${identity.tag}`,
+  );
   const notes = `---\ntitle: StreamSkope ${identity.tag}\nrelease_version: ${identity.version}\nrelease_tag: ${identity.tag}\n---\n${body}`;
   releaseNotesBody(notes, identity.version, identity.tag);
   return notes;
