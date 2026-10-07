@@ -90,7 +90,7 @@ export interface NatsProfileUpdateInput {
 }
 export interface NatsProfileStoreCapability {
   readonly durability: "durable" | "session";
-  readonly protection: "memory" | "os-protected" | "unavailable";
+  readonly protection: "memory" | "os-protected" | "passphrase-protected" | "unavailable";
   readonly state: "ready" | "unavailable";
   readonly recovery?: string;
 }

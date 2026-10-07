@@ -6,7 +6,7 @@ import {
   ProviderSseDelivery,
   type ProviderSseCloseReport,
   type ProviderSseWritable,
-} from "../../src/platform/dev-host/provider-sse-delivery";
+} from "../../src/platform/node/provider-sse-delivery";
 import { createProviderFixture } from "../support/provider-fixture";
 import {
   HOST_PROTOCOL_VERSION,

@@ -8,6 +8,8 @@ export function natsProfileStorageLabel(
     return `Profile storage unavailable. ${capability.recovery ?? "Restore protected storage and retry."}`;
   if (capability.durability === "session" && capability.protection === "memory")
     return "Session profiles · credentials held in memory. Profiles are lost when this development host restarts.";
+  if (capability.protection === "passphrase-protected")
+    return "Durable profiles · credentials encrypted with your unlocked passphrase vault.";
   return "Durable profiles · credentials protected by the operating system.";
 }
 

@@ -300,7 +300,9 @@ export class KafkaProfileCatalog {
           : this.store.state === "unavailable"
             ? `Kafka profile storage unavailable. ${this.store.recovery ?? "Restore protected storage and restart StreamSkope."}`
             : this.store.durability === "durable"
-              ? "Kafka · OS-protected profiles."
+              ? this.store.protection === "passphrase-protected"
+                ? "Kafka · Vault-protected profiles."
+                : "Kafka · OS-protected profiles."
               : "Kafka · Session-only profiles. Credentials remain in host memory.",
       failure:
         this.failure ??

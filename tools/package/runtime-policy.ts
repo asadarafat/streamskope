@@ -41,7 +41,13 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     // Shared provider delivery owns a 30-second ACK deadline, cleared on ACK or close.
     "src/platform/electron/main/provider-delivery.ts",
     // Each SSE client owns one local-write deadline, cleared on completion or retirement.
-    "src/platform/dev-host/provider-sse-delivery.ts",
+    "src/platform/node/provider-sse-delivery.ts",
+    // Browser sessions expire once; locking clears the deadline and provider admission.
+    "src/platform/node/web-gateway.ts",
+    // Bounded file selections expire once; completion and host lock clear the deadline.
+    "src/platform/node/browser-plugin-files.ts",
+    // Kernel lease acquisition has a finite subprocess deadline, cleared on exit.
+    "src/platform/node/vault/passphrase-vault.ts",
     "src/platform/electron/main/electron-entry.ts",
     // At most eight review-expiry deadlines release cache pins; suspended while installing.
     "src/platform/node/plugins/package-candidates.ts",

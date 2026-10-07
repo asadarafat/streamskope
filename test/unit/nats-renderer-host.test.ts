@@ -115,7 +115,7 @@ describe("Core NATS renderer host", () => {
         event: "backend.availability",
         payload: {
           state: "unavailable",
-          recovery: "Restart the local StreamSkope development host and reload.",
+          recovery: "Check the StreamSkope host, unlock its vault if needed, and reload.",
         },
       }),
     ]);

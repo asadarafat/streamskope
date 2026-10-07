@@ -41,9 +41,13 @@ function rendererOrigin(browserWindow: BrowserTransportWindow): string {
       cause: error,
     });
   }
-  if (parsed.origin !== origin || parsed.protocol !== "http:" || parsed.hostname.length === 0) {
+  if (
+    parsed.origin !== origin ||
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.hostname.length === 0
+  ) {
     throw new BrowserDevelopmentHostError(
-      "Browser renderer origin must be one exact HTTP development origin.",
+      "Browser renderer origin must be one exact HTTP or HTTPS origin.",
     );
   }
   return origin;
@@ -78,7 +82,7 @@ function eventData(block: string): string | null {
 function eventStreamBody(response: Response): ReadableStream<Uint8Array> {
   const body = response.body;
   if (body === null || !response.headers.get("content-type")?.startsWith("text/event-stream")) {
-    throw new BrowserDevelopmentHostError("Development host did not provide an event stream.");
+    throw new BrowserDevelopmentHostError("StreamSkope host did not provide an event stream.");
   }
   return body;
 }
@@ -141,7 +145,7 @@ export function createBrowserProviderTransport<Event extends ProviderWireEvent>(
       nextSequence,
       state,
       state === "unavailable"
-        ? "Restart the local StreamSkope development host and reload."
+        ? "Check the StreamSkope host, unlock its vault if needed, and reload."
         : undefined,
     );
 
@@ -168,7 +172,7 @@ export function createBrowserProviderTransport<Event extends ProviderWireEvent>(
         });
         if (!response.ok) {
           throw new BrowserDevelopmentHostError(
-            `Development gateway event stream failed with HTTP ${response.status}.`,
+            `StreamSkope gateway event stream failed with HTTP ${response.status}.`,
           );
         }
         eventStreamBody(response);
@@ -201,7 +205,7 @@ export function createBrowserProviderTransport<Event extends ProviderWireEvent>(
         await currentReadiness.settled;
         if (currentReadiness.state !== "ready") {
           throw new BrowserDevelopmentHostError(
-            "Development-host event stream is unavailable. Reload before submitting commands.",
+            "StreamSkope host event stream is unavailable. Reload before submitting commands.",
           );
         }
       }
@@ -215,7 +219,7 @@ export function createBrowserProviderTransport<Event extends ProviderWireEvent>(
       });
       if (!response.ok) {
         throw new BrowserDevelopmentHostError(
-          `Development gateway rejected the command with HTTP ${response.status}.`,
+          `StreamSkope gateway rejected the command with HTTP ${response.status}.`,
         );
       }
       return (await response.json()) as unknown;

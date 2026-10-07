@@ -11,6 +11,7 @@ import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 
 import { streamSkopeGeometry } from "./studioTokens";
 import { StreamSkopeAppIcon } from "./StreamSkopeAppIcon";
+import { BrowserVaultControl } from "./BrowserVaultControl";
 import {
   StudioButton as Button,
   StudioIconButton as IconButton,
@@ -101,6 +102,7 @@ export function ProductApplicationBar({
         {providerControl}
         <Box sx={{ flex: 1 }} />
         {actions}
+        <BrowserVaultControl />
 
         {onOpenCommandPalette === undefined ? null : navigatorTemporary ? (
           <Tooltip title="Search and commands">

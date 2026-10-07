@@ -135,7 +135,9 @@ export function ProfilePanel({
     store?.state !== "ready"
       ? null
       : store.durability === "durable"
-        ? "OS-protected profiles. Encrypted by the operating-system credential service."
+        ? store.protection === "passphrase-protected"
+          ? "Vault-protected profiles. Credentials encrypted with your unlocked passphrase vault."
+          : "OS-protected profiles. Encrypted by the operating-system credential service."
         : "Session-only profiles. Available only while this development host is running.";
 
   useEffect(() => {
@@ -523,7 +525,11 @@ export function ProfilePanel({
           variant="caption"
           title={storageLabel}
         >
-          {store?.durability === "durable" ? "OS-protected profiles" : "Session-only profiles"}
+          {store?.durability === "durable"
+            ? store.protection === "passphrase-protected"
+              ? "Vault-protected profiles"
+              : "OS-protected profiles"
+            : "Session-only profiles"}
         </Typography>
       )}
 
