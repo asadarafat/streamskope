@@ -73,7 +73,7 @@ describe("development commands", () => {
     expect(release).not.toContain("git push");
   });
 
-  it("requires both native browser archives before a desktop draft and keeps registries optional", () => {
+  it("requires native archives and public registry qualification before a desktop draft", () => {
     const release = readFileSync(
       new URL("../../.github/workflows/release.yml", import.meta.url),
       "utf8",
@@ -84,13 +84,19 @@ describe("development commands", () => {
     expect(browser).toContain("os: ubuntu-24.04-arm\n            arch: arm64");
     expect(browser).toContain("npm run package -- container --archive");
     expect(browser).toContain("STREAMSKOPE_SOURCE_REVISION: ${{ github.sha }}");
-    expect(draft).toContain("needs: [prepare, checks, desktop, eda, browser]");
+    expect(draft).toContain("needs: [prepare, checks, desktop, eda, browser, registry]");
     expect(draft).toContain("pattern: browser-linux-*\n          merge-multiple: false");
     expect(draft).toContain("--containers dist/container-staging");
+    expect(draft).toContain("--registry dist/browser-registry/registry.json");
     expect(draft).toContain(
       'gh release create "$RELEASE_TAG" dist/installers/* dist/container-package/*',
     );
-    expect(release).not.toContain("packages: write");
+    const registry = /^ {2}registry:\n([\s\S]*?)(?=^ {2}[a-z-]+:)/mu.exec(release)?.[1];
+    expect(registry).toContain("needs: [prepare, checks, desktop, browser, eda]");
+    expect(registry).toContain("packages: write");
+    expect(registry).toContain("--password-stdin");
+    expect(registry).toContain("browser-registry.ts publish dist/container-staging");
+    expect(registry).toContain('"$GITHUB_RUN_ID"');
     expect(release).not.toContain("docker/login-action");
   });
 });

@@ -26,6 +26,7 @@ WORKDIR /opt/streamskope
 ARG STREAMSKOPE_VERSION=0.0.0-dev
 ARG STREAMSKOPE_SOURCE_SHA
 LABEL org.opencontainers.image.title="StreamSkope browser" \
+      org.opencontainers.image.source="https://github.com/asadarafat/streamskope" \
       org.opencontainers.image.version="${STREAMSKOPE_VERSION}" \
       org.opencontainers.image.revision="${STREAMSKOPE_SOURCE_SHA}" \
       org.opencontainers.image.licenses="Apache-2.0"

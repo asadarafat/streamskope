@@ -9,7 +9,7 @@
   "compatibility": {
     "streamskope": {
       "minimum": "0.9.0",
-      "maximumExclusive": "0.10.0"
+      "maximumExclusive": "0.11.0"
     },
     "target": {
       "system": "nsp",

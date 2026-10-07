@@ -12,10 +12,16 @@ import { afterEach, expect, it } from "vitest";
 import {
   browserReleaseNames,
   browserReleaseTopology,
+  browserRegistryTopology,
   prepareBrowserReleaseAssets,
   validateBrowserReleaseAssets,
   validateBrowserImageArchive,
+  type BrowserReleaseManifest,
 } from "../../tools/package/browser-release";
+import {
+  BROWSER_IMAGE_REPOSITORY,
+  type BrowserRegistryMetadata,
+} from "../../tools/package/browser-registry-metadata";
 import { prepareUnsignedRelease } from "../../tools/package/release-policy";
 
 const version = "0.10.0-rc.1";
@@ -126,6 +132,42 @@ async function fixture(
   return { root, staging, output, topology };
 }
 
+/** Manufacture a registry receipt for the independently inspected archive configs, without network claims. */
+async function registryFixture(
+  root: string,
+  staging: string,
+): Promise<{ path: string; metadata: BrowserRegistryMetadata }> {
+  const platforms = await Promise.all(
+    (["amd64", "arm64"] as const).map(async (arch, index) => {
+      const image = JSON.parse(
+        await readFile(
+          join(staging, `browser-linux-${arch}`, `container-linux-${arch}.json`),
+          "utf8",
+        ),
+      ) as { imageId: string };
+      return {
+        platform: `linux/${arch}` as const,
+        manifestDigest: `sha256:${String(index + 1).repeat(64)}`,
+        imageId: image.imageId,
+      };
+    }),
+  );
+  const image = `${BROWSER_IMAGE_REPOSITORY}:${version}`;
+  const digest = `sha256:${"c".repeat(64)}`;
+  const metadata: BrowserRegistryMetadata = {
+    schemaVersion: 1,
+    version,
+    sourceRevision: commit,
+    image,
+    reference: `${image}@${digest}`,
+    digest,
+    platforms,
+  };
+  const path = join(root, "registry.json");
+  await writeFile(path, JSON.stringify(metadata));
+  return { path, metadata };
+}
+
 it("assembles both independently inspected Docker save archives, one topology and bounded metadata", async () => {
   const { staging, output, topology } = await fixture();
   await prepareBrowserReleaseAssets(staging, output, version, commit);
@@ -152,6 +194,150 @@ it("assembles both independently inspected Docker save archives, one topology an
   await expect(prepareBrowserReleaseAssets(staging, output, version, commit)).rejects.toThrow(
     /already exists/u,
   );
+});
+
+it("assembles schema 2 with digest-pinned registry delivery and matching offline native archives", async () => {
+  const { root, staging, output, topology: offline } = await fixture();
+  const registry = await registryFixture(root, staging);
+  await prepareBrowserReleaseAssets(
+    staging,
+    output,
+    version,
+    commit,
+    "streamskope.clab.yml",
+    registry.path,
+  );
+  expect(await validateBrowserReleaseAssets(output, version, commit)).toEqual(
+    browserReleaseNames(version, true),
+  );
+  const manifest = JSON.parse(
+    await readFile(join(output, `streamskope-${version}-container.json`), "utf8"),
+  ) as BrowserReleaseManifest;
+  expect(manifest.schemaVersion).toBe(2);
+  expect(manifest.registry).toEqual(registry.metadata);
+  expect(manifest.registry!.platforms.map((platform) => platform.imageId)).toEqual(
+    manifest.archives.map((archive) => archive.imageId),
+  );
+  const online = await readFile(join(output, `streamskope-${version}.clab.yml`), "utf8");
+  expect(online).toBe(
+    browserRegistryTopology(await readFile("streamskope.clab.yml", "utf8"), registry.metadata),
+  );
+  expect(online).toContain(`image: \${STREAMSKOPE_IMAGE:=${registry.metadata.reference}}`);
+  expect(online).toContain("image-pull-policy: IfNotPresent");
+  expect(online).not.toContain("image-pull-policy: Never");
+  const offlineFile = `streamskope-${version}-offline.clab.yml`;
+  expect(await readFile(join(output, offlineFile), "utf8")).toBe(offline);
+  expect(offline).toContain(`image: \${STREAMSKOPE_IMAGE:=streamskope:${version}}`);
+  expect(offline).toContain("image-pull-policy: Never");
+  expect(offline).not.toContain(BROWSER_IMAGE_REPOSITORY);
+  expect(manifest.offlineTopology).toEqual({
+    file: offlineFile,
+    sha256: createHash("sha256").update(offline).digest("hex"),
+  });
+  expect(manifest.topology.sha256).toBe(createHash("sha256").update(online).digest("hex"));
+});
+
+it("rejects a validly shaped registry receipt whose native image differs from its qualified archive", async () => {
+  const { root, staging, output } = await fixture();
+  const registry = await registryFixture(root, staging);
+  await writeFile(
+    registry.path,
+    JSON.stringify({
+      ...registry.metadata,
+      platforms: registry.metadata.platforms.map((platform) =>
+        platform.platform === "linux/arm64"
+          ? { ...platform, imageId: `sha256:${"e".repeat(64)}` }
+          : platform,
+      ),
+    }),
+  );
+  await expect(
+    prepareBrowserReleaseAssets(
+      staging,
+      output,
+      version,
+      commit,
+      "streamskope.clab.yml",
+      registry.path,
+    ),
+  ).rejects.toThrow(/Registry native images differ from the qualified offline archives/u);
+  await expect(
+    readFile(join(output, `streamskope-${version}-container.json`)),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+it.each([
+  "registry-image-id",
+  "registry-reference",
+  "missing-registry",
+  "offline-metadata-hash",
+  "unexpected-metadata",
+  "online-topology",
+  "offline-topology-and-hash",
+  "missing-offline-topology",
+  "offline-symlink",
+] as const)("rejects tampered schema 2 %s before installer checksums", async (mutation) => {
+  const { root, staging, output } = await fixture();
+  const registry = await registryFixture(root, staging);
+  await prepareBrowserReleaseAssets(
+    staging,
+    output,
+    version,
+    commit,
+    "streamskope.clab.yml",
+    registry.path,
+  );
+  const manifestPath = join(output, `streamskope-${version}-container.json`);
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as BrowserReleaseManifest;
+  const offlinePath = join(output, `streamskope-${version}-offline.clab.yml`);
+  const changed: { -readonly [Key in keyof BrowserReleaseManifest]: BrowserReleaseManifest[Key] } =
+    structuredClone(manifest);
+  if (mutation === "registry-image-id")
+    changed.registry = {
+      ...registry.metadata,
+      platforms: registry.metadata.platforms.map((platform) =>
+        platform.platform === "linux/arm64"
+          ? { ...platform, imageId: `sha256:${"e".repeat(64)}` }
+          : platform,
+      ),
+    };
+  if (mutation === "registry-reference")
+    changed.registry = { ...registry.metadata, reference: `${registry.metadata.image}:latest` };
+  if (mutation === "missing-registry") delete changed.registry;
+  if (mutation === "offline-metadata-hash")
+    changed.offlineTopology = { ...manifest.offlineTopology!, sha256: "b".repeat(64) };
+  if (mutation === "online-topology")
+    await writeFile(join(output, `streamskope-${version}.clab.yml`), "image-pull-policy: Always\n");
+  if (mutation === "offline-topology-and-hash") {
+    const altered = (await readFile(offlinePath, "utf8")).replace(
+      "image-pull-policy: Never",
+      "image-pull-policy: Always",
+    );
+    await writeFile(offlinePath, altered);
+    changed.offlineTopology = {
+      ...manifest.offlineTopology!,
+      sha256: createHash("sha256").update(altered).digest("hex"),
+    };
+  }
+  if (mutation === "missing-offline-topology") await rm(offlinePath);
+  if (mutation === "offline-symlink") {
+    await rm(offlinePath);
+    await symlink(join(output, `streamskope-${version}.clab.yml`), offlinePath);
+  }
+  await writeFile(
+    manifestPath,
+    JSON.stringify(mutation === "unexpected-metadata" ? { ...changed, unverified: true } : changed),
+  );
+  const installers = join(root, "installers");
+  await mkdir(installers);
+  for (const suffix of ["darwin-arm64.dmg", "linux-x64.AppImage", "win32-x64-Setup.exe"])
+    await writeFile(join(installers, `StreamSkope-${version}-${suffix}`), "native");
+  await expect(
+    prepareUnsignedRelease(installers, version, commit, `v${version}`, output),
+  ).rejects.toThrow();
+  await expect(readFile(join(installers, "SHA256SUMS"))).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it("qualifies one actual native archive locally while retaining the development publication guard", async () => {
@@ -298,5 +484,133 @@ it.each([true, false])(
     expect(
       (await readFile(join(installers, "SHA256SUMS"), "utf8")).trim().split("\n"),
     ).toHaveLength(7);
+  },
+);
+
+it.each(["registry-first", "archives-first"] as const)(
+  "assembles registry CLI delivery with %s options and hashes all eight payload files",
+  async (order) => {
+    const { root, staging } = await fixture();
+    const registry = await registryFixture(root, staging);
+    const installers = join(root, "installers");
+    await mkdir(installers);
+    const native = ["darwin-arm64.dmg", "linux-x64.AppImage", "win32-x64-Setup.exe"].map(
+      (suffix) => `StreamSkope-${version}-${suffix}`,
+    );
+    for (const name of native) await writeFile(join(installers, name), "native");
+    const source = join(root, "reviewed.md");
+    const changelog = join(root, "changelog.md");
+    const notes = join(root, "notes.md");
+    await writeFile(
+      source,
+      `---\nrelease_version: ${version}\nrelease_tag: v${version}\n---\n# Reviewed release\n\nOperator notes.\n`,
+    );
+    const markdown = "## Changes\n\nRegistry delivery with a preserved offline path.\n";
+    await writeFile(changelog, markdown);
+    await writeFile(
+      `${changelog}.json`,
+      JSON.stringify({
+        schemaVersion: 1,
+        component: "desktop",
+        version,
+        tag: `v${version}`,
+        sourceSha: commit,
+        markdownSha256: createHash("sha256").update(markdown).digest("hex"),
+      }),
+    );
+    const registryOptions = ["--registry", registry.path];
+    const archiveOptions = ["--containers", staging];
+    await execute(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "tools/package.ts",
+        "release",
+        installers,
+        version,
+        commit,
+        source,
+        notes,
+        `v${version}`,
+        changelog,
+        ...(order === "registry-first"
+          ? [...registryOptions, ...archiveOptions]
+          : [...archiveOptions, ...registryOptions]),
+      ],
+      { timeout: 15_000 },
+    );
+    const output = join(root, "container-package");
+    expect(await validateBrowserReleaseAssets(output, version, commit)).toEqual(
+      browserReleaseNames(version, true),
+    );
+    const content = await readFile(notes, "utf8");
+    expect(content).toContain(registry.metadata.reference);
+    expect(content).toContain("No registry login is required.");
+    expect(content).toContain(`streamskope-${version}-offline.clab.yml`);
+    expect(content).toContain("Registry delivery with a preserved offline path.");
+    const lines = (await readFile(join(installers, "SHA256SUMS"), "utf8")).trim().split("\n");
+    expect(lines).toHaveLength(8);
+    const checksums = new Map(
+      lines.map((line) => {
+        const match = /^([a-f0-9]{64})  (.+)$/u.exec(line);
+        expect(match).not.toBeNull();
+        return [match![2]!, match![1]!] as const;
+      }),
+    );
+    expect([...checksums.keys()].sort()).toEqual(
+      [...native, ...browserReleaseNames(version, true)].sort(),
+    );
+    for (const name of checksums.keys()) {
+      const bytes = await readFile(join(native.includes(name) ? installers : output, name));
+      expect(checksums.get(name)).toBe(createHash("sha256").update(bytes).digest("hex"));
+    }
+  },
+);
+
+it.each(["missing-archives", "duplicate-registry", "missing-registry-path"] as const)(
+  "rejects registry CLI %s before publishing notes or installer checksums",
+  async (mutation) => {
+    const { root, staging } = await fixture();
+    const registry = await registryFixture(root, staging);
+    const installers = join(root, "installers");
+    await mkdir(installers);
+    for (const suffix of ["darwin-arm64.dmg", "linux-x64.AppImage", "win32-x64-Setup.exe"])
+      await writeFile(join(installers, `StreamSkope-${version}-${suffix}`), "native");
+    const source = join(root, "reviewed.md");
+    const notes = join(root, "notes.md");
+    await writeFile(
+      source,
+      `---\nrelease_version: ${version}\nrelease_tag: v${version}\n---\n# Reviewed release\n\nOperator notes.\n`,
+    );
+    const options =
+      mutation === "missing-archives"
+        ? ["--registry", registry.path]
+        : mutation === "duplicate-registry"
+          ? ["--containers", staging, "--registry", registry.path, "--registry", registry.path]
+          : ["--containers", staging, "--registry"];
+    await expect(
+      execute(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "tools/package.ts",
+          "release",
+          installers,
+          version,
+          commit,
+          source,
+          notes,
+          `v${version}`,
+          ...options,
+        ],
+        { timeout: 15_000 },
+      ),
+    ).rejects.toMatchObject({ code: 1 });
+    await expect(readFile(notes)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(installers, "SHA256SUMS"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   },
 );

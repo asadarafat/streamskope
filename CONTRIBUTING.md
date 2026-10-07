@@ -438,7 +438,13 @@ ARM64 and Windows x64. Two additional native Linux jobs build AMD64 and ARM64
 browser images, save gzip-compressed Docker save archives, reload them and check
 their image identity. Each exercises an authenticated gateway, encrypted profile
 persistence, native workers, vault lock/unlock and graceful restart with disposable
-data. A Linux runner builds the complete unsigned EDA OCI application with
+data. A registry job publishes those exact native images as a public multi-platform
+image at `ghcr.io/asadarafat/streamskope:VERSION`. It verifies the AMD64/ARM64 index
+and anonymous pulls before promoting the version tag. Published deployment uses
+the exact version and index digest; no floating `latest` image is used.
+Registry publication requires Actions write access and public package visibility.
+A private or inaccessible candidate fails qualification before promotion.
+A Linux runner builds the complete unsigned EDA OCI application with
 EDABuilder v26.8.2 and retains it as a separate Actions artifact. Desktop installer packaging
 belongs to the release runners; local Linux development uses `dev` and `build`.
 Local EDA OCI packaging remains available through `npm run package -- eda`.
@@ -471,13 +477,17 @@ inspect the existing tag/draft before retrying: an ordinary retry rejects the us
 identity. Choose an unused version or explicitly resolve the unpublished failed
 identity; the workflow never overwrites or deletes it automatically.
 
-After qualification, native desktop, both browser archive jobs and unsigned EDA
+After qualification, native desktop, both browser archive jobs, public registry
+delivery and unsigned EDA
 packaging pass, a desktop release creates a **draft** with exactly three unsigned
-installers and four browser assets: AMD64 and ARM64 Docker save archives, a
-version-matched Containerlab topology and a combined image/archive manifest.
-One `SHA256SUMS` covers all seven files. Release assembly independently inspects
+installers and five browser assets: AMD64 and ARM64 Docker save archives, a
+version/digest-pinned online Containerlab topology, a separate offline topology
+and a combined registry/image/archive manifest. One `SHA256SUMS` covers all eight
+files. Release assembly independently inspects
 each archive and checks its version, source, architecture and image identity;
-both builds must supply the identical reviewed topology. No registry is required.
+both builds must supply the identical reviewed topology. Online deployment pulls
+the matching public image without a registry login. Offline deployment loads an
+archive and uses `streamskope-VERSION-offline.clab.yml` with pull policy `Never`.
 The draft includes reviewed content from `website/docs/releases/unreleased.md`
 and a generated changelog. The unsigned EDA application remains a separate
 Actions artifact.
@@ -614,8 +624,9 @@ published desktop; stamped release previews remain explicitly labeled previews.
 Publication refuses a non-release event, prerelease, mutable release, wrong source
 commit, mismatched version or incomplete notes. The build verifies that the three
 installers and `SHA256SUMS` exist in the published release. Browser download links
-require all four version-matched, uploaded browser assets from that same
-publication event; a partial set fails the docs build. Historical desktop-only
+require all five version-matched, uploaded browser assets for registry delivery
+from that same publication event; a partial set fails the docs build. Historical
+archive-only delivery can retain its four-file asset contract. Desktop-only
 releases leave browser downloads unavailable. Pages qualifies the site and verifies
 its public revision, key pages and bookmark redirects. Docs changes become public
 with the next desktop release. To recover a failed deployment, rerun that release's
@@ -772,6 +783,15 @@ plugins as usable. The original **v0.1.0+build.1** and its API **3** assets rema
 published and immutable. Keep source-only changes marked unreleased until their
 supporting desktop and plugin releases are available.
 
+The pending EDA and NSP Connector 0.1.2 updates retain support for core 0.9.x and
+extend the host interval to `>=0.9.0, <0.11.0` for the production browser host.
+Their API 4 and exact target intervals remain EDA 26.8.2 and NSP 26.4.0. Qualify
+the actual core and signed plugin draft artifacts, then publish these compatible
+plugins before core 0.10.0 so Pages can snapshot their published availability.
+Advise users to update plugins before upgrading the desktop; offline users need
+the compatible signed portable files in advance. Keep source versions at
+`0.0.0-dev` until release CI stamps its disposable checkout.
+
 Desktop plugin packaging does not require cluster access. It validates the
 manifest and includes the declared compatibility range, but does not prove that
 range works. Qualify every supported target release before widening the inclusive
@@ -903,3 +923,11 @@ The production host stores credentials through an explicitly unlocked passphrase
 vault and serves authenticated provider commands. The Vite development host has
 separate fixture and memory-store behavior. See the [operator deployment guide](website/docs/start/containerlab.md)
 for data ownership, setup, Containerlab deployment and graceful recovery.
+
+The root topology selects the locally built `streamskope:0.0.0-dev` image with
+pull policy `Never`. Release assembly creates `streamskope-VERSION.clab.yml`
+for the public GHCR index pinned by version and digest, plus
+`streamskope-VERSION-offline.clab.yml` for the archive-loaded local image.
+Both use the same private data bind, numeric owner and browser-unlocked vault.
+Neither a local build nor a successful registry publication establishes live
+EDA/NSP qualification.

@@ -17,11 +17,21 @@ survives locks and restarts; corrupt policy blocks remote acquisition. Browser
 plugin downloads use direct networking; signed portable files and verified cache
 remain available without GitHub.
 
-Core release CI prepares native AMD64/ARM64 Docker-save archives, matching
-topology, image identity and checksums. Existing published releases are not
-retroactively repackaged. Use [Run with Containerlab](../start/containerlab.md)
+Core release CI prepares a public AMD64/ARM64 image in
+`ghcr.io/asadarafat/streamskope` and an online Containerlab topology pinned to its
+version and digest. Optional offline delivery provides two gzip-compressed Docker
+save archives, a separate local-image topology and a combined registry/image
+manifest, with shared release checksums. The root source topology remains offline
+and uses the development image. Existing published releases are not
+retroactively repackaged. Use [Run with Containerlab](https://asadarafat.github.io/streamskope/start/containerlab/)
 for source instructions and release-derived availability. Desktop custom proxy
 support keeps its existing behavior.
 
-Desktop versions are assigned during release CI. Pending plugin changes remain
-in each plugin's release commentary and are released independently.
+EDA and NSP Connector 0.1.2 extend the supported core interval to
+`>=0.9.0, <0.11.0`, retaining plugin API 4 and the exact
+EDA 26.8.2 and NSP 26.4.0 targets. Update compatible plugins before upgrading the
+desktop to 0.10.0; offline users should obtain the signed portable files first.
+These declarations do not imply completed live-target qualification.
+
+Desktop versions are assigned during release CI. Plugins keep their own release
+commentary and are released independently.

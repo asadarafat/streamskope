@@ -373,20 +373,23 @@ describe("plugin compatibility declarations", () => {
 });
 
 it.each(["eda", "nsp"])(
-  "admits %s source release packages on stable 0.9 hosts and rejects previous and next minors",
+  "admits %s source release packages on stable 0.9 and 0.10 hosts and rejects outside bounds or previews",
   async (plugin) => {
     const value: unknown = JSON.parse(
       await readFile(new URL(`../../plugins/${plugin}/manifest.json`, import.meta.url), "utf8"),
     );
     const development = parsePluginManifest(value);
     expect(development.version).toBe("0.0.0-dev");
-    const released = parsePluginManifest({ ...development, version: "0.1.0" });
+    const released = parsePluginManifest({ ...development, version: "0.1.2" });
     expect(isPluginCompatibleWithHost(released, "v0.9.0")).toBe(true);
     expect(isPluginCompatibleWithHost(released, "v0.9.1")).toBe(true);
     expect(isPluginCompatibleWithHost(released, "v0.9.99")).toBe(true);
+    expect(isPluginCompatibleWithHost(released, "v0.10.0")).toBe(true);
+    expect(isPluginCompatibleWithHost(released, "v0.10.99")).toBe(true);
     expect(isPluginCompatibleWithHost(released, "v0.8.99")).toBe(false);
     expect(isPluginCompatibleWithHost(released, "v0.9.0-rc.1")).toBe(false);
     expect(isPluginCompatibleWithHost(released, "v0.10.0-rc.1")).toBe(false);
-    expect(isPluginCompatibleWithHost(released, "v0.10.0")).toBe(false);
+    expect(isPluginCompatibleWithHost(released, "v0.11.0")).toBe(false);
+    expect(isPluginCompatibleWithHost(released, "v0.11.0-rc.1")).toBe(false);
   },
 );
