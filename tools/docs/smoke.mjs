@@ -1,7 +1,9 @@
-/* global process, document, window, console, innerWidth */
+/* global process, document, window, console, innerWidth, navigator, URL */
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { chromium, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { checkNavigation, isReleasePreview } from "./navigation.mjs";
@@ -74,6 +76,176 @@ try {
       })),
       [],
     );
+  }
+  async function browserQuickstart() {
+    const quickstart = base + "start/containerlab/";
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(quickstart);
+    const content = page.locator(".md-content__inner");
+    assert.deepEqual(
+      (await content.getByRole("heading", { level: 2 }).allTextContents())
+        .map((text) => text.replace(/\s*¶$/u, "").trim())
+        .filter((text) => /^\d+\./u.test(text)),
+      ["1. Install", "2. Create the vault", "3. Connect a broker"],
+      "Browser onboarding has three outcome-oriented steps",
+    );
+    assert.doesNotMatch(
+      await content.innerText(),
+      /\b(?:Node(?:\.js)?|npm)\b|build from source|https?:\/\/[^\s]+:8080\b/iu,
+      "Browser quickstart uses the installed host URL without a development toolchain",
+    );
+    const breadcrumbs = page.locator(".md-path");
+    await expect(breadcrumbs).toBeVisible();
+    await expect(breadcrumbs.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+    await expect(breadcrumbs).toContainText("Start here");
+    const installer = page.getByRole("region", {
+      name: "Browser workbench installation",
+      exact: true,
+    });
+    await expect(installer).toHaveAttribute("data-desktop-release", desktopRelease);
+    if (!published) {
+      await expect(installer.locator("code")).toHaveCount(0);
+      assert.doesNotMatch(
+        await installer.innerHTML(),
+        /releases\/download\/[^"\s]+\/install-browser-workbench\.sh|curl\s+-f/iu,
+        "A source preview cannot invent a published installer command",
+      );
+    } else if ((await installer.locator("code").count()) > 0) {
+      assert.equal(
+        (await installer.locator("code").innerText()).trim(),
+        `curl -fsSL https://github.com/asadarafat/streamskope/releases/download/${encodeURIComponent(desktopRelease)}/install-browser-workbench.sh | sudo -E bash`,
+        "Published onboarding uses the exact verified release installer",
+      );
+    }
+    const manual = content.locator('a[href$="/guide/browser-host/"]').first();
+    await expect(manual).toBeVisible();
+    await manual.click();
+    await page.waitForURL(base + "guide/browser-host/");
+    await expect(page.locator(".md-path")).toContainText("Operate safely");
+    await expect(
+      page
+        .locator(".md-sidebar--primary")
+        .getByRole("link", { name: "Operate the browser host", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await page.goto(base + "guide/recovery/");
+    await content
+      .getByRole("link", { name: "browser host backup and restore", exact: true })
+      .click();
+    await page.waitForURL(base + "guide/browser-host/#back-up-and-restore");
+    await expect(page.locator('[id="back-up-and-restore"]')).toHaveCount(1);
+    await page.goto(quickstart + "#back-up-and-restore");
+    await page.waitForURL(quickstart + "#back-up-and-restore");
+    await expect(page.locator('[id="back-up-and-restore"]')).toHaveCount(1);
+    await content
+      .getByRole("link", { name: "browser host backup and restore", exact: true })
+      .click();
+    await page.waitForURL(base + "guide/browser-host/#back-up-and-restore");
+    await expect(page.locator('[id="back-up-and-restore"]')).toHaveCount(1);
+
+    // Exercise the actual template and site enhancement with synthetic uploaded
+    // asset metadata. This render fixture does not claim a release was published.
+    const fixtureTag = "v0.10.1";
+    const releaseRoot = `https://github.com/asadarafat/streamskope/releases/download/${fixtureTag}`;
+    const installerUrl = `${releaseRoot}/install-browser-workbench.sh`;
+    const command = `curl -fsSL ${installerUrl} | sudo -E bash`;
+    const fixture = {
+      available: true,
+      installer_available: true,
+      tag: fixtureTag,
+      version: fixtureTag.slice(1),
+      release_url: `https://github.com/asadarafat/streamskope/releases/tag/${fixtureTag}`,
+      checksum_url: `${releaseRoot}/SHA256SUMS`,
+      installer_url: installerUrl,
+      install_command: command,
+      assets: [],
+    };
+    const python = resolve(
+      ".cache/zensical",
+      process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+    );
+    const { stdout: rendered } = await promisify(execFile)(python, [
+      "-c",
+      [
+        "import json, sys",
+        "from jinja2 import Environment, FileSystemLoader, StrictUndefined",
+        "environment = Environment(loader=FileSystemLoader('website/overrides'), autoescape=True, undefined=StrictUndefined)",
+        "environment.filters['url'] = lambda path: '../../' + path",
+        "print(environment.get_template('partials/browser-installer.html').render(config={'extra': {'container_downloads': json.loads(sys.argv[1]), 'documentation': {'status': 'Published documentation'}}}))",
+      ].join("\n"),
+      JSON.stringify(fixture),
+    ]);
+    const regionPattern = /<section\b[^>]*class="sk-browser-installer"[^>]*>[\s\S]*?<\/section>/u;
+    await page.route(quickstart, async (route) => {
+      const response = await route.fetch();
+      const html = await response.text();
+      assert.equal(
+        html.match(new RegExp(regionPattern.source, "gu"))?.length,
+        1,
+        "The fixture replaces exactly one installer region before site scripts initialize",
+      );
+      await route.fulfill({ response, body: html.replace(regionPattern, rendered.trim()) });
+    });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: new URL(base).origin,
+    });
+    try {
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const theme of ["light", "dark"]) {
+          await page.goto(quickstart);
+          const scheme = await page.locator("body").getAttribute("data-md-color-scheme");
+          if ((scheme === "slate") !== (theme === "dark"))
+            await page.locator(`label[title="Switch to ${theme} mode"]`).click();
+          await expect(installer).toHaveAttribute("data-desktop-release", fixtureTag);
+          await expect(installer.locator("code")).toHaveText(command);
+          await installer.scrollIntoViewIfNeeded();
+          const copy = installer.getByRole("button", { name: "Copy to clipboard", exact: true });
+          await expect(copy).toBeVisible();
+          await copy.click();
+          assert.equal(await page.evaluate(() => navigator.clipboard.readText()), command);
+          assert(
+            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+            "The long installer command cannot widen the page",
+          );
+          await accessible();
+          await page.screenshot({
+            path: resolve(evidence, `browser-installer-fixture-${width}-${theme}.png`),
+          });
+        }
+      }
+      await writeFile(
+        resolve(evidence, "browser-installer-render-fixture.json"),
+        JSON.stringify(
+          { kind: "synthetic-template-fixture", tag: fixtureTag, installerUrl },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await page.unroute(quickstart);
+    }
+    // Qualify the actual source/release page too; fixture availability is isolated.
+    for (const [route, label] of [
+      [quickstart, "browser-quickstart"],
+      [base + "guide/browser-host/", "browser-host"],
+    ]) {
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const theme of ["light", "dark"]) {
+          await page.goto(route);
+          const scheme = await page.locator("body").getAttribute("data-md-color-scheme");
+          if ((scheme === "slate") !== (theme === "dark"))
+            await page.locator(`label[title="Switch to ${theme} mode"]`).click();
+          if (route === quickstart) {
+            await expect(installer).toHaveAttribute("data-desktop-release", desktopRelease);
+            if (!published) await expect(installer.locator("code")).toHaveCount(0);
+          }
+          assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+          await accessible();
+          await page.screenshot({ path: resolve(evidence, `${label}-${width}-${theme}.png`) });
+        }
+      }
+    }
   }
   for (const route of routes) {
     assert.equal((await page.goto(base + route)).status(), 200, route);
@@ -183,6 +355,7 @@ try {
     }
     assert.doesNotMatch(await page.locator("body").innerText(), /Kubus|TopoViewer|FIELD GUIDE/i);
   }
+  await browserQuickstart();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(base + "start/installation/#download");

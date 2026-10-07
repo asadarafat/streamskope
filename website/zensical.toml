@@ -11,7 +11,7 @@ nav = [
   { "Home" = "index.md" },
   { "Start here" = [
     { "Install StreamSkope" = "start/installation.md" },
-    { "Run with Containerlab" = "start/containerlab.md" },
+    { "Install the browser workbench" = "start/containerlab.md" },
     { "Check compatibility" = "start/compatibility.md" },
     { "Read your first message" = "start/quickstart.md" },
     { "Connect your Kafka" = "guide/connections.md" }
@@ -34,6 +34,7 @@ nav = [
     { "NSP Connector" = "plugins/nsp.md" }
   ] },
   { "Operate safely" = [
+    { "Operate the browser host" = "guide/browser-host.md" },
     { "Reset consumer offsets" = "guide/offset-recovery.md" },
     { "Copy or replay records" = "guide/record-replay.md" },
     { "Manage Kafka Connect" = "guide/kafka-connect.md" },

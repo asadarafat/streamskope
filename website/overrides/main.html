@@ -45,5 +45,7 @@ page.meta.plugin_portable_downloads %}{% set portable %}{% include
 "partials/portable-downloads.html" %}{% endset %}{% set content = content | replace("<!-- portable-plugin-downloads -->",
 portable) %}{% endif %}{% if page.meta.container_downloads %}{% set browser_downloads %}{% include
 "partials/container-downloads.html" %}{% endset %}{% set content = content | replace("<!-- container-downloads -->",
-browser_downloads) %}{% endif %}{{ content }} {% if page.meta.plugin_compatibility %} {% include
+browser_downloads) %}{% endif %}{% if page.meta.browser_installer %}{% set browser_installation %}{%
+include "partials/browser-installer.html" %}{% endset %}{% set content = content | replace("<!-- browser-installer -->",
+browser_installation) %}{% endif %}{{ content }} {% if page.meta.plugin_compatibility %} {% include
 "partials/plugin-compatibility.html" %} {% endif %} {% endblock %}

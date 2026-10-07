@@ -44,10 +44,11 @@ On a mismatch, stop and obtain a fresh copy from the trusted release.
 
 ## Browser alternative
 
-Use the [Containerlab deployment](containerlab.md) for a Linux-hosted browser
-workbench with an encrypted connection vault. Its availability table distinguishes
-released browser assets from source-only instructions. It connects to your own
-Kafka or NATS servers and does not require an Apple Developer certificate.
+Use [Install the browser workbench](containerlab.md) for a Linux-hosted workbench
+with an encrypted connection vault. Its installer command appears only when the
+documented release contains the verified installer. For earlier releases or
+restricted networks, use [manual deployment](../guide/browser-host.md#manual-deployment).
+It connects to your own Kafka or NATS servers and avoids desktop OS signing warnings.
 
 ## Desktop prerequisites
 

@@ -28,11 +28,13 @@ The [qualification record](website/docs/guide/qualification.md) links the releas
 automated checks and identifies workflows that still need recorded evidence.
 
 Prefer a browser workbench on a Linux Docker host? Follow
-[Run with Containerlab](https://asadarafat.github.io/streamskope/start/containerlab/).
-The latest release provides a public AMD64/ARM64 GHCR image and a Containerlab
-topology pinned to its version and digest. Saved connection credentials are
-protected by a browser-unlocked vault. Offline delivery includes Docker save
-archives and a separate local-image topology.
+[Install the browser workbench](https://asadarafat.github.io/streamskope/start/containerlab/).
+The documented release determines its available installation method. Published
+browser delivery provides a public AMD64/ARM64 GHCR image and a Containerlab
+topology pinned to its version and digest; use the
+[manual deployment guide](website/docs/guide/browser-host.md)
+for those files. Saved credentials use a browser-unlocked vault. Offline delivery
+includes Docker save archives and a separate local-image topology.
 
 StreamSkope also includes **NATS** as a built-in messaging provider.
 Open **Connection Profiles → Add connection → NATS server** to save a

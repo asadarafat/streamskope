@@ -32,9 +32,10 @@
   {% else %}
   <p>
     {% if config.extra.documentation.status == 'Published documentation' %}This release has no
-    verified browser assets.{% else %}This preview provides source build instructions.{% endif %} No
-    browser download is asserted for the documented <strong>{{ downloads.tag }}</strong> release.
-    Check its <a href="{{ downloads.release_url }}">published assets</a> before installing.
+    verified browser assets.{% else %}This source preview does not verify uploaded release assets.{%
+    endif %} Check
+    <a href="{{ downloads.release_url }}">{{ downloads.tag }} published assets</a> before following
+    the manual release instructions below.
   </p>
   {% endif %}
 </section>
