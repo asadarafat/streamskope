@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+import { format, resolveConfig } from "prettier";
 
 import { githubReader, type GithubRead } from "./release-changelog";
 import {
@@ -322,6 +324,18 @@ export async function reconcileReleaseDocumentation(
   ].sort();
   if (changed.some((path) => !allowedReleaseDocumentationPath(path)))
     throw new Error("Reconciliation changed an unexpected path; refusing to stage it.");
+  // Format editable pages for normal PR CI; archived publication bodies are exact.
+  for (const path of changed) {
+    if (
+      !path.endsWith(".md") ||
+      /^website\/docs\/releases\/(?:plugins\/(?:eda|nsp)\/)?v[^/]+\.md$/u.test(path)
+    )
+      continue;
+    const file = resolve(root, path);
+    const contents = await readFile(file, "utf8");
+    const formatted = await format(contents, { ...(await resolveConfig(file)), filepath: file });
+    if (formatted !== contents) await writeFile(file, formatted, "utf8");
+  }
   if (!changed.length) {
     if (existing) {
       await autoMerge(writeGithub, repository, existing, false);

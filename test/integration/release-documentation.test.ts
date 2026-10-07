@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
+import { check, resolveConfig } from "prettier";
 import { afterEach, expect, it } from "vitest";
 
 import type { GithubRead } from "../../tools/package/release-changelog";
@@ -368,6 +369,41 @@ it("preserves newer commentary and requires review instead of enabling auto-merg
     "Newer highlight.",
   );
   expect(repo.writes.some((item) => item.path === "/graphql")).toBe(false);
+});
+it("formats generated editable pages for CI while retaining published body bytes", async () => {
+  const repo = await fixture();
+  const body = "# StreamSkope v0.1.0\n\n| a | longer heading |\n|---|---|\n| x | y |\n";
+  const readGithub: GithubRead = async (path) => {
+    const result = await repo.readGithub(path);
+    return path.includes("/releases?")
+      ? (result as Record<string, unknown>[]).map((release) => ({ ...release, body }))
+      : result;
+  };
+  await reconcileReleaseDocumentation({
+    ...repo.options,
+    readGithub,
+    updateQualification: async () => {
+      const index = "website/docs/releases/index.md";
+      await repo.write(index, `${await readFile(join(repo.root, index), "utf8")}\n${body}`);
+      await repo.write(
+        "website/docs/guide/qualification.md",
+        "# Qualification\n<!-- publication-qualification -->\n## Published release: v0.1.0\n\nRecorded limitations.\n<!-- /publication-qualification -->\n",
+      );
+    },
+  });
+  for (const relative of [
+    "website/docs/releases/unreleased.md",
+    "website/docs/releases/index.md",
+    "website/docs/guide/qualification.md",
+  ]) {
+    const file = join(repo.root, relative);
+    expect(
+      await check(await readFile(file, "utf8"), { ...(await resolveConfig(file)), filepath: file }),
+    ).toBe(true);
+  }
+  const archived = await readFile(join(repo.root, "website/docs/releases/v0.1.0.md"), "utf8");
+  expect(archived.endsWith(body)).toBe(true);
+  expect(await check(body, { parser: "markdown" })).toBe(false);
 });
 it("merges an already qualified fallback PR through the protected endpoint with its exact head", async () => {
   const repo = await fixture();
