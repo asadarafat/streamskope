@@ -84,6 +84,12 @@ def container_downloads(root=ROOT, environment=None):
         ("Containerlab topology", f"streamskope-{version}.clab.yml"),
         ("Image identity and archive checksums", f"streamskope-{version}-container.json"),
     ]
+    # Registry delivery starts with core 0.10.0. Older archive-only releases retain
+    # their original four assets; newer releases must include the offline topology.
+    numeric_version = tuple(int(part) for part in version.split("+", 1)[0].split("-", 1)[0].split("."))
+    registry_delivery = numeric_version >= (0, 10, 0)
+    if registry_delivery:
+        names.insert(3, ("Offline Containerlab topology", f"streamskope-{version}-offline.clab.yml"))
     assets = release.get("assets", [])
     if not isinstance(assets, list):
         raise ValueError("Browser release assets must be a list")
@@ -104,7 +110,8 @@ def container_downloads(root=ROOT, environment=None):
             type(checksums[0].get("size")) is not int or checksums[0]["size"] <= 0
             or checksums[0].get("browser_download_url") != checksum_url):
         raise ValueError("Browser release requires its exact published SHA256SUMS")
-    result.update({"available": True, "checksum_url": checksum_url})
+    result.update({"available": True, "checksum_url": checksum_url,
+                   "registry_delivery": registry_delivery})
     return result
 
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readdir, writeFile } from "node:fs/promises";
+import { lstat, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parseReleaseVersion } from "../../src/plugins/compatibility";
@@ -45,6 +45,17 @@ export async function prepareUnsignedRelease(
     containerDirectory === undefined
       ? []
       : await validateBrowserReleaseAssets(containerDirectory, version, commit);
+  const registry =
+    containerDirectory === undefined
+      ? undefined
+      : (
+          JSON.parse(
+            await readFile(
+              join(containerDirectory, `streamskope-${version}-container.json`),
+              "utf8",
+            ),
+          ) as { registry?: { reference: string } }
+        ).registry;
   const lines: string[] = [];
   for (const [assetDirectory, names] of [
     [directory, expected],
@@ -65,7 +76,7 @@ export async function prepareUnsignedRelease(
   await writeFile(join(directory, "SHA256SUMS"), `${lines.join("\n")}\n`, { flag: "wx" });
   return `# StreamSkope ${version}
 
-A desktop Kafka workbench for exploring messages, consumer groups, schemas and cluster operations.
+A workbench for inspecting Kafka and NATS streams and their supported operations.
 
 ## Downloads
 
@@ -95,10 +106,21 @@ ${
 | AMD64 | StreamSkope-${version}-container-linux-amd64.tar.gz |
 | ARM64 | StreamSkope-${version}-container-linux-arm64.tar.gz |
 
-Download the matching archive, streamskope-${version}.clab.yml and
+${
+  registry === undefined
+    ? `Download the matching archive, streamskope-${version}.clab.yml and
 streamskope-${version}-container.json. Verify all files against SHA256SUMS,
 load the gzip-compressed Docker save archive with Docker, then deploy the topology
-with Containerlab. No image registry or Apple Developer ID certificate is needed.
+with Containerlab. No image registry or Apple Developer ID certificate is needed.`
+    : `Download streamskope-${version}.clab.yml and verify it against SHA256SUMS, then
+deploy with Containerlab. Its public GHCR image is pinned to ${registry.reference};
+Docker selects AMD64 or ARM64. No registry login is required.
+For offline use, download the matching gzip-compressed Docker save archive,
+streamskope-${version}-offline.clab.yml and streamskope-${version}-container.json.
+Verify those files against SHA256SUMS, load the archive and deploy the offline topology.
+Both editions use the same qualified image and private data directory.
+No Apple Developer ID certificate is needed.`
+}
 The browser stores credentials in an encrypted vault that you unlock with your
 passphrase; protect that passphrase and the private data directory.
 

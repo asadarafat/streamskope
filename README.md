@@ -29,7 +29,10 @@ automated checks and identifies workflows that still need recorded evidence.
 
 Prefer a browser workbench on a Linux Docker host? This checkout can build and
 run StreamSkope with [Containerlab](website/docs/start/containerlab.md), with saved
-connection credentials protected by a browser-unlocked vault. Core release CI packages version-matched browser image archives and topologies.
+connection credentials protected by a browser-unlocked vault. Core release CI
+prepares a public multi-platform GHCR image and a topology pinned to its version
+and digest. Offline delivery includes Docker save archives and a separate local
+image topology.
 Check the guide's availability notice and your chosen release assets; source
 implementation alone does not establish a published browser package.
 

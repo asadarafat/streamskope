@@ -3,7 +3,9 @@
   {% if downloads.available %}
   <p>
     Browser deployment assets for <strong>{{ downloads.tag }}</strong> are included in this
-    published release. Choose the archive for your Linux Docker host.
+    published release. {% if downloads.registry_delivery %}Use the Containerlab topology for public
+    GHCR delivery, or the matching image archive and offline topology for an offline host.{% else
+    %}Choose the archive for your Linux Docker host.{% endif %}
   </p>
   <table>
     <thead>

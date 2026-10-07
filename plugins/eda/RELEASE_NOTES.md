@@ -1,3 +1,9 @@
 ## Unreleased changes
 
-No EDA Connector changes are pending release.
+Declare compatibility with StreamSkope 0.9.x and 0.10.x, including the production
+browser host. Plugin API 4 and the exact EDA 26.8.2 target remain unchanged.
+
+Update the plugin before upgrading the desktop to 0.10.0; older plugin packages
+exclude that host version. For offline upgrades, obtain the compatible signed
+portable plugin file first. Compatibility declarations do not establish live
+capture qualification.

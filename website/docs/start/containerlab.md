@@ -18,20 +18,50 @@ The EDA application image is a separate component and cannot run this workbench.
 
 ## Use a released image
 
-When the table lists browser assets, download the image archive for your Linux
-Docker host's architecture, the matching `.clab.yml` topology and `SHA256SUMS`
-from that exact release. Verify the archive and topology before use. Release
-archives use Docker's `save` format compressed with gzip. On Linux, after placing
-the chosen archive and topology beside the downloaded checksum file, run
-`sha256sum --ignore-missing --check SHA256SUMS` and require an `OK` result for
-each chosen file. Load the selected
-archive with `docker load --input <image-archive.tar.gz>`.
+When the table lists registry-backed browser delivery, use the online topology
+for the simplest deployment. Download `streamskope-VERSION.clab.yml`,
+`streamskope-VERSION-container.json` and `SHA256SUMS` from that exact release.
+Replace `VERSION` in the filenames below with the version in the availability
+table. These instructions do not require Node, npm or a source build.
 
-Create a private `streamskope-data` directory beside the downloaded topology,
-export your numeric user and group as shown below, then run
-`clab deploy -t <downloaded-topology.clab.yml>`. The topology selects the exact
-loaded image version and never silently pulls a different one. This path does
-not need Node, npm, a source build or a registry account.
+The online topology pulls the public multi-platform image from
+`ghcr.io/asadarafat/streamskope`. Its reference contains both the release version
+and immutable index digest, such as `:VERSION@sha256:DIGEST`; Docker selects the
+Linux AMD64 or ARM64 image for its host. No registry login is required. Use the
+matching topology instead of a floating image tag.
+
+### Offline or restricted networks
+
+Download the Docker save archive for the Linux Docker host's architecture,
+`streamskope-VERSION-offline.clab.yml`, the image manifest and `SHA256SUMS` on a
+machine with access, then transfer them to the host. Select `amd64` for x64 or
+`arm64` for ARM64. Release archives use Docker's `save` format compressed with
+gzip.
+
+Use the separate **offline** topology after loading the archive. It selects the
+local `streamskope:VERSION` image with pull policy `Never`, so deployment does
+not contact GHCR. The online topology and the archive identify the same qualified
+native image. Historical archive-only releases use their supplied local-image
+topology; the availability table identifies the files actually published.
+
+### Verify and deploy
+
+Verify the chosen topology, image manifest and any downloaded archive before use.
+On Linux, place them beside `SHA256SUMS`, run
+`sha256sum --ignore-missing --check SHA256SUMS`, and require an `OK` result for
+each chosen file. For offline delivery, load the verified archive with
+`docker load --input <image-archive.tar.gz>`. Then create private persistent data
+and export the numeric owner:
+
+```sh
+mkdir -m 700 streamskope-data
+export STREAMSKOPE_UID="$(id -u)"
+export STREAMSKOPE_GID="$(id -g)"
+```
+
+For online delivery, run `clab deploy -t streamskope-VERSION.clab.yml`. For
+offline delivery, run `clab deploy -t streamskope-VERSION-offline.clab.yml`.
+Continue with [Create the vault](#2-create-the-vault) once the instance is running.
 
 If browser assets are unavailable for the documented release, use the following
 source procedure. Publication of a desktop installer does not imply a browser
@@ -40,9 +70,10 @@ image is available.
 ## Before you start
 
 Use a Linux Docker host with Containerlab, a source checkout, **Node 24.21+ in the 24.x line**, and
-npm for source builds. Released image archives need only the Linux Docker host
-and Containerlab. The image's vault uses Linux advisory file locking. Choose the image for
-the Docker host's architecture; a local build qualifies only that architecture.
+npm for source builds. Released images need only the Linux Docker host and
+Containerlab, with GHCR access for online delivery or a transferred archive for
+offline delivery. The image's vault uses Linux advisory file locking. A local
+build qualifies only the Docker host's architecture.
 Building needs access to the base image and package registry, or their approved
 local mirrors and caches.
 
@@ -78,6 +109,8 @@ The source image is `streamskope:0.0.0-dev`. The lab is `streamskope`, its node 
 `app`, and its Docker container is `clab-streamskope-app`. The topology mounts
 `./streamskope-data` at `/data`. This directory is outside Containerlab's
 generated `clab-streamskope` directory so redeployment does not discard it.
+The root `streamskope.clab.yml` uses pull policy `Never`; source deployment
+continues to use the local build instead of the released GHCR image.
 
 Open **http://127.0.0.1:8080** from a browser that can reach the Linux host's
 loopback port. On a first deployment, you should see **Create vault**.
@@ -176,6 +209,13 @@ the target resources before restarting. An unlock or health endpoint alone does
 not establish that remote capture resources were removed.
 
 ## Plugins and offline use
+
+Plugin host compatibility must include the actual workbench version.
+EDA and NSP Connector 0.1.2 cover core `>=0.9.0, <0.11.0`, retaining plugin
+API 4 and the exact EDA 26.8.2 and NSP 26.4.0 targets. Existing 0.1.1 packages
+exclude core 0.10.0. Before a desktop upgrade to 0.10.0, update its plugins first;
+for offline use, obtain compatible signed portable files before moving the host.
+Check each plugin guide's publication notice for actual package availability.
 
 Use **Preferences → Plugins → Install from file** to transfer an approved signed
 portable `.skope-plugin` file from your browser computer to this host. The host

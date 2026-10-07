@@ -22,6 +22,11 @@ import { list, type ReadEntry } from "tar";
 import { parseReleaseVersion } from "../../src/plugins/compatibility";
 import { readBoundedFile } from "../../src/platform/node/bounded-file";
 
+import {
+  parseBrowserRegistryMetadata,
+  type BrowserRegistryMetadata,
+} from "./browser-registry-metadata";
+
 const ARCHITECTURES = ["amd64", "arm64"] as const;
 type Architecture = (typeof ARCHITECTURES)[number];
 const MAX_ARCHIVE_BYTES = 2 * 1024 ** 3;
@@ -44,21 +49,24 @@ interface ArchiveRecord extends ImageRecord {
 }
 
 export interface BrowserReleaseManifest {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
   readonly version: string;
   readonly sourceRevision: string;
   readonly image: string;
   readonly format: "docker-save-gzip";
   readonly topology: { readonly file: string; readonly sha256: string };
   readonly archives: readonly ArchiveRecord[];
+  readonly registry?: BrowserRegistryMetadata;
+  readonly offlineTopology?: { readonly file: string; readonly sha256: string };
 }
 
-export function browserReleaseNames(version: string): readonly string[] {
+export function browserReleaseNames(version: string, registry = false): readonly string[] {
   parseReleaseVersion(version);
   return [
     ...ARCHITECTURES.map((arch) => `StreamSkope-${version}-container-linux-${arch}.tar.gz`),
     `streamskope-${version}-container.json`,
     `streamskope-${version}.clab.yml`,
+    ...(registry ? [`streamskope-${version}-offline.clab.yml`] : []),
   ].sort();
 }
 
@@ -269,6 +277,18 @@ export function browserReleaseTopology(source: string, version: string): string 
   return source.replace(sentinel, `\${STREAMSKOPE_IMAGE:=streamskope:${version}}`);
 }
 
+export function browserRegistryTopology(source: string, registry: BrowserRegistryMetadata): string {
+  const reviewed = browserReleaseTopology(source, registry.version);
+  if (reviewed.split("image-pull-policy: Never").length !== 2)
+    throw new Error("The reviewed Containerlab topology must declare one local image policy.");
+  return reviewed
+    .replace(
+      `\${STREAMSKOPE_IMAGE:=streamskope:${registry.version}}`,
+      `\${STREAMSKOPE_IMAGE:=${registry.reference}}`,
+    )
+    .replace("image-pull-policy: Never", "image-pull-policy: IfNotPresent");
+}
+
 async function directoryNames(directory: string, expected: readonly string[]): Promise<void> {
   const metadata = await lstat(directory);
   if (!metadata.isDirectory() || metadata.isSymbolicLink())
@@ -281,20 +301,35 @@ async function directoryNames(directory: string, expected: readonly string[]): P
     throw new Error("Browser release assets are missing, duplicated, or unexpected.");
 }
 
-/** Combine two independently qualified native builds into four public browser assets. */
+/** Combine qualified native builds with matching online and offline delivery metadata. */
 export async function prepareBrowserReleaseAssets(
   staging: string,
   output: string,
   version: string,
   commit: string,
   topologySource = "streamskope.clab.yml",
+  registryPath?: string,
 ): Promise<void> {
   identity(version, commit);
   await directoryNames(
     staging,
     ARCHITECTURES.map((arch) => `browser-linux-${arch}`),
   );
-  const topology = browserReleaseTopology(await readFile(topologySource, "utf8"), version);
+  const source = await readFile(topologySource, "utf8");
+  const offline = browserReleaseTopology(source, version);
+  const registry =
+    registryPath === undefined
+      ? undefined
+      : parseBrowserRegistryMetadata(
+          JSON.parse(
+            (
+              await readBoundedFile(registryPath, MAX_METADATA_BYTES, { rejectSymlinks: true })
+            ).toString("utf8"),
+          ),
+          version,
+          commit,
+        );
+  const topology = registry === undefined ? offline : browserRegistryTopology(source, registry);
   const topologyFile = `streamskope-${version}.clab.yml`;
   const archives: ArchiveRecord[] = [];
   for (const arch of ARCHITECTURES) {
@@ -319,20 +354,35 @@ export async function prepareBrowserReleaseAssets(
       MAX_METADATA_BYTES,
       { rejectSymlinks: true },
     );
-    if (!suppliedTopology.equals(Buffer.from(topology)))
+    if (!suppliedTopology.equals(Buffer.from(offline)))
       throw new Error(
         "Browser builds must include the identical version-matched reviewed topology.",
       );
     archives.push(await inspectArchive(join(directory, archive), record));
   }
+  if (
+    registry !== undefined &&
+    registry.platforms.some((platform, index) => platform.imageId !== archives[index]?.imageId)
+  )
+    throw new Error("Registry native images differ from the qualified offline archives.");
+  const offlineTopology =
+    registry === undefined
+      ? undefined
+      : {
+          file: `streamskope-${version}-offline.clab.yml`,
+          sha256: createHash("sha256").update(offline).digest("hex"),
+        };
   const manifest: BrowserReleaseManifest = {
-    schemaVersion: 1,
+    schemaVersion: registry === undefined ? 1 : 2,
     version,
     sourceRevision: commit,
     image: `streamskope:${version}`,
     format: "docker-save-gzip",
     topology: { file: topologyFile, sha256: createHash("sha256").update(topology).digest("hex") },
     archives,
+    ...(registry === undefined || offlineTopology === undefined
+      ? {}
+      : { registry, offlineTopology }),
   };
   try {
     await lstat(output);
@@ -350,6 +400,8 @@ export async function prepareBrowserReleaseAssets(
         constants.COPYFILE_EXCL,
       );
     await writeFile(join(temporary, topologyFile), topology, { flag: "wx" });
+    if (offlineTopology !== undefined)
+      await writeFile(join(temporary, offlineTopology.file), offline, { flag: "wx" });
     await writeFile(
       join(temporary, `streamskope-${version}-container.json`),
       `${JSON.stringify(manifest, null, 2)}\n`,
@@ -369,16 +421,6 @@ export async function validateBrowserReleaseAssets(
   topologySource = "streamskope.clab.yml",
 ): Promise<readonly string[]> {
   identity(version, commit);
-  const names = browserReleaseNames(version);
-  await directoryNames(directory, names);
-  const topology = browserReleaseTopology(await readFile(topologySource, "utf8"), version);
-  const topologyBytes = await readBoundedFile(
-    join(directory, `streamskope-${version}.clab.yml`),
-    MAX_METADATA_BYTES,
-    { rejectSymlinks: true },
-  );
-  if (!topologyBytes.equals(Buffer.from(topology)))
-    throw new Error("Browser release topology does not match the reviewed source.");
   const manifest: unknown = JSON.parse(
     (
       await readBoundedFile(
@@ -389,6 +431,40 @@ export async function validateBrowserReleaseAssets(
     ).toString("utf8"),
   );
   const input = object(manifest);
+  const registry =
+    input.schemaVersion === 2
+      ? parseBrowserRegistryMetadata(input.registry, version, commit)
+      : undefined;
+  const names = browserReleaseNames(version, registry !== undefined);
+  await directoryNames(directory, names);
+  const source = await readFile(topologySource, "utf8");
+  const offline = browserReleaseTopology(source, version);
+  const topology = registry === undefined ? offline : browserRegistryTopology(source, registry);
+  const topologyBytes = await readBoundedFile(
+    join(directory, `streamskope-${version}.clab.yml`),
+    MAX_METADATA_BYTES,
+    { rejectSymlinks: true },
+  );
+  if (!topologyBytes.equals(Buffer.from(topology)))
+    throw new Error(
+      "Browser release topology does not match the reviewed source and registry digest.",
+    );
+  const offlineTopology =
+    registry === undefined
+      ? undefined
+      : {
+          file: `streamskope-${version}-offline.clab.yml`,
+          sha256: createHash("sha256").update(offline).digest("hex"),
+        };
+  if (
+    offlineTopology !== undefined &&
+    !(
+      await readBoundedFile(join(directory, offlineTopology.file), MAX_METADATA_BYTES, {
+        rejectSymlinks: true,
+      })
+    ).equals(Buffer.from(offline))
+  )
+    throw new Error("Offline browser topology differs from the reviewed local-image topology.");
   if (!Array.isArray(input.archives) || input.archives.length !== ARCHITECTURES.length)
     throw new Error("Browser release must include both native Linux architectures.");
   const archives: ArchiveRecord[] = [];
@@ -400,8 +476,13 @@ export async function validateBrowserReleaseAssets(
     const record = imageRecord(fields, version, commit, arch);
     archives.push(await inspectArchive(join(directory, record.archive), record));
   }
+  if (
+    registry !== undefined &&
+    registry.platforms.some((platform, index) => platform.imageId !== archives[index]?.imageId)
+  )
+    throw new Error("Registry native images differ from the qualified offline archives.");
   const expected: BrowserReleaseManifest = {
-    schemaVersion: 1,
+    schemaVersion: registry === undefined ? 1 : 2,
     version,
     sourceRevision: commit,
     image: `streamskope:${version}`,
@@ -411,6 +492,9 @@ export async function validateBrowserReleaseAssets(
       sha256: createHash("sha256").update(topologyBytes).digest("hex"),
     },
     archives,
+    ...(registry === undefined || offlineTopology === undefined
+      ? {}
+      : { registry, offlineTopology }),
   };
   if (!isDeepStrictEqual(input, expected))
     throw new Error("Browser release manifest does not match the actual archives and topology.");

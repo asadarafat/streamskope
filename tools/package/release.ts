@@ -198,17 +198,30 @@ async function main(): Promise<void> {
     return;
   }
   const arguments_ = process.argv.slice(2);
-  const containerOption = arguments_.indexOf("--containers");
-  const containerStaging = containerOption === -1 ? undefined : arguments_[containerOption + 1];
-  if (containerOption !== -1 && (containerOption !== arguments_.length - 2 || !containerStaging))
-    throw new Error(
-      "--containers requires one native-build staging directory as the final argument.",
-    );
+  const optionStart = arguments_.findIndex((argument) => argument.startsWith("--"));
+  const options = new Map<string, string>();
+  const optional = optionStart === -1 ? [] : arguments_.slice(optionStart);
+  for (let index = 0; index < optional.length; index += 2) {
+    const key = optional[index]!;
+    const value = optional[index + 1];
+    if (
+      !["--containers", "--registry"].includes(key) ||
+      !value ||
+      value.startsWith("--") ||
+      options.has(key)
+    )
+      throw new Error("Release options require unique --containers or --registry paths.");
+    options.set(key, value);
+  }
+  const containerStaging = options.get("--containers");
+  const registryPath = options.get("--registry");
+  if (registryPath !== undefined && containerStaging === undefined)
+    throw new Error("Registry delivery requires the qualified native archive staging directory.");
   const [directory, version, commit, source, output, tag, changelog, ...extra] =
-    containerOption === -1 ? arguments_ : arguments_.slice(0, containerOption);
+    optionStart === -1 ? arguments_ : arguments_.slice(0, optionStart);
   if (!directory || !version || !commit || !source || !output || extra.length) {
     throw new Error(
-      "Usage: npm run package -- release <assets-directory> <version> <commit> <source-page> <notes-output> [tag] [changelog] [--containers <native-build-staging>]",
+      "Usage: npm run package -- release <assets-directory> <version> <commit> <source-page> <notes-output> [tag] [changelog] [--containers <native-build-staging>] [--registry <verified-registry-metadata>]",
     );
   }
   const body = releaseNotesBody(await readFile(source, "utf8"), version, tag);
@@ -220,7 +233,14 @@ async function main(): Promise<void> {
       ? undefined
       : join(resolve(directory), "..", "container-package");
   if (containerStaging !== undefined && containerDirectory !== undefined)
-    await prepareBrowserReleaseAssets(containerStaging, containerDirectory, version, commit);
+    await prepareBrowserReleaseAssets(
+      containerStaging,
+      containerDirectory,
+      version,
+      commit,
+      "streamskope.clab.yml",
+      registryPath,
+    );
   const downloads = (
     await prepareUnsignedRelease(directory, version, commit, tag, containerDirectory)
   ).replace(/^# StreamSkope [^\n]+\n/u, "## Distribution\n");

@@ -175,13 +175,14 @@ it("packages distinct development identities without changing source and include
   for (const packaged of [plugin, nspPlugin]) {
     expect(packaged.manifest).toMatchObject({
       apiVersion: 4,
-      compatibility: { streamskope: { minimum: "0.9.0", maximumExclusive: "0.10.0" } },
+      compatibility: { streamskope: { minimum: "0.9.0", maximumExclusive: "0.11.0" } },
     });
     const releaseManifest = { ...packaged.manifest, version: "0.1.0" };
     expect(isPluginCompatibleWithHost(releaseManifest, "v0.9.0")).toBe(true);
     expect(isPluginCompatibleWithHost(releaseManifest, "v0.9.1")).toBe(true);
     expect(isPluginCompatibleWithHost(releaseManifest, "v0.8.99")).toBe(false);
-    expect(isPluginCompatibleWithHost(releaseManifest, "v0.10.0")).toBe(false);
+    expect(isPluginCompatibleWithHost(releaseManifest, "v0.10.0")).toBe(true);
+    expect(isPluginCompatibleWithHost(releaseManifest, "v0.11.0")).toBe(false);
     expect(packaged.manifest.version).toMatch(/^0\.0\.0-dev\.[1-9]\d*$/u);
     expect(packaged.manifest).not.toHaveProperty("revision");
   }
