@@ -43,5 +43,7 @@ set downloads %}{% include "partials/desktop-downloads.html" %}{% endset %}{% se
 | replace("<!-- desktop-downloads -->", downloads) %}{% endif %}{% if
 page.meta.plugin_portable_downloads %}{% set portable %}{% include
 "partials/portable-downloads.html" %}{% endset %}{% set content = content | replace("<!-- portable-plugin-downloads -->",
-portable) %}{% endif %}{{ content }} {% if page.meta.plugin_compatibility %} {% include
+portable) %}{% endif %}{% if page.meta.container_downloads %}{% set browser_downloads %}{% include
+"partials/container-downloads.html" %}{% endset %}{% set content = content | replace("<!-- container-downloads -->",
+browser_downloads) %}{% endif %}{{ content }} {% if page.meta.plugin_compatibility %} {% include
 "partials/plugin-compatibility.html" %} {% endif %} {% endblock %}

@@ -6,26 +6,27 @@ or exported message.
 
 ## Stored data
 
-Paths below are relative to the [application-data directory](recovery.md#find-your-application-data).
+Desktop paths below are relative to the [application-data directory](recovery.md#find-your-application-data).
 
-| Data                                        | Location                                         | Protection and lifetime                                                                                                                                                                                                                   |
-| ------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Connection profiles and EDA resume metadata | `profiles/kafka-profiles.json`                   | Profile metadata is readable JSON; protected values such as trust material and secrets use OS-backed encryption. Persists across restarts                                                                                                 |
-| Migration snapshots                         | `profiles/kafka-profiles.json.pre-*`             | Retain the original profile document and its protection. Persist until deliberately archived or removed                                                                                                                                   |
-| Retrieval recipes and legacy templates      | `templates/`                                     | Ordinary JSON containing endpoints, commands, parameter definitions and bindings; do not put secrets in recipe defaults                                                                                                                   |
-| Rules                                       | `rules/kafka-rules.json`                         | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
-| Saved investigation queries                 | `queries/kafka-queries.json`                     | Ordinary JSON with bounds, filters and optional local profile IDs; no message records. Filter literals can contain sensitive text; persists across restarts                                                                               |
-| Topic configuration history                 | `history/kafka-topic-configuration-history.json` | Ordinary JSON with recorded configuration-change evidence; not a broker audit log                                                                                                                                                         |
-| Kafka observations                          | `history/kafka-observations.json`                | Unencrypted JSON with cluster/topic/group identities, offset and health samples, optional record-size/key-frequency aggregates and example partition/offset locators; no raw keys, headers or payloads. Private file permissions on POSIX |
-| Relationship graphs                         | Workbench page memory                            | Bounded identities and timestamped evidence; no saved graph, raw records, schema definitions or connector credentials                                                                                                                     |
-| Operational preferences                     | `workbench/kafka-operational-preferences.json`   | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
-| Installed plugins                           | `plugins/`                                       | Verified code, manifests and selection state; removed through Preferences → Plugins                                                                                                                                                       |
-| Cached plugin packages                      | `plugins/.packages/`                             | Verified original archives and provenance; private file permissions on POSIX, not encrypted. Up to four archives of 48 MiB each; unused copies may be evicted. Removing a plugin retains cached delivery bytes for offline reinstallation |
-| Plugin download settings                    | `plugins/network.json`                           | Proxy endpoint, mode and offline preference are readable JSON. Proxy credentials use OS-backed encryption when available; otherwise credentials are session-only and omitted from disk. Independent of provider connection settings.      |
-| NSP recovery identifiers                    | `plugins/.recovery/streamskope.nsp.json`         | Non-secret API/account and request/execution identifiers; survive restart and plugin version changes until confirmed cleanup clears them                                                                                                  |
-| Browser-engine state                        | Other Electron files under application data      | Runtime caches/state; include in a same-machine full backup, but do not treat them as a message archive                                                                                                                                   |
-| Read messages and activity history          | Bounded workbench memory                         | No durable message archive; closing/replacing a view or process can discard it                                                                                                                                                            |
-| Downloaded JSON and copied text             | User-selected file or OS clipboard               | Plaintext; remains outside the profile store and is not removed by uninstalling a plugin                                                                                                                                                  |
+| Data                                   | Location                                         | Protection and lifetime                                                                                                                                                                                                                   |
+| -------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kafka profiles and EDA resume metadata | `profiles/kafka-profiles.json`                   | Profile metadata is readable JSON; protected values such as trust material and secrets use OS-backed encryption. Persists across restarts                                                                                                 |
+| NATS connection profiles               | `profiles/nats-profiles.json`                    | Profile metadata is readable JSON; token and trust values use OS-backed protection. Persists across restarts                                                                                                                              |
+| Migration snapshots                    | `profiles/kafka-profiles.json.pre-*`             | Retain the original profile document and its protection. Persist until deliberately archived or removed                                                                                                                                   |
+| Retrieval recipes and legacy templates | `templates/`                                     | Ordinary JSON containing endpoints, commands, parameter definitions and bindings; do not put secrets in recipe defaults                                                                                                                   |
+| Rules                                  | `rules/kafka-rules.json`                         | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
+| Saved investigation queries            | `queries/kafka-queries.json`                     | Ordinary JSON with bounds, filters and optional local profile IDs; no message records. Filter literals can contain sensitive text; persists across restarts                                                                               |
+| Topic configuration history            | `history/kafka-topic-configuration-history.json` | Ordinary JSON with recorded configuration-change evidence; not a broker audit log                                                                                                                                                         |
+| Kafka observations                     | `history/kafka-observations.json`                | Unencrypted JSON with cluster/topic/group identities, offset and health samples, optional record-size/key-frequency aggregates and example partition/offset locators; no raw keys, headers or payloads. Private file permissions on POSIX |
+| Relationship graphs                    | Workbench page memory                            | Bounded identities and timestamped evidence; no saved graph, raw records, schema definitions or connector credentials                                                                                                                     |
+| Operational preferences                | `workbench/kafka-operational-preferences.json`   | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
+| Installed plugins                      | `plugins/`                                       | Verified code, manifests and selection state; removed through Preferences → Plugins                                                                                                                                                       |
+| Cached plugin packages                 | `plugins/.packages/`                             | Verified original archives and provenance; private file permissions on POSIX, not encrypted. Up to four archives of 48 MiB each; unused copies may be evicted. Removing a plugin retains cached delivery bytes for offline reinstallation |
+| Plugin download settings               | `plugins/network.json`                           | Proxy endpoint, mode and offline preference are readable JSON. Proxy credentials use OS-backed encryption when available; otherwise credentials are session-only and omitted from disk. Independent of provider connection settings.      |
+| NSP recovery identifiers               | `plugins/.recovery/streamskope.nsp.json`         | Non-secret API/account and request/execution identifiers; survive restart and plugin version changes until confirmed cleanup clears them                                                                                                  |
+| Browser-engine state                   | Other Electron files under application data      | Runtime caches/state; include in a same-machine full backup, but do not treat them as a message archive                                                                                                                                   |
+| Read messages and activity history     | Bounded workbench memory                         | No durable message archive; closing/replacing a view or process can discard it                                                                                                                                                            |
+| Downloaded JSON and copied text        | User-selected file or OS clipboard               | Plaintext; remains outside the profile store and is not removed by uninstalling a plugin                                                                                                                                                  |
 
 Releases through v0.7.0 use the legacy `preferences/` location. On upgrade, valid legacy
 `preferences/` directories migrate into `workbench/` without changing
@@ -41,7 +42,7 @@ Browser development profiles are session-only. Its installed plugins live in
 `.cache/development-plugins`; a development checkout is not a desktop backup.
 Keep approved portable files separately from the plugin cache. Cache metadata alone
 does not authorize executable code; retained archives are verified again before use.
-Browser observation history also lasts only for the host session. Desktop
+Development browser observation history also lasts only for the host session. Desktop
 observation history is limited to eight identities, 240 samples per identity,
 24 hours and 4 MiB; retention is enforced when the store is used, not by a
 background erasure service. **Observed health → Clear all observation history** removes all
@@ -59,6 +60,25 @@ need, then remove the identified app-data directory using your OS file manager.
 Review exports, clipboard history and backups separately. Removing the application
 binary or the desktop plugin does not establish that all copies of your data are
 gone. Do not remove shared OS credential-service files to clean up one application.
+
+## Production browser data
+
+The [Containerlab host](../start/containerlab.md) mounts its private data directory
+at `/data`. `vault.json` holds authenticated vault metadata; `kafka-profiles.json`
+and `nats-profiles.json` are at this directory's root. Their protected credentials
+and trust values use passphrase-derived authenticated encryption, with the key
+held only by the unlocked host. This is separate from Electron's OS-backed keys.
+
+The host also stores `rules/`, `queries/`, `templates/`, `history/`, `workbench/`
+and `plugins/`, including durable offline-download policy, package cache and
+recovery identifiers. These files, endpoint names and profile metadata are
+ordinary filesystem data, not an encrypted disk. Browser observation history is
+durable under the same retention bounds as the desktop store. Read messages stay
+in bounded workbench memory; browser downloads remain outside this directory.
+
+Back up the entire locked directory with its ownership and permissions preserved,
+and preserve the passphrase separately. There is no passphrase recovery or
+automatic desktop credential migration. Follow [browser backup and restore](../start/containerlab.md#back-up-and-restore).
 
 ## Message limits
 

@@ -26,7 +26,7 @@ export function useNatsWorkspace({
     if (host === null) {
       setSnapshot(
         initialNatsWorkspaceSnapshot(
-          unavailableRecovery ?? "Use a desktop build that includes the NATS provider.",
+          unavailableRecovery ?? "Use a host build that includes the NATS provider.",
         ),
       );
       return;

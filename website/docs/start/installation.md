@@ -42,6 +42,13 @@ installers, `shasum -a 256 -c SHA256SUMS` (macOS) or
 `sha256sum -c SHA256SUMS` (Linux) checks the complete set.
 On a mismatch, stop and obtain a fresh copy from the trusted release.
 
+## Browser alternative
+
+Use the [Containerlab deployment](containerlab.md) for a Linux-hosted browser
+workbench with an encrypted connection vault. Its availability table distinguishes
+released browser assets from source-only instructions. It connects to your own
+Kafka or NATS servers and does not require an Apple Developer certificate.
+
 ## Desktop prerequisites
 
 The packaged app needs no Node, Docker, Containerlab or Java installation. Kafka

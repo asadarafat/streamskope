@@ -1,0 +1,30 @@
+name: streamskope
+mgmt:
+  network: streamskope-mgmt
+  ipv4-subnet: auto
+  external-access: false
+  driver-opts:
+    com.docker.network.bridge.gateway_mode_ipv4: nat
+    com.docker.network.bridge.gateway_mode_ipv6: nat
+topology:
+  nodes:
+    app:
+      kind: linux
+      image: ${STREAMSKOPE_IMAGE:=streamskope:0.0.0-dev}
+      image-pull-policy: Never
+      user: "${STREAMSKOPE_UID:=1000}:${STREAMSKOPE_GID:=1000}"
+      privileged: false
+      restart-policy: unless-stopped
+      cpu: 1
+      memory: 1GiB
+      security-opts:
+        - no-new-privileges:true
+      cap-add: []
+      ports:
+        - ${STREAMSKOPE_HOST_BIND:=127.0.0.1}:${STREAMSKOPE_HOST_PORT:=8080}:8080/tcp
+      binds:
+        - ./streamskope-data:/data
+      env:
+        STREAMSKOPE_PUBLIC_ORIGIN: ${STREAMSKOPE_PUBLIC_ORIGIN:=http://127.0.0.1:8080}
+      labels:
+        io.streamskope.deployment: browser

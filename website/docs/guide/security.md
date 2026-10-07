@@ -75,13 +75,34 @@ existing integrity checks. File imports require that signed portable format; old
 be imported from a user-supplied file. Use the [offline installation guide](../plugins/offline.md)
 for the documented desktop, and check its availability notice before using an older installer.
 
-The plugin backend runs as trusted code inside the desktop host
+The plugin backend runs as trusted code inside the application host
 with that process's permissions. It is not a sandbox for arbitrary extensions.
 Plugin UI runs through the host bridge without direct Node access.
 
 Saved profile secrets depend on the OS credential service. Other local metadata
 and exported messages have different protection; review [Data and exports](data-handling.md)
 and [Backup and recovery](recovery.md) before sharing files or changing machines.
+
+## Production browser host
+
+The [Containerlab gateway](../start/containerlab.md) serves one owner at an exact
+configured origin. First creation needs a private setup code and a vault
+passphrase. An unlocked session uses an HttpOnly, SameSite cookie and expires
+after two hours. Unsafe requests must have the exact configured origin. The
+application listener is HTTP; use an approved HTTPS reverse proxy for remote
+access and set the exact external origin. Broker traffic originates in the
+container, with the provider's normal TLS validation.
+
+**Lock vault and disconnect** revokes the browser session and closes host provider
+work before releasing the key. Closing a tab does not lock the host. A failed
+cleanup blocks another unlock until the host is restarted and remote state is
+reconciled. Restart always starts locked. The vault protects profile credentials,
+not all filesystem metadata or exported records.
+
+This is single-owner access, without SSO, roles or tenant isolation. Do not share
+the vault passphrase as a substitute for a multiuser authorization service. The
+image mounts no Docker socket or Kubernetes credentials and the supplied topology
+runs the application as a non-root user.
 
 ## EDA authorization
 

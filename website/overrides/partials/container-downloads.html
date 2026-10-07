@@ -1,0 +1,38 @@
+{% set downloads = config.extra.container_downloads %}
+<section class="sk-downloads" aria-label="Browser deployment availability">
+  {% if downloads.available %}
+  <p>
+    Browser deployment assets for <strong>{{ downloads.tag }}</strong> are included in this
+    published release. Choose the archive for your Linux Docker host.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Download</th>
+        <th>File</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for asset in downloads.assets %}
+      <tr>
+        <td>{{ asset.label }}</td>
+        <td><a href="{{ asset.url }}">{{ asset.name }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p>
+    Verify these files against <a href="{{ downloads.checksum_url }}">SHA256SUMS</a>. The linked
+    image metadata records source identity and archive checksums. See the release notes for its
+    executed packaging workflow; these links do not establish that every live-target workflow
+    passed.
+  </p>
+  {% else %}
+  <p>
+    {% if config.extra.documentation.status == 'Published documentation' %}This release has no
+    verified browser assets.{% else %}This preview provides source build instructions.{% endif %} No
+    browser download is asserted for the documented <strong>{{ downloads.tag }}</strong> release.
+    Check its <a href="{{ downloads.release_url }}">published assets</a> before installing.
+  </p>
+  {% endif %}
+</section>

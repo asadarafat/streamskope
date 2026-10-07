@@ -102,13 +102,17 @@ async function main(): Promise<void> {
     await desktop();
     return;
   }
+  if (target === "container") {
+    node("tools/package/container.ts", ...args);
+    return;
+  }
   node("tools/check/forge-patch.ts", "--apply");
   if (target === "eda" && args.length === 0) run("bash", ["tools/package/eda.sh"]);
   else if (target === "plugin" && args.length <= 1) node("tools/package/plugin.ts", ...args);
   else if (target === "release") node("tools/package/release.ts", ...args);
   else
     throw new Error(
-      "Usage: npm run package [-- desktop|eda|plugin [eda|nsp]|release <release arguments>]",
+      "Usage: npm run package [-- desktop|container [--archive]|eda|plugin [eda|nsp]|release <release arguments>]",
     );
 }
 

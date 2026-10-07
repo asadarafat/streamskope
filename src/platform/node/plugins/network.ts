@@ -16,6 +16,7 @@ interface Options {
   readonly path: string;
   readonly transport?: PluginNetworkTransport;
   readonly protector?: ProfileProtector;
+  readonly durableSettings?: boolean;
   readonly changed: () => void;
 }
 
@@ -28,6 +29,9 @@ export class PluginNetworkController {
       path: options.path,
       ...(options.transport === undefined ? {} : { transport: options.transport }),
       ...(options.protector === undefined ? {} : { protector: options.protector }),
+      ...(options.durableSettings === undefined
+        ? {}
+        : { durableSettings: options.durableSettings }),
       changing: (): void => {
         this.acquisitions.cancelRemote();
         options.changed();

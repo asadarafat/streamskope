@@ -341,7 +341,7 @@ export function ObservedHealthPage({
             <Typography variant="body2">
               History:{" "}
               {health.snapshot.durability === "durable"
-                ? "Private desktop storage; retained across restarts"
+                ? "Private host storage; retained across restarts"
                 : "Browser host session only"}
               . At most eight identities, 240 samples each, 24 hours and 4 MiB. Older evidence is
               evicted; payloads, raw keys and credentials are not stored.

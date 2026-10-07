@@ -12,6 +12,8 @@ test-results/
 .sign/
 .DS_Store
 .vscode/
+streamskope-data/
+clab-streamskope/
 
 # Local secrets and trust stores (never production source).
 .env
