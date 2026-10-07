@@ -1,8 +1,9 @@
+import type { ProviderWireEvent } from "../providers/host";
+
 import type {
   ProviderDeliveryLease,
   ProviderDeliveryQueue,
-} from "../node/accounted-provider-event-queue";
-import type { ProviderWireEvent } from "../providers/host";
+} from "./accounted-provider-event-queue";
 
 export interface ProviderSseWritable {
   readonly destroyed: boolean;

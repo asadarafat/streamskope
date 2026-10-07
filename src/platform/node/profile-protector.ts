@@ -1,4 +1,4 @@
-/** Host-only protection supplied by the operating-system credential service. */
+/** Host-only protection supplied by the operating-system credential service or unlocked vault. */
 export interface ProfileProtector {
   protect(plaintext: string): Promise<Buffer>;
   unprotect(
@@ -8,7 +8,7 @@ export interface ProfileProtector {
 
 export interface ProfileProtectionCapability {
   readonly durability: "durable";
-  readonly protection: "os-protected" | "unavailable";
+  readonly protection: "os-protected" | "passphrase-protected" | "unavailable";
   readonly recovery?: string;
   readonly state: "ready" | "unavailable";
 }

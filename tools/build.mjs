@@ -12,6 +12,11 @@ import {
   applyRuntimeDependencyPatches,
 } from "./check/build-dependency-patches.ts";
 
+const [target = "desktop", ...extraArguments] = process.argv.slice(2);
+if (!["desktop", "web"].includes(target) || extraArguments.length > 0) {
+  throw new Error("Usage: npm run build [-- desktop|web]");
+}
+
 await applyForgePatch(process.cwd());
 await applyBuildDependencyPatches(process.cwd());
 await applyRuntimeDependencyPatches(process.cwd());
@@ -35,18 +40,28 @@ if (compilation.status !== 0) process.exit(compilation.status ?? 1);
 await build({ configFile: "config/vite.config.ts" });
 
 const repositoryRoot = process.cwd();
-const outputDirectory = resolve(repositoryRoot, "dist/electron");
+const outputDirectory = resolve(repositoryRoot, target === "web" ? "dist/web" : "dist/electron");
 const entries = [
-  {
-    emptyOutDir: true,
-    input: resolve(repositoryRoot, "src/platform/electron/main/electron-entry.ts"),
-    name: "main",
-  },
-  {
-    emptyOutDir: false,
-    input: resolve(repositoryRoot, "src/platform/electron/preload/index.ts"),
-    name: "preload",
-  },
+  ...(target === "web"
+    ? [
+        {
+          emptyOutDir: true,
+          input: resolve(repositoryRoot, "src/platform/node/browser-entry.ts"),
+          name: "server",
+        },
+      ]
+    : [
+        {
+          emptyOutDir: true,
+          input: resolve(repositoryRoot, "src/platform/electron/main/electron-entry.ts"),
+          name: "main",
+        },
+        {
+          emptyOutDir: false,
+          input: resolve(repositoryRoot, "src/platform/electron/preload/index.ts"),
+          name: "preload",
+        },
+      ]),
   {
     emptyOutDir: false,
     input: resolve(repositoryRoot, "src/features/kafka/engine/trust-material-worker.ts"),
@@ -88,4 +103,6 @@ for (const entry of entries) {
   });
 }
 
-for (const plugin of OFFICIAL_PLUGINS) await buildPlugin(plugin);
+if (target === "desktop") {
+  for (const plugin of OFFICIAL_PLUGINS) await buildPlugin(plugin);
+}

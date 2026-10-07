@@ -19,7 +19,12 @@ export const PROFILE_LIMITS = {
 
 export const PROFILE_TRUST_KINDS = ["pem", "jks", "pkcs12"] as const;
 export const PROFILE_STORE_DURABILITIES = ["durable", "session"] as const;
-export const PROFILE_STORE_PROTECTIONS = ["memory", "os-protected", "unavailable"] as const;
+export const PROFILE_STORE_PROTECTIONS = [
+  "memory",
+  "os-protected",
+  "passphrase-protected",
+  "unavailable",
+] as const;
 export const PROFILE_STORE_STATES = ["ready", "unavailable"] as const;
 export const CLUSTER_SERVICE_AUTHENTICATION_MODES = ["none", "oauth"] as const;
 export const KAFKA_PROFILE_TRANSPORTS = ["tls", "plaintext"] as const;

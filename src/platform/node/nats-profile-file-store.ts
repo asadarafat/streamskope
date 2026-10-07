@@ -33,6 +33,7 @@ interface ProtectedProfile {
 
 export interface NatsProfileFileStoreOptions {
   readonly createTempId?: () => string;
+  readonly protection?: "os-protected" | "passphrase-protected";
 }
 
 export class NatsProfileFileCorruptError extends NatsProfileError {
@@ -142,6 +143,11 @@ export class AtomicNatsProfileFileStore implements NatsProfileStore {
     options: NatsProfileFileStoreOptions = {},
   ) {
     this.createTempId = options.createTempId ?? createAtomicPrivateFileTempId;
+    this.currentCapability = {
+      durability: "durable",
+      protection: options.protection ?? "os-protected",
+      state: "ready",
+    };
   }
 
   get capability(): NatsProfileStoreCapability {

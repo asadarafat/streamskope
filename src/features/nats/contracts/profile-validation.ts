@@ -150,12 +150,18 @@ export function parseNatsProfileStoreCapability(value: unknown): NatsProfileStor
   const input = natsObject(value);
   natsExactKeys(input, ["durability", "protection", "state"], ["recovery"]);
   const durability = natsEnum(input.durability, ["durable", "session"] as const);
-  const protection = natsEnum(input.protection, ["memory", "os-protected", "unavailable"] as const);
+  const protection = natsEnum(input.protection, [
+    "memory",
+    "os-protected",
+    "passphrase-protected",
+    "unavailable",
+  ] as const);
   const state = natsEnum(input.state, ["ready", "unavailable"] as const);
   if (
     (state === "unavailable") !== (protection === "unavailable") ||
     (protection === "memory" && durability !== "session") ||
-    (protection === "os-protected" && durability !== "durable")
+    ((protection === "os-protected" || protection === "passphrase-protected") &&
+      durability !== "durable")
   )
     throw new NatsContractValidationError();
   return {

@@ -410,6 +410,18 @@ describe("Material UI Kafka profile workflow", () => {
     expect(screen.getByRole("status", { name: "Profile storage status" })).toHaveTextContent(
       "OS-protected",
     );
+    publishProfiles(
+      host,
+      [profile()],
+      { durability: "durable", protection: "passphrase-protected", state: "ready" },
+      4,
+    );
+    expect(screen.getByRole("status", { name: "Profile storage status" })).toHaveTextContent(
+      "Vault-protected",
+    );
+    expect(screen.getByRole("status", { name: "Profile storage status" })).not.toHaveTextContent(
+      "operating-system",
+    );
 
     view.unmount();
     const unavailableHost = new FakeHost();
