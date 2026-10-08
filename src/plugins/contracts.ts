@@ -48,6 +48,56 @@ export interface PluginManifest {
   readonly styles?: "renderer.css";
 }
 
+export const PLUGIN_TRANSITION_OPERATIONS = [
+  "startup",
+  "install",
+  "retry",
+  "remove",
+  "renderer-recovery",
+  "review-install",
+  "review-retry",
+  "review-remove",
+  "review-exit",
+  "resolve-exit",
+  "shutdown",
+] as const;
+export type PluginTransitionOperation = (typeof PLUGIN_TRANSITION_OPERATIONS)[number];
+export const PLUGIN_TRANSITION_STAGES = [
+  "queued",
+  "verify-package",
+  "wait-connections",
+  "review-change",
+  "load-candidate",
+  "prepare-unload",
+  "drain-requests",
+  "commit-storage",
+  "retire-previous",
+  "activate-candidate",
+  "rollback-storage",
+  "startup-recovery",
+  "review-exit",
+  "resolve-exit",
+  "close-backend",
+  "close-candidate",
+  "discard-package",
+] as const;
+export type PluginTransitionStage = (typeof PLUGIN_TRANSITION_STAGES)[number];
+
+/** Host-owned progress only; waiting does not establish cancellation or completed cleanup. */
+export interface PluginTransition {
+  readonly operationId: string;
+  readonly pluginId: string;
+  readonly activationId?: string;
+  readonly operation: PluginTransitionOperation;
+  readonly stage: PluginTransitionStage;
+  readonly state: "queued" | "running" | "waiting";
+  readonly startedAt: string;
+  readonly stageStartedAt: string;
+  readonly outstandingRequests: number;
+  readonly outstandingConnections: number;
+  readonly commit: "not-started" | "in-progress" | "confirmed";
+}
+
 export interface PluginInstallation {
   readonly id: string;
   readonly activationId?: string;
@@ -59,6 +109,7 @@ export interface PluginInstallation {
   readonly error?: string;
   readonly rendererUrl?: string;
   readonly stylesUrl?: string;
+  readonly transition?: PluginTransition;
 }
 
 export interface PluginSnapshot {

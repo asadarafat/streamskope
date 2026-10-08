@@ -9,6 +9,7 @@ import { comparePluginManifests } from "../../../plugins/validation";
 import { StudioAlert as Alert, StudioButton as Button } from "../../../platform/ui/controls";
 
 import { PluginCompatibility } from "./PluginPackageReviewDialog";
+import { PluginTransitionStatus } from "./PluginTransitionStatus";
 import type {
   PluginActionTarget,
   PluginInspectionInput,
@@ -88,6 +89,9 @@ function PluginCard({
               : "Installed, but not active"}
         </Typography>
         {error === undefined ? null : <Alert severity="error">{error}</Alert>}
+        {installation?.transition === undefined ? null : (
+          <PluginTransitionStatus transition={installation.transition} />
+        )}
         {error === undefined || !catalogIsOlder ? null : (
           <Alert severity="warning">
             The catalog offers older version {available?.version}. Installed version{" "}
@@ -203,7 +207,7 @@ export function PluginManagementCards({
                         )
                   }
                   error={installation?.error ?? rendererErrors[manifest.id]}
-                  disabled={disabled}
+                  disabled={disabled || installation?.transition !== undefined}
                   remoteDisabled={remoteDisabled}
                   onInspect={onInspect}
                   onLocal={onLocal}
@@ -225,13 +229,20 @@ export function PluginManagementCards({
                       <Typography component="h5" variant="subtitle1">
                         {entry.id}
                       </Typography>
-                      <Alert severity="error">
-                        {entry.error ??
-                          rendererErrors[entry.id] ??
-                          "This plugin could not be activated."}
-                      </Alert>
+                      {entry.error === undefined &&
+                      rendererErrors[entry.id] === undefined &&
+                      entry.transition !== undefined ? null : (
+                        <Alert severity="error">
+                          {entry.error ??
+                            rendererErrors[entry.id] ??
+                            "This plugin could not be activated."}
+                        </Alert>
+                      )}
+                      {entry.transition === undefined ? null : (
+                        <PluginTransitionStatus transition={entry.transition} />
+                      )}
                       <Button
-                        disabled={disabled}
+                        disabled={disabled || entry.transition !== undefined}
                         color="error"
                         variant="text"
                         onClick={(): void => {
@@ -252,10 +263,12 @@ export function PluginManagementCards({
 export function PluginCachedPackages({
   packages,
   disabled,
+  busyPluginIds,
   onInspect,
 }: {
   readonly packages: PluginDelivery["cachedPackages"];
   readonly disabled: boolean;
+  readonly busyPluginIds: readonly string[];
   readonly onInspect: (input: PluginInspectionInput) => Promise<void>;
 }): React.JSX.Element {
   return (
@@ -285,7 +298,7 @@ export function PluginCachedPackages({
               </Typography>
               <PluginCompatibility manifest={entry.manifest} />
               <Button
-                disabled={disabled}
+                disabled={disabled || busyPluginIds.includes(entry.manifest.id)}
                 onClick={(): void => {
                   void onInspect({
                     source: "cache",

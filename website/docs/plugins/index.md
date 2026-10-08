@@ -110,10 +110,41 @@ third-party code. Plugin backend code runs in the trusted application host.
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Update                        | Activates without restart; asks to stop affected work and complete required cleanup first                             |
 | Failed download or activation | Keeps or restores the previous working installation when available; stopped platform work may need an explicit resume |
-| Remove                        | Requires the plugin's active work to stop and cleanup to succeed before removing its code                             |
-| Cleanup fails                 | Keeps the plugin available for recovery; inspect its error and retry using the relevant guide                         |
+| Remove                        | Stops affected work before changing the installation, then closes the old plugin instance                             |
+| Cleanup fails                 | Reports the failure and retains recovery records; the installed version may already have changed or been removed      |
 | Reinstall                     | Restores the plugin UI for retained profiles                                                                          |
 | Retry activation              | Verifies retained package bytes and compatibility, then reloads locally without a GitHub request                      |
+
+### When a change takes longer
+
+An installation, update or removal shows its current stage in **Preferences →
+Plugins**, including time spent in that stage and outstanding requests or
+connections. A queued change is waiting for another plugin operation. A waiting
+stage means the host is still waiting for the actual operation; it does not mean
+the operation was cancelled or that cleanup finished.
+
+You can close and reopen Preferences to inspect the same change. Its status does
+not depend on GitHub being reachable. Controls for a conflicting change to that
+plugin remain unavailable until the operation settles. Download cancellation
+applies to acquiring package bytes, not to an installation that has already begun
+changing the running plugin.
+
+Installation state and cleanup state are distinct. Until storage completion is
+confirmed, files may already have changed. Once the storage change is saved, the
+previous instance can still be closing.
+Removing code does not prove that every remote resource was removed. Inspect the
+plugin's error and its guide before retrying or changing the application host.
+Keep saved profiles and recovery records until the platform cleanup is confirmed.
+
+If you try to exit while another plugin change is pending, finish that change
+before reviewing the exit action. This keeps the exit decision tied to the
+plugins that will actually close.
+
+The status warning never forces a replacement, skips cleanup or automatically
+retries a platform operation. A plugin that blocks the host process itself can
+also prevent status updates. During application startup, the desktop or browser
+host still waits for backend activation before opening the workbench; these
+status views do not bypass that startup requirement.
 
 Removing a plugin retains its saved profiles. Profiles owned by that plugin need
 a compatible installation before reconnecting; **Open plugins** leads back to

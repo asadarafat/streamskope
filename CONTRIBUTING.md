@@ -834,18 +834,33 @@ identity and renderer assets; callbacks from retired views cannot operate the ne
 instance. Changes serialize with shutdown and owned profile connections.
 
 Active EDA work requires confirmation before cancellation and temporary-resource
-cleanup. Cleanup failure leaves the current plugin available for retry. Successful
-removal deletes its installation files while retaining saved profile metadata.
+cleanup. A failure before installation commit leaves the current selection in
+place. A failure while retiring the old instance can happen after installation
+files changed; report that cleanup outcome and retain recovery records rather
+than claiming the old installation is still selected. Successful removal deletes
+its installation files while retaining saved profile metadata.
 Failed backend or renderer activation restores the previous verified version when
 available; a stopped capture must be resumed explicitly. Unrelated Kafka sessions
 remain available. API 2 introduced these lifecycle hooks; API 3 added explicit
 compatibility identities and resources. API 4 uses independent SemVer and an
 inclusive minimum/exclusive maximum desktop interval. Host protocol 28 introduced
-activation identities and versioned snapshots; the current paired host protocol is 52. Existing API 2 and API 3 packages
+activation identities and versioned snapshots; the current paired host protocol is 53. Existing API 2 and API 3 packages
 retain their legacy versions and asset names and remain loadable on the new host.
 A compatible API 4 package supersedes either legacy generation; within API 4,
 updates follow SemVer precedence. Earlier unreleased API 1 packages
 must be rebuilt; profile metadata stays at version 1.
+
+The host-owned transition controller serializes plugin changes, retains their
+admission and dispatch authority, and publishes bounded phase metadata. Status
+reads use a verified inventory projection, not the mutation queue. Watchdog
+warnings are diagnostic only: never settle the real operation, release its
+barrier or hide failed cleanup. Queued operations do not block dispatch until
+their mutating work starts; review hooks leave recovery commands available.
+Renderer lifetimes depend on activation identity, not progress revisions. The
+full host startup barrier still waits for backend activation. Protocol 53 carries
+optional transition metadata; it requires matching host/preload/renderer builds
+because the protocol 52 parser rejects unknown fields. Plugin API 4 and persisted
+package/profile formats are unchanged.
 
 NSP follows the same hot lifecycle. It retains a reusable shared helper workflow
 instead of deploying a broker or tunnel. Cancelling, updating or removing the

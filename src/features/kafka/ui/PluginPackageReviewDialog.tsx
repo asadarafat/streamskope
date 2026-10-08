@@ -1,6 +1,10 @@
 import { Box, Stack, Typography } from "@mui/material";
 
-import type { PluginChangePrompt, PluginManifest } from "../../../plugins/contracts";
+import type {
+  PluginChangePrompt,
+  PluginManifest,
+  PluginTransition,
+} from "../../../plugins/contracts";
 import {
   StudioAlert as Alert,
   StudioButton as Button,
@@ -12,6 +16,7 @@ import {
 import { StudioTechnicalText } from "../../../platform/ui/StudioCodeBlock";
 
 import type { PluginPackageReview } from "./usePluginChanges";
+import { PluginTransitionStatus } from "./PluginTransitionStatus";
 
 export function PluginCompatibility({
   manifest,
@@ -40,12 +45,14 @@ export function PluginPackageReviewDialog({
   review,
   prompt,
   pending,
+  transition,
   onApply,
   onClose,
 }: {
   readonly review: PluginPackageReview | undefined;
   readonly prompt: PluginChangePrompt | undefined;
   readonly pending: boolean;
+  readonly transition: PluginTransition | undefined;
   readonly onApply: () => Promise<void>;
   readonly onClose: () => Promise<void>;
 }): React.JSX.Element {
@@ -121,6 +128,7 @@ export function PluginPackageReviewDialog({
               <StudioTechnicalText component="dd">{review.sha256}</StudioTechnicalText>
             </Box>
             <PluginCompatibility manifest={review.manifest} />
+            {transition === undefined ? null : <PluginTransitionStatus transition={transition} />}
             {review.status === "blocked" ? (
               <Alert severity="error">{review.reason ?? "This package cannot be installed."}</Alert>
             ) : null}
@@ -151,11 +159,11 @@ export function PluginPackageReviewDialog({
             void onClose();
           }}
         >
-          {actionable ? "Cancel" : "Close"}
+          {transition !== undefined && !pending ? "Close review" : actionable ? "Cancel" : "Close"}
         </Button>
         {!actionable ? null : (
           <Button
-            disabled={pending}
+            disabled={pending || transition !== undefined}
             variant="contained"
             onClick={(): void => {
               void onApply();

@@ -105,6 +105,11 @@ async function setup(
   runtimes.push(runtime);
   return { runtime, store };
 }
+async function readyList(host: PluginRuntime): ReturnType<PluginRuntime["list"]> {
+  await host.start();
+  return host.list();
+}
+
 afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(
@@ -125,7 +130,7 @@ describe("plugin shutdown and profile boundaries", () => {
           }),
         }),
     });
-    const before = (await runtime.list()).plugins[0]!;
+    const before = (await readyList(runtime)).plugins[0]!;
     expect(await runtime.prepareChange(manifest.id, "retry")).toBeNull();
     expect((await runtime.retryActivation(manifest.id)).plugins[0]?.activationId).toBe(
       before.activationId,
@@ -145,11 +150,11 @@ describe("plugin shutdown and profile boundaries", () => {
       loadModule: () => Promise.resolve({ activate }),
       catalog: { list, download },
     });
-    expect((await runtime.list()).plugins[0]).toMatchObject({
+    expect((await readyList(runtime)).plugins[0]).toMatchObject({
       installed: manifest,
       error: "Temporary activation failure",
     });
-    expect((await runtime.list()).plugins[0]?.active).toBeUndefined();
+    expect((await readyList(runtime)).plugins[0]?.active).toBeUndefined();
     expect(await store.getActive(manifest.id)).toBeUndefined();
     const recovered = (await runtime.retryActivation(manifest.id)).plugins[0]!;
     expect(recovered).toMatchObject({
@@ -181,7 +186,7 @@ describe("plugin shutdown and profile boundaries", () => {
     await writeFile(retained!.backendPath, "tampered backend code");
     await expect(runtime.retryActivation(manifest.id)).rejects.toThrow(/verified package/u);
     expect(activate).toHaveBeenCalledTimes(1);
-    expect((await runtime.list()).plugins[0]?.active).toBeUndefined();
+    expect((await readyList(runtime)).plugins[0]?.active).toBeUndefined();
     expect((await runtime.remove(manifest.id)).plugins).toEqual([]);
     expect(download).not.toHaveBeenCalled();
   });
@@ -193,7 +198,7 @@ describe("plugin shutdown and profile boundaries", () => {
     const { runtime, store } = await setup({ loadModule: () => Promise.resolve({ activate }) });
     await runtime.start();
     await expect(runtime.retryActivation(manifest.id)).rejects.toThrow("Still unavailable");
-    expect((await runtime.list()).plugins[0]).toMatchObject({
+    expect((await readyList(runtime)).plugins[0]).toMatchObject({
       installed: manifest,
       error: "Still unavailable",
     });
@@ -205,8 +210,8 @@ describe("plugin shutdown and profile boundaries", () => {
     });
     reopened.bindHost(bindings());
     runtimes.push(reopened);
-    expect((await reopened.list()).plugins[0]?.installed).toEqual(manifest);
-    expect((await reopened.list()).plugins[0]?.active).toBeUndefined();
+    expect((await readyList(reopened)).plugins[0]?.installed).toEqual(manifest);
+    expect((await readyList(reopened)).plugins[0]?.active).toBeUndefined();
     expect((await reopened.retryActivation(manifest.id)).plugins[0]?.active).toEqual(manifest);
   });
 
@@ -260,7 +265,7 @@ describe("plugin shutdown and profile boundaries", () => {
     const { runtime } = await setup({ loadModule: () => Promise.resolve({ activate }) });
     await runtime.close();
     await expect(runtime.start()).rejects.toThrow(/closing/u);
-    await expect(runtime.list()).rejects.toThrow(/closing/u);
+    expect((await runtime.list()).plugins).toEqual([]);
     await expect(
       runtime.rendererAsset(
         `/plugins/${manifest.id}/${sha256}/00000000-0000-0000-0000-000000000000/renderer.js`,
@@ -341,7 +346,7 @@ describe("plugin shutdown and profile boundaries", () => {
     const rejected = expect(updating).rejects.toThrow(/superseded/u);
     download.resolve(updatedPackage());
     await rejected;
-    expect((await runtime.list()).plugins).toEqual([]);
+    expect((await readyList(runtime)).plugins).toEqual([]);
     expect(await store.list()).toEqual([]);
   });
 
@@ -371,7 +376,7 @@ describe("plugin shutdown and profile boundaries", () => {
     const rejected = expect(first).rejects.toThrow(/superseded/u);
     downloads[0]!.resolve(updatedPackage());
     await rejected;
-    expect((await runtime.list()).plugins[0]?.activationId).toBe(current.activationId);
+    expect((await readyList(runtime)).plugins[0]?.activationId).toBe(current.activationId);
   });
 
   it("protects another profile from raw SDK update/delete commands as well as helper deletion", async () => {
@@ -532,12 +537,12 @@ describe("hot plugin lifecycle", () => {
           },
         }),
     });
-    const before = (await runtime.list()).plugins[0]!;
+    const before = (await readyList(runtime)).plugins[0]!;
     await runtime.rendererFailed(manifest.id, before.activationId!, "Renderer rejected");
     await expect(runtime.retryActivation(manifest.id)).rejects.toThrow(/confirmation/u);
     expect(activations).toBe(1);
     expect(prepareUnload).not.toHaveBeenCalled();
-    expect((await runtime.list()).plugins[0]?.activationId).toBe(before.activationId);
+    expect((await readyList(runtime)).plugins[0]?.activationId).toBe(before.activationId);
     const confirmation = await runtime.prepareChange(manifest.id, "retry");
     const recovered = (await runtime.retryActivation(manifest.id, confirmation!.token)).plugins[0]!;
     expect(recovered.active).toEqual(manifest);
@@ -585,7 +590,7 @@ describe("hot plugin lifecycle", () => {
             },
           }),
       });
-      const before = (await runtime.list()).plugins[0]!;
+      const before = (await readyList(runtime)).plugins[0]!;
       await runtime.rendererFailed(manifest.id, before.activationId!, "Renderer rejected");
       if (failure === "verification") {
         const installation = await store.getInstalled(manifest.id);
@@ -593,7 +598,7 @@ describe("hot plugin lifecycle", () => {
       }
       const prompt = await runtime.prepareChange(manifest.id, "retry");
       await expect(runtime.retryActivation(manifest.id, prompt!.token)).rejects.toThrow();
-      expect((await runtime.list()).plugins[0]?.activationId).toBe(before.activationId);
+      expect((await readyList(runtime)).plugins[0]?.activationId).toBe(before.activationId);
       await expect(runtime.execute(request(before.activationId!))).resolves.toBeNull();
       expect(originalClose).not.toHaveBeenCalled();
       expect(activations).toBe(failure === "verification" ? 1 : 2);
@@ -608,7 +613,7 @@ describe("hot plugin lifecycle", () => {
       { ...backend(), close, prepareUnload },
       backend(),
     );
-    const before = (await runtime.list()).plugins[0]!;
+    const before = (await readyList(runtime)).plugins[0]!;
     const changed = vi.fn();
     const events = vi.fn();
     runtime.subscribeChanges(changed);
@@ -617,7 +622,7 @@ describe("hot plugin lifecycle", () => {
     const after = snapshot.plugins[0]!;
     expect(after.active?.version).toBe("1.1.0");
     expect(after.activationId).not.toBe(before.activationId);
-    expect(snapshot.revision).toBe(1);
+    expect(snapshot.revision).toBeGreaterThan(1);
     expect(changed).toHaveBeenCalledWith(snapshot);
     expect(prepareUnload).toHaveBeenCalledWith("update");
     expect(close).toHaveBeenCalledTimes(1);
@@ -654,9 +659,9 @@ describe("hot plugin lifecycle", () => {
       },
       { ...backend(), close: newClose },
     );
-    const before = (await runtime.list()).plugins[0]!;
+    const before = (await readyList(runtime)).plugins[0]!;
     await expect(runtime.install(manifest.id)).rejects.toThrow("EDA cleanup failed");
-    expect((await runtime.list()).plugins[0]).toMatchObject({
+    expect((await readyList(runtime)).plugins[0]).toMatchObject({
       activationId: before.activationId,
       pending: null,
       active: manifest,
@@ -666,15 +671,24 @@ describe("hot plugin lifecycle", () => {
     expect((await store.getActive(manifest.id))?.manifest).toEqual(manifest);
     await expect(runtime.execute(request(before.activationId!))).resolves.toBeNull();
     await expect(runtime.remove(manifest.id)).rejects.toThrow("EDA cleanup failed");
-    expect((await runtime.list()).plugins[0]?.active).toEqual(manifest);
+    expect((await readyList(runtime)).plugins[0]?.active).toEqual(manifest);
   });
 
   it("accepts immediate renderer commands when the activation event is published", async () => {
     const { runtime } = await hotSetup(backend(), backend());
+    const original = (await runtime.list()).plugins[0]!.activationId;
     const response = deferred<Promise<unknown>>();
-    runtime.subscribeChanges((snapshot) => {
-      const activationId = snapshot.plugins[0]?.activationId;
-      if (activationId !== undefined) response.resolve(runtime.execute(request(activationId)));
+    const stop = runtime.subscribeChanges((snapshot) => {
+      const plugin = snapshot.plugins[0];
+      const activationId = plugin?.activationId;
+      if (
+        activationId !== undefined &&
+        activationId !== original &&
+        plugin?.transition === undefined
+      ) {
+        stop();
+        response.resolve(runtime.execute(request(activationId)));
+      }
     });
     await runtime.install(manifest.id);
     await expect(response.promise).resolves.toBeNull();
@@ -687,7 +701,7 @@ describe("hot plugin lifecycle", () => {
       { ...backend(), close },
       { ...backend(), close: candidateClose },
     );
-    const before = (await runtime.list()).plugins[0]!;
+    const before = (await readyList(runtime)).plugins[0]!;
     vi.spyOn(store, "commitInstall").mockRejectedValueOnce(new Error("Disk full"));
     await expect(runtime.install(manifest.id)).rejects.toThrow("Disk full");
     expect(close).not.toHaveBeenCalled();
@@ -736,7 +750,7 @@ describe("hot plugin lifecycle", () => {
       },
       backend(),
     );
-    const activationId = (await runtime.list()).plugins[0]!.activationId!;
+    const activationId = (await readyList(runtime)).plugins[0]!.activationId!;
     const running = runtime.execute(request(activationId));
     await entered.promise;
     const removal = runtime.remove(manifest.id);
@@ -817,6 +831,33 @@ describe("hot plugin lifecycle", () => {
     await expect(runtime.remove(manifest.id, prompt!.token)).rejects.toThrow(/confirmation/u);
   });
 
+  it("reviews exit only after an admitted replacement has settled", async () => {
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const beforeExit = vi.fn(() => Promise.resolve(undefined));
+    const { runtime } = await hotSetup(
+      {
+        ...backend(),
+        prepareUnload: async () => {
+          entered.resolve();
+          await release.promise;
+        },
+      },
+      { ...backend(), beforeExit },
+    );
+    const installing = runtime.install(manifest.id);
+    try {
+      await entered.promise;
+      await expect(runtime.prepareExit()).rejects.toThrow(/busy/u);
+      expect(beforeExit).not.toHaveBeenCalled();
+    } finally {
+      release.resolve();
+      await installing;
+    }
+    expect(await runtime.prepareExit()).toBeNull();
+    expect(beforeExit).toHaveBeenCalledOnce();
+  });
+
   it("does not apply an old exit decision to a replacement backend", async () => {
     const resolveExit = vi.fn(() => Promise.resolve(true));
     const beforeExit = (): ReturnType<PluginBackend["beforeExit"]> =>
@@ -844,7 +885,7 @@ describe("hot plugin lifecycle", () => {
 
   it("rolls back an update whose UI fails and ignores delayed errors from the retired UI", async () => {
     const { runtime, store } = await hotSetup(backend(), backend());
-    const first = (await runtime.list()).plugins[0]!;
+    const first = (await readyList(runtime)).plugins[0]!;
     const updated = (await runtime.install(manifest.id)).plugins[0]!;
     const recovered = await runtime.rendererFailed(
       manifest.id,
@@ -857,9 +898,9 @@ describe("hot plugin lifecycle", () => {
     });
     expect(recovered.plugins[0]!.activationId).not.toBe(first.activationId);
     expect((await store.getActive(manifest.id))?.manifest).toEqual(manifest);
-    expect(await runtime.rendererFailed(manifest.id, updated.activationId!, "Late error")).toEqual(
-      recovered,
-    );
+    expect(
+      (await runtime.rendererFailed(manifest.id, updated.activationId!, "Late error")).plugins,
+    ).toEqual(recovered.plugins);
   });
 
   it("retains active capture work when a delayed renderer error arrives", async () => {
@@ -942,7 +983,7 @@ describe("hot plugin lifecycle", () => {
     const rejectedInstall = expect(installing).rejects.toThrow(/closing/u);
     await entered.promise;
     const removing = runtime.remove(manifest.id);
-    const rejectedRemove = expect(removing).rejects.toThrow(/closing/u);
+    const rejectedRemove = expect(removing).rejects.toThrow(/busy/u);
     const closing = runtime.close();
     finishActivation.resolve();
     await rejectedInstall;

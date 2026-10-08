@@ -122,12 +122,17 @@ async function execute(
 ): Promise<JsonValue> {
   return host.execute({
     pluginId: manifest.id,
-    activationId: (await host.list()).plugins[0]?.activationId ?? "",
+    activationId: (await readyList(host)).plugins[0]?.activationId ?? "",
     method,
     input,
     requestId: "request",
     correlationId: "correlation",
   });
+}
+
+async function readyList(host: PluginRuntime): ReturnType<PluginRuntime["list"]> {
+  await host.start();
+  return host.list();
 }
 
 afterEach(async () => {
@@ -154,12 +159,13 @@ describe("optional installed plugin runtime", () => {
       await store.install(original, pluginPackageSha256(original));
       const host = runtime(store, bindings(), other);
       await execute(host, "start");
-      const before = await host.list();
+      const before = await readyList(host);
       const changed = vi.fn();
       host.subscribeChanges(changed);
       const snapshot = await host.install(manifest.id);
-      expect(snapshot).toEqual(before);
-      expect(changed).not.toHaveBeenCalled();
+      expect(snapshot.plugins).toEqual(before.plugins);
+      expect(snapshot.plugins[0]?.transition).toBeUndefined();
+      expect(changed).toHaveBeenCalled();
       expect(await host.prepareExit()).toMatchObject({
         pluginId: manifest.id,
         title: "Pending work",
@@ -184,8 +190,8 @@ describe("optional installed plugin runtime", () => {
     await store.install(primary, pluginPackageSha256(primary));
     const host = runtime(store, bindings(), primary);
     await execute(host, "start");
-    const before = await host.list();
-    expect(await host.install(manifest.id)).toEqual(before);
+    const before = await readyList(host);
+    expect((await host.install(manifest.id)).plugins).toEqual(before.plugins);
     expect(await host.prepareExit()).toMatchObject({ title: "Pending work" });
   });
 
@@ -200,9 +206,9 @@ describe("optional installed plugin runtime", () => {
       Buffer.from(fixture.encodedKey, "base64").toString(),
     );
     const host = runtime(store, bindings(), portable);
-    const before = await host.list();
+    const before = await readyList(host);
     await expect(host.install(manifest.id)).rejects.toThrow(/not trusted/u);
-    expect(await host.list()).toEqual(before);
+    expect(await readyList(host)).toEqual(before);
     await expect(execute(host, "echo", "original backend")).resolves.toBe("original backend");
   });
 
@@ -218,7 +224,7 @@ describe("optional installed plugin runtime", () => {
       Buffer.from(fixture.encodedKey, "base64").toString(),
     );
     const host = runtime(store, bindings(), portable);
-    const before = (await host.list()).plugins[0]!;
+    const before = (await readyList(host)).plugins[0]!;
     await writeFile(
       join(path, manifest.id, pluginPackageSha256(primary), "package.skope-plugin"),
       "damaged original archive",
@@ -232,7 +238,7 @@ describe("optional installed plugin runtime", () => {
     );
     await host.close();
     const reopened = runtime(new PluginStore(path, { trustedPublishers: fixture.publishers }));
-    expect((await reopened.list()).plugins[0]?.active).toEqual(manifest);
+    expect((await readyList(reopened)).plugins[0]?.active).toEqual(manifest);
     await expect(execute(reopened, "echo", "verified after reopening")).resolves.toBe(
       "verified after reopening",
     );
@@ -324,7 +330,7 @@ describe("optional installed plugin runtime", () => {
     runtimes.push(host);
     const first = host.catalog();
     const second = host.catalog();
-    expect((await host.list()).plugins[0]?.active).toEqual(manifest);
+    expect((await readyList(host)).plugins[0]?.active).toEqual(manifest);
     expect(await host.catalog(false)).toEqual({ plugins: [], source: "unavailable" });
     expect((await host.remove(manifest.id)).plugins).toEqual([]);
     expect(list).toHaveBeenCalledTimes(1);
@@ -387,7 +393,7 @@ describe("optional installed plugin runtime", () => {
         "Plugin download connection failed. Check system or custom proxy settings, retry, or install a signed file or cached package.",
     });
     expect((await host.catalog(false)).error).toEqual(expect.any(String));
-    expect((await host.list()).plugins[0]?.active).toEqual(manifest);
+    expect((await readyList(host)).plugins[0]?.active).toEqual(manifest);
   });
 
   it("rejects a future host requirement before installation or loading code on startup", async () => {
@@ -435,7 +441,7 @@ describe("optional installed plugin runtime", () => {
     older.bindHost(bindings());
     runtimes.push(older);
     await older.start();
-    expect((await older.list()).plugins[0]?.error).toContain(
+    expect((await readyList(older)).plugins[0]?.error).toContain(
       "requires StreamSkope v0.1.0+build.10",
     );
     expect(loadModule).not.toHaveBeenCalled();
@@ -448,7 +454,7 @@ describe("optional installed plugin runtime", () => {
     const upgraded = new PluginRuntime({ store, hostRelease: "v0.1.0+build.10" });
     upgraded.bindHost(bindings());
     runtimes.push(upgraded);
-    expect((await upgraded.list()).plugins[0]?.active?.version).toBe(future.version);
+    expect((await readyList(upgraded)).plugins[0]?.active?.version).toBe(future.version);
   });
 
   it.each([3, 4, "development"] as const)(
@@ -497,12 +503,12 @@ describe("optional installed plugin runtime", () => {
       host.bindHost(bindings());
       runtimes.push(host);
       await host.install(manifest.id);
-      const before = (await host.list()).plugins[0]!;
+      const before = (await readyList(host)).plugins[0]!;
       available = packaged(
         `${backendCode}\n// Different code cannot reuse the published identity.`,
       );
       await expect(host.install(manifest.id)).rejects.toThrow("version has different content");
-      expect((await host.list()).plugins[0]?.activationId).toBe(before.activationId);
+      expect((await readyList(host)).plugins[0]?.activationId).toBe(before.activationId);
       expect((await store.list())[0]?.active).toEqual(current);
       await expect(execute(host, "echo", "still active")).resolves.toBe("still active");
       available = original;
@@ -565,25 +571,25 @@ describe("optional installed plugin runtime", () => {
       });
       host.bindHost(bindings());
       runtimes.push(host);
-      const before = (await host.list()).plugins[0]!;
+      const before = (await readyList(host)).plugins[0]!;
       expect(before.active).toEqual(legacy);
       await expect(host.install(manifest.id)).resolves.toMatchObject({
         plugins: [{ active: semantic, previous: legacy, restartRequired: false }],
       });
-      const activation = (await host.list()).plugins[0]!.activationId;
+      const activation = (await readyList(host)).plugins[0]!.activationId;
       expect(activation).not.toBe(before.activationId);
       await expect(execute(host, "echo", "migrated")).resolves.toBe("migrated");
       expect(await store.readRecoveryState(manifest.id)).toEqual(recovery);
       available = original;
       await expect(host.install(manifest.id)).rejects.toThrow("older than installed");
-      expect((await host.list()).plugins[0]!.activationId).toBe(activation);
+      expect((await readyList(host)).plugins[0]!.activationId).toBe(activation);
       // A newer candidate whose code fails activation cannot replace the working migration.
       available = packed(
         { ...semantic, version: "0.1.1" },
         'exports.activate=()=>{throw new Error("candidate failed");};',
       );
       await expect(host.install(manifest.id)).rejects.toThrow("candidate failed");
-      expect((await host.list()).plugins[0]!.active).toEqual(semantic);
+      expect((await readyList(host)).plugins[0]!.active).toEqual(semantic);
       expect(await store.readRecoveryState(manifest.id)).toEqual(recovery);
     },
   );
@@ -632,21 +638,23 @@ describe("optional installed plugin runtime", () => {
       const incompatible = new PluginRuntime({ store, hostRelease, loadModule });
       incompatible.bindHost(bindings());
       runtimes.push(incompatible);
-      expect((await incompatible.list()).plugins[0]?.error).toContain("requires StreamSkope 0.2.0");
+      expect((await readyList(incompatible)).plugins[0]?.error).toContain(
+        "requires StreamSkope 0.2.0",
+      );
       expect((await store.list())[0]?.installed).toEqual(current);
       expect(loadModule).not.toHaveBeenCalled();
       await incompatible.close();
       const compatible = new PluginRuntime({ store, hostRelease: "v0.2.5" });
       compatible.bindHost(bindings());
       runtimes.push(compatible);
-      expect((await compatible.list()).plugins[0]?.active).toEqual(current);
+      expect((await readyList(compatible)).plugins[0]?.active).toEqual(current);
     },
   );
 
   it("starts without any installed code and preserves an unavailable profile's metadata", async () => {
     const host = runtime(new PluginStore(await directory()));
     await host.start();
-    expect(await host.list()).toEqual({ revision: 0, plugins: [] });
+    expect(await readyList(host)).toEqual({ revision: 0, plugins: [] });
     const source = {
       kind: "plugin",
       pluginId: manifest.id,
@@ -667,7 +675,7 @@ describe("optional installed plugin runtime", () => {
     host.subscribe((event) => events.push(event));
     await expect(execute(host, "echo", { hello: "world" })).resolves.toEqual({ hello: "world" });
     expect(events).toEqual([{ pluginId: manifest.id, name: "changed", data: { hello: "world" } }]);
-    const rendererUrl = (await host.list()).plugins[0]!.rendererUrl!;
+    const rendererUrl = (await readyList(host)).plugins[0]!.rendererUrl!;
     const asset = await host.rendererAsset(rendererUrl);
     expect(Buffer.from(asset!.content).toString()).toContain("export default");
     for (const path of [
@@ -711,7 +719,7 @@ describe("optional installed plugin runtime", () => {
     await expect(execute(host, "echo", "installed now")).resolves.toBe("installed now");
     await host.close();
     const restarted = runtime(new PluginStore(directories[0]!));
-    expect((await restarted.list()).plugins[0]).toMatchObject({
+    expect((await readyList(restarted)).plugins[0]).toMatchObject({
       active: manifest,
       pending: null,
       restartRequired: false,
@@ -733,7 +741,7 @@ describe("optional installed plugin runtime", () => {
     await expect(execute(host, "echo", "still working")).resolves.toBe("still working");
     await host.close();
     const restarted = runtime(new PluginStore(path));
-    const snapshot = await restarted.list();
+    const snapshot = await readyList(restarted);
     expect(snapshot.plugins[0]?.active?.version).toBe("1.0.0");
     expect(snapshot.plugins[0]?.error).toBeUndefined();
     await expect(execute(restarted, "echo", "recovered")).resolves.toBe("recovered");
@@ -744,9 +752,9 @@ describe("optional installed plugin runtime", () => {
     const newer = packageBytes("1.1.0");
     await store.install(newer, pluginPackageSha256(newer));
     const host = runtime(store, bindings(), packageBytes("1.0.0"));
-    const before = (await host.list()).plugins[0]!;
+    const before = (await readyList(host)).plugins[0]!;
     await expect(host.install(manifest.id)).rejects.toThrow(/older than installed version/u);
-    expect((await host.list()).plugins[0]).toMatchObject({
+    expect((await readyList(host)).plugins[0]).toMatchObject({
       active: { version: "1.1.0" },
       activationId: before.activationId,
       pending: null,
@@ -782,7 +790,7 @@ describe("optional installed plugin runtime", () => {
     await writeFile(join(path, "state.json"), "not JSON");
     const host = runtime(new PluginStore(path));
     await expect(host.start()).resolves.toBeUndefined();
-    const snapshot = await host.list();
+    const snapshot = await readyList(host);
     expect(snapshot.plugins).toEqual([]);
     expect(snapshot.error).toEqual(expect.any(String));
     await expect(execute(host, "echo")).rejects.toThrow(/not active/u);

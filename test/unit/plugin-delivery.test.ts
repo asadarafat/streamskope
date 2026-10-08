@@ -101,6 +101,7 @@ async function setup(options: Omit<PluginRuntimeOptions, "store"> = {}): Promise
   };
 }
 async function start(host: PluginRuntime): Promise<void> {
+  await host.start();
   const plugin = (await host.list()).plugins[0]!;
   await host.execute({
     pluginId: manifest.id,
@@ -260,7 +261,7 @@ describe("offline reviewed plugin delivery", () => {
     const candidate = (await host.inspectPackage({ source: "file" }))!;
     expect(candidate.status).toBe("already-installed");
     expect(await host.preparePackageChange(candidate.candidateId)).toBeNull();
-    expect(await host.installPackage(candidate.candidateId)).toEqual(before);
+    expect((await host.installPackage(candidate.candidateId)).plugins).toEqual(before.plugins);
     expect((await store.getActive(manifest.id))?.publisher).toBeUndefined();
     expect(await host.prepareChange(manifest.id, "remove")).not.toBeNull();
   });
@@ -273,6 +274,7 @@ describe("offline reviewed plugin delivery", () => {
       choosePackageFile: (): Promise<Uint8Array | null> => choosing,
     });
     await store.install(primary(), pluginPackageSha256(primary()));
+    await host.start();
     const inspection = host.inspectPackage({ source: "file" });
     expect((await host.list()).plugins[0]?.active).toEqual(manifest);
     await host.close();

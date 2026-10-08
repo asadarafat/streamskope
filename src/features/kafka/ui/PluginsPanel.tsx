@@ -40,6 +40,15 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
   const remoteDisabled =
     network.snapshot?.configuration === null || network.snapshot?.configuration?.offline === true;
   const completedEntry = snapshot.plugins.find((entry) => entry.id === changes.completed?.id);
+  const busyPluginIds = snapshot.plugins
+    .filter((entry) => entry.transition !== undefined)
+    .map((entry) => entry.id);
+  const reviewTransition = snapshot.plugins.find(
+    (entry) => entry.id === changes.review?.manifest.id,
+  )?.transition;
+  const confirmationTransition = snapshot.plugins.find(
+    (entry) => entry.id === changes.confirmation?.plugin.id,
+  )?.transition;
   const showStatus =
     changes.status.length > 0 &&
     (changes.completed === undefined ||
@@ -172,6 +181,7 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
         <PluginCachedPackages
           packages={delivery.cachedPackages}
           disabled={disabled || localInspectionPending}
+          busyPluginIds={busyPluginIds}
           onInspect={changes.inspect}
         />
       )}
@@ -179,12 +189,14 @@ export function PluginsPanel({ host }: { readonly host: StreamSkopeHost }): Reac
         review={changes.review}
         prompt={changes.reviewPrompt}
         pending={changes.pending !== undefined}
+        transition={reviewTransition}
         onApply={changes.applyReview}
         onClose={changes.closeReview}
       />
       <PluginLocalChangeDialog
         confirmation={changes.confirmation}
         pending={changes.pending !== undefined}
+        transition={confirmationTransition}
         onCancel={changes.cancelLocal}
         onConfirm={changes.confirmLocal}
       />
