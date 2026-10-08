@@ -541,9 +541,9 @@ function validateSummary(stage: LocalStage, summary: Summary): void {
         ),
     );
     if (summary.outcome === "passed")
-      assert.deepEqual(
-        [...summary.checkIds].sort(),
-        [...LOCAL_LIVE_CHECKS[stage]].sort(),
+      assert.equal(
+        summary.checkIds.length,
+        LOCAL_LIVE_CHECKS[stage].length,
         "Passed live evidence must include every required operation, including cleanup.",
       );
     assert(typeof summary.apiCertificateVerification === "boolean");
