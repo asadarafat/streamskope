@@ -57,6 +57,12 @@ Cancellation waits for the current transport request; it does not undo an accept
 record. The result reports every acknowledgement, rejection, unknown result and
 unsent record. An acknowledgement survives failed read-back or client cleanup.
 
+If destination cleanup is unavailable, new replay reviews and unstarted plans
+are blocked for that host session. Existing outcomes remain available. Inspect
+the destination and reconcile receipts, then restart the app or browser host
+before reviewing another replay. Reconnecting a profile or refreshing the browser
+does not clear an unconfirmed cleanup.
+
 An unknown result may already exist at the destination. Repeating the **same plan**
 returns its recorded outcome without resending. Creating a **new plan** can duplicate
 previous writes; reconcile receipts and consumer effects first. This is bounded

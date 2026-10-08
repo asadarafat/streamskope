@@ -10,7 +10,7 @@ export class OffsetResetFacade {
     session: KafkaApplicationSession,
     private readonly activity: (input: ActivityInput) => void,
   ) {
-    this.service = new OffsetResetService(() => session.writeContext());
+    this.service = new OffsetResetService(() => session.offsetResetScope());
   }
   async execute(
     command: Extract<

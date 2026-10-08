@@ -1,6 +1,10 @@
 import { expect, it, vi } from "vitest";
 
 import { RecordBatchService } from "../../src/features/kafka/application/record-batch-service";
+import {
+  KafkaConnectionScopes,
+  type WriteDispatch,
+} from "../../src/features/kafka/application/connection-scope";
 import type { RecordBatchInput } from "../../src/features/kafka/contracts/schema-samples";
 import type { KafkaWriteOutcome } from "../../src/features/kafka/contracts/reviewed-writes";
 import { RecordingActiveConnection } from "../support/kafka-backend-facade-fixture";
@@ -23,7 +27,7 @@ const batch: RecordBatchInput = {
     headers: [],
   })),
 };
-function setup(): {
+function setup(beforeDispatch?: () => Promise<boolean>): {
   service: RecordBatchService;
   send: ReturnType<typeof vi.fn<() => Promise<KafkaWriteOutcome>>>;
   change: () => void;
@@ -38,13 +42,19 @@ function setup(): {
   let generation = 1;
   let now = 0;
   const delays: number[] = [];
+  const scopes = new KafkaConnectionScopes(() => ({
+    connection,
+    generation,
+    connectionName: "Fixture",
+  }));
   const service = new RecordBatchService(
-    () => ({ connection, generation, connectionName: "Fixture" }),
+    () => scopes.reviewedWrite(),
     () => now,
     (delay): Promise<void> => {
       delays.push(delay);
       return Promise.resolve();
     },
+    beforeDispatch,
   );
   return {
     service,
@@ -72,6 +82,54 @@ it("reviews without writes, pins all records and coalesces repeated confirmation
   expect(fixture.delays).toEqual([200, 200]);
   await fixture.service.apply(review.planId);
   expect(fixture.send).toHaveBeenCalledTimes(3);
+});
+
+it("keeps a refused admission unsent rather than claiming an uncertain write", async () => {
+  const service = new RecordBatchService(() => ({
+    connectionName: "Narrow destination",
+    isCurrent: (): boolean => true,
+    reviewWrite: (): Promise<void> => Promise.resolve(),
+    tryDispatchWrite: (): WriteDispatch => ({ started: false }),
+  }));
+  const review = await service.review(batch);
+  expect(await service.apply(review.planId)).toEqual({
+    total: 3,
+    unsent: 3,
+    outcomes: [],
+    stopReason: "connection-changed",
+  });
+});
+
+it("revokes dispatch when reconnect occurs while destination revalidation is awaiting", async () => {
+  let finish!: (valid: boolean) => void;
+  const revalidate = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const fixture = setup(revalidate);
+  const review = await fixture.service.review(batch);
+  const result = fixture.service.apply(review.planId);
+  await vi.waitFor(() => expect(revalidate).toHaveBeenCalledOnce());
+  fixture.change();
+  finish(true);
+  expect(await result).toMatchObject({ outcomes: [], unsent: 3, stopReason: "connection-changed" });
+  expect(fixture.send).not.toHaveBeenCalled();
+});
+
+it("retains synchronous dispatch failure as an admitted uncertain write", async () => {
+  const fixture = setup();
+  fixture.send.mockImplementationOnce(() => {
+    throw new Error("lost acknowledgement before a promise was returned");
+  });
+  const review = await fixture.service.review(batch);
+  expect(await fixture.service.apply(review.planId)).toMatchObject({
+    outcomes: [{ state: "unknown" }],
+    unsent: 2,
+    stopReason: "write-failed",
+  });
+  expect(fixture.send).toHaveBeenCalledOnce();
 });
 it("cancels during an in-flight send and accounts for acknowledgement plus all unsent records", async () => {
   const fixture = setup();

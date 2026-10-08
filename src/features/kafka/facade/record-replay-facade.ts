@@ -18,7 +18,7 @@ export class RecordReplayFacade {
     private readonly activity: (input: ActivityInput) => void,
   ) {
     this.service = new RecordReplayService(
-      () => session.writeContext(),
+      () => session.reviewedWriteScope(),
       connections ? new SavedReplayDestinations(profiles, connections) : undefined,
     );
   }

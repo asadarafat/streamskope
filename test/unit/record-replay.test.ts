@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import { RecordReplayService } from "../../src/features/kafka/application/record-replay-service";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
+import type { ReviewedReplayDestinationPort } from "../../src/features/kafka/application/replay-destination";
 import {
   parseRecordReplayInput,
   parseRecordReplayReview,
@@ -46,9 +48,16 @@ const receipt: KafkaWriteOutcome = {
 };
 const services: RecordReplayService[] = [];
 afterEach(async () => {
-  for (const service of services.splice(0)) await service.invalidate();
-  vi.useRealTimers();
+  try {
+    for (const service of services.splice(0)) await service.invalidate();
+  } finally {
+    vi.useRealTimers();
+  }
 });
+async function expectCleanupFailure(service: RecordReplayService): Promise<void> {
+  await expect(service.invalidate()).rejects.toThrow("did not close cleanly");
+  services.splice(services.indexOf(service), 1);
+}
 function fixture(): {
   service: RecordReplayService;
   send: ReturnType<typeof vi.fn<(value: unknown) => Promise<KafkaWriteOutcome>>>;
@@ -56,6 +65,7 @@ function fixture(): {
   validate: ReturnType<
     typeof vi.fn<() => Promise<{ clusterId: string; topicId: string; partitions: number }>>
   >;
+  open: ReturnType<typeof vi.fn<ReviewedReplayDestinationPort["openReviewed"]>>;
   changeSource(): void;
   changeProfile(): void;
 } {
@@ -71,20 +81,27 @@ function fixture(): {
     reviewWrite: validate,
     applyWrite: send,
   });
-  const service = new RecordReplayService(
-    () => ({ connection: source, generation, connectionName: "Source" }),
-    {
-      open: (): Promise<
-        import("../../src/features/kafka/application/replay-destination").ReplayDestination
-      > => Promise.resolve({ connection: target, name: "Target", current: () => valid, close }),
-    },
+  const sourceScopes = new KafkaConnectionScopes(() => ({
+    connection: source,
+    generation,
+    connectionName: "Source",
+  }));
+  const targetScopes = new KafkaConnectionScopes(() =>
+    valid ? { connection: target, generation: 0, connectionName: "Target" } : null,
   );
+  const open = vi
+    .fn<ReviewedReplayDestinationPort["openReviewed"]>()
+    .mockResolvedValue({ scope: targetScopes.reviewedWrite()!, close });
+  const service = new RecordReplayService(() => sourceScopes.reviewedWrite(), {
+    openReviewed: open,
+  });
   services.push(service);
   return {
     service,
     send,
     close,
     validate,
+    open,
     changeSource(): void {
       generation++;
     },
@@ -237,6 +254,9 @@ it("retains partial acknowledgements and uncertainty without retry, including cl
   });
   expect(await f.service.apply(review.planId, replayConfirmation(review))).toEqual(result);
   expect(f.send).toHaveBeenCalledTimes(2);
+  await expect(f.service.review(input)).rejects.toThrow("did not close cleanly");
+  expect(f.open).toHaveBeenCalledOnce();
+  await expectCleanupFailure(f.service);
 });
 it("expires unused reviews and closes isolated clients without an operator action", async () => {
   vi.useFakeTimers();
@@ -254,3 +274,105 @@ it("closes an isolated target when destination review fails", async () => {
   expect(f.close).toHaveBeenCalledTimes(1);
   expect(f.send).not.toHaveBeenCalled();
 });
+
+it("revokes source authority during destination revalidation before sending any record", async () => {
+  const f = fixture();
+  const review = await f.service.review(input);
+  let finish!: (identity: { clusterId: string; topicId: string; partitions: number }) => void;
+  f.validate.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const applying = f.service.apply(review.planId, replayConfirmation(review));
+  await vi.waitFor(() => expect(f.validate).toHaveBeenCalledTimes(3));
+  f.changeSource();
+  finish({ clusterId: "cluster-target", topicId: "topic-target", partitions: 1 });
+  expect(await applying).toMatchObject({
+    outcomes: [],
+    unsent: 3,
+    stopReason: "connection-changed",
+    cleanup: "complete",
+  });
+  expect(f.send).not.toHaveBeenCalled();
+  expect(f.close).toHaveBeenCalledOnce();
+});
+
+it("invalidation waits for a pending review's owned cleanup and reports its failure", async () => {
+  const f = fixture();
+  let finish!: (identity: { clusterId: string; topicId: string; partitions: number }) => void;
+  let finishCleanup!: () => void;
+  f.validate.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  f.close.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        finishCleanup = (): void => reject(new Error("Cleanup unavailable"));
+      }),
+  );
+  const reviewing = f.service.review(input);
+  const failedReview = expect(reviewing).rejects.toThrow("did not close cleanly");
+  await vi.waitFor(() => expect(f.validate).toHaveBeenCalledOnce());
+  const invalidation = f.service.invalidate();
+  const failedInvalidation = expect(invalidation).rejects.toThrow("did not close cleanly");
+  finish({ clusterId: "cluster-target", topicId: "topic-target", partitions: 1 });
+  await vi.waitFor(() => expect(f.close).toHaveBeenCalledOnce());
+  let completed = false;
+  void invalidation.catch(() => {
+    completed = true;
+  });
+  await Promise.resolve();
+  expect(completed).toBe(false);
+  finishCleanup();
+  await Promise.all([failedReview, failedInvalidation]);
+  expect(f.send).not.toHaveBeenCalled();
+  await expectCleanupFailure(f.service);
+});
+
+it("does not misreport a revoked batch admission as cleanup failure during invalidation", async () => {
+  const f = fixture();
+  const review = await f.service.review(input);
+  const applying = f.service.apply(review.planId, replayConfirmation(review));
+  const failedApply = expect(applying).rejects.toThrow("old connection");
+  f.changeSource();
+  await Promise.all([failedApply, expect(f.service.invalidate()).resolves.toBeUndefined()]);
+  expect(f.send).not.toHaveBeenCalled();
+  expect(f.close).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])(
+  "distinguishes failed late-open cleanup from an ordinary denied review: cleanup failed %s",
+  async (failedCleanup) => {
+    const f = fixture();
+    let fail!: () => void;
+    f.open.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = (): void =>
+            reject(
+              Object.assign(
+                new Error("Destination unavailable"),
+                failedCleanup ? { cleanupCause: new Error("Owned close failed") } : {},
+              ),
+            );
+        }),
+    );
+    const reviewing = f.service.review(input);
+    const failedReview = expect(reviewing).rejects.toThrow("Destination unavailable");
+    await vi.waitFor(() => expect(f.open).toHaveBeenCalledOnce());
+    const invalidation = f.service.invalidate();
+    const result = failedCleanup
+      ? expect(invalidation).rejects.toThrow("did not close cleanly")
+      : expect(invalidation).resolves.toBeUndefined();
+    fail();
+    await Promise.all([failedReview, result]);
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.close).not.toHaveBeenCalled();
+    if (failedCleanup) await expectCleanupFailure(f.service);
+  },
+);

@@ -58,14 +58,23 @@ function baseline(state: ConnectState | null): string {
   );
 }
 export class ConnectService {
-  private readonly plans: ConnectionPlans<PlanValue, ConnectOutcome>;
+  private readonly plans: ConnectionPlans<PlanValue, ConnectOutcome, ReviewContext>;
   private applying = false;
   constructor(
     private readonly context: () => ReviewContext | null,
     private readonly port: ConnectPort,
     private readonly now = Date.now,
   ) {
-    this.plans = new ConnectionPlans(context, now);
+    this.plans = new ConnectionPlans(
+      context,
+      (expected) => {
+        const actual = context();
+        return (
+          actual?.connection === expected.connection && actual.generation === expected.generation
+        );
+      },
+      now,
+    );
   }
   private active(): { owner: ReviewContext; service: KafkaClusterServiceContext } {
     const owner = this.context();

@@ -158,13 +158,20 @@ owner and waits for all cleanup, even when one owner fails. Consumption retains
 its separate final flush. Command admission closes before cancellation and its
 final drain follows plugin cleanup, which may still use its owned host commands.
 
-Reviewed writes and observations use session-owned connection scopes instead of
-receiving the full active adapter and comparing generation numbers themselves.
-Read scopes fence results against connection changes; write scopes validate
-immediately before one dispatch and retain that attempt's eventual receipt.
-The observation sampler owns its bounded reader cleanup. Other features still
-use their existing context contracts; migrate them only with focused acceptance
-checks for their cancellation and acknowledgement policies.
+Reviewed writes, sample batches, replay, ACL changes, offset resets and observations
+use session-owned connection scopes. Their concrete objects expose only the
+operations each feature needs; the connection owner retains the adapter and
+generation. Read scopes fence results before and after awaited work. Mutation
+scopes check authority synchronously at dispatch and retain an admitted attempt's
+eventual acknowledgement or uncertainty, even after disconnect. Later work stays
+unsent. Review-plan confirmation and expiry remain feature responsibilities.
+
+Saved replay destinations expose a reviewed scope and an owned, coalesced close
+operation. Closing revokes new dispatch; failed cleanup remains visible during
+invalidation. The observation sampler owns its bounded reader cleanup. Connect,
+environment comparison and the other legacy context consumers have not been
+migrated; change them only with focused acceptance checks for their cancellation
+and acknowledgement policies.
 
 `src/platform/node` owns shared backend composition, plugin loading, SSH/HTTPS adapters and
 file stores. Browser development and Electron use these same modules. Electron

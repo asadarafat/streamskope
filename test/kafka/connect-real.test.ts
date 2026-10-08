@@ -183,7 +183,7 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
       connector: create.name,
     });
     if (deadLetter!.original?.state !== "complete") throw new Error("Missing DLQ bytes.");
-    const replay = new RecordReplayService(() => session.writeContext());
+    const replay = new RecordReplayService(() => session.reviewedWriteScope());
     try {
       const plan = await replay.review({
         targetProfile: null,

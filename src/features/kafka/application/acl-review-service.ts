@@ -12,7 +12,8 @@ import {
 } from "../contracts/acl-review";
 import type { KafkaWriteOutcome } from "../contracts/reviewed-writes";
 
-import { ConnectionPlans, type ReviewContext } from "./connection-plans";
+import { ConnectionPlans } from "./connection-plans";
+import type { AclReviewScope } from "./connection-scope";
 import { explainTopicAccess, readAccessPolicy, type BrokerAccessPolicy } from "./topic-access";
 
 function canonical(acl: KafkaAclBinding): string {
@@ -33,9 +34,9 @@ interface Baseline {
 function fingerprint(baseline: Baseline): string {
   return JSON.stringify([baseline.inventory.map(canonical).sort(), baseline.policy]);
 }
-async function readBaseline(context: ReviewContext): Promise<Baseline> {
-  if (!context.connection.listAcls) throw new Error("ACL inventory is unavailable.");
-  const inventory = await context.connection.listAcls(AbortSignal.timeout(15_000));
+async function readBaseline(context: AclReviewScope): Promise<Baseline> {
+  if (!context.listAcls) throw new Error("ACL inventory is unavailable.");
+  const inventory = await context.listAcls(AbortSignal.timeout(15_000));
   if (
     inventory.length > KAFKA_ACL_LIMITS.acls ||
     utf8ByteLength(JSON.stringify(inventory)) > 2 * 1024 * 1024
@@ -46,20 +47,21 @@ async function readBaseline(context: ReviewContext): Promise<Baseline> {
   // An unsupported binding cannot be silently dropped from a security decision.
   return {
     inventory: inventory.map((acl) => parseKafkaAclBinding(acl, "inventory")),
-    policy: await readAccessPolicy(context.connection),
+    policy: await readAccessPolicy(context),
   };
 }
 export class AclReviewService {
   private readonly plans: ConnectionPlans<
     { input: AclChangeInput; baseline: Baseline },
-    KafkaWriteOutcome
+    KafkaWriteOutcome,
+    AclReviewScope
   >;
   private active = false;
   private reads = 0;
-  constructor(context: () => ReviewContext | null, now = Date.now) {
-    this.plans = new ConnectionPlans(context, now);
+  constructor(context: () => AclReviewScope | null, now = Date.now) {
+    this.plans = new ConnectionPlans(context, (scope) => scope.isCurrent(), now);
   }
-  private async snapshot(): Promise<{ context: ReviewContext; baseline: Baseline }> {
+  private async snapshot(): Promise<{ context: AclReviewScope; baseline: Baseline }> {
     const context = this.plans.context();
     if (!context || this.reads >= 2)
       throw new Error("Connect and wait for the active access review.");
@@ -80,7 +82,7 @@ export class AclReviewService {
   async review(input: AclChangeInput): Promise<AclChangeReview> {
     const parsed = parseAclChangeInput(input),
       { context, baseline } = await this.snapshot();
-    if (parsed.action === "create" ? !context.connection.createAcl : !context.connection.deleteAcl)
+    if (parsed.action === "create" ? !context.tryCreateAcl : !context.tryDeleteAcl)
       throw new Error("ACL mutation is unavailable.");
     const present = baseline.inventory.some((acl) => canonical(acl) === canonical(parsed.acl));
     const after = baseline.inventory.filter((acl) => canonical(acl) !== canonical(parsed.acl));
@@ -139,8 +141,16 @@ export class AclReviewService {
               "The exact binding is already in the reviewed desired state. No mutation was sent.",
             );
           try {
-            if (desired) await plan.context.connection.createAcl!(input.acl);
-            else await plan.context.connection.deleteAcl!(input.acl);
+            const dispatched = desired
+              ? plan.context.tryCreateAcl!(input.acl)
+              : plan.context.tryDeleteAcl!(input.acl);
+            if (!dispatched.started)
+              return result(
+                "rejected",
+                "not-applicable",
+                "The connection changed before dispatch. No mutation was sent; review again.",
+              );
+            await dispatched.result;
           } catch (error) {
             const denied =
               typeof error === "object" &&
@@ -156,7 +166,7 @@ export class AclReviewService {
             );
           }
           try {
-            const observed = await plan.context.connection.listAcls!();
+            const observed = await plan.context.listAcls!();
             if (
               !this.plans.current(plan.context) ||
               observed.some((acl) => canonical(acl) === canonical(input.acl)) !== desired

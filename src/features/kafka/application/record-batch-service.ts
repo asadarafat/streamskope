@@ -7,15 +7,10 @@ import {
 } from "../contracts/schema-samples";
 import type { KafkaWriteOutcome } from "../contracts/reviewed-writes";
 
-import type { KafkaActiveConnection } from "./types";
+import type { ReviewedWriteScope } from "./connection-scope";
 
-interface Context {
-  readonly connection: KafkaActiveConnection;
-  readonly generation: number;
-  readonly connectionName: string;
-}
 interface Plan {
-  readonly context: Context;
+  readonly scope: ReviewedWriteScope;
   readonly review: RecordBatchReview;
   readonly controller: AbortController;
   operation?: Promise<RecordBatchOutcome>;
@@ -36,7 +31,7 @@ export class RecordBatchService {
   private active = false;
   private reviews = 0;
   constructor(
-    private readonly context: () => Context | null,
+    private readonly scope: () => ReviewedWriteScope | null,
     private readonly now = Date.now,
     private readonly wait = pause,
     private readonly beforeDispatch?: () => Promise<boolean>,
@@ -46,34 +41,34 @@ export class RecordBatchService {
   }
   async review(input: RecordBatchInput): Promise<RecordBatchReview> {
     const parsed = parseRecordBatchInput(input);
-    const context = this.context();
-    if (!context?.connection.reviewWrite || !context.connection.applyWrite)
+    const scope = this.scope();
+    if (!scope?.reviewWrite || !scope.tryDispatchWrite)
       throw new Error("Connect an adapter supporting reviewed writes.");
     if (this.active || this.reviews >= 2)
       throw new Error("Wait for the current batch or reviews to finish.");
     this.reviews++;
     try {
       // All records share one topic/partition. Validate the destination without producing.
-      await context.connection.reviewWrite({
+      await scope.reviewWrite({
         kind: "record",
         topic: parsed.topic,
         partition: parsed.partition,
         record: parsed.records[0]!,
       });
-      if (!this.current(context)) throw new Error("Connection changed during review.");
+      if (!scope.isCurrent()) throw new Error("Connection changed during review.");
       if (this.plans.size >= 4) {
         const oldest = this.plans.keys().next().value;
         if (oldest) this.plans.delete(oldest);
       }
       const review: RecordBatchReview = {
         planId: globalThis.crypto.randomUUID(),
-        connectionName: context.connectionName,
+        connectionName: scope.connectionName,
         expiresAt: new Date(this.now() + 120_000).toISOString(),
         input: parsed,
       };
       this.plans.set(review.planId, {
         review: structuredClone(review),
-        context,
+        scope,
         controller: new AbortController(),
       });
       return review;
@@ -91,11 +86,7 @@ export class RecordBatchService {
         new Error("Review is unavailable; never automatically retry an uncertain batch."),
       );
     if (plan.operation) return plan.operation;
-    if (
-      this.active ||
-      !this.current(plan.context) ||
-      this.now() >= Date.parse(plan.review.expiresAt)
-    )
+    if (this.active || !plan.scope.isCurrent() || this.now() >= Date.parse(plan.review.expiresAt))
       return Promise.reject(
         new Error("Batch is busy, expired or belongs to an old connection. Review again."),
       );
@@ -106,10 +97,6 @@ export class RecordBatchService {
         this.active = false;
       });
     return plan.operation;
-  }
-  private current(expected: Context): boolean {
-    const actual = this.context();
-    return actual?.connection === expected.connection && actual.generation === expected.generation;
   }
   private async run(plan: Plan): Promise<RecordBatchOutcome> {
     const started = this.now();
@@ -125,7 +112,7 @@ export class RecordBatchService {
         stopReason = "cancelled";
         break;
       }
-      if (!this.current(plan.context)) {
+      if (!plan.scope.isCurrent()) {
         stopReason = "connection-changed";
         break;
       }
@@ -140,7 +127,7 @@ export class RecordBatchService {
           stopReason = "cancelled";
           break;
         }
-        if (!this.current(plan.context)) {
+        if (!plan.scope.isCurrent()) {
           stopReason = "connection-changed";
           break;
         }
@@ -155,7 +142,7 @@ export class RecordBatchService {
       }
       let outcome: KafkaWriteOutcome;
       try {
-        outcome = await plan.context.connection.applyWrite!({
+        const dispatch = plan.scope.tryDispatchWrite!({
           kind: "record",
           topic: input.topic,
           partition: input.partition,
@@ -164,6 +151,11 @@ export class RecordBatchService {
             ? {}
             : { timestamp: input.timestamps[outcomes.length]! }),
         });
+        if (!dispatch.started) {
+          stopReason = "connection-changed";
+          break;
+        }
+        outcome = await dispatch.result;
       } catch {
         outcome = {
           state: "unknown",

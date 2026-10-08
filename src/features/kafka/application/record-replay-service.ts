@@ -6,16 +6,50 @@ import {
   type RecordReplayReview,
   type RecordReplayOutcome,
 } from "../contracts/record-replay";
+import type { KafkaWriteDestination, KafkaWriteInput } from "../contracts/reviewed-writes";
 
 import { RecordBatchService } from "./record-batch-service";
-import type { ReviewContext } from "./connection-plans";
-import type { ReplayDestination, ReplayDestinationPort } from "./replay-destination";
+import type { ReviewedWriteScope, WriteDispatch } from "./connection-scope";
+import type {
+  ReviewedReplayDestination,
+  ReviewedReplayDestinationPort,
+} from "./replay-destination";
+import { ownedCleanupFailure } from "./session-lifecycle";
+
+/** Combine source and isolated destination authority without exposing either adapter. */
+function replayScope(
+  source: ReviewedWriteScope,
+  destination: ReviewedWriteScope,
+  signal: AbortSignal,
+): ReviewedWriteScope {
+  const isCurrent = (): boolean => !signal.aborted && source.isCurrent() && destination.isCurrent();
+  return {
+    connectionName: destination.connectionName,
+    isCurrent,
+    ...(destination.reviewWrite === undefined
+      ? {}
+      : {
+          reviewWrite: async (input: KafkaWriteInput): Promise<KafkaWriteDestination | void> => {
+            if (!isCurrent()) throw new Error("Replay inputs changed during review.");
+            const result = await destination.reviewWrite!(input);
+            if (!isCurrent()) throw new Error("Replay inputs changed during review.");
+            return result;
+          },
+        }),
+    ...(destination.tryDispatchWrite === undefined
+      ? {}
+      : {
+          tryDispatchWrite: (input: KafkaWriteInput): WriteDispatch =>
+            isCurrent() ? destination.tryDispatchWrite!(input) : { started: false as const },
+        }),
+  };
+}
 
 interface Plan {
   readonly review: RecordReplayReview;
   readonly batch: RecordBatchService;
   readonly batchId: string;
-  readonly target: ReplayDestination;
+  readonly target: ReviewedReplayDestination;
   readonly controller: AbortController;
   readonly timer: ReturnType<typeof setTimeout>;
   current(): boolean;
@@ -27,56 +61,58 @@ export class RecordReplayService {
   private readonly reviews = new Set<AbortController>();
   private readonly pendingReviews = new Set<Promise<RecordReplayReview>>();
   private active = false;
+  private cleanupUnconfirmed = false;
   constructor(
-    private readonly context: () => ReviewContext | null,
-    private readonly destinations?: ReplayDestinationPort,
+    private readonly scope: () => ReviewedWriteScope | null,
+    private readonly destinations?: ReviewedReplayDestinationPort,
     private readonly now = Date.now,
   ) {}
-  private matches(context: ReviewContext): boolean {
-    const actual = this.context();
-    return actual?.connection === context.connection && actual.generation === context.generation;
-  }
   review(input: RecordReplayInput): Promise<RecordReplayReview> {
-    const operation = this.prepare(input);
+    const operation = this.prepare(input).catch((error: unknown): never => {
+      if (ownedCleanupFailure(error) !== undefined) this.cleanupUnconfirmed = true;
+      throw error;
+    });
     this.pendingReviews.add(operation);
     void operation.finally(() => this.pendingReviews.delete(operation)).catch(() => undefined);
     return operation;
   }
   private async prepare(input: RecordReplayInput): Promise<RecordReplayReview> {
+    if (this.cleanupUnconfirmed)
+      throw new Error(
+        "A replay destination did not close cleanly. Resolve cleanup before reviewing another replay.",
+      );
     const parsed = parseRecordReplayInput(input),
       batchInput = replayBatch(parsed);
-    const source = this.context();
+    const source = this.scope();
     if (!source || this.active || this.reviews.size >= 2)
       throw new Error("Connect and wait for active replay operations to finish.");
     const controller = new AbortController();
     this.reviews.add(controller);
-    let target: ReplayDestination | undefined;
+    let target: ReviewedReplayDestination | undefined;
     let retained = false;
     try {
       if (parsed.targetProfile) {
         if (!this.destinations) throw new Error("Saved-profile destinations are unavailable.");
-        target = await this.destinations.open(
+        target = await this.destinations.openReviewed(
           parsed.targetProfile.id,
           parsed.targetProfile.revision,
           AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
         );
       } else
         target = {
-          connection: source.connection,
-          name: source.connectionName,
-          current: (): boolean => this.matches(source),
+          scope: source,
           close: (): Promise<void> => Promise.resolve(),
         };
       const pinned = target;
-      const current = (): boolean =>
-        !controller.signal.aborted && this.matches(source) && pinned.current();
+      const scope = replayScope(source, pinned.scope, controller.signal);
+      const current = (): boolean => scope.isCurrent();
       const first = {
         kind: "record" as const,
         topic: parsed.topic,
         partition: parsed.partition,
         record: batchInput.records[0]!,
       };
-      const identity = await target.connection.reviewWrite?.(first);
+      const identity = await scope.reviewWrite?.(first);
       if (
         !identity?.clusterId ||
         !identity.topicId ||
@@ -84,19 +120,12 @@ export class RecordReplayService {
       )
         throw new Error("The broker must report stable cluster and topic identities for replay.");
       const batch = new RecordBatchService(
-        () =>
-          current()
-            ? {
-                connection: pinned.connection,
-                generation: source.generation,
-                connectionName: pinned.name,
-              }
-            : null,
+        () => scope,
         this.now,
         undefined,
         async () => {
           if (!current()) return false;
-          const actual = await pinned.connection.reviewWrite?.(first);
+          const actual = await scope.reviewWrite?.(first);
           return (
             current() &&
             actual?.clusterId === identity.clusterId &&
@@ -117,7 +146,7 @@ export class RecordReplayService {
       const review: RecordReplayReview = {
         planId: crypto.randomUUID(),
         sourceName: source.connectionName,
-        targetName: target.name,
+        targetName: target.scope.connectionName,
         expiresAt: reviewed.expiresAt,
         input: parsed,
         batch: batchInput,
@@ -145,7 +174,7 @@ export class RecordReplayService {
       this.reviews.delete(controller);
       if (!retained) {
         controller.abort();
-        await target?.close();
+        if (target !== undefined) await this.closeTarget(target);
       }
     }
   }
@@ -155,14 +184,19 @@ export class RecordReplayService {
     plan.controller.abort();
     plan.batch.cancel(plan.batchId);
     // Let an in-flight write retain its acknowledgement before closing the target.
-    return plan.operation ? plan.operation.then(() => undefined) : this.close(plan);
+    return plan.operation
+      ? plan.operation.then(
+          () => this.close(plan),
+          () => this.close(plan),
+        )
+      : this.close(plan);
   }
   async invalidate(): Promise<void> {
     for (const controller of this.reviews) controller.abort();
     const cancellations = [...this.plans.keys()].map((id) => this.cancel(id));
     await Promise.allSettled(this.pendingReviews);
     const results = await Promise.allSettled(cancellations);
-    if (results.some((r) => r.status === "rejected"))
+    if (this.cleanupUnconfirmed || results.some((r) => r.status === "rejected"))
       throw new Error("An isolated replay destination did not close cleanly.");
   }
   apply(id: string, confirmation: string): Promise<RecordReplayOutcome> {
@@ -170,6 +204,12 @@ export class RecordReplayService {
     if (!plan || confirmation !== replayConfirmation(plan.review))
       return Promise.reject(new Error("Confirm the exact replay destination."));
     if (plan.operation) return plan.operation;
+    if (this.cleanupUnconfirmed)
+      return Promise.reject(
+        new Error(
+          "A replay destination did not close cleanly. Resolve cleanup before starting another replay.",
+        ),
+      );
     if (
       this.active ||
       this.reviews.size > 0 ||
@@ -203,7 +243,17 @@ export class RecordReplayService {
   }
   private close(plan: Plan): Promise<void> {
     clearTimeout(plan.timer);
-    plan.close ??= Promise.resolve().then(() => plan.target.close());
+    plan.close ??= Promise.resolve().then(() => this.closeTarget(plan.target));
     return plan.close;
+  }
+  private async closeTarget(target: ReviewedReplayDestination): Promise<void> {
+    try {
+      await target.close();
+    } catch (cleanupCause) {
+      this.cleanupUnconfirmed = true;
+      throw Object.assign(new Error("An isolated replay destination did not close cleanly."), {
+        cleanupCause,
+      });
+    }
   }
 }

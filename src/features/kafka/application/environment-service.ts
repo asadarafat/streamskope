@@ -72,7 +72,7 @@ interface Plan {
   readonly lifecycle: number;
 }
 export class EnvironmentService {
-  private readonly plans: ConnectionPlans<Plan, EnvironmentOutcome>;
+  private readonly plans: ConnectionPlans<Plan, EnvironmentOutcome, ReviewContext>;
   private readonly controllers = new Set<AbortController>();
   private readonly operations = new Set<Promise<unknown>>();
   private readonly cleanupFailures: unknown[] = [];
@@ -83,7 +83,16 @@ export class EnvironmentService {
     private readonly destinations?: ReplayDestinationPort,
     private readonly now = Date.now,
   ) {
-    this.plans = new ConnectionPlans(context, now);
+    this.plans = new ConnectionPlans(
+      context,
+      (expected) => {
+        const actual = context();
+        return (
+          actual?.connection === expected.connection && actual.generation === expected.generation
+        );
+      },
+      now,
+    );
   }
   cancel(): void {
     this.lifecycle++;
