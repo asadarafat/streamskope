@@ -73,6 +73,26 @@ describe("development commands", () => {
     expect(release).not.toContain("git push");
   });
 
+  it("requires every parallel lane before the single CI status and retains all evidence", () => {
+    const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+    const gate = /^ {2}checks:\n([\s\S]*)$/mu.exec(ci)?.[1];
+    expect(gate).toContain("name: CI");
+    expect(gate).toContain("needs: [shared, docs, runtime]");
+    expect(gate).toContain("if: ${{ always() }}");
+    expect(gate).toContain("always() && (cancelled() || contains(needs.*.result, 'cancelled'))");
+    expect(gate).toContain("if: ${{ !cancelled() }}");
+    expect(gate).toContain("STREAMSKOPE_CI_RESULTS: ${{ toJSON(needs) }}");
+    expect(gate).toContain("node tools/check/ci-evidence.ts aggregate");
+    expect(gate).toContain("name: qualification\n");
+    expect(gate).toContain("github-token: ${{ github.token }}");
+    expect(gate).toContain("run-id: ${{ github.run_id }}");
+    for (const lane of ["shared", "docs", "runtime"]) {
+      expect(ci).toContain(`npm run check -- --ci --lane ${lane}`);
+      expect(ci).toContain(`name: qualification-${lane}`);
+    }
+    expect(ci).not.toContain("continue-on-error");
+  });
+
   it("requires native archives and public registry qualification before a desktop draft", () => {
     const release = readFileSync(
       new URL("../../.github/workflows/release.yml", import.meta.url),

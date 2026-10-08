@@ -33,7 +33,10 @@ mapping on those targets.
 Local CI runs workflow validation, formatting, lint, TypeScript, architecture,
 unit/integration tests, EDA source and agent checks, dependency checks, a
 **60-second performance soak**, docs qualification and configured live EDA/NSP tests.
-The stages are listed directly in `tools/check.sh`; it stops at the first failure.
+The stages are listed directly in `tools/check.sh`; each invocation stops at the
+first failure. The default local run does not start the disposable real-broker
+and workbench browser suites; use `npm run check -- --ci` to reproduce the complete
+GitHub qualification scope locally, with Docker and Chromium installed.
 `npm run docs -- qualify` checks npm command examples in tracked Markdown and the
 retrieval guide's required actions and UI labels. It owns documentation tests,
 the strict build and Chromium checks. Firefox intro playback checks run when
@@ -51,8 +54,15 @@ including the search dialog, and exercises keyboard selection, filters, closing
 and reopening in both themes on desktop and mobile. Its report is retained in
 `.artifacts/website/search-accessibility.json`; there are no widget or rule exceptions.
 Automated checks alone do not establish full WCAG conformance.
-GitHub calls `npm run check -- --ci` to run the same checks without the local
-soak or live EDA/NSP stages. It still qualifies documentation in a browser.
+GitHub runs three independent jobs through `npm run check -- --ci --lane LANE`:
+`shared` owns static, architecture, unit, integration, EDA agent and dependency
+checks; `docs` owns documentation qualification; `runtime` owns real Kafka/NATS
+and the selected workbench browser suites. The final required **CI** check accepts
+only three successful jobs with matching source evidence. Local soak and live
+EDA/NSP remain local responsibilities. Running `--ci` without a lane executes all
+three sequentially. Browser suites keep distinct report and trace directories
+under `test-results/web/`; the combined `qualification` artifact retains those
+reports and a source-bound evidence index under `.artifacts/ci/`.
 The soak exercises the application pipeline at 1,000 records/s with mixed payloads
 and clone round trips. Results are in `dist/performance/qualification-soak.json`;
 docs results are in `.artifacts/website/`.
@@ -203,9 +213,9 @@ retains original UTF-8/base64, headers and host-received UTC evidence.
 Core NATS real-server qualification uses `test/nats/provider-real.test.ts` and
 the actual Vite product/provider registry in
 `test/e2e/web-nats-workspace.spec.ts`, with the checksum-pinned NATS 2.15.0
-token/verified-TLS fixture. The ordinary PR job allows 20 minutes: the preceding
-provider-backend qualification took about 12.5 minutes before adding actual NATS
-browser workflows. Existing test/global deadlines remain unchanged. Record
+token/verified-TLS fixture. These scenarios run in the `runtime` CI job alongside
+the real Kafka and selected browser workflows, independently of shared tests
+and docs. Existing test/global deadlines remain unchanged. Record
 executed browser and server results for the exact revision; backend-only checks
 do not qualify the workspace or native operating-system credential storage.
 The operator guide is [NATS live subscriptions](website/docs/guide/core-nats.md).

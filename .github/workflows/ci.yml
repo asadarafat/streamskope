@@ -15,15 +15,15 @@ defaults:
   run:
     shell: bash
 
+env:
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  STREAMSKOPE_DOCS_URL: https://asadarafat.github.io/streamskope/
+
 jobs:
-  checks:
-    name: CI
+  shared:
+    name: Static, unit and integration
     runs-on: ubuntu-24.04
-    # PR11 took about 12.5 minutes before the real NATS workspace scenarios.
     timeout-minutes: 20
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-      STREAMSKOPE_DOCS_URL: https://asadarafat.github.io/streamskope/
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -37,6 +37,36 @@ jobs:
         with:
           go-version: 1.24.0
           cache-dependency-path: vendors/streamskope/apps/capture/agent/go.mod
+      - run: npm ci --no-audit --no-fund
+      # Shared integration tests also exercise real browser plugin installation.
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run check -- --ci --lane shared
+      - name: Stage evidence with repository-relative paths
+        if: ${{ !cancelled() }}
+        run: node tools/check/ci-evidence.ts stage
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: qualification-shared
+          path: ${{ runner.temp }}/qualification
+          overwrite: true
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.21.0
+          cache: npm
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.2.0
         with:
           python-version: "3.11"
@@ -44,37 +74,96 @@ jobs:
           cache-dependency-path: website/requirements.txt
       - run: npm ci --no-audit --no-fund
       - run: npx --no-install playwright install --with-deps chromium
-      - run: npm run check -- --ci
-      - name: Verify real Kafka collection, replication recovery and final-client cleanup
-        run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts test/kafka/provider-stream-stop-real.test.ts
-      - name: Verify NATS token, TLS and subscription lifecycle
-        run: npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/nats-real.json test/nats/provider-real.test.ts
-      - name: Verify production renderer module initialization
+      - run: npm run check -- --ci --lane docs
+      - name: Stage evidence with repository-relative paths
+        if: ${{ !cancelled() }}
+        run: node tools/check/ci-evidence.ts stage
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: qualification-docs
+          path: ${{ runner.temp }}/qualification
+          overwrite: true
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  runtime:
+    name: Real providers and browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run check -- --ci --lane runtime
+      - name: Stage evidence with repository-relative paths
+        if: ${{ !cancelled() }}
+        run: node tools/check/ci-evidence.ts stage
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: qualification-runtime
+          path: ${{ runner.temp }}/qualification
+          overwrite: true
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  checks:
+    name: CI
+    needs: [shared, docs, runtime]
+    # A skipped required check is accepted by GitHub; cancellation must fail this gate.
+    if: ${{ always() }}
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject cancelled qualification
+        if: ${{ always() && (cancelled() || contains(needs.*.result, 'cancelled')) }}
         run: |
-          node tools/package/e2e.mjs web test/e2e/web-production-startup.spec.ts
-          cp test-results/web/playwright-results.json .artifacts/ci/production-startup.json
-      - name: Verify workbench and monitoring browser workflows
-        run: >-
-          node tools/package/e2e.mjs web
-          test/e2e/web-stream-monitor.spec.ts
-          test/e2e/web-observations-recovery.spec.ts
-          test/e2e/web-responsive-workbench.spec.ts
-          --grep 'keyboard-operable|investigates real lag|persistent resource hierarchy|expanded dock in both themes|main resource page primary'
-      - name: Verify NATS live workspace and connection handoffs in Chromium
-        run: node tools/package/e2e.mjs web test/e2e/web-nats-workspace.spec.ts
-      - name: Verify hot plugin lifecycle and local management during catalog failure
-        run: node tools/package/e2e.mjs web test/e2e/web-plugin-installation.spec.ts
+          echo "Qualification was cancelled; every lane must finish successfully." >&2
+          exit 1
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        if: ${{ !cancelled() }}
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        if: ${{ !cancelled() }}
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        if: ${{ !cancelled() }}
+        with:
+          pattern: qualification-*
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+      - name: Require every lane and collect source-bound evidence
+        if: ${{ !cancelled() }}
+        env:
+          STREAMSKOPE_CI_RESULTS: ${{ toJSON(needs) }}
+        run: node tools/check/ci-evidence.ts aggregate
+      - name: Stage evidence with repository-relative paths
+        if: ${{ !cancelled() }}
+        run: node tools/check/ci-evidence.ts stage
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: ${{ !cancelled() }}
         with:
           name: qualification
-          path: |
-            .artifacts/ci/vitest.json
-            .artifacts/ci/observations-real.json
-            .artifacts/ci/nats-real.json
-            .artifacts/ci/production-startup.json
-            .artifacts/website
-            test-results/web
+          path: ${{ runner.temp }}/qualification
+          overwrite: true
           include-hidden-files: true
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
