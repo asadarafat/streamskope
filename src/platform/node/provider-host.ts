@@ -1,4 +1,5 @@
 import type { ProviderWireEvent } from "../providers/host";
+import { OperationalDiagnosticError } from "../diagnostics";
 
 import {
   AccountedProviderEventQueue,
@@ -252,9 +253,22 @@ export class ProviderHostRegistry {
             ]
           : [],
       );
-      if (failures.length > 0)
-        fail(new AggregateError(failures, "Application providers did not stop cleanly."));
-      else complete();
+      if (failures.length > 0) {
+        const owners = results.flatMap((result, index) =>
+          result.status === "rejected" ? [this.owned[index]!.id] : [],
+        );
+        const code =
+          owners.length === 1 && owners[0] === "kafka"
+            ? "KAFKA_CLEANUP_UNCONFIRMED"
+            : owners.length === 1 && owners[0] === "nats"
+              ? "NATS_CLEANUP_UNCONFIRMED"
+              : "PROVIDER_CLEANUP_UNCONFIRMED";
+        fail(
+          new OperationalDiagnosticError(code, {
+            cause: new AggregateError(failures, "Application providers did not stop cleanly."),
+          }),
+        );
+      } else complete();
     });
     return this.shutdownPromise;
   }

@@ -1,18 +1,33 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  formatOperationalDiagnostic,
+  operationalDiagnostic,
+  OperationalDiagnosticError,
+  type OperationalDiagnostic,
+} from "../diagnostics";
+
 import { openBrowserRuntime } from "./browser-runtime";
 import { inspectPassphraseVault } from "./vault/passphrase-vault";
 import { startWebGateway } from "./web-gateway";
 
+function writeDiagnostic(diagnostic: OperationalDiagnostic): void {
+  try {
+    process.stderr.write(`${formatOperationalDiagnostic(diagnostic)}\n`);
+  } catch {
+    /* Console availability cannot change startup or cleanup outcomes. */
+  }
+}
+
 async function main(): Promise<void> {
   const dataRoot = process.env.STREAMSKOPE_DATA_DIR;
   if (dataRoot === undefined || dataRoot.length === 0) {
-    throw new Error("Set STREAMSKOPE_DATA_DIR to a private persistent absolute directory.");
+    throw new OperationalDiagnosticError("BROWSER_CONFIGURATION_INVALID");
   }
   const portValue = process.env.STREAMSKOPE_PORT ?? "8080";
   if (!/^[1-9]\d{0,4}$/u.test(portValue) || Number(portValue) > 65_535) {
-    throw new Error("STREAMSKOPE_PORT must be an integer between 1 and 65535.");
+    throw new OperationalDiagnosticError("BROWSER_CONFIGURATION_INVALID");
   }
   const port = Number(portValue);
   const entryDirectory =
@@ -27,6 +42,7 @@ async function main(): Promise<void> {
     dataRoot,
     inspectVault: () => inspectPassphraseVault(dataRoot),
     openRuntime: (passphrase, mode) => openBrowserRuntime(dataRoot, passphrase, mode),
+    onDiagnostic: writeDiagnostic,
   });
   process.stdout.write(`StreamSkope browser host: ${gateway.origin}\n`);
   if (gateway.setupCodePath !== undefined) {
@@ -38,8 +54,8 @@ async function main(): Promise<void> {
     shuttingDown = true;
     void gateway.close().then(
       () => process.exit(0),
-      () => {
-        process.stderr.write("StreamSkope cleanup failed; inspect remote capture resources.\n");
+      (error: unknown) => {
+        writeDiagnostic(operationalDiagnostic(error, "CLEANUP_UNCONFIRMED"));
         process.exit(1);
       },
     );
@@ -48,10 +64,8 @@ async function main(): Promise<void> {
   process.once("SIGINT", stop);
 }
 
-void main().catch(() => {
+void main().catch((error: unknown) => {
   // Never print nested authentication, profile, plugin or credential errors.
-  process.stderr.write(
-    "StreamSkope browser host could not start. Check configuration and data ownership.\n",
-  );
+  writeDiagnostic(operationalDiagnostic(error, "BROWSER_START_FAILED"));
   process.exitCode = 1;
 });

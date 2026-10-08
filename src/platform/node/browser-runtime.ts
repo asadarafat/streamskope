@@ -1,6 +1,11 @@
 import { join } from "node:path";
 
 import { parseHostCommand } from "../../features/kafka/contracts";
+import {
+  operationalDiagnostic,
+  OperationalDiagnosticError,
+  type OperationalDiagnosticCode,
+} from "../diagnostics";
 
 import { BrowserPluginFiles } from "./browser-plugin-files";
 import { createKafkaBackend } from "./kafka-backend";
@@ -37,6 +42,7 @@ export async function openBrowserRuntime(
   let ownedKafka: ReturnType<typeof createKafkaBackend> | undefined;
   let ownedNats: ReturnType<typeof createNatsBackend> | undefined;
   let ownedProviders: ProviderHostRegistry | undefined;
+  let startupCode: OperationalDiagnosticCode = "PLUGIN_RUNTIME_START_FAILED";
   try {
     const plugins = (ownedPlugins = new PluginRuntime({
       store: new PluginStore(join(dataRoot, "plugins")),
@@ -44,6 +50,7 @@ export async function openBrowserRuntime(
       durableSettings: true,
       choosePackageFile: (signal): Promise<Uint8Array | null> => files.chooseFile(signal),
     }));
+    startupCode = "KAFKA_RUNTIME_START_FAILED";
     const kafka = (ownedKafka = createKafkaBackend({
       profileStore: new AtomicKafkaProfileFileStore(
         vault.paths.kafkaProfiles,
@@ -66,11 +73,13 @@ export async function openBrowserRuntime(
         join(dataRoot, "history", "kafka-observations.json"),
       ),
     }));
+    startupCode = "NATS_RUNTIME_START_FAILED";
     const nats = (ownedNats = createNatsBackend({
       profileStore: new AtomicNatsProfileFileStore(vault.paths.natsProfiles, vault.protector, {
         protection: "passphrase-protected",
       }),
     }));
+    startupCode = "PRIVATE_HOST_START_FAILED";
     const kafkaEndpoint = createKafkaProviderEndpoint(kafka);
     const providers = (ownedProviders = new ProviderHostRegistry([
       {
@@ -89,6 +98,7 @@ export async function openBrowserRuntime(
       },
       createNatsProviderEndpoint(nats),
     ]));
+    startupCode = "PLUGIN_RUNTIME_START_FAILED";
     await plugins.start();
     return {
       providers,
@@ -98,24 +108,72 @@ export async function openBrowserRuntime(
       lock: async (): Promise<void> => {
         files.close();
         await providers.shutdown();
-        await vault.lock();
+        try {
+          await vault.lock();
+        } catch (cause) {
+          throw new OperationalDiagnosticError("VAULT_LOCK_FAILED", { cause });
+        }
       },
     };
   } catch (error) {
     files.close();
     const cleanup: Promise<void>[] = [];
-    if (ownedProviders !== undefined) cleanup.push(ownedProviders.shutdown());
+    const clean = async (
+      operation: () => Promise<void>,
+      fallback: OperationalDiagnosticCode,
+    ): Promise<void> => {
+      try {
+        await operation();
+      } catch (cause) {
+        const diagnostic = operationalDiagnostic(cause, fallback);
+        throw new OperationalDiagnosticError(diagnostic.code, {
+          cause,
+          correlationId: diagnostic.correlationId,
+        });
+      }
+    };
+    if (ownedProviders !== undefined)
+      cleanup.push(
+        clean(ownedProviders.shutdown.bind(ownedProviders), "PROVIDER_CLEANUP_UNCONFIRMED"),
+      );
     else {
-      if (ownedKafka !== undefined) cleanup.push(ownedKafka.shutdown());
-      if (ownedNats !== undefined) cleanup.push(ownedNats.shutdown());
-      if (ownedPlugins !== undefined) cleanup.push(ownedPlugins.close());
+      if (ownedKafka !== undefined)
+        cleanup.push(clean(ownedKafka.shutdown.bind(ownedKafka), "KAFKA_CLEANUP_UNCONFIRMED"));
+      if (ownedNats !== undefined)
+        cleanup.push(clean(ownedNats.shutdown.bind(ownedNats), "NATS_CLEANUP_UNCONFIRMED"));
+      if (ownedPlugins !== undefined)
+        cleanup.push(clean(ownedPlugins.close.bind(ownedPlugins), "CLEANUP_UNCONFIRMED"));
     }
     const results = await Promise.allSettled(cleanup);
-    if (results.some((result) => result.status === "rejected")) {
+    const failures = results
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason as unknown);
+    if (failures.length > 0) {
       blockedVaults.add(vault);
-      throw new WebGatewayCleanupUnconfirmedError();
+      const diagnostic = operationalDiagnostic(
+        failures.length === 1 ? failures[0] : undefined,
+        "CLEANUP_UNCONFIRMED",
+      );
+      const code = diagnostic.code;
+      throw new WebGatewayCleanupUnconfirmedError(
+        {
+          cause: new AggregateError(failures, "Runtime startup cleanup failed.", { cause: error }),
+          correlationId: diagnostic.correlationId,
+        },
+        code === "KAFKA_CLEANUP_UNCONFIRMED" ||
+          code === "NATS_CLEANUP_UNCONFIRMED" ||
+          code === "PROVIDER_CLEANUP_UNCONFIRMED" ||
+          code === "VAULT_LOCK_FAILED"
+          ? code
+          : "CLEANUP_UNCONFIRMED",
+      );
     }
-    await vault.lock();
-    throw error;
+    try {
+      await vault.lock();
+    } catch (cause) {
+      blockedVaults.add(vault);
+      throw new WebGatewayCleanupUnconfirmedError({ cause }, "VAULT_LOCK_FAILED");
+    }
+    throw new OperationalDiagnosticError(startupCode, { cause: error });
   }
 }

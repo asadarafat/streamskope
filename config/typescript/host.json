@@ -18,6 +18,7 @@
     "../../src/features/kafka/facade/**/*.ts",
     "../../src/features/kafka/engine/**/*.ts",
     "../../src/platform/activity/**/*.ts",
+    "../../src/platform/diagnostics.ts",
     "../../src/platform/desktop/**/*.ts",
     "../../src/platform/dev-host/**/*.ts",
     "../../src/platform/node/**/*.ts",

@@ -2,6 +2,12 @@ import { join } from "node:path";
 
 import { app, dialog, net, safeStorage, session } from "electron";
 
+import {
+  formatOperationalDiagnostic,
+  operationalDiagnostic,
+  OperationalDiagnosticError,
+  type OperationalDiagnosticCode,
+} from "../../diagnostics";
 import { PluginRuntime } from "../../node/plugins/runtime";
 import { PluginStore } from "../../node/plugins/store";
 import { ProviderHostRegistry } from "../../node/provider-host";
@@ -31,6 +37,17 @@ let runningShell: RunningElectronShell | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let exitPending = false;
 let restartRequested = false;
+let startupFailure: OperationalDiagnosticCode = "DESKTOP_START_FAILED";
+
+function reportFailure(error: unknown, fallback: OperationalDiagnosticCode): void {
+  try {
+    process.stderr.write(
+      `${formatOperationalDiagnostic(operationalDiagnostic(error, fallback))}\n`,
+    );
+  } catch {
+    // Diagnostics must never interrupt cleanup or change the application's exit status.
+  }
+}
 
 async function requestExit(): Promise<void> {
   if (exitPending || shutdownPromise !== undefined) return;
@@ -77,22 +94,37 @@ function shutdown(exitCode: number): Promise<void> {
   shutdownPromise = new Promise<void>((resolve) => {
     complete = resolve;
   });
-  const attempts: Promise<void>[] = [];
-  try {
-    if (runningShell !== undefined) attempts.push(runningShell.close());
-  } catch (cause) {
-    attempts.push(Promise.reject(new Error("Desktop shell cleanup failed.", { cause })));
-  }
-  const ownedProviders = providers === undefined ? [backend, natsBackend] : [providers];
-  for (const owner of ownedProviders) {
+  const attempts: { code: OperationalDiagnosticCode; promise: Promise<void> }[] = [];
+  const cleanup = (code: OperationalDiagnosticCode, operation: () => Promise<void>): void => {
     try {
-      if (owner !== undefined) attempts.push(owner.shutdown());
+      attempts.push({ code, promise: operation() });
     } catch (cause) {
-      attempts.push(Promise.reject(new Error("Desktop provider shutdown failed.", { cause })));
+      attempts.push({
+        code,
+        promise: Promise.reject(new OperationalDiagnosticError(code, { cause })),
+      });
     }
+  };
+  const shell = runningShell;
+  if (shell !== undefined) cleanup("DESKTOP_SHELL_CLEANUP_UNCONFIRMED", () => shell.close());
+  const ownedProviders: readonly [
+    typeof backend | typeof natsBackend | typeof providers,
+    OperationalDiagnosticCode,
+  ][] =
+    providers === undefined
+      ? [
+          [backend, "KAFKA_CLEANUP_UNCONFIRMED"],
+          [natsBackend, "NATS_CLEANUP_UNCONFIRMED"],
+        ]
+      : [[providers, "PROVIDER_CLEANUP_UNCONFIRMED"]];
+  for (const [owner, code] of ownedProviders) {
+    if (owner !== undefined) cleanup(code, () => owner.shutdown());
   }
-  void Promise.allSettled(attempts).then((results) => {
+  void Promise.allSettled(attempts.map(({ promise }) => promise)).then((results) => {
     const failed = results.some((result) => result.status === "rejected");
+    results.forEach((result, index) => {
+      if (result.status === "rejected") reportFailure(result.reason, attempts[index]!.code);
+    });
     try {
       if (restartRequested && !failed) app.relaunch();
       app.exit(failed ? 1 : exitCode);
@@ -107,10 +139,12 @@ async function start(): Promise<void> {
   await app.whenReady();
   const developmentRendererUrl = process.env.STREAMSKOPE_RENDERER_URL;
   const userDataPath = app.getPath("userData");
+  startupFailure = "PROFILE_PROTECTION_START_FAILED";
   const profileProtection = await initializeElectronProfileProtection(
     safeStorage,
     process.platform,
   );
+  startupFailure = "PLUGIN_RUNTIME_START_FAILED";
   const plugins = new PluginRuntime({
     store: new PluginStore(join(userDataPath, "plugins")),
     networkTransport: createPluginNetworkTransport({
@@ -135,10 +169,12 @@ async function start(): Promise<void> {
     },
   });
   if (developmentRendererUrl === undefined) {
+    startupFailure = "DESKTOP_SHELL_START_FAILED";
     installPackagedRendererProtocol(join(__dirname, "..", "renderer"), (path) =>
       plugins.rendererAsset(path),
     );
   }
+  startupFailure = "KAFKA_RUNTIME_START_FAILED";
   backend = await createElectronKafkaBackend({
     platform: process.platform,
     safeStorage,
@@ -146,13 +182,16 @@ async function start(): Promise<void> {
     plugins,
     profileProtection,
   });
+  startupFailure = "NATS_RUNTIME_START_FAILED";
   natsBackend = createNatsBackend({
     profileStore: createElectronNatsProfileStore({ userDataPath, profileProtection }),
   });
+  startupFailure = "PRIVATE_HOST_START_FAILED";
   providers = new ProviderHostRegistry([
     createKafkaProviderEndpoint(backend),
     createNatsProviderEndpoint(natsBackend),
   ]);
+  startupFailure = "DESKTOP_SHELL_START_FAILED";
   runningShell = await createElectronShell({
     registry: providers,
     deliveryBindings: [
@@ -180,7 +219,6 @@ app.on("window-all-closed", () => {
 });
 
 void start().catch((error: unknown) => {
-  const summary = error instanceof Error ? error.message : "Unknown startup failure.";
-  process.stderr.write(`StreamSkope startup failed: ${summary}\n`);
+  reportFailure(error, startupFailure);
   void shutdown(1);
 });

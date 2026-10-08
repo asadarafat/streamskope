@@ -90,6 +90,9 @@ export default [
         { pattern: "src/platform/ui/**", type: "ui" },
         { pattern: "test/architecture/fixtures/renderer/**", type: "renderer" },
       ],
+      "boundaries/files": [
+        { pattern: "src/platform/diagnostics.ts", category: "platform-diagnostics" },
+      ],
     },
     rules: {
       "@typescript-eslint/explicit-function-return-type": "error",
@@ -113,6 +116,10 @@ export default [
         {
           default: "disallow",
           policies: [
+            {
+              from: { element: { types: { anyOf: ["platform-node", "main"] } } },
+              allow: { to: { file: { categories: "platform-diagnostics" } } },
+            },
             {
               from: { element: { type: "nats-contracts" } },
               allow: {
@@ -579,6 +586,23 @@ export default [
               regex: "(^|/)platform/(?!desktop(?:/|$)|ui(?:/|$)|providers(?:/|$))",
               message:
                 "Renderer code may use only declared desktop, provider and shared UI platform contracts.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/platform/diagnostics.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["*"],
+              message:
+                "The operational diagnostic catalog must remain independent of host, provider and SDK modules.",
             },
           ],
         },

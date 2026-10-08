@@ -8,6 +8,7 @@ import {
   ProviderWireValidationError,
 } from "../../src/platform/node/provider-host";
 import { createProviderFixture } from "../support/provider-fixture";
+import { OperationalDiagnosticError } from "../../src/platform/diagnostics";
 
 describe("registered provider ownership", () => {
   it("routes only to registered owners and rejects foreign commands before execution", async () => {
@@ -97,8 +98,13 @@ describe("registered provider ownership", () => {
     expect(second.requests).toHaveLength(0);
     release();
     await expect(closing).rejects.toMatchObject({
-      name: "AggregateError",
-      message: "Application providers did not stop cleanly.",
+      name: "OperationalDiagnosticError",
+      diagnostic: {
+        code: "PROVIDER_CLEANUP_UNCONFIRMED",
+        owner: "provider-host",
+        stage: "cleanup",
+      },
+      cause: expect.any(AggregateError) as unknown,
     });
     expect(settled).toBe(true);
     expect(registry.shutdown()).toBe(closing);
@@ -130,7 +136,7 @@ describe("registered provider ownership", () => {
     expect(second.shutdownCalls).toBe(1);
     expect(settled).toBe(false);
     release();
-    await expect(closing).rejects.toBeInstanceOf(AggregateError);
+    await expect(closing).rejects.toBeInstanceOf(OperationalDiagnosticError);
     expect(settled).toBe(true);
   });
 

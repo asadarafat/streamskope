@@ -15,6 +15,10 @@ import type { PluginRendererAsset } from "../../src/platform/node/plugins/runtim
 import { PassphraseVaultError } from "../../src/platform/node/vault/passphrase-vault";
 import { WebGatewayCleanupUnconfirmedError } from "../../src/platform/node/web-gateway-errors";
 import { createProviderFixture, type ProviderFixture } from "../support/provider-fixture";
+import {
+  OperationalDiagnosticError,
+  type OperationalDiagnostic,
+} from "../../src/platform/diagnostics";
 
 const PASSPHRASE = "gateway independent test passphrase";
 const cleanups: (() => Promise<void>)[] = [];
@@ -30,6 +34,7 @@ async function fixture(
     subscribeFails?: boolean;
     openDelay?: Promise<void>;
     openError?: Error;
+    diagnosticSinkFails?: boolean;
   } = {},
 ): Promise<{
   gateway: RunningWebGateway;
@@ -38,6 +43,7 @@ async function fixture(
   opens: { mode: string; passphrase: string }[];
   providers: ProviderFixture[];
   keyLocks: number[];
+  diagnostics: OperationalDiagnostic[];
   create: () => Promise<Response>;
 }> {
   const root = await mkdtemp(join(tmpdir(), "streamskope-web-gateway-"));
@@ -54,6 +60,7 @@ async function fixture(
   const opens: { mode: string; passphrase: string }[] = [];
   const providers: ProviderFixture[] = [];
   const keyLocks: number[] = [];
+  const diagnostics: OperationalDiagnostic[] = [];
   let exists = false;
   const gateway = await startWebGateway({
     port: 0,
@@ -61,6 +68,10 @@ async function fixture(
     publicOrigin: "http://127.0.0.1:0",
     rendererRoot,
     dataRoot,
+    onDiagnostic: (diagnostic): void => {
+      diagnostics.push(diagnostic);
+      if (options.diagnosticSinkFails) throw new Error("private logger failure");
+    },
     ...(options.lifetime === undefined ? {} : { sessionLifetimeMs: options.lifetime }),
     inspectVault: () => Promise.resolve(exists ? "present" : "missing"),
     openRuntime: async (passphrase, mode): Promise<WebGatewayRuntime> => {
@@ -106,6 +117,7 @@ async function fixture(
     opens,
     providers,
     keyLocks,
+    diagnostics,
     create: async () =>
       post(gateway, "/__streamskope_session/create", {
         setupCode: (await readFile(gateway.setupCodePath!, "utf8")).trim(),
@@ -488,11 +500,11 @@ describe("production browser gateway", () => {
     const occupied = await fixture({ openError: new PassphraseVaultError("in-use") });
     const result = await occupied.create();
     expect(result.status).toBe(409);
-    await expect(result.json()).resolves.toEqual({
+    await expect(result.json()).resolves.toMatchObject({
       error: {
         code: "VAULT_IN_USE",
-        summary: "Another StreamSkope host holds this data directory's lease.",
         recovery: "Stop the other StreamSkope host using this data directory, then retry.",
+        diagnostic: { code: "VAULT_IN_USE", owner: "vault", stage: "unlock" },
       },
     });
     const broken = await fixture({ openError: new Error("secret/path/password runtime detail") });
@@ -569,4 +581,55 @@ describe("production browser gateway", () => {
     });
     expect(f.keyLocks).toEqual([1]);
   });
+});
+
+it("returns and records the same host-generated diagnostic without exposing private causes", async () => {
+  const f = await fixture({
+    openError: new OperationalDiagnosticError("NATS_RUNTIME_START_FAILED", {
+      cause: new Error("private-password private-host.example /private/credential-path"),
+    }),
+    diagnosticSinkFails: true,
+  });
+  const response = await fetch(f.gateway.origin + "/__streamskope_session/create", {
+    method: "POST",
+    headers: {
+      origin: f.gateway.origin,
+      "content-type": "application/json",
+      "x-correlation-id": "attacker-selected-reference",
+    },
+    body: JSON.stringify({
+      setupCode: (await readFile(f.gateway.setupCodePath!, "utf8")).trim(),
+      passphrase: PASSPHRASE,
+    }),
+  });
+  expect(response.status).toBe(503);
+  const result = (await response.json()) as {
+    error: { code: string; diagnostic: OperationalDiagnostic };
+  };
+  expect(result.error.code).toBe("RUNTIME_START_FAILED");
+  expect(result.error.diagnostic).toEqual(f.diagnostics[0]);
+  expect(result.error.diagnostic).toMatchObject({
+    code: "NATS_RUNTIME_START_FAILED",
+    owner: "nats",
+    stage: "startup",
+  });
+  expect(JSON.stringify(result)).not.toMatch(/private|attacker|password|credential-path/);
+  expect(result.error.diagnostic.correlationId).toMatch(/^[a-f0-9-]{36}$/u);
+});
+
+it("identifies a missing required renderer without turning ordinary missing assets into host faults", async () => {
+  const f = await fixture();
+  const auth = session(await f.create());
+  await rm(join(f.rendererRoot, "index.html"));
+  const missing = await fetch(f.gateway.origin + "/assets/absent.js", {
+    headers: { cookie: auth },
+  });
+  expect(missing.status).toBe(404);
+  expect(f.diagnostics).toHaveLength(0);
+  const root = await fetch(f.gateway.origin + "/", { headers: { cookie: auth } });
+  expect(root.status).toBe(503);
+  const result = (await root.json()) as { error: { diagnostic: OperationalDiagnostic } };
+  expect(result.error.diagnostic).toEqual(f.diagnostics[0]);
+  expect(result.error.diagnostic.code).toBe("RENDERER_ASSET_UNAVAILABLE");
+  expect(JSON.stringify(result)).not.toContain(f.rendererRoot);
 });
