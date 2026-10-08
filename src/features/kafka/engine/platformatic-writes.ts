@@ -303,7 +303,7 @@ export class PlatformaticReviewedWrites {
         stream.destroy();
       }
     } finally {
-      consumer.close(true);
+      await consumer.close(true);
     }
   }
 }

@@ -162,7 +162,7 @@ export class PlatformaticOffsetReset {
     } catch {
       unavailable = true;
     } finally {
-      consumer.close(true);
+      await consumer.close(true);
     }
     return {
       examples,
