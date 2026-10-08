@@ -49,8 +49,29 @@ export function PluginTransitionStatus({
 }): React.JSX.Element {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return (): void => clearInterval(timer);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let mounted = true;
+    const clearTimer = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+    };
+    const refresh = (): void => {
+      timer = undefined;
+      if (!mounted || document.visibilityState !== "visible") return;
+      setNow(Date.now());
+      timer = setTimeout(refresh, 1000);
+    };
+    const visibilityChanged = (): void => {
+      clearTimer();
+      refresh();
+    };
+    document.addEventListener("visibilitychange", visibilityChanged);
+    refresh();
+    return (): void => {
+      mounted = false;
+      clearTimer();
+      document.removeEventListener("visibilitychange", visibilityChanged);
+    };
   }, [transition.operationId]);
   const elapsed = Math.max(0, Math.floor((now - Date.parse(transition.startedAt)) / 1000));
   const stageElapsed = Math.max(

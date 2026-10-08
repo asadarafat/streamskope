@@ -36,6 +36,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/ui/TrustRecipeManager.tsx",
     // One idle package-review deadline, cleared on replacement, installation or unmount.
     "src/features/kafka/ui/usePluginChanges.ts",
+    // Mounted progress owns one elapsed-display timeout; hidden documents suspend it.
+    "src/features/kafka/ui/PluginTransitionStatus.tsx",
     "src/features/kafka/ui/stream-monitor-observer.ts",
     "src/platform/electron/main/electron-profile-protection.ts",
     // Shared provider delivery owns a 30-second ACK deadline, cleared on ACK or close.
@@ -51,6 +53,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/platform/electron/main/electron-entry.ts",
     // At most eight review-expiry deadlines release cache pins; suspended while installing.
     "src/platform/node/plugins/package-candidates.ts",
+    // Each admitted transition owns one stage watchdog; settlement clears it without releasing stalled work.
+    "src/platform/node/plugins/transition.ts",
     // At most sixteen remote acquisition deadlines, cleared on cancellation or settlement.
     "src/platform/node/plugins/acquisition.ts",
     "plugins/eda/backend/eda-api-client.ts",
