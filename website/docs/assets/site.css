@@ -28,6 +28,9 @@
   --md-typeset-a-color: #a4bcff;
   --md-accent-fg-color: #a4bcff;
 }
+[data-md-color-scheme="slate"][data-md-color-primary] {
+  --md-typeset-a-color: var(--launch-accent);
+}
 .md-header {
   box-shadow: none;
   border-bottom: 1px solid var(--launch-rule);

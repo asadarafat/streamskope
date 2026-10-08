@@ -248,6 +248,120 @@ try {
       }
     }
   }
+  async function publishedPluginAvailability() {
+    // Exercise the published layout even when PR qualification builds a preview.
+    // These package values are a render fixture, not publication evidence.
+    const sourcePlugins = await Promise.all(
+      ["eda", "nsp"].map(async (system) => {
+        const manifest = JSON.parse(await readFile(`plugins/${system}/manifest.json`, "utf8"));
+        return {
+          name: manifest.name,
+          system,
+          api: manifest.apiVersion,
+          availability: "published",
+          published_version: "0.1.2",
+          published_api: manifest.apiVersion,
+          checked_at: "2026-10-08T00:00:00Z",
+        };
+      }),
+    );
+    const python = resolve(
+      ".cache/zensical",
+      process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+    );
+    for (const plugin of ["eda", "nsp"]) {
+      const { stdout: rendered } = await promisify(execFile)(python, [
+        "-c",
+        [
+          "import json, sys",
+          "from jinja2 import Environment, FileSystemLoader, StrictUndefined",
+          "environment = Environment(loader=FileSystemLoader('website/overrides'), autoescape=True, undefined=StrictUndefined)",
+          "environment.filters['url'] = lambda path: '../../' + path",
+          "print(environment.get_template('partials/plugin-availability.html').render(config={'extra': {'source_plugins': json.loads(sys.argv[1]), 'documentation': {'status': 'Published documentation', 'revision': '1234567890abcdef1234567890abcdef12345678'}}}, page={'meta': {'plugin_scope': sys.argv[2]}}))",
+        ].join("\n"),
+        JSON.stringify(sourcePlugins),
+        plugin,
+      ]);
+      const target = base + `plugins/${plugin}/`;
+      const pattern =
+        /<aside\b[^>]*class="sk-version sk-plugin-availability"[^>]*>[\s\S]*?<\/aside>/u;
+      await page.route(target, async (route) => {
+        const response = await route.fetch();
+        const html = await response.text();
+        assert.equal(html.match(new RegExp(pattern.source, "gu"))?.length, 1);
+        await route.fulfill({ response, body: html.replace(pattern, rendered.trim()) });
+      });
+      try {
+        for (const width of [390, 320]) {
+          await page.setViewportSize({ width, height: 900 });
+          for (const theme of ["light", "dark"]) {
+            await page.goto(target);
+            const scheme = await page.locator("body").getAttribute("data-md-color-scheme");
+            if ((scheme === "slate") !== (theme === "dark"))
+              await page.locator(`label[title="Switch to ${theme} mode"]`).click();
+            const notice = page.getByRole("complementary", { name: "Plugin availability" });
+            await notice.locator("summary").click();
+            await expect(notice.locator("details")).toHaveAttribute("open", "");
+            await expect(notice).toContainText("Catalog checked 2026-10-08T00:00:00Z");
+            const compatibility = notice.getByRole("link", {
+              name: "check compatibility",
+              exact: true,
+            });
+            await compatibility.scrollIntoViewIfNeeded();
+            await page.mouse.move(0, 0);
+            const settledColor = async () => {
+              await page.waitForFunction(() =>
+                [...document.querySelectorAll(".sk-plugin-availability a")].every((element) =>
+                  element.getAnimations().every((animation) => animation.playState !== "running"),
+                ),
+              );
+              return compatibility.evaluate((element) => window.getComputedStyle(element).color);
+            };
+            if (theme === "dark")
+              assert.equal(
+                await settledColor(),
+                "rgb(164, 188, 255)",
+                "Dark normal links use the accessible site accent",
+              );
+            else await settledColor();
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+            await accessible();
+            await page.screenshot({
+              path: resolve(
+                evidence,
+                `plugin-availability-fixture-${plugin}-${width}-${theme}.png`,
+              ),
+            });
+            const accent = theme === "dark" ? "rgb(164, 188, 255)" : "rgb(36, 79, 198)";
+            await compatibility.hover();
+            assert.equal(await settledColor(), accent, "Hover retains the accessible site accent");
+            await compatibility.focus();
+            await page.mouse.move(0, 0);
+            assert.equal(
+              await settledColor(),
+              accent,
+              "Keyboard focus retains the accessible site accent",
+            );
+          }
+        }
+      } finally {
+        await page.unroute(target);
+      }
+    }
+    await writeFile(
+      resolve(evidence, "plugin-availability-render-fixture.json"),
+      JSON.stringify(
+        {
+          kind: "synthetic-template-fixture",
+          plugins: ["eda", "nsp"],
+          widths: [390, 320],
+          themes: ["light", "dark"],
+        },
+        null,
+        2,
+      ),
+    );
+  }
   for (const route of routes) {
     assert.equal((await page.goto(base + route)).status(), 200, route);
     await page.locator("h1").first().waitFor();
@@ -357,6 +471,7 @@ try {
     assert.doesNotMatch(await page.locator("body").innerText(), /Kubus|TopoViewer|FIELD GUIDE/i);
   }
   await browserQuickstart();
+  await publishedPluginAvailability();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(base + "start/installation/#download");
