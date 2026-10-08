@@ -11,6 +11,52 @@ shared, docs and real-provider/browser lanes. GitHub runs those lanes in paralle
 and retains their reports and aggregate index in the `qualification` artifact.
 The existing five npm commands remain the entry points.
 
+## Check matrix
+
+Choose evidence for the behavior changed, then run the maintained qualification.
+Use the [development guide](development.md) for toolchain and fixture prerequisites
+and [documentation guide](documentation.md) for site-specific checks.
+
+| Run                                    | Included                                                                            | Important limits                                                                    |
+| -------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Focused owner tests                    | The selected contract, service or UI behavior.                                      | Development feedback; not a substitute for the required PR gate.                    |
+| `npm run check`                        | Shared checks, 60-second soak, docs, configured EDA, configured NSP, in that order. | Stops at the first failure; does not start the disposable runtime lane.             |
+| `npm run check -- --ci`                | Shared, docs and runtime lanes sequentially.                                        | Does not include the local soak or live EDA/NSP harnesses.                          |
+| `npm run check -- --ci --lane runtime` | One selected lane; `shared` and `docs` are also valid.                              | Qualifying one lane does not qualify the others.                                    |
+| GitHub PR and reused release CI        | The three lanes in parallel, then the required **CI** evidence gate.                | All lanes must succeed with matching source evidence. Main pushes do not repeat CI. |
+| Native recovery or packaging rehearsal | The explicitly selected installed app, OS/CPU or container image.                   | Scope is limited to the actual source, platform, target and scenario that ran.      |
+
+[tools/check.sh](../tools/check.sh) owns the maintained stages. Shared checks
+include workflows, formatting, lint, all four TypeScript projects, architecture,
+unit/integration tests, EDA source/Go agent checks and dependency checks. The
+runtime lane exercises real Kafka and NATS plus selected production-browser,
+workbench and plugin-lifecycle scenarios; it does not run every system test.
+
+The soak drives the application pipeline at 1,000 records/s with mixed payloads
+and clone round trips. It is a synthetic pipeline measurement, not broker
+throughput, network endurance or rendered UI interaction latency. Choose an
+additional real-system test for those claims. For example, developer CLI/sandbox
+and relationship scenarios have their own tests under `test/kafka/`; a shared
+unit-test pass does not establish their live behavior.
+
+## Evidence locations
+
+| Output                                                                          | Use                                                                                |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `.artifacts/qualification/RUN_ID/qualification.json` and its evidence directory | Complete per-run local receipt and sanitized copied evidence.                      |
+| `.artifacts/ci/` and GitHub's `qualification` artifact                          | Lane reports and aggregate source/run/hash index.                                  |
+| `dist/performance/qualification-soak.json`                                      | Synthetic pipeline measurements and declared limits.                               |
+| `.artifacts/website/`                                                           | Docs qualification, browser, search and screenshot evidence.                       |
+| `dist/ci/eda-live.json`, `dist/ci/nsp-live.json`                                | Local harness outcomes and completed checks; inspect as private diagnostic output. |
+| `test-results/web/`                                                             | Separate browser-suite reports and traces.                                         |
+| `dist/native-recovery/PLATFORM-ARCH.json`                                       | Sanitized installed-recovery outcome, installer identity and cleanup evidence.     |
+
+Raw harness files, browser traces and app-data directories are not automatically
+safe publication assets. Use the collector's approved projection for sharing.
+Focused tests can write a separate report path so they do not overwrite an
+ongoing qualification's inputs. Keep source and receipt files unchanged while a
+maintained run is active.
+
 ## Read a local result
 
 The receipt records the source revision and Git tree, whether the checkout was
@@ -54,6 +100,120 @@ The report separates these scopes. Review gaps against the changed behavior befo
 publishing. A passing source gate alone is insufficient evidence for a native,
 live-system or recovery claim. Existing historical reports retain their original
 scope and identity.
+
+## Live EDA
+
+Use a test cluster with the matching capture app already installed and a producer
+that exports real events. The harness verifies the running EDA version through
+its API against the declared target. It creates temporary capture resources and
+a local tunnel, consumes an actual event, checks health/relationship metadata,
+and confirms the selected producer remains unchanged. It closes the consumer and
+tunnel, removes its owned session, confirms absence and tests repeat removal.
+This is not a read-only cluster check.
+
+Supply `STREAMSKOPE_EDA_API_URL`, `STREAMSKOPE_EDA_API_USERNAME` and
+`STREAMSKOPE_EDA_API_PASSWORD` together through private local configuration.
+Optional settings are `STREAMSKOPE_EDA_API_CA` (CA file),
+`STREAMSKOPE_EDA_API_CLIENT_SECRET`, `STREAMSKOPE_EDA_CAPTURE_PRODUCER` and
+`STREAMSKOPE_EDA_CAPTURE_LOCAL_PORT` (default `19092`). API certificate
+verification stays enabled. Keep credentials out of tracked files and command
+arguments.
+
+```sh
+node --import tsx tools/check/eda-live.ts
+```
+
+No connection settings records a skip; partial, unreachable or invalid settings
+fail. Generate an event in the selected producer during the test if necessary.
+Inspect `dist/ci/eda-live.json` for completed checks. A pass establishes this
+source-level capture path and cleanup on the tested target, not installed native
+storage, all plugin UI paths or every EDA version.
+
+## Live NSP
+
+The NSP harness **creates one uniquely owned temporary Kafka topic, produces one
+generated marker, reads it through the host, and confirms topic deletion**. Use a
+test system and an account authorized for those topic operations and the helper
+workflow lifecycle. Business topics are inspected as metadata only; their
+payloads are not read or written. The harness does not deploy a broker.
+
+Set `STREAMSKOPE_NSP_CONFIG` to a private JSON file containing `apiUrl`, `username`,
+`password` and `verifyCertificate`. Optional `brokers` is an array of reachable
+`host:port` addresses, and `authentication` is `auto`, `tls` or `oauth`. Keep the
+file outside tracked source with restrictive permissions. API verification should
+stay enabled; an explicit trusted-development-lab exception does not disable
+Kafka certificate verification.
+
+```sh
+STREAMSKOPE_NSP_CONFIG=/absolute/path/private-nsp.json node --import tsx tools/check/nsp-live.ts
+```
+
+An unset path records a skip; invalid configuration or a failed configured check
+fails. The same harness runs at the end of local `npm run check`. GitHub `--ci`
+excludes both live-cluster harnesses.
+
+The test uses the production package loader with an isolated catalog and
+in-memory profile store. It exercises profile test/create/update/connect, helper
+reuse and execution cleanup, hot update/removal/reinstallation, and recovery
+after interrupting a real accepted workflow execution. The hot-update candidate
+uses the same built code with a newer qualification-only manifest; this is not
+proof of an upgrade between two published plugin implementations.
+
+The immutable reusable helper definition remains in NSP. Owned execution cleanup
+and owned topic deletion are separate obligations. Pending execution cleanup
+blocks plugin removal; a recovery journal is retained on failure. Inspect the
+reported retained state and reconcile it through the supported plugin flow;
+deleting the journal is not cleanup. Review `dist/ci/nsp-live.json` and the final
+receipt before claiming success. In-memory source-host checks do not establish
+native credential persistence, installed-app behavior or other NSP versions.
+
+## Native recovery
+
+Use the manual [Native recovery workflow](../.github/workflows/native-recovery.yml)
+for installer replacement on Linux x64, macOS ARM64 and Windows x64. Select a
+published baseline and either current source or another published release. It
+creates isolated application data, saves a protected profile and query, replaces
+the app and restores the complete old backup. Reconnection and a filtered
+known-record export must pass without re-entering credentials.
+
+For a local native rehearsal, replace the version placeholders:
+
+```sh
+node --import tsx tools/check/native-recovery.ts --from BASELINE_VERSION --to TARGET_VERSION
+```
+
+For an unreleased candidate on macOS ARM64:
+
+```sh
+node --import tsx tools/check/native-recovery.ts --from BASELINE_VERSION --candidate dist/installers/StreamSkope-0.0.0-dev-darwin-arm64.dmg --candidate-version 0.0.0-dev
+```
+
+Use the matching installer filename on other supported platforms. Candidate mode
+requires a clean committed checkout, builds the candidate and retains its neutral
+development version; it does not publish a release. Published installers are
+verified against `SHA256SUMS`. The report records exact installer hashes and the
+candidate source revision where applicable.
+
+Candidate mode backs up the baseline after quitting it and requires the candidate
+to reconnect after replacement, another restart and backup restoration. It omits
+baseline restart; published-to-published mode also requires that baseline restart.
+Candidate success therefore does not retroactively qualify the old build. Keep
+historical outcomes in the [operator qualification record](../website/docs/guide/qualification.md)
+rather than treating them as current-source results.
+
+The rehearsal needs Java 17+ and an unlocked OS credential service. Without all
+three explicit fixture variables (`STREAMSKOPE_TEST_KAFKA_ENDPOINT`,
+`STREAMSKOPE_TEST_OAUTH_ENDPOINT`, `STREAMSKOPE_TEST_CA_PATH`), supply none and let
+it start its checksum-pinned loopback JVM Kafka fixture with TLS/RS256 OAuth.
+Linux additionally needs Xvfb, D-Bus and GNOME Keyring. Windows runs only on a
+disposable GitHub Actions account because installer registration affects the
+user account. macOS copies the DMG app into an isolated directory; Linux launches
+the extracted AppImage, which does not qualify FUSE or desktop launcher integration.
+
+Only sanitized reports are uploaded; owned app data, credentials, traces and
+broker logs are removed. Confirm cleanup outcomes. This separate rehearsal does
+not establish cross-account credential portability, live EDA/NSP behavior or
+long-running renderer endurance.
 
 ## Browser data compatibility
 
