@@ -167,6 +167,21 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
   };
 }
 
+/** Exact reviewed predecessor identities, shared with the standalone maintenance policy. */
+export const REVIEWED_BROWSER_PREDECESSORS = Object.freeze([
+  Object.freeze({
+    version: "0.10.3",
+    sourceRevision: "089980705afaffc1a6135a9347eb1bff68b27206",
+    registryReference:
+      "ghcr.io/asadarafat/streamskope:0.10.3@sha256:74995d8654ad9c967abe631e177ee4739ce7d0267070c03e40b9f62c3dba2057",
+    images: Object.freeze({
+      amd64: "sha256:3dfbfb6eebfeed1e279a7286acc769ad50f491676babf0c8b71166807a5b8923",
+      arm64: "sha256:deb3afffbb1196488e97993e420083fb47d9058e497a111861f372b3a1a63eaf",
+    }),
+    contract: BROWSER_DATA_COMPATIBILITY.contract,
+  }),
+]);
+
 /** Reviewed unchanged persisted formats; this legacy image has no inspection executable. */
 export function reviewedLegacyBrowserDataContract(identity: {
   readonly version: string;
@@ -175,15 +190,11 @@ export function reviewedLegacyBrowserDataContract(identity: {
   readonly architecture: "amd64" | "arm64";
   readonly imageId: string;
 }): typeof BROWSER_DATA_COMPATIBILITY.contract | undefined {
-  const images = {
-    amd64: "sha256:3dfbfb6eebfeed1e279a7286acc769ad50f491676babf0c8b71166807a5b8923",
-    arm64: "sha256:deb3afffbb1196488e97993e420083fb47d9058e497a111861f372b3a1a63eaf",
-  };
-  return identity.version === "0.10.3" &&
-    identity.sourceRevision === "089980705afaffc1a6135a9347eb1bff68b27206" &&
-    identity.registryReference ===
-      "ghcr.io/asadarafat/streamskope:0.10.3@sha256:74995d8654ad9c967abe631e177ee4739ce7d0267070c03e40b9f62c3dba2057" &&
-    identity.imageId === images[identity.architecture]
-    ? BROWSER_DATA_COMPATIBILITY.contract
-    : undefined;
+  return REVIEWED_BROWSER_PREDECESSORS.find(
+    (predecessor) =>
+      identity.version === predecessor.version &&
+      identity.sourceRevision === predecessor.sourceRevision &&
+      identity.registryReference === predecessor.registryReference &&
+      identity.imageId === predecessor.images[identity.architecture],
+  )?.contract;
 }

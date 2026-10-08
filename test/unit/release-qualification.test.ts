@@ -22,7 +22,10 @@ import {
 } from "../../tools/check/qualification";
 import { browserInstallerEvidence } from "../../tools/package/browser-installer-evidence";
 import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
-import { browserDataEvidenceFixture } from "../support/browser-data-evidence";
+import {
+  browserDataEvidenceFixture,
+  browserUpgradeEvidenceFixture,
+} from "../support/browser-data-evidence";
 import {
   assembleReleaseQualification,
   attachLocalQualification,
@@ -198,6 +201,10 @@ async function report(
           startedAt: new Date(Date.now() - 1000).toISOString(),
           preflight: browserDataEvidenceFixture(
             "1.2.3",
+            `sha256:${(arch === "amd64" ? "b" : "c").repeat(64)}`,
+          ),
+          transition: browserUpgradeEvidenceFixture(
+            `linux/${arch}`,
             `sha256:${(arch === "amd64" ? "b" : "c").repeat(64)}`,
           ),
         },

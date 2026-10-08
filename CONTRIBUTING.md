@@ -1016,5 +1016,10 @@ refuses execution. Release assembly creates an exact-version installer bound to
 its topology and image-manifest hashes, `streamskope-VERSION.clab.yml` pinned to
 the public GHCR index, and `streamskope-VERSION-offline.clab.yml` for the
 archive-loaded local image. Native release qualification executes that installer
-and verifies its persistent vault/profile lifecycle and graceful resume.
+and verifies its persistent vault/profile lifecycle, graceful resume and explicit
+upgrade/rollback against the exact reviewed predecessor. The maintained Python
+transaction owner is embedded into the single downloaded installer by the
+renderer; it is not a separate user prerequisite or download. Normal no-argument
+resume stays pinned. See [browser maintenance qualification](maintainers/qualification.md#browser-data-compatibility)
+for local rehearsal versus public delivery evidence and their limits.
 Neither a source build nor registry publication establishes live EDA/NSP results.

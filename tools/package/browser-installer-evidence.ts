@@ -7,6 +7,10 @@ import {
 } from "../../src/platform/node/browser-data-compatibility";
 import { ciExecution, type CiExecution } from "../check/ci-evidence";
 
+import {
+  validateBrowserUpgradeEvidence,
+  type BrowserUpgradeEvidence,
+} from "./browser-upgrade-evidence";
 import { parseBrowserRegistryMetadata } from "./browser-registry-metadata";
 
 export const BROWSER_INSTALLER_CHECKS = [
@@ -111,7 +115,7 @@ export function validateBrowserDataPreflight(
 }
 
 export interface BrowserInstallerEvidence {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
   readonly deliveryScope: "public-registry";
   readonly outcome: "passed";
   readonly version: string;
@@ -123,18 +127,19 @@ export interface BrowserInstallerEvidence {
   readonly completedAt: string;
   readonly releaseTransport: string;
   readonly preflight: BrowserDataPreflightEvidence;
+  readonly transition: BrowserUpgradeEvidence;
   readonly checks: readonly string[];
 }
 
 export function browserInstallerEvidence(
   input: Pick<
     BrowserInstallerEvidence,
-    "version" | "sourceRevision" | "platform" | "image" | "startedAt" | "preflight"
+    "version" | "sourceRevision" | "platform" | "image" | "startedAt" | "preflight" | "transition"
   >,
   env: NodeJS.ProcessEnv = process.env,
 ): BrowserInstallerEvidence {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     deliveryScope: "public-registry",
     outcome: "passed",
     ...input,
@@ -160,7 +165,7 @@ export function validateBrowserInstallerEvidence(
     throw new Error("Missing native installer qualification.");
   const input = value as BrowserInstallerEvidence;
   if (
-    input.schemaVersion !== 3 ||
+    input.schemaVersion !== 4 ||
     input.deliveryScope !== "public-registry" ||
     input.outcome !== "passed" ||
     input.version !== expected.version ||
@@ -182,9 +187,10 @@ export function validateBrowserInstallerEvidence(
     JSON.stringify(input.checks) !== JSON.stringify(BROWSER_INSTALLER_CHECKS)
   )
     throw new Error(
-      "Current native installer qualification requires schema 3 public-registry evidence for this release, source and run.",
+      "Current native installer qualification requires schema 4 public-registry evidence for this release, source and run.",
     );
   const preflight = validateBrowserDataPreflight(input.preflight, expected);
+  const transition = validateBrowserUpgradeEvidence(input.transition, expected);
   // Return only public fields, never arbitrary additions to an uploaded receipt.
   return {
     ...browserInstallerEvidence(
@@ -195,6 +201,7 @@ export function validateBrowserInstallerEvidence(
         image: expected.image,
         startedAt: input.startedAt,
         preflight,
+        transition,
       },
       {},
     ),

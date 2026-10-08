@@ -269,7 +269,7 @@ jobs:
         with:
           name: browser-registry
           path: dist/browser-registry
-      - name: Qualify the native installer, public image and persistent vault lifecycle
+      - name: Qualify native installation, public delivery, vault persistence, upgrade and rollback
         run: |
           qualifier_node="$(command -v node)"
           sudo -n env "PATH=$PATH" "EXPECTED_ARCH=$EXPECTED_ARCH" "GITHUB_RUN_ID=$GITHUB_RUN_ID" "GITHUB_RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT" "$qualifier_node" --import tsx tools/package/browser-installer-smoke.ts dist/container-staging "$RELEASE_VERSION" "$GITHUB_SHA" dist/browser-registry/registry.json

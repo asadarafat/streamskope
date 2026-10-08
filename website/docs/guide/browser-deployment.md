@@ -256,8 +256,9 @@ saved owner and port are supplied by the installer, rather than the topology's
 defaults. Keep `installation.json` and the private release files. Removing these
 records does not migrate the data into a new installation.
 
-Rerunning even a newer installer retains the pinned release. There is no supported
-browser-host upgrade procedure, automatic upgrade or adoption of a manual instance.
+Rerunning even a newer installer retains the pinned release. To change it, use
+the explicit [check and upgrade procedure](browser-host.md#upgrade-an-installer-managed-host).
+The installer does not adopt a manual instance.
 
 ### Manually managed host
 
@@ -272,6 +273,53 @@ clab deploy -t streamskope-VERSION.clab.yml
 Use the offline filename for offline delivery and preserve the same variables in
 sudo invocations. The second deployment reuses `streamskope-data`. It does not
 automatically reconnect brokers or resume an EDA capture.
+
+## Maintenance limits and recovery
+
+Installer-managed maintenance retains the saved owner, account home, port,
+loopback origin and data location. It requires the local Docker daemon, existing
+Containerlab and the original Linux account. It does not install prerequisites,
+change networking or migrate a manual deployment. Metadata and image downloads
+may need GitHub/GHCR access; cached bytes must still match the exact release.
+
+The reviewed legacy starting point is **0.10.3**. Newer targets must declare the
+supported browser data contract. A similar version number is not evidence of
+compatible data, and an arbitrary earlier image is not a rollback target. Only
+the previous release recorded by a completed transition is selected by `rollback`.
+
+Before the first upgrade, create and unlock the vault at least once, then lock
+it. Maintenance requires its original lease file; it does not fabricate or
+replace that file. Complete plugin-owned target work through the application.
+The initial automated maintenance scope refuses saved plugin-managed profile
+sources, including retained profile backups, and unresolved plugin recovery.
+Retain those records and obtain a reviewed migration if the check still refuses;
+deleting them is not proof of remote cleanup.
+
+The preflight inspects storage envelopes and installed package integrity without
+decrypting profiles or executing plugins. It cannot prove protected-content
+authenticity or remote-resource cleanup. After a confirmed graceful stop, the
+transaction holds the existing vault lease while checking consistent data,
+backing it up and committing the replacement. A forced stop, nonzero exit,
+competing data owner or substituted lease blocks progress.
+
+Complete backups and their integrity records remain under
+`/var/lib/streamskope/browser/backups/`. They preserve the data's contents,
+permissions and numeric ownership. Retain them until the replacement has been
+unlocked and verified and your normal backup policy permits retirement. They
+consume local disk space and remain sensitive; do not upload them to an issue.
+
+If maintenance is interrupted, keep `installation.json`, `maintenance.json`,
+the backup generations and all application data. Run the trusted maintenance
+installer again with `recover` from the original account. Ordinary no-argument
+resume refuses an active transaction, so it cannot accidentally start the old
+release against changed data.
+
+Recovery advances only when the journal, actual container and installation
+record agree. If the new record was already committed, it finishes bookkeeping.
+If a candidate was unlocked or its data changed after an interruption, or its
+identity was never durably recorded, recovery can require operator review. It
+does not guess ownership, remove another container or restore a stale snapshot.
+Preserve the failure's reason and transaction identity for a maintainer.
 
 ## Back up and restore
 

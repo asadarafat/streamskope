@@ -429,6 +429,7 @@ export async function prepareBrowserReleaseAssets(
             manifestSha256: createHash("sha256").update(manifestContent).digest("hex"),
           },
           await readFile("tools/package/install-browser-workbench.sh", "utf8"),
+          await readFile("tools/package/browser-maintenance.py", "utf8"),
         ),
         { flag: "wx", mode: 0o755 },
       );
@@ -544,6 +545,7 @@ export async function validateBrowserReleaseAssets(
         manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
       },
       await readFile("tools/package/install-browser-workbench.sh", "utf8"),
+      await readFile("tools/package/browser-maintenance.py", "utf8"),
     );
     if (!installer.equals(Buffer.from(reviewed)))
       throw new Error("Browser installer does not match the reviewed template and release assets.");
