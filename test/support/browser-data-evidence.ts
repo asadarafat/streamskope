@@ -1,4 +1,9 @@
 import {
+  browserUpgradePredecessor,
+  BROWSER_UPGRADE_CHECKS,
+  type BrowserUpgradeEvidence,
+} from "../../tools/package/browser-upgrade-evidence";
+import {
   BROWSER_DATA_COMPATIBILITY,
   BROWSER_DATA_DOCUMENT_KINDS,
   BROWSER_DATA_INSPECTION_LIMITATIONS,
@@ -30,5 +35,19 @@ export function browserDataEvidenceFixture(
       }),
       unverified: BROWSER_DATA_INSPECTION_LIMITATIONS,
     },
+  };
+}
+
+/** Structured validator fixture, never evidence of an executed native transition. */
+export function browserUpgradeEvidenceFixture(
+  platform: string,
+  imageId: string,
+): BrowserUpgradeEvidence {
+  return {
+    predecessor: browserUpgradePredecessor(platform),
+    targetImageId: imageId,
+    upgradeBackup: { inventorySha256: "1".repeat(64), dataSnapshotSha256: "2".repeat(64) },
+    rollbackBackup: { inventorySha256: "3".repeat(64), dataSnapshotSha256: "2".repeat(64) },
+    checks: BROWSER_UPGRADE_CHECKS,
   };
 }

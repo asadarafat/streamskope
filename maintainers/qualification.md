@@ -82,9 +82,24 @@ and exact installer bytes. An older schema 3 installer requires qualification fr
 its own source, rather than reconstruction using today's template.
 
 Local staged-image receipts are separate from public-registry delivery evidence
-and cannot satisfy release acceptance. This inspection work does not yet provide
-an installer-managed upgrade, rollback or complete backup procedure. Continue
-using the existing [browser operations guide](../website/docs/guide/browser-host.md).
+and cannot satisfy release acceptance. The installer uses this inspection as one
+part of its [owned maintenance transaction](../website/docs/guide/browser-host.md#upgrade-an-installer-managed-host),
+alongside confirmed graceful shutdown, the held original vault lease, a complete
+private backup and locked target readiness.
+
+Native installer qualification separately exercises an actual transition from
+the exact reviewed 0.10.3 image: initialize a vault and saved profile, check and
+upgrade while unlocked, unlock the target and verify persistence/native workers,
+roll back, unlock the predecessor and verify a pinned rerun. Both transitions
+must have complete backup integrity evidence. Public receipts require the exact
+public target image and anonymous registry delivery; a source build or sealed
+local rehearsal does not establish that scope. A local rehearsal may use a real
+locally staged target without publishing an image, but its receipt remains local.
+
+The first reviewed legacy predecessor is 0.10.3; these checks do not establish
+automatic migration from every historical release. Readiness proves the locked
+host started, while the authenticated native fixture establishes its own saved
+profile and unlock result. Neither establishes remote plugin-resource cleanup.
 
 ## Attach local acceptance to a draft
 

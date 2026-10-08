@@ -1,0 +1,548 @@
+"""Focused transaction tests: real journal, copy, fsync, lock and retained data.
+External Docker/HTTP effects are controlled; whole shell and native tests own delivery.
+"""
+
+import copy
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location(
+    "maintenance", Path(__file__).resolve().parents[2] / "tools/package/browser-maintenance.py"
+)
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+
+POLICY = {
+    "dataCompatibility": {
+        "contract": "streamskope-browser-data-v1",
+        "inspector": "dist/web/data-preflight.cjs",
+        "reportSchemaVersion": 1,
+    },
+    "predecessors": [],
+}
+
+
+def release(version, digit):
+    return {
+        "version": version,
+        "sourceRevision": digit * 40,
+        "topologySha256": digit * 64,
+        "manifestSha256": digit * 64,
+        "reference": "ghcr.io/asadarafat/streamskope:" + version + "@sha256:" + digit * 64,
+        "imageId": "sha256:" + digit * 64,
+        "deliveryScope": "public-registry",
+        "contract": POLICY["dataCompatibility"]["contract"],
+        "inspector": True,
+        "topology": "streamskope-" + version + ".clab.yml",
+    }
+
+
+def report(version):
+    documents = [
+        {"kind": kind, "state": "missing", "count": 0, "formats": [], "reason": None}
+        for kind in m.DOCUMENTS
+    ]
+    documents[0].update(state="verified", count=4)
+    documents[1].update(state="verified", count=1, formats=[1])
+    return {
+        "schemaVersion": 1,
+        "dataContract": POLICY["dataCompatibility"]["contract"],
+        "hostRelease": "v" + version,
+        "outcome": "eligible",
+        "documents": documents,
+        "unverified": m.LIMITATIONS,
+    }
+
+
+class Crash(BaseException):
+    pass
+
+
+class Fixture:
+    def __init__(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="streamskope-maintenance-core-")
+        self.root = Path(self.temporary.name)
+        self.uid, self.gid = os.getuid(), os.getgid()
+        self.owner = self.uid or 1000
+        self.data = self.root / "streamskope-data"
+        self.data.mkdir(mode=0o700)
+        os.chown(self.data, self.owner, self.gid)
+        for name, content in (
+            ("vault.lock", b""),
+            ("vault.json", b"protected vault"),
+            ("nats-profiles.json", b"protected profiles"),
+        ):
+            self.write(name, content)
+        self.source, self.target = release("0.10.3", "a"), release("0.11.0", "b")
+        self.state = {
+            "schemaVersion": 1,
+            **self.pointer(self.source),
+            "uid": self.owner,
+            "gid": self.gid,
+            "home": str(self.root),
+            "operatorUid": self.uid,
+            "port": 18081,
+        }
+        m.atomic_json(self.root / "installation.json", self.state, self.uid, self.gid)
+        stage = self.root / ".install-fixture"
+        stage.mkdir(mode=0o700)
+        self.config = {
+            "root": str(self.root),
+            "stateUid": self.uid,
+            "stateGid": self.gid,
+            "arch": "arm64",
+            "lab": "fixture",
+            "network": "fixture-mgmt",
+            "container": "clab-fixture-app",
+            "stage": str(stage),
+            "target": self.pointer(self.target),
+        }
+        self.active = {
+            "Id": "1" * 64,
+            "RestartCount": 0,
+            "State": {
+                "StartedAt": "2026-10-08T00:00:00Z",
+                "Running": True,
+                "Status": "running",
+                "ExitCode": 0,
+                "OOMKilled": False,
+            },
+        }
+        self.calls = []
+        self.engine = None
+
+    @staticmethod
+    def pointer(value):
+        return {key: value[key] for key in m.POINTER_KEYS}
+
+    def write(self, name, content):
+        path = self.data / name
+        path.write_bytes(content)
+        os.chmod(path, 0o600)
+        os.chown(path, self.owner, self.gid)
+
+    def open(self):
+        if self.engine:
+            self.engine.close()
+        engine = m.Maintenance(self.config, POLICY)
+        self.engine = engine
+        engine.operator = lambda: None
+        engine.release = lambda pointer: copy.deepcopy(
+            next(value for value in (self.source, self.target) if self.pointer(value) == pointer)
+        )
+        engine.named_container = lambda: None if self.active is None else self.active["Id"]
+        engine.conflicts = lambda _: None
+
+        def owned(_release, expected=None):
+            m.require(
+                self.active is not None and (expected is None or self.active["Id"] == expected),
+                "ownership-unconfirmed",
+            )
+            return copy.deepcopy(self.active)
+
+        engine.owned = owned
+
+        def preflight(inspector, data=None):
+            m.require(not (self.data / "managed").exists(), "preflight-blocked")
+            return report(inspector["version"])
+
+        engine.preflight = preflight
+
+        def docker(*args, **_options):
+            self.calls.append(args)
+            if args[0] == "stop":
+                self.active["State"].update(Running=False, Status="exited")
+            elif args[0] == "rm":
+                self.active = None
+            return 0, b""
+
+        engine.docker = docker
+
+        def deploy(target):
+            self.calls.append(("deploy",))
+            self.active = {
+                "Id": "2" * 64,
+                "RestartCount": 0,
+                "State": {
+                    "StartedAt": "2026-10-08T00:01:00Z",
+                    "Running": True,
+                    "Status": "running",
+                    "ExitCode": 0,
+                    "OOMKilled": False,
+                },
+            }
+            engine.journal["candidateId"] = self.active["Id"]
+            engine.save_journal("deployed")
+
+        engine.deploy = deploy
+        engine.ready = lambda: None
+        return engine
+
+    def interrupt(self, phase):
+        engine = self.open()
+        original = engine.save_journal
+
+        def save(next_phase=None):
+            original(next_phase)
+            if engine.journal["phase"] == phase:
+                raise Crash()
+
+        engine.save_journal = save
+        with unittest.TestCase().assertRaises(Crash):
+            engine.execute("upgrade")
+        engine.close()
+
+    def close(self):
+        if self.engine:
+            self.engine.close()
+        self.temporary.cleanup()
+
+
+class TransactionTest(unittest.TestCase):
+    def setUp(self):
+        self.fixture = Fixture()
+
+    def tearDown(self):
+        self.fixture.close()
+
+    def test_commit_holds_real_original_inode_lease_through_ready_and_record_switch(self):
+        f = self.fixture
+        before = m.inventory(f.data, f.owner, f.gid)
+        inode = (f.data / "vault.lock").stat().st_ino
+        engine = f.open()
+        observations = []
+
+        def contender():
+            result = subprocess.run(
+                ["flock", "-n", "-E", "75", str(f.data / "vault.lock"), "true"], capture_output=True
+            )
+            observations.append(result.returncode)
+
+        engine.ready = contender
+        atomic = m.atomic_json
+
+        def write(path, value, uid, gid):
+            if Path(path).name == "installation.json":
+                contender()
+            atomic(path, value, uid, gid)
+
+        with patch.object(m, "atomic_json", write):
+            result = engine.execute("upgrade")
+        self.assertEqual(observations, [75, 75])
+        self.assertEqual(result["outcome"], "committed")
+        self.assertEqual(result["previous"]["version"], "0.10.3")
+        self.assertEqual((f.data / "vault.lock").stat().st_ino, inode)
+        self.assertEqual(m.inventory(f.data, f.owner, f.gid), before)
+        generation = f.root / result["backup"]["path"]
+        self.assertEqual(m.inventory(generation / "data", f.owner, f.gid), before)
+        self.assertEqual(
+            m.digest((generation / "inventory.json").read_bytes()),
+            result["backup"]["inventorySha256"],
+        )
+        self.assertEqual(
+            json.loads((generation / "transaction.json").read_bytes())["phase"], "committed"
+        )
+        self.assertFalse((f.root / "maintenance.json").exists())
+        engine.close()
+        self.assertEqual(
+            subprocess.run(["flock", "-n", str(f.data / "vault.lock"), "true"]).returncode, 0
+        )
+
+    def test_completed_recover_is_idempotent_and_retains_previous_identity(self):
+        f = self.fixture
+        f.open().execute("upgrade")
+        result = f.open().execute("recover")
+        self.assertEqual(result["outcome"], "unchanged")
+        self.assertEqual(result["previous"]["version"], "0.10.3")
+        self.assertEqual(sum(call[0] == "deploy" for call in f.calls), 1)
+
+    def test_read_current_preserves_schema_one_and_two_and_blocks_active_journal(self):
+        f = self.fixture
+        self.assertEqual(m.read_current(f.root, f.uid, f.gid)[0], "0.10.3")
+        f.open().execute("upgrade")
+        self.assertEqual(m.read_current(f.root, f.uid, f.gid)[0], "0.11.0")
+        (f.root / "maintenance.json").write_text("unknown")
+        with self.assertRaisesRegex(m.Refused, "recovery-required"):
+            m.read_current(f.root, f.uid, f.gid)
+
+    def test_recover_intent_rechecks_managed_data_before_stopping(self):
+        f = self.fixture
+        f.interrupt("intent")
+        f.write("managed", b"new managed profile")
+        with self.assertRaisesRegex(m.Refused, "preflight-blocked"):
+            f.open().execute("recover")
+        self.assertEqual(f.calls, [])
+        self.assertTrue(f.active["State"]["Running"])
+
+    def test_recover_intent_rechecks_space_and_lease_before_stopping(self):
+        f = self.fixture
+        f.interrupt("intent")
+        engine = f.open()
+        engine.capacity = lambda _: (_ for _ in ()).throw(m.Refused("backup-unavailable"))
+        with self.assertRaisesRegex(m.Refused, "backup-unavailable"):
+            engine.execute("recover")
+        self.assertEqual(f.calls, [])
+        (f.data / "vault.lock").rename(f.data / "old.lock")
+        f.write("vault.lock", b"")
+        with self.assertRaisesRegex(m.Refused, "ownership-unconfirmed"):
+            f.open().execute("recover")
+        self.assertEqual(f.calls, [])
+
+    def test_recover_stopped_completes_without_duplicate_stop(self):
+        f = self.fixture
+        f.interrupt("stopped")
+        result = f.open().execute("recover")
+        self.assertEqual(result["outcome"], "recovered")
+        self.assertEqual(sum(call[0] == "stop" for call in f.calls), 1)
+
+    def test_recover_retired_completes_without_removing_any_new_owner(self):
+        f = self.fixture
+        f.interrupt("retired")
+        result = f.open().execute("recover")
+        self.assertEqual(result["outcome"], "recovered")
+        self.assertEqual(sum(call[0] == "rm" for call in f.calls), 1)
+
+    def test_recover_deployed_refuses_changed_data_instead_of_restoring_snapshot(self):
+        f = self.fixture
+        f.interrupt("deployed")
+        f.write("nats-profiles.json", b"newer user data")
+        before = (f.root / "installation.json").read_bytes()
+        with self.assertRaisesRegex(m.Refused, "recovery-required"):
+            f.open().execute("recover")
+        self.assertEqual((f.data / "nats-profiles.json").read_bytes(), b"newer user data")
+        self.assertEqual((f.root / "installation.json").read_bytes(), before)
+        self.assertTrue(f.active["State"]["Running"])
+
+    def test_complete_record_stale_journal_only_archives_without_network_or_data_checks(self):
+        f = self.fixture
+        engine = f.open()
+        engine.archive = lambda: (_ for _ in ()).throw(Crash())
+        with self.assertRaises(Crash):
+            engine.execute("upgrade")
+        engine.close()
+        f.write("nats-profiles.json", b"legitimate postcommit edits")
+        engine = f.open()
+        engine.release = lambda _: (_ for _ in ()).throw(
+            AssertionError("network must not be needed")
+        )
+        result = engine.execute("recover")
+        self.assertEqual(result["outcome"], "recovered")
+        self.assertEqual(
+            (f.data / "nats-profiles.json").read_bytes(), b"legitimate postcommit edits"
+        )
+        self.assertFalse((f.root / "maintenance.json").exists())
+
+    def test_partial_backup_is_preserved_while_recovery_creates_complete_next_attempt(self):
+        f = self.fixture
+        with patch.object(m.shutil, "copyfileobj", side_effect=OSError("disk interrupted")):
+            with self.assertRaises(OSError):
+                f.open().execute("upgrade")
+        result = f.open().execute("recover")
+        transaction = f.root / "backups" / result["transactionId"]
+        self.assertEqual(
+            sorted(path.name for path in transaction.iterdir()), ["attempt-1", "attempt-2"]
+        )
+        self.assertTrue((transaction / "attempt-1/data").exists())
+        self.assertTrue((transaction / "attempt-2/inventory.json").exists())
+
+    def test_ambiguous_candidate_without_recorded_id_is_preserved(self):
+        f = self.fixture
+        f.interrupt("retired")
+        f.active = {"Id": "f" * 64, "State": {"Running": True}}
+        before = list(f.calls)
+        with self.assertRaisesRegex(m.Refused, "recovery-required"):
+            f.open().execute("recover")
+        self.assertEqual(f.calls, before)
+        self.assertEqual(f.active["Id"], "f" * 64)
+
+    def test_held_original_vault_lease_refuses_recovery_without_deployment(self):
+        f = self.fixture
+        f.interrupt("stopped")
+        with open(f.data / "vault.lock", "rb") as owner:
+            m.fcntl.flock(owner, m.fcntl.LOCK_EX | m.fcntl.LOCK_NB)
+            with self.assertRaisesRegex(m.Refused, "lease-held"):
+                f.open().execute("recover")
+        self.assertFalse(any(call[0] == "deploy" for call in f.calls))
+
+    def test_candidate_fresh_setup_is_not_ready(self):
+        engine = self.fixture.open()
+        engine.run = lambda *args, **kwargs: (
+            0,
+            b'{"status":"locked","state":"locked","setupRequired":true}',
+        )
+        with patch.object(m.time, "sleep"):
+            with self.assertRaisesRegex(m.Refused, "candidate-unavailable"):
+                m.Maintenance.ready(engine)
+
+    def test_candidate_stopping_during_readiness_never_switches_record(self):
+        f = self.fixture
+        engine = f.open()
+        engine.ready = lambda: f.active["State"].update(Running=False, Status="exited")
+        original = (f.root / "installation.json").read_bytes()
+        with self.assertRaisesRegex(m.Refused, "candidate-unavailable"):
+            engine.execute("upgrade")
+        self.assertEqual((f.root / "installation.json").read_bytes(), original)
+        self.assertTrue((f.root / "maintenance.json").exists())
+
+    def test_inspector_timeout_only_removes_its_verified_readonly_worker(self):
+        for foreign in (False, True):
+            with self.subTest(foreign=foreign):
+                f = self.fixture
+                engine = f.open()
+                retained = None
+                removed = []
+
+                def docker(*args, **options):
+                    nonlocal retained
+                    if args[0] == "run":
+                        name = args[args.index("--name") + 1]
+                        nonce = args[args.index("--label") + 1].split("=", 1)[1]
+                        retained = {
+                            "Id": "e" * 64,
+                            "Name": "/" + name,
+                            "Image": f.target["imageId"],
+                            "Config": {
+                                "Image": f.target["imageId"],
+                                "Labels": {
+                                    "io.streamskope.maintenance": "foreign" if foreign else nonce
+                                },
+                                "User": str(f.owner) + ":" + str(f.gid),
+                                "Entrypoint": ["node"],
+                                "Cmd": [POLICY["dataCompatibility"]["inspector"], "/data"],
+                            },
+                            "HostConfig": {
+                                "ReadonlyRootfs": True,
+                                "NetworkMode": "none",
+                                "Privileged": False,
+                                "CapAdd": None,
+                                "CapDrop": ["ALL"],
+                                "SecurityOpt": ["no-new-privileges:true"],
+                            },
+                            "Mounts": [
+                                {
+                                    "Type": "bind",
+                                    "Source": str(f.data),
+                                    "Destination": "/data",
+                                    "RW": False,
+                                }
+                            ],
+                        }
+                        raise m.Refused("candidate-unavailable")
+                    if args[:2] == ("container", "ls"):
+                        return 0, b"" if retained is None else (retained["Id"] + "\n").encode()
+                    if args[:2] == ("container", "inspect"):
+                        return 0, m.canonical([retained])
+                    self.assertEqual(args, ("rm", "--force", "e" * 64))
+                    removed.append(args)
+                    retained = None
+                    return 0, b""
+
+                engine.docker = docker
+                with self.assertRaisesRegex(
+                    m.Refused, "cleanup-unconfirmed" if foreign else "candidate-unavailable"
+                ):
+                    m.Maintenance.preflight(engine, f.target)
+                self.assertEqual(len(removed), 0 if foreign else 1)
+                self.assertEqual(f.active["Id"], "1" * 64)
+
+
+class CommandBoundaryTest(unittest.TestCase):
+    def invoke(self, script, timeout=5):
+        processes = []
+        original = subprocess.Popen
+
+        def start(*args, **kwargs):
+            process = original(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        with patch.object(m.subprocess, "Popen", start):
+            with self.assertRaisesRegex(m.Refused, "^candidate-unavailable$"):
+                m.command([sys.executable, "-c", script], timeout=timeout, allow_failure=True)
+        self.assertEqual(len(processes), 1)
+        self.assertIsNotNone(processes[0].returncode)
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(processes[0].pid, os.WNOHANG)
+
+    def test_live_stdout_and_stderr_are_each_stopped_at_the_shared_bound(self):
+        for stream in (1, 2):
+            with self.subTest(stream=stream), patch.object(m, "MAX_OUTPUT", 32 * 1024):
+                self.invoke(
+                    "import os,time; os.write("
+                    + str(stream)
+                    + ", b'private-output-sentinel' * 4096); time.sleep(60)"
+                )
+
+    def test_neither_stream_can_hide_under_a_separate_limit(self):
+        with patch.object(m, "MAX_OUTPUT", 24 * 1024):
+            self.invoke(
+                "import os,time; os.write(1,b'x'*16000); os.write(2,b'y'*16000); time.sleep(60)"
+            )
+
+    def test_silent_timeout_kills_and_reaps_without_returning_command_text(self):
+        self.invoke("import time; time.sleep(60)", timeout=0.1)
+
+    def test_bounded_stderr_is_discarded_and_explicit_nonzero_result_is_retained(self):
+        result = m.command(
+            [
+                sys.executable,
+                "-c",
+                "import os,sys; os.write(1,b'public'); os.write(2,b'private-output-sentinel'); sys.exit(7)",
+            ],
+            allow_failure=True,
+        )
+        self.assertEqual(result, (7, b"public"))
+
+
+class BoundaryTest(unittest.TestCase):
+    def test_semver_precedence_and_equal_identity_policy(self):
+        ordered = [
+            "0.11.0-alpha",
+            "0.11.0-alpha.1",
+            "0.11.0-alpha.2",
+            "0.11.0-alpha.10",
+            "0.11.0-beta",
+            "0.11.0-rc.1",
+            "0.11.0",
+            "0.12.0",
+            "1.0.0",
+        ]
+        for left, right in zip(ordered, ordered[1:]):
+            self.assertTrue(m.newer(right, left))
+            self.assertFalse(m.newer(left, right))
+        self.assertFalse(m.newer("0.11.0", "0.11.0"))
+        with self.assertRaises(m.Refused):
+            m.newer("0.11.0-rc.01", "0.10.3")
+
+    def test_initialized_vault_proof_required_beyond_generic_preflight_eligibility(self):
+        value = report("0.11.0")
+        value["documents"][1].update(state="missing", count=0, formats=[])
+        with self.assertRaisesRegex(m.Refused, "preflight-blocked"):
+            m.inspection(value, POLICY, "0.11.0")
+
+    def test_journal_and_state_json_refuse_duplicate_keys(self):
+        with self.assertRaises(m.Refused):
+            m.decode(b'{"schemaVersion":1,"schemaVersion":2}')
+
+    def test_private_inventory_refuses_links_without_following_or_repairing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            outside = root / "outside"
+            outside.write_text("untouched")
+            data = root / "data"
+            data.mkdir(mode=0o700)
+            (data / "secret").symlink_to(outside)
+            with self.assertRaises(m.Refused):
+                m.inventory(data, os.getuid(), os.getgid())
+            self.assertEqual(outside.read_text(), "untouched")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

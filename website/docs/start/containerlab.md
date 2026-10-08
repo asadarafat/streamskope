@@ -43,7 +43,9 @@ losing the passphrase makes saved credentials unrecoverable.
 
 An existing vault shows **Unlock**. Enter its original passphrase.
 Rerunning the installer preserves the vault, profiles and installed version;
-a newer installer does not upgrade an existing installation.
+a newer installer does not upgrade an existing installation automatically.
+Use the separate [upgrade procedure](../guide/browser-host.md#upgrade-an-installer-managed-host)
+when you want to change releases.
 
 **You should see:** **Connection Profiles** after the vault opens.
 

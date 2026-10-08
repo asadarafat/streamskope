@@ -6,7 +6,10 @@ import {
   validateBrowserInstallerEvidence,
 } from "../../tools/package/browser-installer-evidence";
 import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
-import { browserDataEvidenceFixture } from "../support/browser-data-evidence";
+import {
+  browserDataEvidenceFixture,
+  browserUpgradeEvidenceFixture,
+} from "../support/browser-data-evidence";
 
 const expected = {
   version: "1.2.3",
@@ -25,6 +28,7 @@ function fixture(): ReturnType<typeof browserInstallerEvidence> {
       image: expected.image,
       startedAt: new Date(Date.now() - 1000).toISOString(),
       preflight: browserDataEvidenceFixture(expected.version, expected.imageId),
+      transition: browserUpgradeEvidenceFixture(expected.platform, expected.imageId),
     },
     { GITHUB_RUN_ID: "1234", GITHUB_RUN_ATTEMPT: "1" },
   );
@@ -38,6 +42,8 @@ it("retains native installer execution provenance and strips unrelated values", 
 it.each([
   { schemaVersion: 1 },
   { schemaVersion: 2 },
+  { schemaVersion: 3 },
+  { transition: undefined },
   { deliveryScope: "local-staged" },
   { sourceRevision: "b".repeat(40) },
   { platform: "linux/amd64" },
@@ -133,3 +139,31 @@ it("derives distinct native image authorities from schema4 and refuses historica
       ),
     ).toThrow();
 });
+
+it.each([
+  "predecessor-source",
+  "predecessor-image",
+  "target-image",
+  "checks",
+  "backup",
+  "same-inventory",
+  "extra-field",
+])(
+  "rejects native transition %s without independent predecessor and complete backups",
+  (change) => {
+    const receipt = structuredClone(fixture());
+    const transition = receipt.transition;
+    if (change === "predecessor-source")
+      Object.assign(transition.predecessor, { sourceRevision: expected.sourceRevision });
+    if (change === "predecessor-image")
+      Object.assign(transition.predecessor, { imageId: expected.imageId });
+    if (change === "target-image")
+      Object.assign(transition, { targetImageId: transition.predecessor.imageId });
+    if (change === "checks") Object.assign(transition, { checks: [] });
+    if (change === "backup") Object.assign(transition, { rollbackBackup: undefined });
+    if (change === "same-inventory")
+      Object.assign(transition, { rollbackBackup: transition.upgradeBackup });
+    if (change === "extra-field") Object.assign(transition, { token: "private" });
+    expect(() => validateBrowserInstallerEvidence(receipt, expected)).toThrow();
+  },
+);

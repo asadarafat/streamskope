@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -10,85 +9,14 @@ import { fileURLToPath } from "node:url";
 import { prepareBrowserReleaseAssets } from "./browser-release";
 import { BROWSER_INSTALLER_NAME } from "./browser-installer";
 import { parseBrowserRegistryMetadata } from "./browser-registry-metadata";
+import { run, replaceConstant, type CommandResult } from "./browser-qualification-process";
+import { verifyBrowserUpgrade } from "./browser-upgrade-smoke";
+import type { BrowserUpgradeEvidence } from "./browser-upgrade-evidence";
 import { verifyBrowserContainer } from "./container-smoke";
 import {
   browserInstallerEvidence,
   type BrowserDataPreflightEvidence,
 } from "./browser-installer-evidence";
-
-interface CommandResult {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-/** Keep private browser secrets out of command arguments and qualification output. */
-function run(
-  command: string,
-  args: readonly string[],
-  environment = process.env,
-  allowFailure = false,
-  timeout = 12 * 60_000,
-): Promise<CommandResult> {
-  return new Promise((accept, reject) => {
-    // The installer must not inherit a controlling terminal that could disclose
-    // its fresh setup code into a recorded qualification session.
-    const child = spawn(command, [...args], {
-      detached: true,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let bytes = 0;
-    let failed = false;
-    const fail = (message: string): void => {
-      if (failed) return;
-      failed = true;
-      clearTimeout(timer);
-      if (child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, "SIGKILL");
-        } catch {
-          // The command may have ended just before its execution bound expired.
-        }
-      }
-      reject(new Error(message));
-    };
-    const capture = (parts: Buffer[], chunk: Buffer): void => {
-      bytes += chunk.length;
-      if (bytes > 2 * 1024 * 1024)
-        fail("Installer qualification command exceeded its output bound.");
-      else parts.push(chunk);
-    };
-    child.stdout.on("data", (chunk: Buffer) => capture(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => capture(stderr, chunk));
-    const timer = setTimeout(
-      () => fail("Installer qualification command exceeded its execution bound."),
-      timeout,
-    );
-    child.once("error", () => fail("Installer qualification command could not start."));
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (failed) return;
-      const result = {
-        code: code ?? 1,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-      };
-      if (result.code !== 0 && !allowFailure)
-        reject(new Error(`Installer qualification command failed: ${result.stderr.trim()}`));
-      else accept(result);
-    });
-  });
-}
-
-function replaceConstant(source: string, name: string, value: string): string {
-  assert.ok(!value.includes("'") && !value.includes("\n"));
-  const expression = new RegExp(`^${name}='[^']*'$`, "mu");
-  assert.ok(expression.test(source), `Installer qualification requires one ${name} constant.`);
-  return source.replace(expression, `${name}='${value}'`);
-}
 
 /** Qualify staged release delivery with the real public image and native host. */
 export async function verifyBrowserInstaller(
@@ -136,6 +64,7 @@ export async function verifyBrowserInstaller(
   let cleaned = false;
   let installationStarted = false;
   let preflight: BrowserDataPreflightEvidence | undefined;
+  let transition: BrowserUpgradeEvidence | undefined;
   try {
     // Empty credentials ensure this exercises public GHCR delivery, rather than
     // silently borrowing the maintainer's or release publisher's registry login.
@@ -276,6 +205,18 @@ with open(${JSON.stringify(fixtureCalls)},'a',encoding='utf8') as receipt:
     assert.deepEqual(await readFile(join(state, "installation.json")), installation);
     assert.deepEqual(await readFile(join(data, "vault.json")), vault);
     assert.deepEqual(await readFile(join(data, "nats-profiles.json")), profiles);
+    transition = await verifyBrowserUpgrade({
+      target: {
+        version,
+        sourceRevision,
+        platform: `linux/${architecture}`,
+        image: registry.reference,
+        imageId: registry.platforms.find((item) => item.platform === `linux/${architecture}`)!
+          .imageId,
+      },
+      installerSource: await readFile(join(output, BROWSER_INSTALLER_NAME), "utf8"),
+      environment,
+    });
   } finally {
     try {
       if (!installationStarted) {
@@ -382,6 +323,10 @@ with open(${JSON.stringify(fixtureCalls)},'a',encoding='utf8') as receipt:
     }
   }
   assert.ok(preflight !== undefined, "Native data preflight must finish before publication.");
+  assert.ok(
+    transition !== undefined,
+    "Native upgrade and rollback must finish before publication.",
+  );
   const evidence = browserInstallerEvidence({
     version,
     sourceRevision,
@@ -389,6 +334,7 @@ with open(${JSON.stringify(fixtureCalls)},'a',encoding='utf8') as receipt:
     image: registry.reference,
     startedAt,
     preflight,
+    transition,
   });
   await mkdir(evidenceRoot, { recursive: true });
   await writeFile(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o644 });

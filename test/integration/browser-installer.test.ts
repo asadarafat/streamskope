@@ -527,6 +527,7 @@ it.each([
         ...change,
       },
       "@STREAMSKOPE_INSTALL_VERSION@\n@STREAMSKOPE_INSTALL_SOURCE@\n@STREAMSKOPE_TOPOLOGY_SHA256@\n@STREAMSKOPE_MANIFEST_SHA256@\n",
+      "invalid helper for invalid identity",
     ),
   ).toThrow();
 });
