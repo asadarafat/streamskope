@@ -7,7 +7,11 @@ const project = process.env.STREAMSKOPE_TEST_PROJECT ?? "all";
 if (!["web", "electron", "package", "boundary", "all"].includes(project)) {
   throw new Error("Unknown Playwright evidence project.");
 }
-const evidenceDirectory = resolve("test-results", project);
+const suite = process.env.STREAMSKOPE_TEST_SUITE;
+if (suite !== undefined && !/^[a-z][a-z0-9-]{0,63}$/u.test(suite)) {
+  throw new Error("Invalid Playwright evidence suite.");
+}
+const evidenceDirectory = resolve("test-results", project, ...(suite ? [suite] : []));
 
 export default defineConfig({
   expect: {
