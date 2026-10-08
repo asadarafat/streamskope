@@ -181,7 +181,14 @@ historical evidence, rather than qualification of this candidate.
 
 <!-- publication-qualification -->
 
-## Published release: v0.10.0
+## Published release: v0.10.1
+
+These pages describe [v0.10.1](../releases/v0.10.1.md) at source [`7350cf1`](https://github.com/asadarafat/streamskope/commit/7350cf1c98e7b59a8558a2ca81812ae9b1b1bb91). The release notes link the packaging workflow; earlier release results below are historical.
+
+The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.10.1/qualification-v0.10.1.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
+<!-- /publication-qualification -->
+
+## Historical qualification: v0.10.0
 
 These pages describe [v0.10.0](../releases/v0.10.0.md) at source [`0e12476`](https://github.com/asadarafat/streamskope/commit/0e12476bf0f79c46de8cf5a1212374f8d8923af0). The release notes link the packaging workflow; earlier release results below are historical.
 
@@ -201,7 +208,6 @@ local-lab check used a container hostname mapping and disabled EDA API certifica
 verification; it does not establish certificate trust. Live NSP was blocked by an
 API connection timeout; no live NSP pass is claimed. Installed native desktop
 live capture and upgrade/rollback were not rehearsed for this release.
-<!-- /publication-qualification -->
 
 ## Historical qualification: v0.9.2
 
