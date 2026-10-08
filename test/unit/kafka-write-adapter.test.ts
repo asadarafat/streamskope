@@ -68,6 +68,39 @@ it("retains the offset after read-back fails and performs no second send", async
   expect(send).toHaveBeenCalledTimes(1);
 });
 
+it("waits for the read-back consumer to close before returning the broker receipt", async () => {
+  const { writer, send } = setup();
+  let completeCleanup!: () => void;
+  const cleanup = new Promise<void>((resolve) => {
+    completeCleanup = resolve;
+  });
+  const promiseConsumer: { close(force?: boolean): Promise<void> } = Consumer.prototype;
+  const closing = vi.spyOn(promiseConsumer, "close").mockReturnValue(cleanup);
+  let settled = false;
+  const pending = writer.apply(record).finally(() => {
+    settled = true;
+  });
+  await vi.waitFor(() => expect(closing).toHaveBeenCalledWith(true));
+  expect(settled).toBe(false);
+  completeCleanup();
+  expect(await pending).toMatchObject({
+    state: "acknowledged",
+    receipt: { topic: "orders", partition: 0, offset: "42" },
+  });
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+it("retains the acknowledged offset when read-back consumer cleanup rejects without resending", async () => {
+  const { writer, send } = setup();
+  vi.spyOn(Consumer.prototype, "close").mockRejectedValue(new Error("Consumer close failed"));
+  expect(await writer.apply(record)).toMatchObject({
+    state: "acknowledged",
+    verification: "unavailable",
+    receipt: { topic: "orders", partition: 0, offset: "42" },
+  });
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
 it.each(["TOPIC_AUTHORIZATION_FAILED", "INVALID_RECORD"])(
   "reports explicit broker rejection %s without retry",
   async (code) => {

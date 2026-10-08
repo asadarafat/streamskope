@@ -11,41 +11,28 @@ import type { GithubRead } from "../../tools/package/release-changelog";
 import {
   allowedReleaseDocumentationPath,
   githubWriter,
+  finalizeReleaseDocumentation,
   reconcileReleaseDocumentation,
   RELEASE_DOCS_BRANCH,
-  RELEASE_DOCS_MARKER,
   validateReleaseDocumentationPullRequest,
-  type GithubWrite,
-  type ReleaseDocumentationOptions,
+  writeReleaseDocumentationFinalization,
 } from "../../tools/package/release-documentation";
-import { EMPTY_PLUGIN_COMMENTARY } from "../../tools/package/release-reconciliation";
+import {
+  createReleaseDocumentationFixture,
+  ownedPull,
+  repository,
+  type ReleaseDocumentationFixture,
+} from "../support/release-documentation-fixture";
 
 const execute = promisify(execFile);
 const directories: string[] = [];
-const repository = "owner/project";
 const sha = "a".repeat(40);
-const title = "docs(release): synchronize published release records";
 afterEach(async () => {
   await Promise.all(
     directories.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
-function ownedPull(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    number: 12,
-    node_id: "PR_test",
-    title,
-    body: RELEASE_DOCS_MARKER,
-    state: "open",
-    auto_merge: null,
-    merge_commit_sha: "b".repeat(40),
-    base: { ref: "main", sha, repo: { full_name: repository } },
-    head: { ref: RELEASE_DOCS_BRANCH, sha, repo: { full_name: repository } },
-    labels: [{ name: "release-notes:skip" }, { name: "component:shared" }],
-    changed_files: 1,
-    ...overrides,
-  };
-}
+
 function validate(readGithub: GithubRead, overrides = {}): Promise<void> {
   return validateReleaseDocumentationPullRequest({
     repository,
@@ -150,179 +137,10 @@ it("validates secure endpoints before sending write credentials", () => {
   expect(() => githubWriter("private", "https://user:password@api.github.com")).toThrow("HTTPS");
 });
 
-interface Fixture extends ReleaseDocumentationOptions {
-  options: ReleaseDocumentationOptions;
-  git: (...args: string[]) => Promise<string>;
-  write: (path: string, contents: string) => Promise<void>;
-  remote: string;
-  directory: string;
-  writes: Array<{ method: string; path: string; body: Record<string, unknown> }>;
-  runs: Array<Record<string, unknown>>;
-  published: string;
-  getPull: () => Record<string, unknown> | null;
-}
-async function fixture(changedHighlights = false): Promise<Fixture> {
-  const directory = await mkdtemp(join(tmpdir(), "streamskope-release-docs-"));
-  directories.push(directory);
-  const root = join(directory, "source");
-  const remote = join(directory, "remote.git");
-  await mkdir(root);
-  const git = async (...args: string[]): Promise<string> =>
-    (await execute("git", args, { cwd: root })).stdout.trimEnd();
-  const write = async (path: string, contents: string): Promise<void> => {
-    await mkdir(dirname(join(root, path)), { recursive: true });
-    await writeFile(join(root, path), contents);
-  };
-  await git("init", "-b", "main");
-  await git("config", "user.name", "Test maintainer");
-  await git("config", "user.email", "maintainer@example.invalid");
-  await execute("git", ["init", "--bare", remote]);
-  await git("remote", "add", "origin", remote);
-  await write("website/zensical.toml", 'desktop_release = "v0.0.0"\n');
-  await write(
-    "website/docs/releases/index.md",
-    "# Releases\n\n<!-- plugin-release-history -->\n<!-- /plugin-release-history -->\n",
-  );
-  const commentary =
-    "---\ntitle: Unreleased changes\nunreleased: true\n---\n\n# Unreleased changes\n\nShipped highlight.\n";
-  await write("website/docs/releases/unreleased.md", commentary);
-  for (const component of ["eda", "nsp"])
-    await write(`plugins/${component}/RELEASE_NOTES.md`, EMPTY_PLUGIN_COMMENTARY);
-  await git("add", ".");
-  await git("commit", "-m", "feat: published behavior");
-  const published = await git("rev-parse", "HEAD");
-  await git("tag", "v0.1.0");
-  if (changedHighlights) {
-    await write("website/docs/releases/unreleased.md", `${commentary}\nNewer highlight.\n`);
-    await git("add", ".");
-    await git("commit", "-m", "feat: newer unpublished work");
-  }
-  await git("push", "origin", "main", "--tags");
-  const release = {
-    id: 1,
-    tag_name: "v0.1.0",
-    body: "# StreamSkope v0.1.0\n\nPublished behavior.\n",
-    draft: false,
-    prerelease: false,
-    immutable: true,
-    published_at: "2026-10-07T00:00:00Z",
-  };
-  const writes: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
-  let pull: Record<string, unknown> | null = null;
-  const runs: Array<Record<string, unknown>> = [];
-  const currentPull = async (): Promise<Record<string, unknown>> => {
-    const head = (
-      await execute("git", ["rev-parse", `refs/heads/${RELEASE_DOCS_BRANCH}`], { cwd: remote })
-    ).stdout.trim();
-    const base = await git("rev-parse", "main");
-    const files = (await git("diff", "--no-renames", "--name-only", base, head))
-      .split("\n")
-      .filter(Boolean);
-    return {
-      ...pull,
-      head: { ref: RELEASE_DOCS_BRANCH, sha: head, repo: { full_name: repository } },
-      base: { ref: "main", sha: base, repo: { full_name: repository } },
-      changed_files: files.length,
-    };
-  };
-  const readGithub: GithubRead = async (path) => {
-    if (path.includes("/releases?")) return [release];
-    if (path.includes("/commits/")) return { sha: published };
-    if (path.includes("/actions/")) return { workflow_runs: runs };
-    if (path.includes("/files?")) {
-      const current = await currentPull();
-      return (
-        await git(
-          "diff",
-          "--no-renames",
-          "--name-only",
-          String((current.base as Record<string, unknown>).sha),
-          String((current.head as Record<string, unknown>).sha),
-        )
-      )
-        .split("\n")
-        .filter(Boolean)
-        .map((filename) => ({ filename }));
-    }
-    if (path.includes("/pulls?")) return pull && pull.state === "open" ? [await currentPull()] : [];
-    if (/\/pulls\/12$/u.test(path)) return currentPull();
-    throw new Error(`Unexpected mock read ${path}`);
-  };
-  const writeGithub: GithubWrite = async (method, path, value) => {
-    const body = value as Record<string, unknown>;
-    writes.push({ method, path, body });
-    if (method === "PUT" && path.endsWith("/merge")) {
-      const current = await currentPull();
-      if (body.sha !== (current.head as Record<string, unknown>).sha)
-        throw new Error("Qualified head changed before merge.");
-      pull = { ...pull, state: "closed", merged: true };
-      return { merged: true, sha: "d".repeat(40) };
-    }
-    if (path === "/graphql") {
-      const enabled = String(body.query).includes("enablePullRequestAutoMerge");
-      pull = { ...pull, auto_merge: enabled ? { enabled: true } : null };
-      return {
-        data: {
-          [enabled ? "enablePullRequestAutoMerge" : "disablePullRequestAutoMerge"]: {
-            pullRequest: { number: 12 },
-          },
-        },
-      };
-    }
-    if (path.endsWith("/labels")) {
-      pull = { ...pull, labels: (body.labels as string[]).map((name) => ({ name })) };
-      return [];
-    }
-    if (path.endsWith("/rerun")) {
-      const id = Number(/\/runs\/(\d+)\//u.exec(path)?.[1]);
-      const run = runs.find((item) => item.id === id)!;
-      run.status = "queued";
-      run.conclusion = null;
-      return null;
-    }
-    if (path.includes("/pulls")) {
-      pull = { ...(pull ?? ownedPull({ labels: [] })), ...body };
-      if (body.state !== "closed") {
-        const current = await currentPull();
-        const head = current.head as Record<string, unknown>;
-        if (!runs.some((item) => item.head_sha === head.sha))
-          runs.push({
-            id: runs.length + 100,
-            head_sha: head.sha,
-            head_branch: RELEASE_DOCS_BRANCH,
-            event: "pull_request",
-            pull_requests: [{ number: 12, head, base: { ref: "main" } }],
-            status: "queued",
-            conclusion: null,
-          });
-      }
-      return { number: 12 };
-    }
-    throw new Error(`Unexpected mock write ${path}`);
-  };
-  const options = {
-    root,
-    repository,
-    readGithub,
-    writeGithub,
-    updateQualification: (): Promise<void> => Promise.resolve(),
-    pause: (): Promise<void> => Promise.resolve(),
-    automaticCi: true,
-  };
-  return {
-    ...options,
-    options,
-    git,
-    write,
-    root,
-    remote,
-    directory,
-    writes,
-    runs,
-    published,
-    getPull: (): Record<string, unknown> | null => pull,
-  };
-}
+const fixture = (changed = false): Promise<ReleaseDocumentationFixture> =>
+  createReleaseDocumentationFixture((directory) => {
+    directories.push(directory);
+  }, changed);
 
 it("creates one owned documentation PR with normal App-triggered CI and reuses it without duplicate runs", async () => {
   const repo = await fixture();
@@ -352,12 +170,8 @@ it("creates one owned documentation PR with normal App-triggered CI and reuses i
   repo.runs[0]!.status = "completed";
   repo.runs[0]!.conclusion = "failure";
   await repo.git("checkout", "main");
-  const retry = await reconcileReleaseDocumentation(repo.options);
-  expect(retry.ciAction).toBe("rerun");
-  expect(repo.writes.find((item) => item.path.endsWith("/rerun"))?.path).toBe(
-    `/repos/${repository}/actions/runs/100/rerun`,
-  );
-  expect(retry.headSha).toBe(first.headSha);
+  await expect(reconcileReleaseDocumentation(repo.options)).rejects.toThrow("ended with failure");
+  expect(repo.writes.some((item) => item.path.endsWith("/rerun"))).toBe(false);
 });
 it("preserves newer commentary and requires review instead of enabling auto-merge", async () => {
   const repo = await fixture(true);
@@ -405,7 +219,7 @@ it("formats generated editable pages for CI while retaining published body bytes
   expect(archived.endsWith(body)).toBe(true);
   expect(await check(body, { parser: "markdown" })).toBe(false);
 });
-it("merges an already qualified fallback PR through the protected endpoint with its exact head", async () => {
+it("hands a qualified fallback PR to its maintainer without requesting a merge", async () => {
   const repo = await fixture();
   const first = await reconcileReleaseDocumentation({
     ...repo.options,
@@ -430,15 +244,8 @@ it("merges an already qualified fallback PR through the protected endpoint with 
   const result = await reconcileReleaseDocumentation({ ...repo.options, automaticCi: false });
   expect(result.headSha).toBe(first.headSha);
   expect(result.ciAction).toBe("existing");
-  expect(repo.writes.find((item) => item.method === "PUT")).toEqual({
-    method: "PUT",
-    path: `/repos/${repository}/pulls/12/merge`,
-    body: {
-      sha: first.headSha,
-      merge_method: "squash",
-      commit_title: "docs(release): synchronize published release records",
-    },
-  });
+  expect(result.autoMergeEnabled).toBe(false);
+  expect(repo.writes.some((item) => item.method === "PUT")).toBe(false);
   expect(repo.writes.some((item) => item.path === "/graphql")).toBe(false);
 });
 it("leaves a qualified PR unmerged when GitHub rejects the protected merge", async () => {
@@ -705,4 +512,485 @@ it("force-with-lease preserves a managed remote branch changed after the ownersh
       concurrentHead,
     ),
   ).toBe(true);
+});
+
+it.each([true, false])(
+  "keeps terminal CI outcomes as errors with automaticCi=%s",
+  async (automaticCi) => {
+    for (const conclusion of [
+      "failure",
+      "cancelled",
+      "timed_out",
+      "skipped",
+      "neutral",
+      "stale",
+      "startup_failure",
+    ]) {
+      const repo = await fixture();
+      await expect(
+        finalizeReleaseDocumentation({
+          ...repo.options,
+          automaticCi,
+          readGithub: async (path) => {
+            const value = await repo.readGithub(path);
+            return path.includes("/actions/")
+              ? {
+                  workflow_runs: (
+                    value as { workflow_runs: Record<string, unknown>[] }
+                  ).workflow_runs.map((run) => ({ ...run, status: "completed", conclusion })),
+                }
+              : value;
+          },
+        }),
+      ).rejects.toThrow(`ended with ${conclusion}`);
+      expect(
+        repo.writes.some(
+          (write) =>
+            write.path.includes("/actions/") || write.path === "/graphql" || write.method === "PUT",
+        ),
+      ).toBe(false);
+    }
+  },
+);
+
+it.each(["queued", "success"])(
+  "hands manual %s CI to the maintainer without polling or merge requests",
+  async (status) => {
+    const repo = await fixture();
+    const result = await finalizeReleaseDocumentation({
+      ...repo.options,
+      automaticCi: false,
+      pause: () => {
+        throw new Error("Manual handoff must not poll");
+      },
+      readGithub: async (path) => {
+        const value = await repo.readGithub(path);
+        return path.includes("/actions/") && status === "success"
+          ? {
+              workflow_runs: (
+                value as { workflow_runs: Record<string, unknown>[] }
+              ).workflow_runs.map((run) => ({
+                ...run,
+                status: "completed",
+                conclusion: "success",
+              })),
+            }
+          : value;
+      },
+    });
+    expect(result).toMatchObject({ finalization: "awaiting-maintainer", autoMergeEnabled: false });
+    expect(repo.writes.some((write) => write.path === "/graphql" || write.method === "PUT")).toBe(
+      false,
+    );
+  },
+);
+
+it("waits through CI and observes the exact merge, allowing a custom App author", async () => {
+  const repo = await fixture();
+  let pauses = 0;
+  const result = await finalizeReleaseDocumentation({
+    ...repo.options,
+    readGithub: async (path) => {
+      const value = await repo.readGithub(path);
+      return /\/pulls\/12$/u.test(path)
+        ? { ...(value as object), user: { login: "streamskope-release[bot]", type: "Bot" } }
+        : value;
+    },
+    pause: () => {
+      pauses++;
+      Object.assign(repo.runs[0]!, { status: "completed", conclusion: "success" });
+      Object.assign(repo.getPull()!, {
+        state: "closed",
+        merged: true,
+        merge_commit_sha: "d".repeat(40),
+      });
+      return Promise.resolve();
+    },
+  });
+  expect(pauses).toBe(1);
+  expect(result).toMatchObject({
+    finalization: "merged",
+    mergeSha: "d".repeat(40),
+    ciAction: "existing",
+  });
+});
+
+it.each(["closed", "head", "files", "ci", "api"])(
+  "fails after a pending observation when %s evidence changes",
+  async (change) => {
+    const repo = await fixture();
+    let changed = false;
+    await expect(
+      finalizeReleaseDocumentation({
+        ...repo.options,
+        pause: () => {
+          changed = true;
+          return Promise.resolve();
+        },
+        readGithub: async (path) => {
+          const value = await repo.readGithub(path);
+          if (!changed) return value;
+          if (change === "api") throw new Error("API unavailable");
+          if (change === "files" && path.includes("/files?"))
+            return [{ filename: "src/unowned.ts" }];
+          if (change === "ci" && path.includes("/actions/"))
+            return {
+              workflow_runs: repo.runs.map((run) => ({
+                ...run,
+                status: "completed",
+                conclusion: "failure",
+              })),
+            };
+          if (/\/pulls\/12$/u.test(path)) {
+            if (change === "closed")
+              return { ...(value as object), state: "closed", merged: false };
+            if (change === "head")
+              return {
+                ...(value as object),
+                head: {
+                  ref: RELEASE_DOCS_BRANCH,
+                  sha: "c".repeat(40),
+                  repo: { full_name: repository },
+                },
+              };
+          }
+          return value;
+        },
+      }),
+    ).rejects.toThrow();
+    expect(repo.writes.some((write) => write.path.includes("/rerun"))).toBe(false);
+  },
+);
+
+it("requires successful CI even when a merge is reported", async () => {
+  const repo = await fixture();
+  await expect(
+    finalizeReleaseDocumentation({
+      ...repo.options,
+      pause: () => {
+        Object.assign(repo.getPull()!, {
+          state: "closed",
+          merged: true,
+          merge_commit_sha: "d".repeat(40),
+        });
+        return Promise.resolve();
+      },
+    }),
+  ).rejects.toThrow("no successful exact-head CI");
+});
+
+it.each([false, true])(
+  "bounds pending finalization with a %s advancing clock",
+  async (advancing) => {
+    const repo = await fixture();
+    let time = 0;
+    let pauses = 0;
+    await expect(
+      finalizeReleaseDocumentation({
+        ...repo.options,
+        now: () => time,
+        pause: () => {
+          pauses++;
+          if (advancing) time += 25 * 60_000;
+          return Promise.resolve();
+        },
+      }),
+    ).rejects.toThrow("bounded finalization");
+    expect(pauses).toBe(advancing ? 1 : 149);
+  },
+);
+
+it.each(["--assume-unchanged", "--skip-worktree"])(
+  "refuses hidden worktree flags %s",
+  async (flag) => {
+    const repo = await fixture();
+    await repo.git("update-index", flag, "website/zensical.toml");
+    await expect(finalizeReleaseDocumentation(repo.options)).rejects.toThrow("clean main");
+    expect(repo.writes).toEqual([]);
+  },
+);
+
+it.each(["README.md", "package-lock.json", "tools/package/release-documentation.ts"])(
+  "refreshes only when loaded inputs are unchanged: %s",
+  async (path) => {
+    const repo = await fixture();
+    let paused = false;
+    const result = finalizeReleaseDocumentation({
+      ...repo.options,
+      pause: async () => {
+        if (paused) throw new Error("Refreshed approval must return immediately");
+        paused = true;
+        const other = join(repo.directory, "other");
+        await execute("git", ["clone", "--branch", "main", repo.remote, other]);
+        await mkdir(dirname(join(other, path)), { recursive: true });
+        await writeFile(join(other, path), "New main content.\n");
+        await execute("git", ["add", "--", path], { cwd: other });
+        await execute(
+          "git",
+          [
+            "-c",
+            "user.name=Other maintainer",
+            "-c",
+            "user.email=other@example.invalid",
+            "commit",
+            "-m",
+            "docs: advance main",
+          ],
+          { cwd: other },
+        );
+        await execute("git", ["push", "origin", "main"], { cwd: other });
+        repo.getPull()!.mergeable_state = "behind";
+      },
+      writeGithub: async (method, endpoint, value) => {
+        const output = await repo.writeGithub(method, endpoint, value);
+        if (paused && method === "PATCH" && endpoint.endsWith("/pulls/12")) {
+          repo.getPull()!.mergeable_state = "blocked";
+          Object.assign(repo.runs.at(-1)!, { status: "completed", conclusion: "action_required" });
+        }
+        return output;
+      },
+    });
+    if (path === "README.md") {
+      expect(await result).toMatchObject({
+        finalization: "approval-required",
+        autoMergeEnabled: false,
+      });
+      expect(repo.runs).toHaveLength(2);
+      expect(repo.getPull()!.auto_merge).toBeNull();
+    } else {
+      await expect(result).rejects.toThrow("toolchain or dependency inputs changed");
+      expect(repo.runs).toHaveLength(1);
+      expect(await repo.git("branch", "--show-current")).toBe(RELEASE_DOCS_BRANCH);
+    }
+  },
+);
+
+it("refuses a dirty owned checkout before a behind refresh", async () => {
+  const repo = await fixture();
+  await expect(
+    finalizeReleaseDocumentation({
+      ...repo.options,
+      pause: async () => {
+        await repo.write("README.md", "Uncommitted user content.\n");
+        repo.getPull()!.mergeable_state = "behind";
+      },
+    }),
+  ).rejects.toThrow("exact clean owned checkout");
+  expect(await readFile(join(repo.root, "README.md"), "utf8")).toBe("Uncommitted user content.\n");
+});
+
+it("retains the verified CI run after GitHub clears its PR association", async () => {
+  const repo = await fixture();
+  const result = await finalizeReleaseDocumentation({
+    ...repo.options,
+    pause: () => {
+      Object.assign(repo.runs[0]!, {
+        status: "completed",
+        conclusion: "success",
+        pull_requests: [],
+      });
+      Object.assign(repo.getPull()!, {
+        state: "closed",
+        merged: true,
+        merge_commit_sha: "d".repeat(40),
+      });
+      return Promise.resolve();
+    },
+  });
+  expect(result.finalization).toBe("merged");
+});
+
+it.each(["id", "head_sha", "workflow_id", "event", "head_branch"])(
+  "rejects substituted CI %s after merge",
+  async (field) => {
+    const repo = await fixture();
+    let merged = false;
+    await expect(
+      finalizeReleaseDocumentation({
+        ...repo.options,
+        pause: () => {
+          merged = true;
+          Object.assign(repo.getPull()!, {
+            state: "closed",
+            merged: true,
+            merge_commit_sha: "d".repeat(40),
+          });
+          return Promise.resolve();
+        },
+        readGithub: async (path) => {
+          const value = await repo.readGithub(path);
+          return merged && /\/actions\/runs\/\d+$/u.test(path)
+            ? {
+                ...(value as object),
+                status: "completed",
+                conclusion: "success",
+                pull_requests: [],
+                [field]: field === "id" || field === "workflow_id" ? 999 : "unseen",
+              }
+            : value;
+        },
+      }),
+    ).rejects.toThrow("run identity changed");
+  },
+);
+
+it.each([
+  { status: ["queued"], conclusion: null },
+  { status: "completed", conclusion: ["success"] },
+])("rejects coercible CI primitives %#", async (state) => {
+  const repo = await fixture();
+  await expect(
+    finalizeReleaseDocumentation({
+      ...repo.options,
+      readGithub: async (path) => {
+        const value = await repo.readGithub(path);
+        return path.includes("/actions/")
+          ? {
+              workflow_runs: (
+                value as { workflow_runs: Record<string, unknown>[] }
+              ).workflow_runs.map((run) => ({ ...run, ...state })),
+            }
+          : value;
+      },
+    }),
+  ).rejects.toThrow("invalid status");
+});
+
+it("rejects contradictory open and merged PR metadata", async () => {
+  const repo = await fixture();
+  await expect(
+    finalizeReleaseDocumentation({
+      ...repo.options,
+      pause: () => {
+        repo.getPull()!.merged = true;
+        return Promise.resolve();
+      },
+    }),
+  ).rejects.toThrow("foreign, closed or changed");
+});
+
+it("reports already archived records complete while preserving new highlights as advisory", async () => {
+  const repo = await fixture();
+  await reconcileReleaseDocumentation(repo.options);
+  await repo.git("switch", "main");
+  await repo.git("merge", "--ff-only", RELEASE_DOCS_BRANCH);
+  repo.getPull()!.state = "closed";
+  await repo.write(
+    "website/docs/releases/unreleased.md",
+    "---\ntitle: Unreleased changes\nunreleased: true\n---\n\n# Unreleased changes\n\nNew future behavior.\n",
+  );
+  await repo.git("add", ".");
+  await repo.git("commit", "-m", "feat: future behavior");
+  const result = await finalizeReleaseDocumentation(repo.options);
+  expect(result).toMatchObject({ finalization: "unchanged", status: "unchanged" });
+  expect(result.warnings).toHaveLength(1);
+  const summary = await writeReleaseDocumentationFinalization(result, repository, {});
+  expect(summary).toContain("already synchronized");
+  expect(summary).toContain("Advisory:");
+  expect(summary).not.toContain("merge the owned PR");
+});
+
+it.each([
+  "unchanged",
+  "merged",
+  "approval-required",
+  "review-required",
+  "awaiting-maintainer",
+] as const)("persists truthful %s outputs and the legacy handoff guard", async (finalization) => {
+  const root = await mkdtemp(join(tmpdir(), "streamskope-release-output-"));
+  directories.push(root);
+  const output = join(root, "output");
+  const summaryPath = join(root, "summary");
+  const complete = finalization === "unchanged" || finalization === "merged";
+  const summary = await writeReleaseDocumentationFinalization(
+    {
+      status: finalization === "unchanged" ? "unchanged" : "pull-request",
+      finalization,
+      ...(finalization !== "unchanged" ? { pullRequest: 12, headSha: sha } : {}),
+      ...(finalization === "merged" ? { mergeSha: "d".repeat(40) } : {}),
+      ciAction: finalization === "approval-required" ? "approval-required" : "existing",
+      autoMergeEnabled: finalization === "merged",
+      warnings: [],
+    },
+    repository,
+    { output, summary: summaryPath },
+  );
+  expect(await readFile(output, "utf8")).toContain(
+    `finalization_status=${finalization}\narchive_complete=${complete}\n`,
+  );
+  expect(await readFile(output, "utf8")).toContain(
+    `review_required=${!complete}\napproval_required=${finalization === "approval-required"}\n`,
+  );
+  expect(await readFile(summaryPath, "utf8")).toBe(summary);
+  if (!complete) expect(summary).toContain("Archive incomplete:");
+});
+
+it.each([false, true])(
+  "returns immediate approval handoff for action-required CI, automaticCi=%s",
+  async (automaticCi) => {
+    const repo = await fixture();
+    const result = await finalizeReleaseDocumentation({
+      ...repo.options,
+      automaticCi,
+      pause: () => {
+        throw new Error("Approval handoff must not wait");
+      },
+      readGithub: async (path) => {
+        const value = await repo.readGithub(path);
+        return path.includes("/actions/")
+          ? {
+              workflow_runs: repo.runs.map((run) => ({
+                ...run,
+                status: "completed",
+                conclusion: "action_required",
+              })),
+            }
+          : value;
+      },
+    });
+    expect(result).toMatchObject({ finalization: "approval-required", autoMergeEnabled: false });
+    expect(repo.writes.some((write) => write.path === "/graphql" || write.method === "PUT")).toBe(
+      false,
+    );
+  },
+);
+
+it("returns immediate manual approval handoff when no owned CI run exists", async () => {
+  const repo = await fixture();
+  const result = await finalizeReleaseDocumentation({
+    ...repo.options,
+    automaticCi: false,
+    pause: () => {
+      throw new Error("Missing manual CI must not wait");
+    },
+    readGithub: (path) =>
+      path.includes("/actions/") ? Promise.resolve({ workflow_runs: [] }) : repo.readGithub(path),
+  });
+  expect(result).toMatchObject({ finalization: "approval-required", autoMergeEnabled: false });
+  expect(repo.writes.some((write) => write.path === "/graphql" || write.method === "PUT")).toBe(
+    false,
+  );
+});
+
+it.each([
+  { status: "action_required", conclusion: "failure" },
+  { status: "action_required", conclusion: "success" },
+  { status: "in_progress", conclusion: "action_required" },
+  { status: "queued", conclusion: "failure" },
+])("rejects contradictory CI status/conclusion pairs %#", async (state) => {
+  const repo = await fixture();
+  await expect(
+    finalizeReleaseDocumentation({
+      ...repo.options,
+      readGithub: async (path) => {
+        const value = await repo.readGithub(path);
+        return path.includes("/actions/")
+          ? { workflow_runs: repo.runs.map((run) => ({ ...run, ...state })) }
+          : value;
+      },
+    }),
+  ).rejects.toThrow("inconsistent conclusion");
+  expect(repo.writes.some((write) => write.path === "/graphql" || write.method === "PUT")).toBe(
+    false,
+  );
 });

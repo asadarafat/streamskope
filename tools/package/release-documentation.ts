@@ -44,14 +44,23 @@ export interface ReleaseDocumentationOptions {
   expectedPublication?: { tag: string; id: number };
   pause?: (milliseconds: number) => Promise<void>;
   automaticCi?: boolean;
+  now?: () => number;
+  /** Refresh remote refs only; the finalizer guards and switches the owned checkout. */
+  refreshMain?: () => Promise<void>;
 }
 export interface ReleaseDocumentationResult {
   status: "unchanged" | "pull-request";
   pullRequest?: number;
   headSha?: string;
-  ciAction: "approval-required" | "rerun" | "existing" | "none";
+  ciAction: "approval-required" | "existing" | "none";
+  ciRun?: CiRunIdentity;
   autoMergeEnabled: boolean;
   warnings: string[];
+}
+export interface ReleaseDocumentationFinalization extends ReleaseDocumentationResult {
+  finalization:
+    "unchanged" | "merged" | "approval-required" | "review-required" | "awaiting-maintainer";
+  mergeSha?: string;
 }
 export interface ReleaseDocumentationValidation {
   repository: string;
@@ -69,6 +78,12 @@ async function git(root: string, ...args: string[]): Promise<string> {
   return (
     await execute("git", args, { cwd: root, maxBuffer: 8 * 1024 ** 2, timeout: 60_000 })
   ).stdout.trimEnd();
+}
+async function cleanCheckout(root: string): Promise<boolean> {
+  return (
+    !(await git(root, "status", "--porcelain", "--untracked-files=all")) &&
+    !(await git(root, "ls-files", "-v", "-z")).split("\0").some((entry) => /^[a-zS]/u.test(entry))
+  );
 }
 async function pages(read: GithubRead, path: string, field?: string): Promise<unknown[]> {
   const values: unknown[] = [];
@@ -111,6 +126,7 @@ function ownedPull(
   value: unknown,
   repository: string,
   expectedSha?: string,
+  allowMerged = false,
 ): Record<string, unknown> {
   const pull = object(value);
   const head = object(pull.head);
@@ -119,7 +135,15 @@ function ownedPull(
   if (
     !Number.isSafeInteger(pull.number) ||
     (pull.number as number) <= 0 ||
-    pull.state !== "open" ||
+    (pull.state !== "open" &&
+      !(
+        allowMerged &&
+        pull.state === "closed" &&
+        pull.merged === true &&
+        typeof pull.merge_commit_sha === "string" &&
+        SHA.test(pull.merge_commit_sha)
+      )) ||
+    (pull.state === "open" && pull.merged === true) ||
     base.ref !== "main" ||
     head.ref !== RELEASE_DOCS_BRANCH ||
     object(base.repo).full_name !== repository ||
@@ -138,7 +162,7 @@ function ownedPull(
   return pull;
 }
 
-/** Verify the one owned PR before relying on or rerunning normal pull_request CI. */
+/** Verify the one owned PR before relying on normal pull_request CI. */
 export async function validateReleaseDocumentationPullRequest(
   options: ReleaseDocumentationValidation,
 ): Promise<void> {
@@ -153,7 +177,15 @@ export async function validateReleaseDocumentationPullRequest(
   const pull = ownedPull(await options.readGithub(path), options.repository, options.sourceSha);
   if (pull.number !== options.pullRequest)
     throw new Error("GitHub returned the wrong release documentation PR.");
-  const files = await pages(options.readGithub, `${path}/files`);
+  await validateChangedPaths(options.readGithub, path, pull);
+}
+
+async function validateChangedPaths(
+  read: GithubRead,
+  path: string,
+  pull: Record<string, unknown>,
+): Promise<void> {
+  const files = await pages(read, `${path}/files`);
   if (!files.length) throw new Error("Release documentation PR has no changed files.");
   const seen = new Set<string>();
   for (const item of files) {
@@ -285,7 +317,7 @@ export async function reconcileReleaseDocumentation(
   if (
     !REPOSITORY.test(repository) ||
     (await git(root, "branch", "--show-current")) !== "main" ||
-    (await git(root, "status", "--porcelain", "--untracked-files=all"))
+    !(await cleanCheckout(root))
   )
     throw new Error("Release documentation reconciliation requires a clean main checkout.");
   const plan = await planReleaseReconciliation(options);
@@ -409,8 +441,9 @@ export async function reconcileReleaseDocumentation(
     pullRequest: number,
     readGithub,
   });
-  const ciAction = await ensurePullRequestCi(options, number, headSha);
-  const autoMergeEnabled = plan.warnings.length === 0 && ciAction !== "approval-required";
+  const ci = await ensurePullRequestCi(options, number, headSha);
+  const autoMergeEnabled =
+    options.automaticCi === true && plan.warnings.length === 0 && ci.action !== "approval-required";
   const pull = ownedPull(
     await readGithub(`/repos/${repository}/pulls/${number}`),
     repository,
@@ -421,65 +454,99 @@ export async function reconcileReleaseDocumentation(
     status: "pull-request",
     pullRequest: number,
     headSha,
-    ciAction,
+    ciAction: ci.action,
+    ...(ci.run ? { ciRun: ci.run } : {}),
     autoMergeEnabled,
     warnings: plan.warnings,
   };
+}
+
+interface CiRunIdentity {
+  id: number;
+  workflowId: number;
+  sourceSha: string;
+}
+interface CiEvidence {
+  action: "approval-required" | "existing";
+  run?: CiRunIdentity;
+  passed: boolean;
 }
 
 async function ensurePullRequestCi(
   options: ReleaseDocumentationOptions,
   number: number,
   headSha: string,
-): Promise<ReleaseDocumentationResult["ciAction"]> {
-  const { repository, readGithub, writeGithub } = options;
-  const deadline = Date.now() + 90_000;
+  observedPull?: Record<string, unknown>,
+  previousRun?: CiRunIdentity,
+): Promise<CiEvidence> {
+  const { repository, readGithub } = options;
+  const now = options.now ?? Date.now;
+  const deadline = now() + 90_000;
   for (let attempt = 0; attempt < 45; attempt++) {
-    const currentPull = ownedPull(
-      await readGithub(`/repos/${repository}/pulls/${number}`),
-      repository,
-      headSha,
-    );
+    const currentPull =
+      observedPull ??
+      ownedPull(await readGithub(`/repos/${repository}/pulls/${number}`), repository, headSha);
     const exactRunSource = (value: unknown): boolean =>
       value === headSha ||
       (typeof currentPull.merge_commit_sha === "string" &&
         SHA.test(currentPull.merge_commit_sha) &&
         value === currentPull.merge_commit_sha);
-    const runs = (
-      await pages(
-        readGithub,
-        `/repos/${repository}/actions/workflows/ci.yml/runs?event=pull_request&branch=${encodeURIComponent(RELEASE_DOCS_BRANCH)}`,
-        "workflow_runs",
+    const runs =
+      currentPull.merged === true
+        ? []
+        : (
+            await pages(
+              readGithub,
+              `/repos/${repository}/actions/workflows/ci.yml/runs?event=pull_request&branch=${encodeURIComponent(RELEASE_DOCS_BRANCH)}`,
+              "workflow_runs",
+            )
+          )
+            .map(object)
+            .filter(
+              (run) =>
+                run.event === "pull_request" &&
+                run.head_branch === RELEASE_DOCS_BRANCH &&
+                exactRunSource(run.head_sha) &&
+                Array.isArray(run.pull_requests) &&
+                run.pull_requests.some((value) => {
+                  const associated = object(value);
+                  const head = object(associated.head);
+                  return (
+                    associated.number === number &&
+                    head.sha === headSha &&
+                    head.ref === RELEASE_DOCS_BRANCH &&
+                    object(associated.base).ref === "main"
+                  );
+                }),
+            )
+            .sort((left, right) => Number(right.id) - Number(left.id));
+    // GitHub can clear pull_requests after merge or branch deletion. Only the
+    // run already associated with this open PR can bridge that transition.
+    let run = runs[0];
+    if (currentPull.merged === true) {
+      if (!previousRun) throw new Error("Merged documentation has no previously owned CI run.");
+      run = object(await readGithub(`/repos/${repository}/actions/runs/${previousRun.id}`));
+      if (
+        run.id !== previousRun.id ||
+        run.workflow_id !== previousRun.workflowId ||
+        run.head_sha !== previousRun.sourceSha ||
+        run.event !== "pull_request" ||
+        run.head_branch !== RELEASE_DOCS_BRANCH
       )
-    )
-      .map(object)
-      .filter(
-        (run) =>
-          run.event === "pull_request" &&
-          run.head_branch === RELEASE_DOCS_BRANCH &&
-          exactRunSource(run.head_sha) &&
-          Array.isArray(run.pull_requests) &&
-          run.pull_requests.some((value) => {
-            const associated = object(value);
-            const head = object(associated.head);
-            return (
-              associated.number === number &&
-              head.sha === headSha &&
-              head.ref === RELEASE_DOCS_BRANCH &&
-              object(associated.base).ref === "main"
-            );
-          }),
-      )
-      .sort((left, right) => Number(right.id) - Number(left.id));
-    const run = runs[0];
+        throw new Error("Previously owned CI run identity changed after merge.");
+    }
     if (!run) {
-      if (!options.automaticCi) return "approval-required";
-      if (attempt < 44 && Date.now() < deadline) {
+      if (!options.automaticCi) return { action: "approval-required", passed: false };
+      if (observedPull)
+        throw new Error(
+          "Normal PR CI disappeared for the owned head; finalization remains incomplete.",
+        );
+      if (attempt < 44 && now() < deadline) {
         await (
           options.pause ??
           ((milliseconds): Promise<void> =>
             new Promise((accept) => setTimeout(accept, milliseconds)))
-        )(Math.min(2000, deadline - Date.now()));
+        )(Math.min(2000, deadline - now()));
         continue;
       }
       throw new Error(
@@ -487,6 +554,8 @@ async function ensurePullRequestCi(
       );
     }
     if (
+      !Number.isSafeInteger(run.workflow_id) ||
+      (run.workflow_id as number) <= 0 ||
       !Number.isSafeInteger(run.id) ||
       (run.id as number) <= 0 ||
       typeof run.head_sha !== "string" ||
@@ -494,6 +563,7 @@ async function ensurePullRequestCi(
     )
       throw new Error("Normal PR CI has incomplete run identity; refusing to use it.");
     if (
+      typeof run.status !== "string" ||
       ![
         "queued",
         "in_progress",
@@ -504,46 +574,167 @@ async function ensurePullRequestCi(
         "action_required",
       ].includes(String(run.status)) ||
       (run.status === "completed" &&
-        ![
-          "success",
-          "failure",
-          "cancelled",
-          "timed_out",
-          "action_required",
-          "neutral",
-          "skipped",
-          "stale",
-          "startup_failure",
-        ].includes(String(run.conclusion)))
+        (typeof run.conclusion !== "string" ||
+          ![
+            "success",
+            "failure",
+            "cancelled",
+            "timed_out",
+            "action_required",
+            "neutral",
+            "skipped",
+            "stale",
+            "startup_failure",
+          ].includes(run.conclusion)))
     )
       throw new Error("Normal PR CI has an invalid status; refusing to treat it as qualification.");
+    if (
+      run.status !== "completed" &&
+      run.conclusion !== null &&
+      run.conclusion !== undefined &&
+      !(run.status === "action_required" && run.conclusion === "action_required")
+    )
+      throw new Error("Normal PR CI has an inconsistent conclusion; refusing qualification.");
     const approval = run.conclusion === "action_required" || run.status === "action_required";
-    const rerun = run.status === "completed" && run.conclusion !== "success";
-    if (approval || (rerun && !options.automaticCi)) return "approval-required";
-    if (!approval && !rerun) return "existing";
-    await validateReleaseDocumentationPullRequest({
-      repository,
-      sourceSha: headSha,
-      pullRequest: number,
-      readGithub,
-    });
-    const latestPull = ownedPull(
-      await readGithub(`/repos/${repository}/pulls/${number}`),
-      repository,
-      headSha,
-    );
-    if (run.head_sha !== headSha && run.head_sha !== latestPull.merge_commit_sha)
-      throw new Error("Normal PR CI source changed before rerun; retry finalization.");
-    try {
-      await writeGithub("POST", `/repos/${repository}/actions/runs/${String(run.id)}/rerun`, {});
-    } catch {
+    if (approval) return { action: "approval-required", passed: false };
+    if (run.status === "completed" && run.conclusion !== "success")
       throw new Error(
-        "Normal PR CI rerun was denied. Finalization remains pending; a maintainer must handle the owned PR's workflow in GitHub.",
+        `Normal PR CI ended with ${String(run.conclusion)}; inspect the owned PR before retrying finalization.`,
       );
-    }
-    return "rerun";
+    return {
+      action: "existing",
+      run: { id: run.id as number, workflowId: run.workflow_id as number, sourceSha: run.head_sha },
+      passed: run.status === "completed",
+    };
   }
   throw new Error("Normal pull request CI finalization did not complete.");
+}
+
+async function refreshOwnedMain(options: ReleaseDocumentationOptions, head: string): Promise<void> {
+  const { root } = options;
+  const assertOwned = async (): Promise<void> => {
+    if (
+      !(await cleanCheckout(root)) ||
+      (await git(root, "branch", "--show-current")) !== RELEASE_DOCS_BRANCH ||
+      (await git(root, "rev-parse", "HEAD")) !== head
+    )
+      throw new Error("Release finalization refresh requires the exact clean owned checkout.");
+  };
+  await assertOwned();
+  if (options.refreshMain) await options.refreshMain();
+  else await git(root, "fetch", "origin", "main", "--tags");
+  await assertOwned();
+  const next = await git(root, "rev-parse", "refs/remotes/origin/main");
+  if (!SHA.test(next)) throw new Error("Release finalization refresh has invalid main identity.");
+  await git(root, "merge-base", "--is-ancestor", "main", next);
+  // This Node process already loaded these inputs. A fresh workflow invocation
+  // must install and load a changed toolchain; resetting files cannot reload it.
+  const paths = (await git(root, "diff", "--name-only", "-z", head, next)).split("\0");
+  if (
+    paths.some((path) =>
+      /^(?:tools\/|src\/|config\/|\.github\/workflows\/|package(?:-lock)?\.json$|\.npmrc$|\.node-version$|\.nvmrc$|\.prettier|prettier\.config\.|website\/requirements\.txt$)/u.test(
+        path,
+      ),
+    )
+  )
+    throw new Error(
+      "Release finalization toolchain or dependency inputs changed; start a fresh invocation from main.",
+    );
+  await git(root, "switch", "main");
+  await git(root, "reset", "--hard", next);
+}
+
+/** A successful handoff is pending work; only observed merge or synchronized main is complete. */
+export async function finalizeReleaseDocumentation(
+  options: ReleaseDocumentationOptions,
+): Promise<ReleaseDocumentationFinalization> {
+  const now = options.now ?? Date.now;
+  const pause =
+    options.pause ??
+    ((milliseconds: number): Promise<void> =>
+      new Promise((accept) => setTimeout(accept, milliseconds)));
+  const deadline = now() + 25 * 60_000;
+  let result = await reconcileReleaseDocumentation(options);
+  for (let attempt = 0; attempt < 150; attempt++) {
+    if (result.status === "unchanged") return { ...result, finalization: "unchanged" };
+    const number = result.pullRequest!;
+    const head = result.headSha!;
+    const path = `/repos/${options.repository}/pulls/${number}`;
+    const pull = ownedPull(await options.readGithub(path), options.repository, head, true);
+    if (pull.number !== number) throw new Error("GitHub returned the wrong finalization PR.");
+    await validateChangedPaths(options.readGithub, path, pull);
+    const ci = await ensurePullRequestCi(options, number, head, pull, result.ciRun);
+    result = {
+      ...result,
+      ciAction: ci.action,
+      ...(ci.run ? { ciRun: ci.run } : {}),
+    };
+    if (pull.merged === true) {
+      if (!ci.passed)
+        throw new Error("Merged release documentation has no successful exact-head CI evidence.");
+      return { ...result, finalization: "merged", mergeSha: String(pull.merge_commit_sha) };
+    }
+    const handoff = result.warnings.length
+      ? "review-required"
+      : ci.action === "approval-required"
+        ? "approval-required"
+        : !options.automaticCi
+          ? "awaiting-maintainer"
+          : null;
+    if (handoff) {
+      await autoMerge(options.writeGithub, options.repository, pull, false);
+      return { ...result, autoMergeEnabled: false, finalization: handoff };
+    }
+    if (attempt === 149 || now() >= deadline)
+      throw new Error(
+        "Release documentation is still pending; bounded finalization ended without a confirmed merge.",
+      );
+    if (pull.mergeable_state === "behind") {
+      await autoMerge(options.writeGithub, options.repository, pull, false);
+      await refreshOwnedMain(options, head);
+      // Re-read exact ownership after fetching, before publishing any replacement.
+      await validateReleaseDocumentationPullRequest({
+        repository: options.repository,
+        sourceSha: head,
+        pullRequest: number,
+        readGithub: options.readGithub,
+      });
+      result = await reconcileReleaseDocumentation(options);
+      continue;
+    }
+    if (!result.autoMergeEnabled)
+      throw new Error("Release finalization has no protected merge request; inspect the owned PR.");
+    await pause(Math.min(10_000, Math.max(0, deadline - now())));
+  }
+  throw new Error("Release documentation finalization exceeded its attempt limit.");
+}
+
+/** Persist precise status and the legacy flag that stops older workflow pollers. */
+export async function writeReleaseDocumentationFinalization(
+  result: ReleaseDocumentationFinalization,
+  repository: string,
+  paths: { output?: string | undefined; summary?: string | undefined },
+): Promise<string> {
+  if (paths.output)
+    await appendFile(
+      paths.output,
+      `finalization_status=${result.finalization}\narchive_complete=${["unchanged", "merged"].includes(result.finalization)}\npull_request=${result.pullRequest ?? ""}\nhead_sha=${result.headSha ?? ""}\nreview_required=${!["unchanged", "merged"].includes(result.finalization)}\napproval_required=${result.finalization === "approval-required"}\n`,
+      "utf8",
+    );
+  const descriptions: Record<ReleaseDocumentationFinalization["finalization"], string> = {
+    unchanged: "Published release documentation is already synchronized.",
+    merged: `Release documentation merged at ${result.mergeSha ?? ""} after required CI.`,
+    "approval-required":
+      "Archive incomplete: approve normal PR CI in GitHub, then review and merge the owned PR. Configure the release GitHub App for automatic finalization.",
+    "review-required":
+      "Archive incomplete: review the preserved commentary and merge the owned PR after required CI passes.",
+    "awaiting-maintainer":
+      "Archive incomplete: normal PR CI is active or successful. Wait for its required checks, then merge the owned PR.",
+  };
+  const summary = `${result.pullRequest ? `Release documentation PR: https://github.com/${repository}/pull/${result.pullRequest}\nCI head: ${result.headSha}\n` : ""}${descriptions[result.finalization]}\n${result.warnings.length ? `Advisory: ${result.warnings.join(" ")}\n` : ""}`;
+
+  if (paths.summary) await appendFile(paths.summary, summary, "utf8");
+  return summary;
 }
 
 export function githubWriter(token: string, apiUrl = "https://api.github.com"): GithubWrite {
@@ -617,28 +808,16 @@ async function main(): Promise<void> {
           expectedPublication = { tag: release.tag_name, id: release.id as number };
       }
     }
-    const result = await reconcileReleaseDocumentation({
+    const result = await finalizeReleaseDocumentation({
       ...options,
       ...(expectedPublication ? { expectedPublication } : {}),
     });
-    if (process.env.GITHUB_OUTPUT)
-      await appendFile(
-        process.env.GITHUB_OUTPUT,
-        `pull_request=${result.pullRequest ?? ""}\nhead_sha=${result.headSha ?? ""}\nreview_required=${result.warnings.length !== 0}\napproval_required=${result.ciAction === "approval-required"}\n`,
-        "utf8",
-      );
-    const summary = result.pullRequest
-      ? `Release documentation PR: https://github.com/${repository}/pull/${result.pullRequest}\nCI head: ${result.headSha}\n${result.autoMergeEnabled ? "Protected merge requested, subject to required checks." : result.ciAction === "approval-required" ? "Normal PR CI requires maintainer approval or rerun. Configure the release GitHub App for automatic qualification." : "Manual review required; newer commentary is preserved."}\n`
-      : "Published release documentation is already synchronized.\n";
-    process.stdout.write(summary);
-    if (process.env.GITHUB_STEP_SUMMARY)
-      await appendFile(process.env.GITHUB_STEP_SUMMARY, summary, "utf8");
-    if (result.warnings.length)
-      throw new Error(`Release finalization remains pending review: ${result.warnings.join(" ")}`);
-    if (result.ciAction === "approval-required")
-      throw new Error(
-        "Release finalization remains pending: approve or rerun normal PR CI in GitHub, or configure the release GitHub App. The built-in token cannot approve its own workflow.",
-      );
+    process.stdout.write(
+      await writeReleaseDocumentationFinalization(result, repository, {
+        output: process.env.GITHUB_OUTPUT,
+        summary: process.env.GITHUB_STEP_SUMMARY,
+      }),
+    );
   }
 }
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

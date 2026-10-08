@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   records:
-    name: Finalize release documentation
+    name: Synchronize release records or hand off
     if: github.event_name == 'release' && !github.event.release.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -24,7 +24,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: write
+      actions: read
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
@@ -48,55 +48,28 @@ jobs:
         with:
           client-id: ${{ vars.STREAMSKOPE_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.STREAMSKOPE_RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
-          permission-actions: write
+          permission-actions: read
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Archival advances main; deployment below remains pinned to the release.
           ref: main
           fetch-depth: 0
           token: ${{ steps.app.outputs.token || github.token }}
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.21.0
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Archive publications and qualify the generated PR
+      - name: Synchronize records and report completion or handoff
         id: records
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
           RELEASE_DOCS_AUTOMATIC_CI: ${{ steps.credentials.outputs.use_app }}
         run: node --import tsx tools/package/release-documentation.ts reconcile
-      - name: Require the documentation PR to merge
-        if: steps.records.outputs.pull_request != '' && steps.records.outputs.review_required != 'true'
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
-          RELEASE_DOCS_AUTOMATIC_CI: ${{ steps.credentials.outputs.use_app }}
-          RELEASE_DOCS_PR: ${{ steps.records.outputs.pull_request }}
-        run: |
-          for attempt in {1..150}; do
-            state=$(gh pr view "$RELEASE_DOCS_PR" --repo "$GITHUB_REPOSITORY" --json state --jq .state)
-            if [[ "$state" == MERGED ]]; then
-              printf 'Release documentation PR #%s merged after required CI.\n' "$RELEASE_DOCS_PR" >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            if [[ "$state" == CLOSED ]]; then
-              echo "Release documentation PR closed without merging; finalization is incomplete." >&2
-              exit 1
-            fi
-            merge_state=$(gh pr view "$RELEASE_DOCS_PR" --repo "$GITHUB_REPOSITORY" --json mergeStateStatus --jq .mergeStateStatus)
-            if [[ "$merge_state" == BEHIND ]]; then
-              git fetch origin main --tags
-              git switch main
-              git reset --hard origin/main
-              npm ci --ignore-scripts --no-audit --no-fund
-              node --import tsx tools/package/release-documentation.ts reconcile
-            fi
-            sleep 10
-          done
-          echo "Release documentation PR is still pending; inspect its CI and merge requirements." >&2
-          exit 1
 
   select:
     if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.draft && !github.event.release.prerelease
@@ -133,7 +106,7 @@ jobs:
           # The release event SHA is the tagged source, even if main has advanced.
           ref: ${{ github.sha }}
           fetch-depth: 2
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.21.0
           cache: npm
