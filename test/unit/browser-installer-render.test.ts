@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import {
   renderBrowserWorkbenchInstaller,
   renderLocalBrowserWorkbenchInstaller,
+  renderLocalBrowserTopology,
 } from "../../tools/package/browser-installer";
 
 const identity = {
@@ -80,4 +81,22 @@ it("embeds the maintained production helper without another runtime download", a
   expect(rendered).not.toMatch(/@STREAMSKOPE_[A-Z_]+@/u);
   expect(rendered).toContain("class Refused");
   expect(Buffer.byteLength(rendered)).toBeLessThan(128 * 1024);
+});
+
+it("renders a closed local tag with pull Never without substituting image-ID authority", async () => {
+  const source = await readFile("streamskope.clab.yml", "utf8");
+  const local = renderLocalBrowserTopology("0.10.4-qa.12345678", identity.sourceRevision, source);
+  expect(local.reference).toBe("streamskope:0.10.4-qa.12345678");
+  expect(local.topology).toContain("image: ${STREAMSKOPE_IMAGE:=streamskope:0.10.4-qa.12345678}");
+  expect(local.topology).toContain("image-pull-policy: Never");
+  expect(() =>
+    renderLocalBrowserTopology(identity.version, identity.sourceRevision, local.topology),
+  ).toThrow();
+  expect(() =>
+    renderLocalBrowserTopology(
+      identity.version,
+      identity.sourceRevision,
+      source.replace("image-pull-policy: Never", "image-pull-policy: Always"),
+    ),
+  ).toThrow();
 });

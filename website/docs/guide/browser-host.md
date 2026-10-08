@@ -101,12 +101,14 @@ passes readiness checks. Open the URL, unlock with your original passphrase,
 and test a saved connection before resuming work. Readiness alone does not
 verify your passphrase or broker access.
 
-| Need                              | Command                                           | Result                                                                    |
-| --------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------- |
-| Review an upgrade                 | `sudo bash install-browser-workbench.sh check`    | Checks the target without stopping the host.                              |
-| Install that target               | `sudo bash install-browser-workbench.sh upgrade`  | Backs up current data and replaces the verified owned host.               |
-| Return to the previous release    | `sudo bash install-browser-workbench.sh rollback` | Uses the previous recorded image with current compatible data.            |
-| Continue an interrupted operation | `sudo bash install-browser-workbench.sh recover`  | Reconciles the recorded transaction or reports why recovery needs review. |
+Use the same command with the operation you need:
+
+| Operation  | Result                                                            |
+| ---------- | ----------------------------------------------------------------- |
+| `check`    | Checks the target without stopping the host.                      |
+| `upgrade`  | Backs up current data and replaces the verified owned host.       |
+| `rollback` | Uses the previous recorded image with current compatible data.    |
+| `recover`  | Continues a recorded transaction or explains why it needs review. |
 
 Rollback does not restore old messages, rewind target systems or replace current
 data with an older backup. If current data is incompatible, it stops instead.

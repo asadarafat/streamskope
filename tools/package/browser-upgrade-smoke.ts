@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
 
 import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
 
-import { renderLocalBrowserWorkbenchInstaller } from "./browser-installer";
+import {
+  renderLocalBrowserWorkbenchInstaller,
+  renderLocalBrowserTopology,
+} from "./browser-installer";
 import type { BrowserInstallerTarget } from "./browser-installer-evidence";
 import { run, replaceConstant } from "./browser-qualification-process";
 import { createBrowserVaultFixture, verifyBrowserNativeWorkers } from "./browser-vault-fixture";
@@ -96,7 +99,7 @@ async function verifyImage(
   target: BrowserInstallerTarget,
   environment = process.env,
 ): Promise<void> {
-  const value = await docker(["image", "inspect", target.imageId], environment);
+  const value = await docker(["image", "inspect", target.image], environment);
   const labels = object(object(value.Config).Labels);
   assert.equal(value.Id, target.imageId);
   assert.equal(`${String(value.Os)}/${String(value.Architecture)}`, target.platform);
@@ -424,22 +427,23 @@ export async function verifyLocalBrowserUpgrade(
   const inspected = await docker(["image", "inspect", image]);
   const platform = `${String(inspected.Os)}/${String(inspected.Architecture)}`;
   assert.ok(platform === "linux/amd64" || platform === "linux/arm64");
+  const { reference, topology } = renderLocalBrowserTopology(
+    version,
+    sourceRevision,
+    await readFile("streamskope.clab.yml", "utf8"),
+  );
   const target = {
-    image: String(inspected.Id),
+    image: reference,
     imageId: String(inspected.Id),
     version,
     sourceRevision,
     platform,
   };
+  // A mutable local tag is only a runtime-compatible selector, never independent image authority.
   await verifyImage(target);
   const root = await mkdtemp(join(tmpdir(), "streamskope-local-delivery-"));
   await chmod(root, 0o700);
   const topologyName = `streamskope-${version}.clab.yml`;
-  const topology = (await readFile("streamskope.clab.yml", "utf8")).replace(
-    "${STREAMSKOPE_IMAGE:=streamskope:0.0.0-dev}",
-    `\${STREAMSKOPE_IMAGE:=${target.imageId}}`,
-  );
-  assert.ok(topology.includes(`image: \${STREAMSKOPE_IMAGE:=${target.imageId}}`));
   const topologyPath = join(root, topologyName);
   await writeFile(topologyPath, topology, { mode: 0o600 });
   const manifest = `${JSON.stringify({ schemaVersion: 1, deliveryScope: "local-staged", version, sourceRevision, platform, imageId: target.imageId, dataCompatibility: BROWSER_DATA_COMPATIBILITY, topology: { file: topologyName, sha256: sha(topology) } }, null, 2)}\n`;

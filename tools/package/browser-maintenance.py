@@ -566,7 +566,10 @@ class Maintenance:
         )
         return {
             **selected,
-            "reference": value["imageId"],
+            # Containerlab resolves named images before creation; a bare Docker ID
+            # is not accepted there. The closed local tag is still independently
+            # inspected against this sealed image ID before and after deployment.
+            "reference": "streamskope:" + selected["version"],
             "imageId": value["imageId"],
             "deliveryScope": "local-staged",
             "contract": value["dataCompatibility"]["contract"],
@@ -1120,7 +1123,7 @@ class Maintenance:
                     )
                 )
             else:
-                require(release["reference"] == release["imageId"])
+                require(release["reference"] == "streamskope:" + release["version"])
         owner = exact(value["originalContainer"], {"id", "startedAt", "restartCount"})
         require(
             isinstance(owner["id"], str)

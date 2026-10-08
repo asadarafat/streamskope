@@ -212,6 +212,66 @@ class TransactionTest(unittest.TestCase):
     def tearDown(self):
         self.fixture.close()
 
+    def test_local_named_image_requires_the_sealed_image_identity_without_pulling(self):
+        f = self.fixture
+        local = {
+            "version": f.target["version"],
+            "sourceRevision": f.target["sourceRevision"],
+            "platform": "linux/arm64",
+            "imageId": f.target["imageId"],
+        }
+        reference = "streamskope:" + f.target["version"]
+        topology = (Path(__file__).resolve().parents[2] / "streamskope.clab.yml").read_text()
+        topology = topology.replace("streamskope:0.0.0-dev", reference).encode()
+        manifest = m.canonical(
+            {
+                "schemaVersion": 1,
+                "deliveryScope": "local-staged",
+                **local,
+                "dataCompatibility": POLICY["dataCompatibility"],
+                "topology": {"file": f.target["topology"], "sha256": m.digest(topology)},
+            }
+        )
+        selected = f.pointer(f.target)
+        for kind, contents in (("topology", topology), ("manifest", manifest)):
+            path = Path(f.config["stage"]) / kind
+            path.write_bytes(contents)
+            path.chmod(0o600)
+            local[kind] = {"path": str(path), "sha256": m.digest(contents)}
+            selected[kind + "Sha256"] = m.digest(contents)
+        engine = m.Maintenance(f.config, POLICY, local)
+        f.engine = engine
+        image = {
+            "Id": f.target["imageId"],
+            "Os": "linux",
+            "Architecture": "arm64",
+            "Config": {
+                "Labels": {
+                    "org.opencontainers.image.version": f.target["version"],
+                    "org.opencontainers.image.revision": f.target["sourceRevision"],
+                }
+            },
+        }
+        calls = []
+
+        def docker(*args, **_options):
+            calls.append(args)
+            self.assertEqual(args, ("image", "inspect", reference))
+            return 0, m.canonical([image])
+
+        engine.docker = docker
+        resolved = engine.release(selected)
+        self.assertEqual(resolved["reference"], reference)
+        self.assertEqual(resolved["imageId"], local["imageId"])
+        # A tag moving to a different image never becomes new authority.
+        image["Id"] = "sha256:" + "c" * 64
+        with self.assertRaisesRegex(m.Refused, "unsupported-target"):
+            engine.release(selected)
+        engine.docker = lambda *_args, **_options: (1, b"")
+        with self.assertRaisesRegex(m.Refused, "unsupported-target"):
+            engine.release(selected)
+        self.assertEqual(calls, [("image", "inspect", reference)] * 2)
+
     def test_commit_holds_real_original_inode_lease_through_ready_and_record_switch(self):
         f = self.fixture
         before = m.inventory(f.data, f.owner, f.gid)

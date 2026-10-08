@@ -117,3 +117,23 @@ export function renderLocalBrowserWorkbenchInstaller(
     local,
   );
 }
+
+/** Native lab runtimes require a named image; this closed tag remains bound to the sealed ID. */
+export function renderLocalBrowserTopology(
+  version: string,
+  sourceRevision: string,
+  template: string,
+): { readonly reference: string; readonly topology: string } {
+  browserRegistryIdentity(version, sourceRevision);
+  const original = "image: ${STREAMSKOPE_IMAGE:=streamskope:0.0.0-dev}";
+  if (
+    template.split(original).length !== 2 ||
+    template.split("image-pull-policy: Never").length !== 2
+  )
+    throw new Error("Local native qualification requires the reviewed unassigned topology.");
+  const reference = `streamskope:${version}`;
+  return {
+    reference,
+    topology: template.replace(original, `image: \${STREAMSKOPE_IMAGE:=${reference}}`),
+  };
+}
