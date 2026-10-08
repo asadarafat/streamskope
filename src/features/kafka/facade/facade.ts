@@ -1,3 +1,4 @@
+import { isAclReviewCommand } from "../contracts/acl-review-commands";
 import { SavedReplayDestinations } from "../application/replay-destination";
 import { KafkaReviewedWriteService } from "../application/reviewed-write-service";
 import {
@@ -387,6 +388,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       return this.unavailableResponse(command, correlationId);
     }
     if (isPluginHostCommand(command)) return this.plugins.execute(command, correlationId);
+    if (isAclReviewCommand(command)) return this.aclReviews.execute(command, correlationId);
 
     const recipeBindings = {
       available: (): boolean => this.available,
@@ -428,10 +430,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "environments.review":
       case "environments.apply":
         return this.environments.execute(command, correlationId);
-      case "acls.access.explain":
-      case "acls.change.review":
-      case "acls.change.apply":
-        return this.aclReviews.execute(command, correlationId);
       case "records.replay.review":
       case "records.replay.apply":
       case "records.replay.cancel":

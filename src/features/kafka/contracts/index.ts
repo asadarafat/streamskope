@@ -548,3 +548,21 @@ export {
   parseRecordDecodeResult,
 } from "./record-codec";
 export type { RecordFormat, RecordDecodeInput, RecordDecodeResult } from "./record-codec";
+
+export {
+  ACL_REVIEW_DESCRIPTORS,
+  ACL_REVIEW_COMMANDS,
+  ACL_REVIEW_COMMAND_ACCESS,
+  isAclReviewCommandName,
+  isAclReviewCommand,
+  parseAclReviewPayload,
+  parseAclReviewResult,
+} from "./acl-review-commands";
+export type {
+  AclReviewCommandDescriptors,
+  AclReviewCommandName,
+  AclReviewPayloads,
+  AclReviewResults,
+  AclReviewCommand,
+  AclReviewSuccess,
+} from "./acl-review-commands";

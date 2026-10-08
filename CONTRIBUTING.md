@@ -150,6 +150,16 @@ notifications. The application's `KafkaSessionRequests` owns request supersessio
 cancellation and stale-response checks; `KafkaApplicationSession` owns connection
 and consumer lifecycles. Preserve the typed host contract between UI and facade.
 
+The three reviewed ACL commands use feature-owned declarations in
+`src/features/kafka/contracts/acl-review-commands.ts`. Each declaration owns its
+payload parser, result parser and read/write classification; command names,
+wire types and central registration derive from it. The matching typed handlers
+stay in `facade/acl-review-facade.ts`, where application behavior and Activity
+belong. When changing this pilot, verify both the central wire parsers and the
+composed facade, including read-only protection before dispatch. Other command
+families retain their existing registration; do not expand the pilot without a
+concrete reduction in repeated definitions.
+
 Connection-bound controllers register their invalidation and shutdown drain
 together in the facade's ordered `FeatureLifecycle` table. Add a feature there
 once rather than maintaining separate connection-change and exit lists. Normal

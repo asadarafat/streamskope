@@ -8,6 +8,7 @@ import type {
 } from "../../../plugins/contracts";
 import type { ProviderHostPort } from "../../../platform/providers/host";
 
+import { ACL_REVIEW_COMMANDS } from "./acl-review-commands";
 import type { HostError } from "./host-errors";
 import type { KafkaSavedQuery } from "./query-library";
 import type { KafkaOriginalRecord } from "./record-bytes";
@@ -153,9 +154,7 @@ export const HOST_COMMANDS = [
   "schemas.compatibility.check",
   "schemas.register",
   "schemas.delete",
-  "acls.access.explain",
-  "acls.change.review",
-  "acls.change.apply",
+  ...ACL_REVIEW_COMMANDS,
   "acls.list",
   "acls.create",
   "acls.delete",

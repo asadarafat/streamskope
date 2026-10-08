@@ -1,18 +1,7 @@
 import type { HostCommandBase } from "./types";
 
 export type RecoveryHostCommand =
-  | (HostCommandBase & {
-      readonly command: "acls.access.explain";
-      readonly payload: import("./acl-review").TopicAccessInput;
-    })
-  | (HostCommandBase & {
-      readonly command: "acls.change.review";
-      readonly payload: import("./acl-review").AclChangeInput;
-    })
-  | (HostCommandBase & {
-      readonly command: "acls.change.apply";
-      readonly payload: { readonly planId: string; readonly confirmation: string };
-    })
+  | import("./acl-review-commands").AclReviewCommand
   | (HostCommandBase & {
       readonly command: "records.replay.review";
       readonly payload: import("./record-replay").RecordReplayInput;
