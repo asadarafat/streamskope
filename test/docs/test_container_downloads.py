@@ -74,7 +74,7 @@ class ContainerDownloadTests(unittest.TestCase):
             "---\nbrowser_installer: true\n---\n" + downloads.BROWSER_INSTALLER_MARKER)
         guide = self.root / "website/docs/guide"
         guide.mkdir(exist_ok=True)
-        (guide / "browser-host.md").write_text(
+        (guide / "browser-deployment.md").write_text(
             "---\ncontainer_downloads: true\n---\n" + downloads.CONTAINER_MARKER)
         self.release["assets"].append({
             "name": downloads.BROWSER_INSTALLER_NAME, "size": 30_000, "state": "uploaded",
@@ -147,9 +147,11 @@ class ContainerDownloadTests(unittest.TestCase):
         }])
         self.assertIn('class="highlight"', rendered)
         self.assertNotIn("<table", rendered)
-        self.assertIn("latest stable desktop release", rendered)
+        self.assertIn("latest release", rendered)
+        self.assertNotIn("latest stable", rendered)
+        self.assertNotIn("desktop release", rendered)
         self.assertIn("URL printed by the installer", rendered)
-        self.assertIn("/streamskope/guide/browser-host/", parsed.links)
+        self.assertIn("/streamskope/guide/browser-deployment/", parsed.links)
 
     def test_quick_install_command_stays_the_same_when_publication_advances(self):
         self.modern()
@@ -228,7 +230,7 @@ class ContainerDownloadTests(unittest.TestCase):
     def test_modern_markers_require_the_reviewed_quickstart_and_manual_page(self):
         self.modern()
         quick = self.root / "website/docs/start/containerlab.md"
-        manual = self.root / "website/docs/guide/browser-host.md"
+        manual = self.root / "website/docs/guide/browser-deployment.md"
         original = {quick: quick.read_text(), manual: manual.read_text()}
         extra = self.root / "website/docs/guide/extra.md"
         for change in ["quick-marker", "quick-flag", "duplicate-quick", "manual-marker", "manual-flag", "duplicate-manual", "extra-quick-page", "extra-manual-page"]:
@@ -256,6 +258,21 @@ class ContainerDownloadTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         downloads.container_downloads(self.root, {})
                     publication.assert_not_called()
+
+    def test_earlier_installer_layout_remains_supported(self):
+        self.modern()
+        guide = self.root / "website/docs/guide"
+        (guide / "browser-deployment.md").rename(guide / "browser-host.md")
+        self.assertTrue(self.published()["installer_available"])
+
+    def test_manual_downloads_cannot_appear_on_both_operations_and_deployment_pages(self):
+        self.modern()
+        guide = self.root / "website/docs/guide"
+        (guide / "browser-host.md").write_text((guide / "browser-deployment.md").read_text())
+        with patch.object(downloads, "published_release") as publication:
+            with self.assertRaisesRegex(ValueError, "one manual download marker"):
+                downloads.container_downloads(self.root, {})
+            publication.assert_not_called()
 
     def test_historical_desktop_only_release_does_not_invent_images(self):
         self.release["assets"] = []

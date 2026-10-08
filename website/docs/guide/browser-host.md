@@ -1,297 +1,96 @@
----
-container_downloads: true
----
+# Use the browser workbench
 
-# Operate the browser host
+Install → Open → Create vault → Connect → Inspect → Lock → Reopen
 
-Use this guide for manual deployment, restricted networks, VM access and
-maintenance. For a normal online installation, start with
-[Install the browser workbench](../start/containerlab.md).
+Use this guide after [installing the browser workbench](../start/containerlab.md).
+One vault owner uses the workbench; tabs in the same session share connections
+and settings.
 
-The browser host serves one owner's Kafka and NATS connections. It does not
-provide separate users, SSO, tenant isolation or independent concurrent
-workbenches. Same-session tabs share connections and settings. Your brokers and
-optional target systems remain separate services.
+## Open and unlock
 
-## Released files
+Open the exact URL printed by the installer. If you no longer have it, rerun the
+trusted published installer from the original Linux account to print it again.
+Enter the original **Vault passphrase** and select **Unlock**. On first use,
+follow [Create the vault](../start/containerlab.md#2-create-the-vault) instead.
 
-Availability follows the exact documented release. A development preview does
-not establish that its browser changes have been published.
+## Connect and inspect
 
-<!-- container-downloads -->
+Open **Connection Profiles**, select a saved profile's **Connect** action and
+wait for connected status. To add one, follow [Connect a broker](../start/containerlab.md#3-connect-a-broker).
 
-The EDA application image is a separate component and cannot run this workbench.
-Source builds are described in
-[CONTRIBUTING.md](https://github.com/asadarafat/streamskope/blob/main/CONTRIBUTING.md#production-browser-and-containerlab-delivery).
+| Task                                   | Guide                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| Configure and test Kafka access        | [Connect your Kafka](connections.md)                                  |
+| Find, filter and inspect Kafka records | [Find and inspect a message](messages.md)                             |
+| Subscribe to new NATS traffic          | [NATS live subscriptions](core-nats.md)                               |
+| Diagnose a failed connection or read   | Open **Raw logs**, then [Troubleshoot a problem](troubleshooting.md). |
 
-## Manual deployment
-
-Use an already prepared Linux AMD64 or ARM64 Docker host with Containerlab.
-Manual deployment does not require Node, npm or a source build. Keep the release
-files together in a private directory owned by your non-root Linux account.
-Keep manual installations separate from `/var/lib/streamskope/browser`, which is
-reserved for installer-managed state. The installer does not adopt an existing
-manual `clab-streamskope-app` container or its data.
-
-### Online image
-
-When the availability table lists registry delivery, download
-`streamskope-VERSION.clab.yml`, `streamskope-VERSION-container.json` and
-`SHA256SUMS` from that exact release. Replace `VERSION` below with its version.
-
-The online topology pulls the public image from
-`ghcr.io/asadarafat/streamskope`. Its reference includes the release version and
-immutable index digest, `:VERSION@sha256:DIGEST`; Docker selects Linux AMD64 or
-ARM64 for the host. No registry login is required. Use the matching topology
-instead of a floating tag.
-
-### Offline or restricted networks
-
-On a machine with access, download the Docker save archive for the Linux host's
-architecture, `streamskope-VERSION-offline.clab.yml`, the image manifest and
-`SHA256SUMS`. Transfer the complete chosen set to the host. Choose `amd64` for x64
-or `arm64` for ARM64. The archives are gzip-compressed Docker `save` files.
-
-After verification, load the archive with
-`docker load --input <image-archive.tar.gz>`. Use the **offline** topology: its
-local `streamskope:VERSION` reference and pull policy `Never` avoid GHCR access.
-The online topology and archive identify the same qualified native image.
-Historical archive-only releases use their supplied local-image topology; the
-availability table identifies the files actually published.
-
-Prepare Docker, Containerlab and their dependencies separately on an offline
-host. The online installer cannot provision missing packages without their
-repositories. For a proxy-controlled host, have its administrator configure
-Docker's image-pull transport and package/download access, or use offline files.
-Browser-host plugin downloads have separate limitations described below.
-
-### Verify and start
-
-Place the chosen files beside `SHA256SUMS` and verify them on Linux:
-
-```sh
-sha256sum --ignore-missing --check SHA256SUMS
-```
-
-Require an `OK` result for every chosen topology, image manifest and archive.
-Stop on a mismatch and obtain a fresh copy from the trusted release. Checksums
-verify the downloaded bytes; they are not a publisher signature.
-
-Create the private data directory and select your non-root numeric owner:
-
-```sh
-mkdir -m 700 streamskope-data
-export STREAMSKOPE_UID="$(id -u)"
-export STREAMSKOPE_GID="$(id -g)"
-```
-
-Run deployment from this directory as an operator allowed to use Containerlab.
-For online delivery:
-
-```sh
-clab deploy -t streamskope-VERSION.clab.yml
-```
-
-For offline delivery, substitute `streamskope-VERSION-offline.clab.yml`.
-If Containerlab requires sudo, retain the chosen application owner:
-
-```sh
-sudo env "STREAMSKOPE_UID=$STREAMSKOPE_UID" "STREAMSKOPE_GID=$STREAMSKOPE_GID" \
-  clab deploy -t streamskope-VERSION.clab.yml
-```
-
-Keep any deliberately configured bind, port and public-origin variables in that
-approved sudo invocation too. Do not run the application container as root.
-The topology mounts `./streamskope-data` at `/data`, outside Containerlab's
-`clab-streamskope` output directory so redeployment preserves it.
-
-With the defaults, open **http://127.0.0.1:8080**. Retrieve the private first-time
-code from your trusted host terminal:
-
-```sh
-docker exec clab-streamskope-app cat /data/setup-code
-```
-
-Then follow [Create the vault](../start/containerlab.md#2-create-the-vault).
-The application prints the code's file location rather than the code itself.
-Do not put the code or vault passphrase in a URL, topology, shell command or log.
-
-## VM and remote-host access
-
-The default URL addresses Linux loopback. A Mac browser needs the VM's loopback
-forwarding; a different VM hostname is not automatically a valid browser origin.
-Linux container checks alone do not prove that forwarding is available.
-
-An SSH tunnel retains the exact loopback origin without exposing the workbench
-on the host's other interfaces. Run this on your browser computer, replacing
-`8081` with the printed or configured port and `user@linux-host` with your host:
-
-```sh
-ssh -N -L 8081:127.0.0.1:8081 user@linux-host
-```
-
-Keep the tunnel running and open `http://127.0.0.1:8081`. Use the same port on
-both ends: the gateway checks the exact scheme, hostname and port. If that port
-is already occupied on your browser computer, resolve the conflict or prepare a
-manual deployment with a deliberate matching origin.
-
-For manual deployment through an explicit VM address, configure the bind address
-and the exact browser origin together before deployment. For a VM whose actual
-reachable hostname is `clab.orb.local`, for example:
-
-```sh
-export STREAMSKOPE_HOST_BIND=0.0.0.0
-export STREAMSKOPE_HOST_PORT=8080
-export STREAMSKOPE_PUBLIC_ORIGIN=http://clab.orb.local:8080
-```
-
-An all-interface bind exposes the listener beyond Linux loopback; restrict access
-through the host's normal network controls. `0.0.0.0` is a bind address, not a
-browser origin. Preserve these variables if using sudo and recreate the node
-after changing them. A reachable TCP port with a mismatched origin is rejected.
-The installer deliberately retains its loopback origin and saved port; it does
-not accept custom networking options.
-
-For access outside a trusted host or lab, use an approved authenticated HTTPS
-reverse proxy and configure the exact external HTTPS origin in a manual
-deployment. The application has no TLS listener and this delivery does not claim
-a qualified public-facing or multiuser service.
+The container makes the connection. `localhost` and `127.0.0.1` in a profile
+refer to the container; every Kafka advertised broker address must be reachable
+from it. Connecting another profile stops the current stream and disconnects
+its host first. If cleanup fails, follow the original workspace's recovery message.
 
 ## Lock and reopen
 
-Select **Lock vault and disconnect** when finished. Locking closes active provider
-work, invalidates the browser session and releases the unlocked key. Unlock with
-the same passphrase to use saved profiles. A wrong passphrase preserves the data.
+Finish active work and any owned capture cleanup, then select
+**Lock vault and disconnect**. Locking closes provider work, ends the session and
+releases the unlocked key. Closing a browser tab does not lock the vault.
+
+Return to the same URL and unlock with the original passphrase. Saved profiles
+remain available; select **Connect** to resume work. Reopening does not
+automatically reconnect brokers or resume a capture.
 
 The session expires two hours after unlocking; activity does not extend it.
-Closing the browser tab is not an explicit lock. Restarting the container starts
-with the vault locked and never supplies its passphrase automatically.
-
-Only one host may open a data directory. Another instance cannot unlock while
-the first holds its lease; the kernel releases the lease after a process crash.
-Do not remove lock files, replace metadata or create a fresh store to dismiss an
-existing-data error. If provider or plugin cleanup is unconfirmed, preserve its
-recovery records and inspect the target resources before restarting. Health or
-unlock success does not prove that remote resources were removed.
+Restarting the container starts with the vault locked. If cleanup is unconfirmed,
+preserve recovery records and [inspect target resources before restarting](browser-deployment.md#protect-the-vault-and-data).
 
 ## Plugins and target access
 
-Use [plugin versioning and compatibility](../plugins/versioning.md) to select a
-package for the actual workbench and target versions. Publication availability
-and live qualification are separate facts; follow each plugin's guide.
+Manage optional plugins through **Preferences → Plugins**. Check
+[plugin compatibility](../plugins/versioning.md) and follow the
+[EDA](../plugins/eda.md) or [NSP](../plugins/nsp.md) guide for target prerequisites.
+For signed file installation on a restricted network, use
+[offline plugins and target access](browser-deployment.md#plugins-and-target-access).
 
-For a restricted network, transfer an approved signed `.skope-plugin` file from
-your browser computer through **Preferences → Plugins → Install from file**.
-The host verifies its publisher, exact bytes and compatibility. Enable
-**Offline plugin downloads** to avoid remote catalog access. The production
-browser host preserves that policy across locks and restarts; unreadable policy
-blocks remote downloads. Its remote downloads use direct networking and do not
-provide the desktop's custom proxy transport. Follow
-[Install without GitHub](../plugins/offline.md) for cache behavior, upload limits
-and target-side prerequisites.
+## VM and remote-host access
 
-The [EDA Connector](../plugins/eda.md) needs its approved capture application and
-broker images available in the reachable EDA cluster. Its local tunnel and Kafka
-client run inside the same application container; the topology does not publish
-the capture's Kafka port. The [NSP Connector](../plugins/nsp.md) needs the NSP API
-and discovered Kafka endpoints reachable from the container. Installing a
-portable plugin does not package either target or make it reachable.
+Open the exact printed URL first. [OrbStack](https://docs.orbstack.dev/machines/ssh#port-forwarding)
+and [WSL](https://learn.microsoft.com/en-us/windows/wsl/networking#accessing-linux-networking-apps-from-windows-localhost)
+normally forward localhost ports to your macOS or Windows browser, depending on
+their configuration. For a remote host or a VM without forwarding, follow
+[the matching-port SSH tunnel procedure](browser-deployment.md#vm-and-remote-host-access).
 
 ## Stop and resume
 
-Finish active work, stop owned captures and complete pending plugin cleanup.
-Then lock the vault before stopping the host. Containerlab's graceful option lets
-the application disconnect providers and release its key before exit.
+Finish cleanup and lock the vault, then follow
+[the graceful stop and resume procedure](browser-deployment.md#stop-and-resume).
+Resume an installer-managed host by rerunning the trusted installer from its
+original Linux account. It preserves the owner, port, vault and pinned release.
+There is no supported browser-host upgrade procedure.
 
-### Installer-managed host
-
-Keep the saved release topology and deployment records under
-`/var/lib/streamskope/browser`. Replace `VERSION` with its installed version:
-
-```sh
-sudo clab destroy --graceful --timeout 2m \
-  -t /var/lib/streamskope/browser/streamskope-VERSION.clab.yml
-```
-
-Run the trusted published installer again from the **original Linux account** to
-resume. It restores the saved UID, GID, image, port and origin, reuses the existing
-vault, and prints its URL. You should see **Unlock**, followed by your saved
-profiles and plugins after entering the original passphrase.
-
-Do not run a plain `clab deploy` against an installer-managed topology: its
-saved owner and port are supplied by the installer, rather than the topology's
-defaults. Keep `installation.json` and the private release files. Removing these
-records does not migrate the data into a new installation. Rerunning even a newer
-installer retains the pinned release; automatic upgrades and manual-instance
-adoption are not supported.
-
-### Manually managed host
-
-From the original release-file directory, retain the same UID/GID and any bind,
-port and origin variables, then run:
-
-```sh
-clab destroy --graceful --timeout 2m -t streamskope-VERSION.clab.yml
-clab deploy -t streamskope-VERSION.clab.yml
-```
-
-Use the offline filename for offline delivery and preserve the same variables in
-sudo invocations. The second deployment reuses `streamskope-data`. It does not
-automatically reconnect brokers or resume an EDA capture.
+With Docker running, the container's `unless-stopped` policy restarts it after a
+Docker restart unless it was explicitly stopped. The vault starts locked;
+unlock and connect explicitly to resume work.
 
 ## Back up and restore
 
-1. Record the installed release, source revision or image digest, plugin versions
-   and target compatibility. Keep the matching release files and installer.
-2. Complete target-side capture/cleanup work, lock the vault and stop the host
-   gracefully as described above.
-3. For an **installer-managed host**, make an access-restricted backup of the
-   **complete `/var/lib/streamskope/browser` directory**, including
-   `installation.json`, its topology, image manifest, checksums and
-   `streamskope-data`. Preserve root ownership and private permissions on the
-   deployment records, and the data directory's original numeric UID/GID.
-   Record the original account's UID, GID, home and selected port.
-4. For a **manual host**, back up the complete `streamskope-data` directory and
-   matching release files. Preserve its numeric owner, permissions and configured
-   bind, port and public origin. Include `vault.json`, both profile stores,
-   settings, history, plugins, package cache and recovery identifiers.
-5. Preserve the vault passphrase separately. A directory backup cannot recover it.
-6. Before restoring, stop the host and retain a separate copy of its current
-   records and data. Restore the complete chosen backup with its original
-   ownership and permissions. Installer-managed recovery requires the same
-   Linux account identity and home at the saved path; rerun the installer from
-   that account. Manual recovery uses the matching compatible image and topology.
-7. Unlock with the original passphrase, review saved endpoints and protection
-   settings, and test a known connection before resuming work.
-
-Moving installer state to another account, changing stored identities or
-upgrading by replacing the pinned image is not a supported migration. Preserve
-the backup and prepare a separately reviewed migration instead of editing the
-metadata to bypass validation.
+Follow [the complete backup and restore procedure](browser-deployment.md#back-up-and-restore).
+For an installer-managed host, preserve all of `/var/lib/streamskope/browser`,
+including deployment records and `streamskope-data`, with its ownership and
+private permissions.
 
 The vault encrypts credentials and protected trust material, **not the entire
-data directory**. Endpoint names, preferences, queries, observations, installed
-plugin metadata and recovery identifiers remain sensitive filesystem data.
-Protect all backups. Desktop profile files do not carry their OS encryption keys
-into this host; automatic desktop-to-browser credential migration is not
-implemented. Exports and target-side messages remain separate from the backup.
-Never attach the data directory or its backup to a public issue.
+data directory**. Saved metadata and backups remain sensitive. Preserve the
+passphrase separately; there is no reset or recovery key.
 
 ## Troubleshooting
 
-| Symptom                                                      | Next action                                                                                                 |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Installer reports an existing runtime or repository conflict | Preserve the existing workloads; prepare Docker manually without replacing them, or use another Linux host. |
-| Installer cannot download files or pull the image            | Check HTTPS/proxy access to GitHub and GHCR, or use a separately prepared offline manual deployment.        |
-| Installer reports another account or unrelated container     | Use the original account and deployment procedure; do not remove records or adopt another host's data.      |
-| No container or listener                                     | Check deployment and `docker logs clab-streamskope-app`; review image availability and ownership.           |
-| Linux opens it; Mac cannot                                   | Check VM loopback forwarding or use the matching-port SSH tunnel.                                           |
-| HTTP 403 at a reachable address                              | Match the configured scheme, hostname and port; changing the browser URL alone does not change the origin.  |
-| Vault is in use                                              | Stop the other host using the data; keep its lease file.                                                    |
-| Vault cannot unlock                                          | Check the passphrase, preserve the store and restore a complete known-good backup if needed.                |
-| Kafka bootstrap works but topic operations fail              | Check every advertised broker address from the application container.                                       |
-| Plugin file is rejected                                      | Review publisher verification and the host/target intervals in the plugin guide.                            |
+Use [Troubleshoot a problem](troubleshooting.md) for connection failures and
+[deployment troubleshooting](browser-deployment.md#troubleshooting) for installer,
+host or vault errors. Preserve existing data and recovery records.
 
-Open **Raw logs** for connection failures and follow
-[Troubleshoot a problem](troubleshooting.md). Share only redacted errors, the
-release/source identity and the action that failed.
+<span id="manual-deployment"></span>
+<span id="released-files"></span>
+
+For release downloads, offline installation or custom networking, use
+[Deploy the browser workbench manually](browser-deployment.md).

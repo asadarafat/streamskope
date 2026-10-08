@@ -34,7 +34,7 @@ nav = [
     { "NSP Connector" = "plugins/nsp.md" }
   ] },
   { "Operate safely" = [
-    { "Operate the browser host" = "guide/browser-host.md" },
+    { "Use the browser workbench" = "guide/browser-host.md" },
     { "Reset consumer offsets" = "guide/offset-recovery.md" },
     { "Copy or replay records" = "guide/record-replay.md" },
     { "Manage Kafka Connect" = "guide/kafka-connect.md" },
@@ -49,6 +49,7 @@ nav = [
     { "Qualification evidence" = "guide/qualification.md" }
   ] },
   { "Advanced" = [
+    { "Deploy the browser workbench manually" = "guide/browser-deployment.md" },
     { "Reuse connection secrets" = "guide/secret-retrieval.md" },
     { "Inspect access and transforms" = "guide/governance.md" },
     { "Run a consumer sandbox" = "guide/developer-sandbox.md" },

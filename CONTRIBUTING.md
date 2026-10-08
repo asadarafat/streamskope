@@ -974,7 +974,7 @@ GitHub repository replacement. Exporting leaves development history intact.
 ## Production browser and Containerlab delivery
 
 Released installation is covered by the [browser quickstart](website/docs/start/containerlab.md);
-[manual deployment and maintenance](website/docs/guide/browser-host.md) covers
+[manual deployment](website/docs/guide/browser-deployment.md) covers
 offline files, origins, ownership and graceful recovery. Source builds use the
 separate procedure below.
 
@@ -1001,8 +1001,9 @@ built `streamskope:0.0.0-dev` image with pull policy `Never`. Its private
 Open the default `http://127.0.0.1:8080` from a browser that can reach Linux loopback,
 then follow the [vault setup](website/docs/start/containerlab.md#2-create-the-vault).
 Source deployments reveal the code through the manual guide's trusted-host
-`docker exec` procedure. For a Mac browser, use VM loopback forwarding or the
-matching-origin [host access procedure](website/docs/guide/browser-host.md#vm-and-remote-host-access).
+`docker exec` procedure. For a browser outside the Linux host, first try the exact
+configured URL. If your VM does not provide automatic loopback access, follow the
+matching-origin [host access procedure](website/docs/guide/browser-deployment.md#vm-and-remote-host-access).
 
 `npm run build -- web` builds the shared renderer, Node host and two worker bundles
 without an image. Append `--archive` to `npm run package -- container` to write a

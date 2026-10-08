@@ -4,78 +4,87 @@ browser_installer: true
 
 # Install the browser workbench
 
-Run StreamSkope on a Linux host and use it from your browser. It connects to your
-own Kafka and NATS servers; it does not start a broker. Saved credentials use an
-encrypted vault that you unlock in the browser.
+Run StreamSkope on a Linux AMD64 or ARM64 host and open it in a browser on macOS,
+Windows or Linux. It connects to your own Kafka and NATS servers; it does not
+start a broker. Saved credentials use an encrypted vault.
 
-Use a Linux AMD64 or ARM64 host, or a Linux VM on your Mac, with `curl` available
-and an account that can run `sudo`. Run the installer from that account. It reuses existing Docker
+Run the installer **inside Linux**, using an account with `sudo` and `curl`.
+The Linux host can be your computer or a VM. The installer reuses existing Docker
 and Containerlab and can install missing prerequisites on Ubuntu 22.04/24.04 and
-Debian 12/13. An existing conflicting runtime is preserved for you to review.
-
-For a restricted network, another distribution, or custom browser address, use
-[manual deployment and host maintenance](../guide/browser-host.md).
+Debian 12/13. It preserves conflicting runtimes for you to review.
+For offline installation, another distribution or custom networking, use
+[manual deployment](../guide/browser-deployment.md).
 
 ## 1. Install
 
-The command below installs the latest stable release. Run it in a Linux terminal,
-then keep that terminal open for the first-time setup code.
+Run this command in the Linux terminal to install the latest release.
+Keep the terminal open for the first-time setup code.
 
 <!-- browser-installer -->
 
-**You should see:** one browser URL and the next vault action. Open the exact
-printed URL. It uses Linux loopback and normally port 8080, choosing the next free
-port when necessary. Use the printed port.
+Open the **exact browser URL printed by the installer**, including its port.
+It normally uses port 8080 and chooses the next free port when necessary.
+You should see **Create vault** or **Unlock**.
 
-If you use a Linux VM, the URL needs loopback forwarding to your Mac. If it does
-not open, follow [VM and remote-host access](../guide/browser-host.md#vm-and-remote-host-access)
-instead of changing the URL alone.
+Can't open the URL from your browser computer?
+Follow [VM and remote-host access](../guide/browser-host.md#vm-and-remote-host-access).
 
 ## 2. Create the vault
 
-On the first installation, enter the **Setup code** shown in your terminal,
-choose and confirm a **Vault passphrase**, then select **Create vault**. The
-installer reveals the code only in an owner terminal, so it is absent from
-captured output and the browser URL. If it was not shown, rerun the same installer
-interactively from the same Linux account.
+On the first installation, enter the **Setup code** shown in your Linux terminal,
+choose and confirm a **Vault passphrase**, then select **Create vault**.
+The installer shows the code only in your terminal, not captured output or the
+URL. If it was not shown, rerun interactively from the same Linux account.
+The code is removed after vault creation.
 
-Choose a unique passphrase with at least 12 characters and at most 1024 UTF-8 bytes,
-and keep it in your password manager. There is no password reset or recovery key. Losing the passphrase makes
-saved credentials unrecoverable. The setup code is removed after vault creation.
+Use a unique passphrase of at least 12 characters and at most 1024 UTF-8 bytes.
+Keep it in your password manager. There is no password reset or recovery key;
+losing the passphrase makes saved credentials unrecoverable.
 
-An existing installation shows **Unlock**. Enter its original passphrase; rerunning
-the installer preserves its saved profiles, vault and pinned version. A newer
-installer does not upgrade that installation automatically.
+An existing vault shows **Unlock**. Enter its original passphrase.
+Rerunning the installer preserves the vault, profiles and installed version;
+a newer installer does not upgrade an existing installation.
 
-**You should see:** Connection Profiles after the vault opens.
+**You should see:** **Connection Profiles** after the vault opens.
 
 ## 3. Connect a broker
 
-Open **Connection Profiles → Add connection**, choose **Kafka broker** or
-**NATS server**, and enter the reachable server and authentication parameters.
-Test and save the profile, then connect.
+Have the server addresses, authentication settings and any TLS trust material
+ready. Open **Connection Profiles → Add connection**.
 
-Connections originate in the application container. In a profile, `localhost`
-and `127.0.0.1` refer to that container. Kafka's advertised broker addresses must
-also be reachable from it. Use [Connect your Kafka](../guide/connections.md) or
-[NATS live subscriptions](../guide/core-nats.md) to inspect your first record.
+| System | Save and connect                                                                                                           |
+| ------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Kafka  | Choose **Kafka broker**, enter the settings, then **Test connection → Save profile**. Select **Connect** on the saved row. |
+| NATS   | Choose **NATS server**, enter the settings, then **Save profile**. Select **Connect** on the saved row.                    |
 
-**You should see:** Kafka topics or the NATS Live Subscription view. NATS receives
-future traffic from the server you supplied.
+Wait for connected status. Use [Connect your Kafka](../guide/connections.md)
+or [NATS live subscriptions](../guide/core-nats.md) for field details.
+Connections originate in the container: `localhost` and `127.0.0.1` in a profile
+refer to that container. Kafka's advertised brokers must also be reachable from it.
 
-When finished, select **Lock vault and disconnect**. Closing a browser tab does
-not lock the vault. See [locking and reopening](../guide/browser-host.md#lock-and-reopen)
-for session expiry and restart behavior.
+For **Kafka**, open **Topics**, select a known topic, choose **Newest N** with a
+small limit such as `10`, then **Load messages**. Select a row and open
+**Message details → Value**. Follow [Find and inspect a message](../guide/messages.md)
+for filters and metadata.
 
-## Keep your installation
+For **NATS**, open **Live Subscription**, enter a permitted **Subject filter**,
+then **Start subscription**. Have your producer send new traffic and select a
+row in **NATS records** to open **Record inspector**. This view receives future
+traffic, not stored history.
 
-The installer keeps private deployment records under
-`/var/lib/streamskope/browser` and application data in its `streamskope-data`
-child. Preserve both the records and data when backing up. Credentials and trust
-material are encrypted; other saved metadata is sensitive filesystem data.
+**You should see:** a record you can inspect. If a connection or read fails,
+open **Raw logs** and follow [Troubleshoot a problem](../guide/troubleshooting.md).
+
+## Finish and return
+
+When finished, complete any owned capture cleanup, then select
+**Lock vault and disconnect**. Closing a browser tab does not lock the vault.
+
+Return to the same URL and unlock with the original passphrase, then connect a
+saved profile. Use [the browser workbench guide](../guide/browser-host.md)
+for everyday operations, session expiry and host maintenance.
 
 <span id="back-up-and-restore"></span>
 
-Use [browser host backup and restore](../guide/browser-host.md#back-up-and-restore)
-for the complete procedure, or [host maintenance](../guide/browser-host.md#stop-and-resume)
-to stop and resume safely.
+Keep a [complete backup](../guide/browser-deployment.md#back-up-and-restore)
+of the deployment records and data under `/var/lib/streamskope/browser`.
