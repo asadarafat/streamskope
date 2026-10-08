@@ -127,6 +127,18 @@ For a save failure on Linux, check the unlocked credential service described in
 
 ## Share useful evidence
 
+In the Kafka workspace, expand **Raw logs**, apply the relevant filters, then
+select **Export → Support report**. This JSON report identifies the application
+release and contains only timestamps, severity, outcome and valid correlation
+IDs from the visible retained activity. It includes retained, visible and exported
+counts, so a filtered view cannot be mistaken for a complete history. It does not
+contain free-form log text or determine the cause of a failure.
+
+**Export → Visible raw logs** remains available when you need the original
+activity text. Review it before sharing: operational identifiers can remain in
+raw logs even when credentials are redacted. Neither export retrieves older
+activity, startup logs or records from the broker.
+
 Report defects at [GitHub Issues](https://github.com/asadarafat/streamskope/issues).
 Include the release tag/build as well as app version, OS/architecture, action, expected result, actual result
 and redacted correlation ID. Exclude passwords, tokens, trust material, private

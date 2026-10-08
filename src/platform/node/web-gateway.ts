@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
 import {
   createServer,
@@ -9,13 +9,25 @@ import {
 import { join } from "node:path";
 
 import { browserDevelopmentSessionCookie } from "../providers/browser-development";
+import {
+  createOperationalDiagnostic,
+  operationalDiagnostic,
+  OperationalDiagnosticError,
+  parseOperationalDiagnostic,
+  type OperationalDiagnostic,
+  type OperationalDiagnosticCode,
+} from "../diagnostics";
 
 import { readBoundedFile } from "./bounded-file";
 import type { PluginRendererAsset } from "./plugins/runtime";
 import type { ProviderHostRegistry } from "./provider-host";
 import { startProviderHttpHost, type RunningDevelopmentHost } from "./provider-http-host";
-import { PassphraseVaultError } from "./vault/passphrase-vault";
-import { GatewayProblem, WebGatewayCleanupUnconfirmedError } from "./web-gateway-errors";
+import { PassphraseVaultError, type PassphraseVaultErrorCode } from "./vault/passphrase-vault";
+import {
+  diagnosticProblem,
+  GatewayProblem,
+  WebGatewayCleanupUnconfirmedError,
+} from "./web-gateway-errors";
 import {
   cookie,
   header,
@@ -64,6 +76,7 @@ export interface WebGatewayOptions {
     mode: "create" | "unlock",
   ) => Promise<WebGatewayRuntime>;
   readonly sessionLifetimeMs?: number;
+  readonly onDiagnostic?: (diagnostic: OperationalDiagnostic) => void;
 }
 
 export interface RunningWebGateway {
@@ -74,6 +87,16 @@ export interface RunningWebGateway {
 }
 
 type GatewayState = "locked" | "opening" | "unlocked" | "closing" | "cleanup-failed";
+const vaultCodes: Record<PassphraseVaultErrorCode, OperationalDiagnosticCode> = {
+  "invalid-passphrase": "VAULT_INVALID_PASSPHRASE",
+  "already-exists": "VAULT_ALREADY_EXISTS",
+  "not-created": "VAULT_NOT_CREATED",
+  unavailable: "VAULT_UNAVAILABLE",
+  "in-use": "VAULT_IN_USE",
+  "unlock-failed": "VAULT_UNLOCK_FAILED",
+  locked: "VAULT_LOCKED",
+  "invalid-value": "VAULT_INVALID_VALUE",
+};
 
 interface UnlockedRuntime {
   readonly runtime: WebGatewayRuntime;
@@ -124,7 +147,12 @@ async function ensureSetupCode(dataRoot: string): Promise<{ path: string; code: 
 }
 
 function configuredOrigin(value: string): URL {
-  const origin = new URL(value);
+  let origin: URL;
+  try {
+    origin = new URL(value);
+  } catch (cause) {
+    throw new OperationalDiagnosticError("BROWSER_CONFIGURATION_INVALID", { cause });
+  }
   if (
     origin.origin !== value ||
     !["http:", "https:"].includes(origin.protocol) ||
@@ -133,9 +161,7 @@ function configuredOrigin(value: string): URL {
     origin.hostname.length === 0 ||
     ["0.0.0.0", "[::]"].includes(origin.hostname)
   )
-    throw new Error(
-      "Gateway public origin must be one exact browser-reachable HTTP or HTTPS origin.",
-    );
+    throw new OperationalDiagnosticError("BROWSER_CONFIGURATION_INVALID");
   return origin;
 }
 
@@ -144,9 +170,15 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
   const publicUrl = configuredOrigin(options.publicOrigin);
   const lifetime = options.sessionLifetimeMs ?? SESSION_LIFETIME_MS;
   if (!Number.isSafeInteger(lifetime) || lifetime < 100 || lifetime > SESSION_LIFETIME_MS)
-    throw new Error("Gateway session lifetime must be between 100 ms and two hours.");
-  let vaultState = await options.inspectVault();
-  const setup = vaultState === "missing" ? await ensureSetupCode(options.dataRoot) : undefined;
+    throw new OperationalDiagnosticError("BROWSER_CONFIGURATION_INVALID");
+  let vaultState: "missing" | "present";
+  let setup: { path: string; code: string } | undefined;
+  try {
+    vaultState = await options.inspectVault();
+    setup = vaultState === "missing" ? await ensureSetupCode(options.dataRoot) : undefined;
+  } catch (cause) {
+    throw new OperationalDiagnosticError("BROWSER_DATA_UNAVAILABLE", { cause });
+  }
   let state: GatewayState = "locked";
   let active: UnlockedRuntime | undefined;
   let shuttingDown = false;
@@ -161,6 +193,14 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
   const retainedRuntimes = new Set<WebGatewayRuntime>();
   let attemptWindow = Date.now();
   let attempts = 0;
+  const notifyDiagnostic = (diagnostic: OperationalDiagnostic): void => {
+    // Diagnostics are observers; a failed console/sink cannot change session ownership.
+    try {
+      options.onDiagnostic?.(diagnostic);
+    } catch {
+      /* Preserve the operational outcome. */
+    }
+  };
 
   const clearSessionCookie = (response: ServerResponse): void => {
     response.setHeader(
@@ -334,7 +374,9 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
           if (mode === "create" && setup !== undefined) await unlink(setup.path);
           if (!shuttingDown) {
             expires = setTimeout(() => {
-              void lock().catch(() => undefined);
+              void lock().catch((error: unknown) =>
+                notifyDiagnostic(operationalDiagnostic(error, "CLEANUP_UNCONFIRMED")),
+              );
             }, lifetime);
             expires.unref();
             response.setHeader(
@@ -346,7 +388,11 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
         } catch (error) {
           if (error instanceof WebGatewayCleanupUnconfirmedError) {
             state = "cleanup-failed";
-            throw new GatewayProblem(503, "CLEANUP_UNCONFIRMED", error.message);
+            throw diagnosticProblem(
+              503,
+              "CLEANUP_UNCONFIRMED",
+              operationalDiagnostic(error, "CLEANUP_UNCONFIRMED"),
+            );
           }
           if (active !== undefined) {
             await lock();
@@ -355,12 +401,12 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
               await runtime.providers.shutdown();
               await runtime.lock();
               retainedRuntimes.delete(runtime);
-            } catch {
+            } catch (cause) {
               state = "cleanup-failed";
-              throw new GatewayProblem(
+              throw diagnosticProblem(
                 503,
                 "CLEANUP_UNCONFIRMED",
-                "Provider cleanup could not be confirmed. Restart the instance.",
+                operationalDiagnostic(cause, "CLEANUP_UNCONFIRMED"),
               );
             }
           }
@@ -377,17 +423,19 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
                   : ["in-use", "already-exists", "not-created", "locked"].includes(error.code)
                     ? 409
                     : 503;
-            throw new GatewayProblem(
+            throw diagnosticProblem(
               status,
               `VAULT_${error.code.toUpperCase().replaceAll("-", "_")}`,
-              error.message,
-              error.recovery,
+              createOperationalDiagnostic(vaultCodes[error.code]),
             );
           }
-          throw new GatewayProblem(
+          throw diagnosticProblem(
             503,
             "RUNTIME_START_FAILED",
-            "The application could not start. Preserve the data directory and check the instance configuration.",
+            operationalDiagnostic(
+              error,
+              runtime === undefined ? "RUNTIME_START_FAILED" : "PRIVATE_HOST_START_FAILED",
+            ),
           );
         }
       })();
@@ -420,11 +468,11 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
       clearSessionCookie(response);
       try {
         await lock();
-      } catch {
-        throw new GatewayProblem(
+      } catch (cause) {
+        throw diagnosticProblem(
           503,
           "CLEANUP_UNCONFIRMED",
-          "Provider cleanup could not be confirmed. Restart the instance.",
+          operationalDiagnostic(cause, "CLEANUP_UNCONFIRMED"),
         );
       }
       json(response, 200, { state: "locked" });
@@ -460,7 +508,15 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
     const asset = pathname.startsWith("/plugins/")
       ? await owner.runtime.pluginAsset(pathname)
       : await readWebGatewayAsset(options.rendererRoot, pathname);
-    if (asset === undefined) throw new GatewayProblem(404, "NOT_FOUND", "Asset was not found.");
+    if (asset === undefined) {
+      if (pathname === "/" || pathname === "/index.html")
+        throw diagnosticProblem(
+          503,
+          "RENDERER_ASSET_UNAVAILABLE",
+          createOperationalDiagnostic("RENDERER_ASSET_UNAVAILABLE"),
+        );
+      throw new GatewayProblem(404, "NOT_FOUND", "Asset was not found.");
+    }
     if (!authorized(request) || active !== owner)
       throw new GatewayProblem(401, "LOCKED", "The session has ended.");
     response.setHeader("Content-Type", asset.contentType);
@@ -472,14 +528,39 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
   };
 
   const server = createServer((request, response) => {
+    const correlationId = randomUUID();
     void handle(request, response).catch((error: unknown) => {
+      const known =
+        error instanceof GatewayProblem ? parseOperationalDiagnostic(error.diagnostic) : null;
+      const diagnostic =
+        known !== null
+          ? createOperationalDiagnostic(known.code, correlationId)
+          : !(error instanceof GatewayProblem) || error.status >= 500
+            ? operationalDiagnostic(error, "HOST_FAILURE", correlationId)
+            : undefined;
+      if (diagnostic !== undefined) notifyDiagnostic(diagnostic);
       if (response.headersSent) {
         response.destroy();
         return;
       }
       if (error instanceof GatewayProblem)
-        problem(response, error.status, error.code, error.message, error.recovery);
-      else problem(response, 500, "HOST_FAILURE", "StreamSkope could not complete the request.");
+        problem(
+          response,
+          error.status,
+          error.code,
+          diagnostic?.summary ?? error.message,
+          diagnostic?.recovery ?? error.recovery,
+          diagnostic,
+        );
+      else
+        problem(
+          response,
+          500,
+          "HOST_FAILURE",
+          diagnostic!.summary,
+          diagnostic!.recovery,
+          diagnostic,
+        );
     });
   });
   server.requestTimeout = 15_000;
@@ -488,6 +569,18 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.hostname, resolve);
+  }).catch((cause: unknown) => {
+    // This code comes directly from the owned Node listener, never a nested plugin exception.
+    const code: unknown =
+      cause instanceof Error ? Object.getOwnPropertyDescriptor(cause, "code")?.value : undefined;
+    throw new OperationalDiagnosticError(
+      code === "EADDRINUSE"
+        ? "BROWSER_PORT_IN_USE"
+        : code === "EACCES"
+          ? "BROWSER_LISTEN_DENIED"
+          : "BROWSER_START_FAILED",
+      { cause },
+    );
   });
   const address = server.address();
   if (address === null || typeof address === "string")

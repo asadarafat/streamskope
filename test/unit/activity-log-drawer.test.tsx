@@ -141,6 +141,7 @@ describe("Material UI Activity log panel", () => {
     expect(copy).toHaveBeenCalledWith(expect.stringContaining("correlation-trust-1"));
     expect(copy).not.toHaveBeenCalledWith(expect.stringContaining("correlation-profiles-1"));
     await user.click(within(session).getByRole("button", { name: "Export visible" }));
+    await user.click(screen.getByRole("menuitem", { name: "Visible raw logs" }));
     expect(download).toHaveBeenCalledOnce();
     const exportedDocument = download.mock.calls[0]?.[0];
     expect(exportedDocument?.content).toContain("correlation-trust-1");
@@ -173,6 +174,39 @@ describe("Material UI Activity log panel", () => {
 
     view.rerender(<ActivityLogDrawer entries={[]} onClose={() => undefined} open />);
     expect(screen.getByText("No activity recorded.")).toBeVisible();
+  });
+
+  it("exports only the visible safe metadata and reports native save cancellation truthfully", async () => {
+    const download = vi.fn<(document: HostTextDocument) => Promise<"cancelled">>(() =>
+      Promise.resolve("cancelled"),
+    );
+    const user = userEvent.setup();
+    const secret = "private-credential-and-filter";
+    render(
+      <ActivityLogDrawer
+        entries={[
+          loadedProfiles,
+          { ...failedTrust, detail: secret, correlationId: "2aecf118-dacc-4e45-83dc-d11fab0b5fa4" },
+        ]}
+        initialQuery={secret}
+        onClose={() => undefined}
+        open
+        transfer={{ copy: () => Promise.resolve(), download }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Export visible" }));
+    expect(download).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("menuitem", { name: "Support report" }));
+    expect(download).toHaveBeenCalledOnce();
+    const document = download.mock.calls[0]![0];
+    expect(document.content).not.toContain(secret);
+    expect(document.content).not.toContain(failedTrust.object);
+    expect(document.content).not.toContain(loadedProfiles.timestamp);
+    expect(JSON.parse(document.content)).toMatchObject({
+      scope: { retainedCount: 2, visibleCount: 1, exportedCount: 1, filtersActive: true },
+    });
+    expect(await screen.findByText("Support report cancelled.")).toBeVisible();
+    expect(screen.queryByText(/report saved/u)).not.toBeInTheDocument();
   });
 
   it("resizes the bounded dock with keyboard commands", async () => {

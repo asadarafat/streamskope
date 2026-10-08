@@ -220,3 +220,58 @@ describe("shared Node host boundary", () => {
     }
   }, 60_000);
 });
+
+describe("operational diagnostic boundary", () => {
+  it("allows only host compositions to use the pure diagnostic catalog", async () => {
+    const eslint = new ESLint({
+      cwd: repositoryRoot,
+      overrideConfig: [tseslint.configs.disableTypeChecked],
+    });
+    const cases = [
+      {
+        file: "src/platform/node/browser-entry.ts",
+        source:
+          'import { createOperationalDiagnostic } from "../diagnostics"; export const access = createOperationalDiagnostic;',
+        rule: null,
+      },
+      {
+        file: "src/platform/electron/main/electron-entry.ts",
+        source:
+          'import { createOperationalDiagnostic } from "../../diagnostics"; export const access = createOperationalDiagnostic;',
+        rule: null,
+      },
+      {
+        file: "src/platform/activity/diagnostics.ts",
+        source:
+          'import { createOperationalDiagnostic } from "../diagnostics"; export const access = createOperationalDiagnostic;',
+        rule: "boundaries/dependencies",
+      },
+      {
+        file: "src/platform/diagnostics.ts",
+        source:
+          'import { ProviderHostRegistry } from "./node/provider-host"; export const access = ProviderHostRegistry;',
+        rule: "boundaries/dependencies",
+      },
+      {
+        file: "src/platform/diagnostics.ts",
+        source: 'import { readFile } from "node:fs/promises"; export const access = readFile;',
+        rule: "no-restricted-imports",
+      },
+      {
+        file: "src/platform/electron/renderer/main.tsx",
+        source:
+          'import { createOperationalDiagnostic } from "../../diagnostics"; export const access = createOperationalDiagnostic;',
+        rule: "boundaries/dependencies",
+      },
+    ];
+    for (const { file, source, rule } of cases) {
+      const [result] = await eslint.lintText(source, { filePath: file });
+      if (rule === null) expect(result?.messages, file).toEqual([]);
+      else
+        expect(
+          result?.messages.map(({ ruleId }) => ruleId),
+          file,
+        ).toContain(rule);
+    }
+  }, 60_000);
+});

@@ -19,11 +19,17 @@ it.skipIf(process.platform !== "linux")(
         { cwd: process.cwd(), timeout: 10000, maxBuffer: 4096 },
       );
       expect(result.stderr).toBe("");
-      expect(JSON.parse(result.stdout) as unknown).toEqual({
+      expect(JSON.parse(result.stdout) as unknown).toMatchObject({
         startupRejected: true,
         leaseReleased: true,
         vaultPreserved: true,
         formatPreserved: true,
+        diagnostic: {
+          code: "KAFKA_RUNTIME_START_FAILED",
+          owner: "kafka",
+          stage: "startup",
+          correlationId: expect.any(String) as unknown,
+        },
       });
       expect(result.stdout).not.toContain(dataRoot);
       expect(result.stdout).not.toContain("independent startup fixture passphrase");

@@ -10,6 +10,7 @@ import {
   StudioIconButton as IconButton,
   StudioInputLabel as InputLabel,
   StudioLabeledControl as FormControlLabel,
+  StudioMenu as Menu,
   StudioMenuItem as MenuItem,
   StudioSelect as Select,
   StudioTextField as TextField,
@@ -24,6 +25,7 @@ import {
   type TextDocumentTransferPort,
 } from "./text-document-transfer";
 import { WorkbenchIcon } from "./WorkbenchIcons";
+import { activitySupportDocument } from "./activity-support-report";
 
 interface ActivityLogDrawerProperties {
   readonly initialQuery?: string;
@@ -179,6 +181,7 @@ export function ActivityLogDrawer({
   const [followLatest, setFollowLatest] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (open) {
       setQuery(initialQuery);
@@ -186,7 +189,7 @@ export function ActivityLogDrawer({
         setFiltersOpen(true);
         setSeverity("all");
       }
-    }
+    } else setExportAnchor(null);
   }, [initialQuery, open]);
   const [severity, setSeverity] = useState<SeverityFilter>("all");
   const [wrapLines, setWrapLines] = useState(false);
@@ -266,23 +269,35 @@ export function ActivityLogDrawer({
     }
   }
 
-  async function exportVisible(): Promise<void> {
+  async function exportVisible(kind: "raw" | "support"): Promise<void> {
+    setExportAnchor(null);
     if (visibleEntries.length === 0) {
       return;
     }
     setTransferError(undefined);
     setTransferStatus("");
+    const label = kind === "support" ? "Support report" : "Visible Activity export";
     try {
-      const outcome = await transfer.download(exportDocument(visibleEntries));
+      const outcome = await transfer.download(
+        kind === "support"
+          ? activitySupportDocument(visibleEntries, entries.length, activeFilterCount > 0)
+          : exportDocument(visibleEntries),
+      );
       setTransferStatus(
         outcome === "cancelled"
-          ? "Visible Activity export cancelled."
+          ? `${label} cancelled.`
           : outcome === "saved"
-            ? "Visible Activity export saved."
-            : "Visible Activity download started.",
+            ? `${label} saved.`
+            : kind === "support"
+              ? "Support report download started."
+              : "Visible Activity download started.",
       );
     } catch {
-      setTransferError("The Activity export failed. No file was saved. Retry the export.");
+      setTransferError(
+        kind === "support"
+          ? "The support report export failed. No file was saved. Retry the export."
+          : "The Activity export failed. No file was saved. Retry the export.",
+      );
     }
   }
 
@@ -367,13 +382,32 @@ export function ActivityLogDrawer({
             </Button>
             <Button
               aria-label="Export visible"
+              aria-haspopup="menu"
+              aria-controls={exportAnchor === null ? undefined : "activity-export-menu"}
+              aria-expanded={exportAnchor !== null}
               disabled={visibleEntries.length === 0}
-              onClick={() => void exportVisible()}
+              onClick={(event) => setExportAnchor(event.currentTarget)}
               sx={{ minHeight: 24, px: 0.75 }}
               variant="text"
             >
               Export
             </Button>
+            <Menu
+              anchorEl={exportAnchor}
+              id="activity-export-menu"
+              onClose={() => setExportAnchor(null)}
+              open={exportAnchor !== null}
+            >
+              <MenuItem onClick={() => void exportVisible("raw")}>Visible raw logs</MenuItem>
+              <MenuItem aria-label="Support report" onClick={() => void exportVisible("support")}>
+                <Stack>
+                  <Typography variant="body2">Support report</Typography>
+                  <Typography color="text.secondary" variant="caption">
+                    Metadata only; no log text
+                  </Typography>
+                </Stack>
+              </MenuItem>
+            </Menu>
           </>
         ) : null}
         <IconButton

@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { OperationalDiagnostic } from "../diagnostics";
+
 import { GatewayProblem } from "./web-gateway-errors";
 
 export function header(request: IncomingMessage, name: string): string | undefined {
@@ -47,9 +49,15 @@ export function problem(
   code: string,
   summary: string,
   recovery?: string,
+  diagnostic?: OperationalDiagnostic,
 ): void {
   json(response, status, {
-    error: { code, summary, ...(recovery === undefined ? {} : { recovery }) },
+    error: {
+      code,
+      summary,
+      ...(recovery === undefined ? {} : { recovery }),
+      ...(diagnostic === undefined ? {} : { diagnostic }),
+    },
   });
 }
 

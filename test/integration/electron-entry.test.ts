@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { parseOperationalDiagnostic } from "../../src/platform/diagnostics";
+
 type AppListener = (...arguments_: unknown[]) => void;
+const stderr = vi.fn((_chunk: unknown) => true);
 
 const native = vi.hoisted(() => {
   const listeners = new Map<string, AppListener[]>();
@@ -153,6 +156,8 @@ vi.mock("../../src/platform/electron/main/electron-shell", () => ({
 
 beforeEach(() => {
   vi.resetModules();
+  stderr.mockReset().mockReturnValue(true);
+  vi.spyOn(process.stderr, "write").mockImplementation(stderr);
   native.listeners.clear();
   native.exitCodes.splice(0);
   native.relaunches = 0;
@@ -173,7 +178,14 @@ beforeEach(() => {
   native.shutdownOperation = (): Promise<void> => Promise.resolve();
   native.natsShutdownOperation = (): Promise<void> => Promise.resolve();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+function diagnostics(): unknown[] {
+  return stderr.mock.calls.map(([line]) => parseOperationalDiagnostic(JSON.parse(String(line))));
+}
 
 async function start(): Promise<void> {
   await import("../../src/platform/electron/main/electron-entry");
@@ -209,12 +221,24 @@ describe("Electron entry cleanup ownership", () => {
       new Promise<void>((resolve) => {
         complete = resolve;
       });
-    native.natsCreateFailure = new Error("NATS fixture startup failed.");
+    native.natsCreateFailure = new Error(
+      "private-passphrase https://user:password@private-host startup failure",
+    );
     await import("../../src/platform/electron/main/electron-entry");
     await vi.waitFor(() => expect(native.shutdownCalls).toBe(1));
     expect(native.shellCreated).toBe(0);
     expect(native.natsShutdownCalls).toBe(0);
     expect(native.exitCodes).toEqual([]);
+    expect(diagnostics()).toEqual([
+      expect.objectContaining({
+        code: "NATS_RUNTIME_START_FAILED",
+        owner: "nats",
+        stage: "startup",
+      }),
+    ]);
+    expect(JSON.stringify(stderr.mock.calls)).not.toMatch(
+      /private-passphrase|private-host|password/u,
+    );
     complete();
     await vi.waitFor(() => expect(native.exitCodes).toEqual([1]));
   });
@@ -280,8 +304,29 @@ describe("Electron entry cleanup ownership", () => {
       expect(native.shellCloseCalls).toBe(1);
       expect(native.shutdownCalls).toBe(1);
       expect(native.relaunches).toBe(0);
+      expect(diagnostics()).toEqual([
+        expect.objectContaining({
+          code: "DESKTOP_SHELL_CLEANUP_UNCONFIRMED",
+          owner: "desktop-shell",
+          stage: "cleanup",
+        }),
+      ]);
+      expect(JSON.stringify(stderr.mock.calls)).not.toContain("private native cleanup detail");
     },
   );
+
+  it("preserves exit and provider cleanup when the diagnostic output itself fails", async () => {
+    native.closeOperation = (): Promise<void> =>
+      Promise.reject(new Error("private cleanup failure"));
+    stderr.mockImplementation(() => {
+      throw new Error("unavailable output");
+    });
+    await start();
+    closeWindows();
+    await vi.waitFor(() => expect(native.exitCodes).toEqual([1]));
+    expect(native.shutdownCalls).toBe(1);
+    expect(native.natsShutdownCalls).toBe(1);
+  });
 
   it.each([true, false])(
     "relaunches only after every owned cleanup succeeds: %s",

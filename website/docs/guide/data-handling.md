@@ -164,6 +164,15 @@ approved Kafka data-export process with its own offset coverage and retention ch
 
 ## Share diagnostic evidence
 
+**Raw logs → Export → Support report** in the Kafka workspace creates
+`streamskope.support/v1` JSON. It contains the release identity, visible activity
+metadata and explicit retention/filter counts, bounded to the latest 100 visible
+entries. Free-form detail, object, operation and filter text are excluded;
+invalid correlation IDs or timestamps are omitted rather than copied as text.
+The report does not include profiles, endpoints, configuration, credentials,
+message data or host logs. It is a limited view of retained activity, not a full
+audit trail or a root-cause diagnosis. It remains an ordinary downloaded file.
+
 Include the release tag/build, OS/CPU, action, expected and actual result, and a
 redacted correlation ID. For EDA include plugin/cluster versions and session phase.
 Review raw logs and screenshots even when application secrets are redacted; topic

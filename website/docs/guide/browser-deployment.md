@@ -329,3 +329,10 @@ Never attach the data directory or its backup to a public issue.
 Open **Raw logs** for connection failures and follow
 [Troubleshoot a problem](troubleshooting.md). Share only redacted errors, the
 release/source identity and the action that failed.
+
+Operational startup and vault failures include a reason code, the failed stage and a
+correlation ID with a recovery action. Keep that ID when contacting a maintainer;
+the matching host diagnostic uses the same ID. Share the diagnostic record,
+not an unreviewed container-log dump. A cleanup diagnostic means cleanup is
+unconfirmed: preserve recovery records and check owned target resources before
+restarting. A reported failure does not release ownership or mark cleanup as done.
