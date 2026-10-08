@@ -35,6 +35,7 @@ export class KafkaProfileCatalog {
   private unsubscribe: (() => void) | undefined;
   private observers = 0;
   private profileSequence = -1;
+  private connectionSequence = -1;
   private backendSequence = -1;
   private activitySequence = -1;
   private clusterSequence = -1;
@@ -70,6 +71,16 @@ export class KafkaProfileCatalog {
   readonly getManagementSnapshot = (): KafkaProfileManagementSnapshot => this.managementSnapshot;
   readonly initialConnectionEvent = (): KafkaConnectionEvent | undefined =>
     this.managementSnapshot.connectionEvent;
+
+  /** Confirmed cleanup revokes cached connection evidence before asynchronous IPC catches up. */
+  readonly invalidateConnection = (): void => {
+    this.managementSnapshot = {
+      ...this.managementSnapshot,
+      connectionEvent: undefined,
+      clusterDiagnostics: initialKafkaUiState.clusterDiagnostics,
+    };
+    this.publish();
+  };
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -196,7 +207,8 @@ export class KafkaProfileCatalog {
         this.loading = false;
         break;
       case "connection.state":
-        if (event.sequence <= (this.managementSnapshot.connectionEvent?.sequence ?? -1)) return;
+        if (event.sequence <= this.connectionSequence) return;
+        this.connectionSequence = event.sequence;
         this.managementSnapshot = {
           ...this.managementSnapshot,
           connectionEvent: event,

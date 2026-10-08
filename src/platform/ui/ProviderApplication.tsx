@@ -188,11 +188,16 @@ export function ProviderApplication({
     };
     const operation = Promise.resolve()
       .then(async (): Promise<ProviderConnectionOutcome> => {
-        const cleanup = await source.workspace.deactivate().catch(() => ({
-          state: "blocked" as const,
-          summary: "The messaging provider could not finish connection cleanup.",
-          recovery: "Keep this workspace open, resolve its connection cleanup, then retry.",
-        }));
+        const cleanup = await source.workspace
+          .deactivate({
+            providerId: target.id,
+            ...(request.kind === "connect" ? { profile: request.profile } : {}),
+          })
+          .catch(() => ({
+            state: "blocked" as const,
+            summary: "The messaging provider could not finish connection cleanup.",
+            recovery: "Keep this workspace open, resolve its connection cleanup, then retry.",
+          }));
         if (!mounted.current || current.current !== source || source.retired) return inactive;
         if (cleanup.state === "blocked") {
           source.interactive = true;

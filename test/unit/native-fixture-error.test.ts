@@ -51,6 +51,30 @@ it("retains only allowlisted system codes and records cleanup failures separatel
   expect(JSON.stringify(untrusted)).not.toContain("secret-value");
 });
 
+it("records a JavaScript download timeout without inventing a process exit code", () => {
+  const error = new NativeKafkaFixtureError(
+    "prepare Kafka distribution",
+    new DOMException("private download details", "TimeoutError"),
+  );
+  expect(error.diagnostic).toEqual({
+    phase: "prepare Kafka distribution",
+    exceptionClasses: [],
+    code: "ETIMEDOUT",
+    cleanup: "not started",
+  });
+  expect(JSON.stringify(error)).not.toContain("private download details");
+});
+
+it("does not report a cancelled JavaScript request as a process exit", () => {
+  const error = new NativeKafkaFixtureError(
+    "prepare Kafka distribution",
+    new DOMException("private cancellation details", "AbortError"),
+  );
+  expect(error.diagnostic).not.toHaveProperty("exitCode");
+  expect(error.diagnostic).not.toHaveProperty("code");
+  expect(JSON.stringify(error)).not.toContain("private cancellation details");
+});
+
 it("uses native Windows archive extraction without depending on Git or MSYS PATH tools", () => {
   expect(nativeArchiveExtractor("win32", "C:\\Windows")).toBe("C:\\Windows\\System32\\tar.exe");
   expect(nativeArchiveExtractor("win32", "D:\\Windows")).toBe("D:\\Windows\\System32\\tar.exe");

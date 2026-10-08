@@ -35,6 +35,25 @@ async function digest(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
+export async function fetchNativeKafkaArchive(fetchArchive = fetch): Promise<Response> {
+  // Prefer the active mirror, retaining old pins after archival. The caller still
+  // verifies downloaded and cached bytes against the original release checksum.
+  let failure: unknown = new Error("Unable to download the pinned Kafka fixture.");
+  for (const origin of ["https://downloads.apache.org", "https://archive.apache.org/dist"]) {
+    try {
+      const response = await fetchArchive(`${origin}/kafka/${KAFKA_VERSION}/${ARCHIVE}`, {
+        signal: AbortSignal.timeout(180_000),
+      });
+      if (response.ok && response.body !== null) return response;
+      await response.body?.cancel();
+      failure = new Error("Unable to download the pinned Kafka fixture.");
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw failure;
+}
+
 export function nativeArchiveExtractor(
   platform = process.platform,
   systemRoot = process.env.SystemRoot,
@@ -52,14 +71,7 @@ async function kafkaDistribution(): Promise<string> {
   await mkdir(cache, { recursive: true });
   const archive = join(cache, ARCHIVE);
   if (!(await stat(archive).catch(() => undefined))) {
-    const response = await fetch(
-      `https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/${ARCHIVE}`,
-      {
-        signal: AbortSignal.timeout(180_000),
-      },
-    );
-    if (!response.ok || !response.body)
-      throw new Error("Unable to download the pinned Kafka fixture.");
+    const response = await fetchNativeKafkaArchive();
     const temporary = `${archive}.${process.pid}.partial`;
     try {
       await pipeline(

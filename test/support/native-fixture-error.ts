@@ -41,6 +41,7 @@ export class NativeKafkaFixtureError extends Error {
     this.name = "NativeKafkaFixtureError";
     const code =
       error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+    const webException = error instanceof DOMException;
     this.diagnostic = {
       phase,
       exceptionClasses: [
@@ -50,8 +51,16 @@ export class NativeKafkaFixtureError extends Error {
           ) ?? [],
         ),
       ].slice(0, 5),
-      ...(typeof code === "string" && systemCodes.has(code) ? { code } : {}),
-      ...(typeof code === "number" && Number.isInteger(code) && code >= 0 && code <= 255
+      ...(webException && error.name === "TimeoutError"
+        ? { code: "ETIMEDOUT" }
+        : typeof code === "string" && systemCodes.has(code)
+          ? { code }
+          : {}),
+      ...(!webException &&
+      typeof code === "number" &&
+      Number.isInteger(code) &&
+      code >= 0 &&
+      code <= 255
         ? { exitCode: code }
         : {}),
       cleanup,

@@ -15,6 +15,11 @@ export interface ProviderProfileReference {
   readonly revision?: number;
 }
 
+export interface ProviderConnectionDestination {
+  readonly providerId: string;
+  readonly profile?: ProviderProfileReference;
+}
+
 /** Safe display projection only; credentials and protocol configuration stay with the provider. */
 export interface ProviderProfileSummary extends ProviderProfileReference {
   readonly name: string;
@@ -82,6 +87,8 @@ export interface ProviderWorkspaceRegistration {
   readonly id: string;
   readonly label: string;
   readonly profiles: ProviderProfilesFacet;
-  readonly deactivate: () => Promise<ProviderDeactivationResult>;
+  readonly deactivate: (
+    destination?: ProviderConnectionDestination,
+  ) => Promise<ProviderDeactivationResult>;
   readonly render: (controls: ProviderWorkspaceControls) => ReactNode;
 }
