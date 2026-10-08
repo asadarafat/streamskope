@@ -201,6 +201,41 @@ function management(
 }
 
 describe("Kafka profile catalog ownership", () => {
+  it("revokes cached connection evidence without admitting replayed older events", () => {
+    const source = fixture();
+    const release = source.catalog.facet.subscribe(() => undefined);
+    source.inventory([{ ...profile, active: true }]);
+    const connected: Extract<HostEvent, { event: "connection.state" }> = {
+      event: "connection.state",
+      sequence: 100,
+      version: HOST_PROTOCOL_VERSION,
+      payload: { connectionName: profile.name, state: "connected" },
+    };
+    source.emit(connected);
+    source.emit({
+      event: "clusterDetails.changed",
+      sequence: 101,
+      version: HOST_PROTOCOL_VERSION,
+      payload: diagnostics,
+    });
+    expect(source.catalog.facet.getSnapshot().profiles[0]?.active).toBe(true);
+    source.catalog.invalidateConnection();
+    expect(source.catalog.initialConnectionEvent()).toBeUndefined();
+    expect(source.catalog.facet.getSnapshot().profiles[0]?.active).toBe(false);
+    expect(source.catalog.getManagementSnapshot().clusterDiagnostics.state).toBe("unavailable");
+    source.emit(connected);
+    expect(source.catalog.initialConnectionEvent()).toBeUndefined();
+    source.emit({
+      ...connected,
+      sequence: 102,
+      payload: { connectionName: null, state: "disconnected" },
+    });
+    expect(source.catalog.initialConnectionEvent()?.payload.state).toBe("disconnected");
+    source.emit({ ...connected, sequence: 103 });
+    expect(source.catalog.facet.getSnapshot().profiles[0]?.active).toBe(true);
+    release();
+  });
+
   it("refreshes and projects safe profiles independently of workspace activation without retaining message batches", async () => {
     const source = fixture();
     const release = source.catalog.facet.subscribe(() => undefined);

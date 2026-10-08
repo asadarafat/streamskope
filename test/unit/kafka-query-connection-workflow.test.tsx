@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { StrictMode } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 
@@ -46,6 +46,8 @@ async function fixture(
   commands: HostCommand[];
   user: ReturnType<typeof userEvent.setup>;
   setCleanupBlocked: (blocked: boolean) => void;
+  deferDisconnect: () => void;
+  releaseDisconnect: () => void;
 }> {
   const commands: HostCommand[] = [];
   const library = new KafkaQueryLibrary();
@@ -53,6 +55,8 @@ async function fixture(
   const listeners = new Set<(event: HostEvent) => void>();
   let sequence = 0;
   let cleanupBlocked = false;
+  let deferDisconnect = false;
+  let releaseDisconnect: (() => void) | undefined;
   let active: string | null = null;
   const profiles: readonly ProfileSummary[] = ["fixture", "other"].map((id) => ({
     id,
@@ -108,11 +112,15 @@ async function fixture(
         };
       if (command.command === "connection.disconnect") {
         active = null;
-        emit({
-          event: "connection.state",
-          payload: { state: "disconnected", connectionName: null },
-        });
-        inventory();
+        const publishDisconnect = (): void => {
+          emit({
+            event: "connection.state",
+            payload: { state: "disconnected", connectionName: null },
+          });
+          inventory();
+        };
+        if (deferDisconnect) releaseDisconnect = publishDisconnect;
+        else publishDisconnect();
       }
       if (command.command === "profiles.connect") {
         active = command.payload.profileId;
@@ -227,6 +235,14 @@ async function fixture(
     setCleanupBlocked: (blocked): void => {
       cleanupBlocked = blocked;
     },
+    deferDisconnect: (): void => {
+      deferDisconnect = true;
+    },
+    releaseDisconnect: (): void => {
+      releaseDisconnect?.();
+      releaseDisconnect = undefined;
+      deferDisconnect = false;
+    },
   };
 }
 
@@ -269,6 +285,29 @@ it("does not transfer a reviewed query to a different Kafka profile", async () =
     expect(screen.getByLabelText("Connection status")).toHaveTextContent("Connected"),
   );
   expect(screen.queryByRole("textbox", { name: "Start time (inclusive)" })).not.toBeInTheDocument();
+  expect(commands.filter((command) => command.command === "messages.start")).toEqual([]);
+});
+
+it("keeps profile actions available when the confirmed disconnect event arrives after activation replacement", async () => {
+  const { commands, user, deferDisconnect, releaseDisconnect } = await fixture();
+  await user.click(
+    await screen.findByRole("button", { name: "Connect insecure plaintext profile Fixture" }),
+  );
+  await screen.findByRole("textbox", { name: "Start time (inclusive)" });
+  await user.click(
+    within(screen.getByRole("navigation", { name: "StreamSkope resources" })).getByRole("button", {
+      name: "Connection Profiles",
+    }),
+  );
+  deferDisconnect();
+  await user.click(screen.getByRole("button", { name: "Disconnect profile Fixture" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("provider-workspace")).toHaveAttribute("aria-busy", "false"),
+  );
+  act(releaseDisconnect);
+  const profiles = await screen.findByRole("main", { name: "Connection profiles page" });
+  expect(within(profiles).getByRole("button", { name: "Profile actions Fixture" })).toBeEnabled();
+  expect(screen.getByLabelText("Connection status")).toHaveTextContent("Disconnected");
   expect(commands.filter((command) => command.command === "messages.start")).toEqual([]);
 });
 

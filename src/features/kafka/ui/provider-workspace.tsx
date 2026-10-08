@@ -132,6 +132,7 @@ export function createKafkaWorkspaceRegistration(
           };
         // An import belongs to the first visit; effect replay and failed cleanup keep that visit.
         initialQueryImportConsumed = true;
+        catalog.invalidateConnection();
         queryHandoff.disconnected(destination);
         return { state: "ready" };
       } catch {
