@@ -56,16 +56,25 @@ approved documentation assets.
 
 | Dependency graph    | Proposal scope                                                                                                             |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Root npm            | Separate production and development minor/patch groups; majors and the four mitigated packages remain outside those groups |
+| Root npm            | Production minor/patch updates; separate UI, browser-testing, native-packaging, build/lint and coordinated Vitest families |
 | `website/promo` npm | Promotional-media tooling, separate from the root npm graph                                                                |
 | GitHub Actions      | Repository workflows                                                                                                       |
 | Python              | Documentation toolchain and the Kafka fixture's OAuth service                                                              |
 | Go                  | EDA capture agent; currently no third-party module requirements                                                            |
 
-Each entry limits open version-update PRs. The four mitigations are excluded from
-routine groups, not ignored. A parent update can still change a mitigated nested
-package, so the offline validator remains necessary. Group rules apply only to
-version updates; they do not group security updates. These behaviors use the
+Each entry limits open version-update PRs. Specific development families precede
+the build/lint catchall: a dependency belongs to its first matching group. Vitest
+and its coverage packages share one proposal, including major migrations; verify
+their peer requirements together rather than upgrading coverage independently.
+Other families group minor/patch changes; other majors remain individual proposals.
+
+Node typings stay on the supported Node 24 major. Dependabot ignores only their
+major updates; a maintainer must deliberately migrate the runtime and typings
+together. Minor/patch typings updates remain eligible. The four source mitigations
+and the Handlebars override below are excluded from routine groups, not ignored.
+A parent update can still change a mitigated nested package, so the offline
+validator remains necessary. Group rules apply only to version updates; they do
+not group security updates. These behaviors use the
 [standard Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
 
 Repository dependency alerts and automatic security-update proposals are separate
@@ -73,6 +82,26 @@ GitHub settings. The configuration file does not establish that either is enable
 maintainers must verify them in the repository's security settings. Security
 proposals still require review and the normal CI gate. See
 [GitHub's security-update configuration](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/configure-security-updates).
+
+## Temporary upstream override
+
+The root manifest selects unmodified **`handlebars@4.7.10`** for both
+`eslint-plugin-boundaries` and `@boundaries/elements`. Their current releases pin
+4.7.9, which is affected by the upstream
+[AST validation](https://github.com/advisories/GHSA-8r5x-fm3f-whwj) and
+[prototype lookup](https://github.com/advisories/GHSA-p8wg-vrv2-v86f) advisories.
+The [patched release](https://github.com/handlebars-lang/handlebars.js/releases/tag/v4.7.10)
+is selected through npm's override rather than editing installed source or
+exempting an advisory. This package remains development-only.
+
+**@asadarafat** owns this override, reviewed on **2026-10-08**. The
+[consumer regressions](../test/integration/handlebars-security.test.ts) resolve the
+library through both actual lint consumers, reject injected AST values and
+forbidden prototype constructors, and preserve ordinary template rendering.
+Fresh installation, full architecture lint and dependency/license checks qualify
+the selected graph. Remove the override once both consumers accept a patched
+version, then qualify their unmodified resolution with the same regressions.
+Keep this exception separate from the four local source corrections below.
 
 ## Active mitigations
 
