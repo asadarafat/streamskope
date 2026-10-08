@@ -580,30 +580,84 @@ release snapshot. Keep the archival documentation PR for repository history and
 subsequent snapshots; it does not deploy Pages or change an existing release snapshot.
 The publication job scans all recognized published components, so retried and
 closely spaced desktop/plugin events converge on one managed
-`automation/release-docs` PR. Configure a repository-installed GitHub App for fully
-automatic PR CI: set repository variable `STREAMSKOPE_RELEASE_APP_CLIENT_ID` and
-secret `STREAMSKOPE_RELEASE_APP_PRIVATE_KEY`. Grant the App access only to this
-repository, with Contents, Pull requests and Actions write permissions. The pinned
-token action mints a repository-scoped installation token and revokes it after the
-job. The normal pull-request event qualifies the PR; no dispatched check substitutes
-for protected-branch CI. The job validates the owned PR, exact head, repository,
-branch and permitted documentation paths before allowing automatic merge.
+`automation/release-docs` PR. The records job invokes
+`node --import tsx tools/package/release-documentation.ts reconcile` once; that
+command owns reconciliation and bounded merge waiting. Normal pull-request CI
+qualifies the exact head. The job verifies the owned PR, repository, branch and
+permitted documentation paths before requesting a protected merge. Archival has
+its own serialization; a pending archive PR does not block or replace the
+independent, release-pinned Pages deployment.
 
-With neither App setting configured, the job can open the PR using the built-in
-token, but GitHub requires maintainer approval before that PR's CI can run. The job
-reports finalization as pending and leaves the PR intact. Approve its workflow in
-GitHub, then rerun the publication job to finish; the built-in token cannot approve
-its own blocked workflows. Partial App configuration fails visibly. Normal PR CI
-remains unchanged. An unchanged generated tree reuses the same
-commit and active/successful check. Archival is serialized separately so plugin
-publications cannot replace a queued desktop Pages deployment.
-The repository must allow Actions to create PRs and enable auto-merge. Auto-merge
-still requires the protected branch's CI and an up-to-date branch. The job waits
-for merge and reports failure if archival remains incomplete. If main advances
-during CI, the job regenerates the same PR against the new main and qualifies
-its new head. A busy main can exhaust the bounded wait; rerun finalization to
-continue. Retrying the
-publication run repairs an interrupted handoff; it does not republish packages.
+For automatic PR CI, install a private GitHub App for this repository only, with
+**Contents: write**, **Pull requests: write** and **Actions: read**. Set repository
+variable `STREAMSKOPE_RELEASE_APP_CLIENT_ID` and secret
+`STREAMSKOPE_RELEASE_APP_PRIVATE_KEY`. Verify the actual App owner, installation,
+selected repository and permissions before provisioning them. The pinned token
+action explicitly requests the repository owner and this single repository,
+then revokes its short-lived installation token after the job. With neither setting
+configured, the job uses the built-in token and manual handoff; exactly one setting
+fails before checkout. Invalid App credentials fail without falling back to another token.
+The repository must allow Actions to create PRs and enable auto-merge; normal
+branch protection and required CI still apply.
+
+Keep the original PEM outside Git and release artifacts, in an owner-only
+directory (mode `0700`) with file mode `0600`, and retain an encrypted backup under
+owner control. GitHub cannot return the stored secret value. Rotate by creating
+a replacement key, updating the repository secret, verifying scoped token creation
+and a genuine App-triggered normal PR CI run, then revoking the old key. Never
+print the key or tokens. App registration, installation and hosted CI require
+separate owner verification; until that evidence is recorded, **App activation is
+pending**, regardless of whether workflow tests pass.
+
+Read `finalization_status` and `archive_complete` in the records step outputs and
+its summary. A green job can mean a successful handoff; only `unchanged` or
+`merged` confirms archive completion. Pending outputs identify the PR and exact
+`head_sha`, with `archive_complete=false`:
+
+| Finalization status   | Meaning and next action                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| `unchanged`           | Published records already match main; no merge is needed.                                      |
+| `merged`              | The exact managed PR's protected merge was confirmed.                                          |
+| `approval-required`   | Approve an actual blocked PR workflow, or follow the no-run procedure below.                   |
+| `review-required`     | Review preserved newer commentary before a normal protected merge.                             |
+| `awaiting-maintainer` | Normal CI is active or successful, but manual mode leaves the protected merge to a maintainer. |
+
+`review_required` is the legacy maintainer-handoff guard: it is true for every
+pending handoff, including CI approval, so reruns of an older publication workflow
+skip its former polling step. Use `finalization_status` for the specific reason;
+`approval_required` identifies the CI-approval handoff.
+
+For an actual approval-required run, select **Approve workflows to run** on the
+PR, let normal CI qualify its exact head, then retry the records job. If manual
+handoff remains, finish the normal protected merge and retry to confirm main is
+synchronized. The built-in token cannot approve its own blocked workflow.
+
+If no PR CI run exists, a maintainer can close and reopen **the same PR** using
+their own GitHub session, without changing its managed branch or metadata.
+`ci.yml` handles the normal `pull_request` **reopened** event. Wait for that CI and
+complete the protected merge. Do not add an empty commit to trigger CI: it would
+violate the managed branch's commit ownership checks. A dispatched workflow or
+manually posted success status does not replace normal PR qualification.
+
+Terminal failed, cancelled or timed-out CI remains a failure in both credential
+modes; the tool never reruns it automatically or calls it an approval handoff.
+API or ownership errors, closure without merge and an exhausted wait also fail.
+Only eligible App automation waits for a confirmed merge. If main advances, the
+command refreshes its verified clean checkout, regenerates the PR and immediately
+rechecks the new head's CI and review requirements. Changes to the executing
+toolchain or dependencies require a fresh job rather than an in-process refresh.
+An unchanged generated tree reuses its commit and active/successful CI.
+
+Retry the current records job to repair an interrupted handoff; it does not
+republish packages. A rerun retains its original workflow definition: an older
+publication workflow requesting Actions write can fail to create a token for
+the new read-only App before reaching the updated command. Keep the App's read
+permission. Finish the same PR through normal protected merge, or run the
+reconciliation command from current source in a separate clean main checkout
+with `GITHUB_REPOSITORY` and an authenticated maintainer's `GH_TOKEN` supplied
+privately. A future publication uses the updated workflow; activating the App
+does not replace an older run's definition. The next release remains blocked
+until its previous publication's archive is actually present on main.
 
 The sidebar shows only the five newest published stable desktop versions and
 **See all releases**; the overview retains older versions and prereleases. Keep
