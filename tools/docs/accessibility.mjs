@@ -1,14 +1,24 @@
 /* global document */
 import { expect } from "@playwright/test";
 
-export async function prepareSearchAudit(page) {
+export async function prepareAccessibilityAudit(page) {
   await page.locator('[data-sk-search="ready"]').waitFor({ state: "attached" });
   // Inspect a settled animation frame; every actual accessibility finding fails.
   await page.waitForFunction(() => {
     const modal = document
       .querySelector('[data-sk-search="ready"]')
       ?.shadowRoot?.querySelector(".l");
-    return modal && modal.getAnimations().every((animation) => animation.playState !== "running");
+    return (
+      modal &&
+      modal
+        .getAnimations({ subtree: true })
+        .every((animation) => animation.playState !== "running") &&
+      [...document.querySelectorAll(".md-sidebar--primary, .md-overlay")].every((element) =>
+        element
+          .getAnimations({ subtree: true })
+          .every((animation) => animation.playState !== "running"),
+      )
+    );
   });
 }
 

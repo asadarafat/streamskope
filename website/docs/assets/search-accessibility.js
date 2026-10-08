@@ -34,6 +34,7 @@
         style.dataset.skSearch = "";
         style.textContent = `
           menu.n { color: var(--md-default-fg-color, #1c2025); }
+          #sk-search-filters h4 { color: var(--md-default-fg-color--light, #5a626a); opacity: 1; }
           :focus-visible { outline: 2px solid var(--md-accent-fg-color, #244fc6); outline-offset: 2px; }
         `;
         root.append(style);
