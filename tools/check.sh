@@ -72,9 +72,32 @@ if [[ "$mode" == ci ]]; then
     ci_lane "$lane"
   fi
 else
+  qualification=$(node --import tsx tools/check/qualification.ts begin)
+  finish_local() {
+    local status=$? evidence_status
+    trap - EXIT INT TERM
+    set +e
+    node --import tsx tools/check/qualification.ts finish "$qualification" "$status"
+    evidence_status=$?
+    if [[ $status -eq 0 ]]; then status=$evidence_status; fi
+    exit "$status"
+  }
+  trap finish_local EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  node --import tsx tools/check/qualification.ts stage "$qualification" shared
   shared
+  node --import tsx tools/check/qualification.ts complete "$qualification" shared
+  node --import tsx tools/check/qualification.ts stage "$qualification" soak
   node --import tsx test/performance/stream-pipeline-replay.ts --seconds=60 --rate=1000 --bytes=256 --mixed --clone
+  node --import tsx tools/check/qualification.ts complete "$qualification" soak
+  node --import tsx tools/check/qualification.ts stage "$qualification" docs
   docs
+  node --import tsx tools/check/qualification.ts complete "$qualification" docs
+  node --import tsx tools/check/qualification.ts stage "$qualification" eda-live
   node --import tsx tools/check/eda-live.ts
+  node --import tsx tools/check/qualification.ts complete "$qualification" eda-live
+  node --import tsx tools/check/qualification.ts stage "$qualification" nsp-live
   node --import tsx tools/check/nsp-live.ts
+  node --import tsx tools/check/qualification.ts complete "$qualification" nsp-live
 fi

@@ -100,7 +100,10 @@ it.each(["0.1.0", "0.2.0-rc.1"])(
       output,
       tag,
     ];
-    await execute(process.execPath, args, { timeout: 15000 });
+    await execute(process.execPath, args, {
+      timeout: 15000,
+      env: { ...process.env, GITHUB_ACTIONS: "false" },
+    });
     const notes = await readFile(output, "utf8");
     expect(notes).toContain("# Reviewed release\n\nReviewed change.");
     expect(notes).toContain("These downloads are unsigned.");
@@ -110,7 +113,12 @@ it.each(["0.1.0", "0.2.0-rc.1"])(
     expect(notes).toContain(`Source: ${commit} (tag ${tag}).`);
     expect(notes).toContain(`StreamSkope-${version}-linux-x64.AppImage`);
     expect((await readFile(join(assets, "SHA256SUMS"), "utf8")).trim().split("\n")).toHaveLength(3);
-    await expect(execute(process.execPath, args, { timeout: 15000 })).rejects.toMatchObject({
+    await expect(
+      execute(process.execPath, args, {
+        timeout: 15000,
+        env: { ...process.env, GITHUB_ACTIONS: "false" },
+      }),
+    ).rejects.toMatchObject({
       code: 1,
     });
     expect(await readFile(output, "utf8")).toBe(notes);
@@ -137,7 +145,7 @@ it("rejects mismatched reviewed notes before writing release checksums", async (
     execute(
       process.execPath,
       ["--import", "tsx", "tools/package.ts", "release", assets, "0.1.0", commit, source, output],
-      { timeout: 15000 },
+      { timeout: 15000, env: { ...process.env, GITHUB_ACTIONS: "false" } },
     ),
   ).rejects.toMatchObject({ code: 1 });
   await expect(readFile(join(assets, "SHA256SUMS"))).rejects.toMatchObject({ code: "ENOENT" });

@@ -13,6 +13,7 @@ import { prepareSearchAudit, checkSearchKeyboard } from "./accessibility.mjs";
 
 const root = resolve("dist/site");
 const evidence = resolve(".artifacts/website");
+const startedAt = new Date().toISOString();
 const desktopRelease = /^desktop_release = "([^"]+)"$/mu.exec(
   await readFile("website/zensical.toml", "utf8"),
 )?.[1];
@@ -818,6 +819,21 @@ try {
   await page.goto(base + "launch/");
   await page.waitForURL(/\/intro\//);
   assert.deepEqual(errors, []);
+  await writeFile(
+    resolve(evidence, "browser-checks.json"),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        outcome: "passed",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        routes: routes.length,
+        media: process.argv.includes("--media") ? "passed" : "skipped",
+      },
+      null,
+      2,
+    ) + "\n",
+  );
   console.log(
     `Documentation browser checks passed: ${routes.length} routes, search, themes, mobile, accessibility; media=${process.argv.includes("--media") ? "passed" : "skipped"}. Evidence: ${evidence}`,
   );

@@ -1,6 +1,7 @@
 """Build and validate public documentation using the pinned Zensical toolchain."""
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -20,6 +21,7 @@ from docs.downloads import desktop_downloads, container_downloads
 from docs.plugins import SNAPSHOT, capture_publications, plugin_context
 from docs.procedures import inspect_retrieval_procedure
 from docs.releases import configure_release_navigation
+from docs.qualification import write_qualification
 
 ROOT = Path(__file__).resolve().parents[1]
 WEBSITE = ROOT / "website"
@@ -309,6 +311,9 @@ def main():
         publication.prepare_publication()
         capture_publications(ROOT)
     if args.action == "qualify":
+        started = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        for name in ("qualification.json", "browser-checks.json"):
+            (ROOT / ".artifacts/website" / name).unlink(missing_ok=True)
         publication.inspect_release_content(ROOT, published=os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1")
         inspect_repository_commands()
         inspect_message_limits()
@@ -327,6 +332,7 @@ def main():
             marker = ROOT / ".cache/docs-media-qualified"
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(fingerprint)
+        write_qualification(ROOT, started, media, fingerprint)
         return
     if args.action == "check":
         inspect_site(SITE, urlsplit(url).path)

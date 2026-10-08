@@ -16,6 +16,12 @@ browser authentication, vault persistence, compiled workers and graceful restart
 Their metadata records identity and checksums, not live-target success. A published release or a green badge alone
 does not qualify operations outside those checks.
 
+Release qualification reports separate source checks, packaged artifacts, local
+soak and live-system outcomes. An absent local receipt is recorded as unrecorded;
+a skipped live test remains skipped. Use the report attached to your exact release,
+including its stated limitations, rather than assuming every test ran because the
+release was published. Historical reports retain their original format and scope.
+
 For a development checkout, `0.0.0-dev` is an unassigned version. Use the PR's
 successful CI result for its exact revision; that check does not build native
 installers. Results from an earlier revision do not qualify changed source.

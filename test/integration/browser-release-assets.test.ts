@@ -610,7 +610,7 @@ it.each([true, false])(
         "--containers",
         staging,
       ],
-      { timeout: 15_000 },
+      { timeout: 15_000, env: { ...process.env, GITHUB_ACTIONS: "false" } },
     );
     const content = await readFile(notes, "utf8");
     expect(content).toContain("## Browser with Containerlab");
@@ -672,7 +672,7 @@ it.each(["registry-first", "archives-first"] as const)(
           ? [...registryOptions, ...archiveOptions]
           : [...archiveOptions, ...registryOptions]),
       ],
-      { timeout: 15_000 },
+      { timeout: 15_000, env: { ...process.env, GITHUB_ACTIONS: "false" } },
     );
     const output = join(root, "container-package");
     expect(await validateBrowserReleaseAssets(output, version, commit)).toEqual(
@@ -742,7 +742,7 @@ it.each(["missing-archives", "duplicate-registry", "missing-registry-path"] as c
           `v${version}`,
           ...options,
         ],
-        { timeout: 15_000 },
+        { timeout: 15_000, env: { ...process.env, GITHUB_ACTIONS: "false" } },
       ),
     ).rejects.toMatchObject({ code: 1 });
     await expect(readFile(notes)).rejects.toMatchObject({ code: "ENOENT" });
