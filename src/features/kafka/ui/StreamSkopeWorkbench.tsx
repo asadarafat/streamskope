@@ -10,7 +10,12 @@ import {
 } from "react";
 import { Box, Stack, Typography } from "@mui/material";
 
-import { HOST_PROTOCOL_VERSION, type HostEvent, type StreamSkopeHost } from "../contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  type HostEvent,
+  type KafkaInvestigationQuery,
+  type StreamSkopeHost,
+} from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 import { ProviderWorkbenchShell } from "../../../platform/ui/ProviderWorkbenchShell";
@@ -80,6 +85,9 @@ export interface StreamSkopeWorkbenchProperties {
     Extract<HostEvent, { readonly event: "connection.state" }> | undefined;
   readonly isInteractive?: (() => boolean) | undefined;
   readonly initialQueryImport?: string | undefined;
+  readonly initialRestoredQuery?: KafkaInvestigationQuery | undefined;
+  readonly onPendingQueryConnection?:
+    ((query: KafkaInvestigationQuery, profileId: string | undefined) => void) | undefined;
   readonly streamMonitorObserver?: RendererStreamMonitorObserver;
 }
 
@@ -88,6 +96,8 @@ export function StreamSkopeWorkbench({
   host,
   streamMonitorObserver,
   initialQueryImport,
+  initialRestoredQuery,
+  onPendingQueryConnection,
   providerControl,
   profilesPage,
   initialConnectionEvent,
@@ -169,6 +179,39 @@ export function StreamSkopeWorkbench({
     openObservedRecord,
     stopConsumption,
   } = useWorkbenchTopics(host, connected, navigation, setNavigation, state);
+
+  const restoreQuerySettings = useCallback(
+    (query: KafkaInvestigationQuery, profileId: string | undefined): void => {
+      const profile = state.profiles.find((entry) => entry.id === profileId);
+      const needsConnection =
+        !connected || (profile !== undefined && profile.name !== state.connectionName);
+      restoreQuery(query, needsConnection);
+      if (needsConnection) onPendingQueryConnection?.(query, profileId);
+      dispatch({
+        type: "query.restored",
+        filters: query.filters ?? query.request.search ?? initialKafkaMessageFilters,
+      });
+      if (profile !== undefined) setSelectedProfileId(profile.id);
+      setNavigation(needsConnection ? "profiles" : "topics");
+      setQueriesOpen(false);
+      setQueryImport(undefined);
+    },
+    [
+      connected,
+      onPendingQueryConnection,
+      restoreQuery,
+      setSelectedProfileId,
+      state.connectionName,
+      state.profiles,
+    ],
+  );
+  const initialRestoredQueryApplied = useRef(false);
+  useEffect(() => {
+    if (initialRestoredQuery === undefined || !connected || initialRestoredQueryApplied.current)
+      return;
+    initialRestoredQueryApplied.current = true;
+    restoreQuerySettings(initialRestoredQuery, undefined);
+  }, [connected, initialRestoredQuery, restoreQuerySettings]);
 
   useRendererStreamMonitorLifecycle({
     dispatch,
@@ -843,20 +886,7 @@ export function StreamSkopeWorkbench({
                 setQueriesOpen(false);
                 setQueryImport(undefined);
               }}
-              onRestore={(query, profileId) => {
-                const profile = state.profiles.find((entry) => entry.id === profileId);
-                const needsConnection =
-                  !connected || (profile !== undefined && profile.name !== state.connectionName);
-                restoreQuery(query, needsConnection);
-                dispatch({
-                  type: "query.restored",
-                  filters: query.filters ?? query.request.search ?? initialKafkaMessageFilters,
-                });
-                if (profile !== undefined) setSelectedProfileId(profile.id);
-                setNavigation(needsConnection ? "profiles" : "topics");
-                setQueriesOpen(false);
-                setQueryImport(undefined);
-              }}
+              onRestore={restoreQuerySettings}
             />
           ) : null}
           <WorkbenchCommandPalette

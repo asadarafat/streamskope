@@ -116,6 +116,13 @@ provider's workspace only after the previous workspace confirms cleanup. Failed
 cleanup keeps the current workspace available for retry. Profile-management lifetime
 is separate from stream authority; a retired renderer cannot acquire new work.
 
+Kafka's [query connection handoff](../src/features/kafka/ui/query-connection-handoff.ts)
+retains one validated settings intent for an explicitly selected profile. After
+confirmed cleanup and connection, the new activation restores its topic, bounds,
+limit and filters without starting a read. Other profiles, provider changes and
+explicit disconnect discard the intent. Only settings cross this transition;
+credentials, messages and the old activation's callbacks remain with their owners.
+
 NATS is an independent sibling under `src/features/nats`. It inspects the configured
 remote NATS server; it is not StreamSkope's internal bus. Its implemented protocol
 is live core subscription traffic, with bounded payloads and token/TLS support,

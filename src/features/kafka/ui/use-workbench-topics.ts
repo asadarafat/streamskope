@@ -78,6 +78,11 @@ export function useWorkbenchTopics(
   state: TopicWorkbenchState,
 ): WorkbenchTopicController {
   const pendingQuery = useRef<KafkaInvestigationQuery | null>(null);
+  const appliedConnection = useRef<{
+    readonly host: StreamSkopeHost;
+    readonly name: string | null;
+  } | null>(null);
+  const preserveQueryDuringPreferenceHydration = useRef(false);
   const [fetchMaximum, setFetchMaximum] = useState<number>(KAFKA_FETCH_LIMITS.defaultMaxMessages);
   const [fetchMode, setFetchMode] = useState<KafkaFetchMode>("tail");
   const [timeWindowDraft, setTimeWindowDraft] = useState(initialKafkaTimeWindow);
@@ -128,14 +133,22 @@ export function useWorkbenchTopics(
   }, [host]);
 
   useEffect(() => {
-    if (connected) {
-      setNavigation("topics");
-      setSelectedTopic(pendingQuery.current?.request.topic ?? null);
-      pendingQuery.current = null;
-      setTopicWorkspace("messages");
-      void requestTopics();
+    if (!connected) {
+      appliedConnection.current = null;
+      return;
     }
-  }, [connected, requestTopics, setNavigation, state.connectionName]);
+    if (
+      appliedConnection.current?.host === host &&
+      appliedConnection.current.name === state.connectionName
+    )
+      return;
+    appliedConnection.current = { host, name: state.connectionName };
+    setNavigation("topics");
+    setSelectedTopic(pendingQuery.current?.request.topic ?? null);
+    pendingQuery.current = null;
+    setTopicWorkspace("messages");
+    void requestTopics();
+  }, [connected, host, requestTopics, setNavigation, state.connectionName]);
 
   useEffect(() => {
     setTopicFilter("");
@@ -187,15 +200,19 @@ export function useWorkbenchTopics(
       appliedFetchDefaults.current.mode !== confirmedFetchDefaults.mode ||
       appliedFetchDefaults.current.maxMessages !== confirmedFetchDefaults.maxMessages
     ) {
-      setFetchMode(confirmedFetchDefaults.mode);
-      setFetchMaximum(confirmedFetchDefaults.maxMessages);
+      if (!preserveQueryDuringPreferenceHydration.current) {
+        setFetchMode(confirmedFetchDefaults.mode);
+        setFetchMaximum(confirmedFetchDefaults.maxMessages);
+      }
       appliedFetchDefaults.current = confirmedFetchDefaults;
     }
+    if (state.preferenceSnapshot !== null) preserveQueryDuringPreferenceHydration.current = false;
   }, [
     confirmedFetchDefaults.maxMessages,
     confirmedFetchDefaults.mode,
     consumptionActive,
     state.consumptionRequest,
+    state.preferenceSnapshot,
   ]);
 
   const requestForTopic = useCallback(
@@ -237,6 +254,7 @@ export function useWorkbenchTopics(
   const restoreQuery = useCallback(
     (query: KafkaInvestigationQuery, awaitConnection: boolean): void => {
       const validated = parseKafkaInvestigationQuery(query);
+      preserveQueryDuringPreferenceHydration.current = state.preferenceSnapshot === null;
       pendingQuery.current = awaitConnection ? validated : null;
       setFetchMode(validated.request.mode);
       setFetchMaximum(validated.request.maxMessages);
@@ -251,7 +269,7 @@ export function useWorkbenchTopics(
       setSelectedMessageId(null);
       setMessageRequestError(undefined);
     },
-    [],
+    [state.preferenceSnapshot],
   );
 
   const startConsumption = useCallback(

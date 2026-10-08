@@ -1,5 +1,5 @@
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
-import type { HostEvent, StreamSkopeHost } from "../contracts";
+import type { HostEvent, KafkaInvestigationQuery, StreamSkopeHost } from "../contracts";
 import { StreamSkopeThemeProvider } from "../../../platform/ui/StreamSkopeThemeProvider";
 
 import { StreamSkopeWorkbench, type StreamSkopeWorkbenchProperties } from "./StreamSkopeWorkbench";
@@ -15,6 +15,9 @@ export interface StreamSkopeAppProperties {
     Extract<HostEvent, { readonly event: "connection.state" }> | undefined;
   readonly isInteractive?: (() => boolean) | undefined;
   readonly initialQueryImport?: string | undefined;
+  readonly initialRestoredQuery?: KafkaInvestigationQuery | undefined;
+  readonly onPendingQueryConnection?:
+    ((query: KafkaInvestigationQuery, profileId: string | undefined) => void) | undefined;
   readonly pluginImporter?: PluginRendererImporter | undefined;
   readonly streamMonitorObserver?: StreamSkopeWorkbenchProperties["streamMonitorObserver"];
 }
@@ -26,6 +29,8 @@ export function KafkaWorkspace({
   pluginImporter,
   streamMonitorObserver,
   initialQueryImport,
+  initialRestoredQuery,
+  onPendingQueryConnection,
   providerControl,
   profilesPage,
   initialConnectionEvent,
@@ -37,6 +42,8 @@ export function KafkaWorkspace({
         desktop={desktop}
         host={host}
         initialQueryImport={initialQueryImport}
+        initialRestoredQuery={initialRestoredQuery}
+        onPendingQueryConnection={onPendingQueryConnection}
         providerControl={providerControl}
         profilesPage={profilesPage}
         initialConnectionEvent={initialConnectionEvent}

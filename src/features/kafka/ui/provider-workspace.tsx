@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type {
   ProviderWorkspaceControls,
   ProviderWorkspaceRegistration,
   ProviderDeactivationResult,
+  ProviderConnectionOutcome,
 } from "../../../platform/ui/provider-workspaces";
 import {
   HOST_PROTOCOL_VERSION,
@@ -11,10 +12,12 @@ import {
   type HostCommand,
   type HostCommandResponse,
   type StreamSkopeHost,
+  type KafkaInvestigationQuery,
 } from "../contracts";
 
 import { KafkaWorkspace, type StreamSkopeAppProperties } from "./StreamSkopeApp";
 import { KafkaProfileCatalog } from "./profile-catalog";
+import { createKafkaQueryConnectionHandoff } from "./query-connection-handoff";
 
 /** New requests require this activation's authority; already admitted results remain unchanged. */
 export function createInteractiveKafkaHost(
@@ -51,6 +54,7 @@ export function createKafkaWorkspaceRegistration(
 ): ProviderWorkspaceRegistration {
   let initialQueryImportConsumed = false;
   const catalog = new KafkaProfileCatalog(properties);
+  const queryHandoff = createKafkaQueryConnectionHandoff();
   function RegisteredKafkaWorkspace({
     controls,
   }: {
@@ -60,6 +64,13 @@ export function createKafkaWorkspaceRegistration(
       initialQueryImportConsumed ? undefined : properties.initialQueryImport,
     );
     const [initialConnectionEvent] = useState(catalog.initialConnectionEvent);
+    const [initialRestoredQuery] = useState(queryHandoff.restored);
+    const onPendingQueryConnection = useCallback(
+      (query: KafkaInvestigationQuery, profileId: string | undefined): void => {
+        if (controls.isInteractive()) queryHandoff.prepare(query, profileId);
+      },
+      [controls.isInteractive],
+    );
     const host = useMemo(
       () => createInteractiveKafkaHost(properties.host, controls.isInteractive),
       [properties.host, controls.isInteractive],
@@ -72,6 +83,8 @@ export function createKafkaWorkspaceRegistration(
         providerControl={undefined}
         profilesPage={controls.profilesPage}
         initialConnectionEvent={initialConnectionEvent}
+        initialRestoredQuery={initialRestoredQuery}
+        onPendingQueryConnection={onPendingQueryConnection}
         isInteractive={controls.isInteractive}
       />
     );
@@ -79,9 +92,16 @@ export function createKafkaWorkspaceRegistration(
   return {
     id: "kafka",
     label: "Kafka",
-    profiles: catalog.facet,
+    profiles: {
+      ...catalog.facet,
+      connect: async (profile): Promise<ProviderConnectionOutcome> => {
+        const outcome = await catalog.facet.connect(profile);
+        if (outcome.ok) queryHandoff.connected(profile.id);
+        return outcome;
+      },
+    },
     render: (controls): React.JSX.Element => <RegisteredKafkaWorkspace controls={controls} />,
-    deactivate: async (): Promise<ProviderDeactivationResult> => {
+    deactivate: async (destination): Promise<ProviderDeactivationResult> => {
       let phase: "stop" | "disconnect" = "stop";
       try {
         const stopped = await properties.host.execute({
@@ -112,6 +132,7 @@ export function createKafkaWorkspaceRegistration(
           };
         // An import belongs to the first visit; effect replay and failed cleanup keep that visit.
         initialQueryImportConsumed = true;
+        queryHandoff.disconnected(destination);
         return { state: "ready" };
       } catch {
         return phase === "stop"
