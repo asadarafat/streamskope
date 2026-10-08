@@ -53,7 +53,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-actions: read
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Archival advances main; deployment below remains pinned to the release.
           ref: main
@@ -78,7 +78,7 @@ jobs:
     outputs:
       publish: ${{ steps.release.outputs.publish }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
       - id: release
@@ -101,7 +101,7 @@ jobs:
       revision: ${{ steps.identity.outputs.revision }}
       release: ${{ steps.identity.outputs.release }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The release event SHA is the tagged source, even if main has advanced.
           ref: ${{ github.sha }}
@@ -153,7 +153,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.build.outputs.revision }}
       - name: Recheck the release immediately before deployment
