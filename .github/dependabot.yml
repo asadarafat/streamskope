@@ -8,7 +8,30 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
     groups:
+      vitest-family:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: [vitest, "@vitest/*"]
+        update-types: [major, minor, patch]
+      ui-framework:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: [react, react-dom, "@types/react", "@types/react-dom", "@mui/*", "@emotion/*"]
+        update-types: [minor, patch]
+      browser-testing:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: ["@playwright/*", playwright, "@axe-core/*", "@testing-library/*", jsdom]
+        update-types: [minor, patch]
+      native-packaging:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: [electron, electron-builder, "@electron/*"]
+        update-types: [minor, patch]
       production-minor-patch:
         applies-to: version-updates
         dependency-type: production
@@ -18,15 +41,18 @@ updates:
           - "@nats-io/transport-node"
           - braces
           - http-cache-semantics
-      development-minor-patch:
+          - handlebars
+      build-and-lint:
         applies-to: version-updates
         dependency-type: development
+        patterns: ["*"]
         update-types: [minor, patch]
         exclude-patterns:
           - node-forge
           - "@nats-io/transport-node"
           - braces
           - http-cache-semantics
+          - handlebars
   - package-ecosystem: npm
     directory: /website/promo
     schedule:
