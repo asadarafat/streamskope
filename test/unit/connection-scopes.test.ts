@@ -1,16 +1,34 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 
 import {
   KafkaConnectionScopes,
   type ConnectionScopeContext,
+  type AclReviewScope,
+  type MutationDispatch,
+  type OffsetResetScope,
+  type ReviewedWriteScope,
 } from "../../src/features/kafka/application/connection-scope";
+import type {
+  KafkaActiveConnection,
+  KafkaClusterMetadata,
+} from "../../src/features/kafka/application/types";
 import { sampleObservationRecords } from "../../src/features/kafka/application/observation-record-sample";
 import type {
   KafkaConsumerGroupDetails,
+  KafkaAclBinding,
+  KafkaConfigurationEntry,
   KafkaWriteInput,
   KafkaWriteOutcome,
 } from "../../src/features/kafka/contracts";
 import type { TopicHealth } from "../../src/features/kafka/contracts/observations";
+import type {
+  OffsetResetInput,
+  OffsetResetResult,
+  OffsetResetReview,
+  OffsetResetSnapshot,
+  OffsetResetTarget,
+} from "../../src/features/kafka/contracts/offset-reset";
+import type { KafkaWriteDestination } from "../../src/features/kafka/contracts/reviewed-writes";
 import {
   ControlledMessageStream,
   RecordingActiveConnection,
@@ -236,8 +254,12 @@ describe("connection-scoped authorities", () => {
     const scopes = new KafkaConnectionScopes(() => context);
     const observation = scopes.observation()!;
     const reviewed = scopes.reviewedWrite()!;
+    const acl = scopes.aclReview()!;
+    const reset = scopes.offsetReset()!;
     context.generation += 1;
     expect(reviewed.isCurrent()).toBe(false);
+    expect(acl.isCurrent()).toBe(false);
+    expect(reset.isCurrent()).toBe(false);
     expect(reviewed.tryDispatchWrite!(write)).toEqual({ started: false });
     await expect(
       observation.observeTopicHealth!(write.topic, new AbortController().signal),
@@ -246,4 +268,347 @@ describe("connection-scoped authorities", () => {
     expect(connection.observedTopics).toEqual([]);
     expect(connection.writes).toEqual([]);
   });
+});
+
+const acl: KafkaAclBinding = {
+  resourceType: "TOPIC",
+  resourceName: "scope.events",
+  patternType: "LITERAL",
+  principal: "User:reader",
+  host: "*",
+  operation: "READ",
+  permission: "ALLOW",
+};
+const resetTarget: OffsetResetTarget = { topic: "scope.events", partition: 0, offset: "10" };
+const resetInput: OffsetResetInput = { groupId: "workers", targets: [resetTarget] };
+const resetResult: OffsetResetResult = {
+  ...resetTarget,
+  state: "acknowledged",
+  observed: "10",
+  verified: true,
+};
+const destination: KafkaWriteDestination = {
+  clusterId: "cluster-a",
+  topicId: "topic-a",
+  partitions: 1,
+};
+
+type MutationMethods = Pick<
+  Required<KafkaActiveConnection>,
+  | "describeClusterMetadata"
+  | "describeBrokerConfiguration"
+  | "listAcls"
+  | "offsetResetSnapshot"
+  | "offsetResetExamples"
+  | "reviewWrite"
+  | "createAcl"
+  | "deleteAcl"
+  | "resetGroupOffset"
+  | "applyWrite"
+>;
+interface MutationFixture {
+  readonly connection: KafkaActiveConnection;
+  readonly methods: { readonly [K in keyof MutationMethods]: Mock<MutationMethods[K]> };
+  readonly scopes: KafkaConnectionScopes;
+  readonly acl: AclReviewScope;
+  readonly reset: OffsetResetScope;
+  readonly write: ReviewedWriteScope;
+  delayReads(): () => void;
+  delayMutations(): () => void;
+  disconnect(): void;
+  reconnect(): void;
+  replace(): void;
+}
+
+function mutationFixture(): MutationFixture {
+  let reads: Promise<void> = Promise.resolve();
+  let mutations: Promise<void> = Promise.resolve();
+  const methods = {
+    describeClusterMetadata: vi.fn(async function (
+      this: Connection,
+      _signal?: AbortSignal,
+    ): Promise<KafkaClusterMetadata> {
+      expect(this).toBe(connection);
+      await reads;
+      return { clusterId: "cluster-a", controllerId: 1, brokers: [] };
+    }),
+    describeBrokerConfiguration: vi.fn(async function (
+      this: Connection,
+      _brokerId: number,
+      _signal?: AbortSignal,
+    ): Promise<readonly KafkaConfigurationEntry[]> {
+      expect(this).toBe(connection);
+      await reads;
+      return [];
+    }),
+    listAcls: vi.fn(async function (
+      this: Connection,
+      _signal?: AbortSignal,
+    ): Promise<readonly KafkaAclBinding[]> {
+      expect(this).toBe(connection);
+      await reads;
+      return [acl];
+    }),
+    offsetResetSnapshot: vi.fn(async function (
+      this: Connection,
+      _input: OffsetResetInput,
+    ): Promise<OffsetResetSnapshot> {
+      expect(this).toBe(connection);
+      await reads;
+      return { inactive: true, state: "Empty", groupRead: "allowed", partitions: [] };
+    }),
+    offsetResetExamples: vi.fn(async function (
+      this: Connection,
+      _input: OffsetResetInput,
+    ): Promise<Pick<OffsetResetReview, "examples" | "exampleStatus">> {
+      expect(this).toBe(connection);
+      await reads;
+      return { examples: [], exampleStatus: "empty" };
+    }),
+    reviewWrite: vi.fn(async function (
+      this: Connection,
+      _input: KafkaWriteInput,
+    ): Promise<KafkaWriteDestination> {
+      expect(this).toBe(connection);
+      await reads;
+      return destination;
+    }),
+    createAcl: vi.fn(function (this: Connection, _binding: KafkaAclBinding): Promise<void> {
+      expect(this).toBe(connection);
+      return mutations;
+    }),
+    deleteAcl: vi.fn(function (this: Connection, _binding: KafkaAclBinding): Promise<void> {
+      expect(this).toBe(connection);
+      return mutations;
+    }),
+    resetGroupOffset: vi.fn(function (
+      this: Connection,
+      _groupId: string,
+      _target: OffsetResetTarget,
+    ): Promise<OffsetResetResult> {
+      expect(this).toBe(connection);
+      return mutations.then(() => resetResult);
+    }),
+    applyWrite: vi.fn(function (
+      this: Connection,
+      _input: KafkaWriteInput,
+    ): Promise<KafkaWriteOutcome> {
+      expect(this).toBe(connection);
+      return mutations.then(() => acknowledged);
+    }),
+  };
+  const connection = Object.assign(new Connection(), methods);
+  let context: ConnectionScopeContext | null = {
+    connection,
+    generation: 1,
+    connectionName: "Cluster A",
+  };
+  const scopes = new KafkaConnectionScopes(() => context);
+  return {
+    connection,
+    methods,
+    scopes,
+    acl: scopes.aclReview()!,
+    reset: scopes.offsetReset()!,
+    write: scopes.reviewedWrite()!,
+    delayReads: (): (() => void) => {
+      const gate = deferred<void>();
+      reads = gate.promise;
+      return (): void => gate.resolve();
+    },
+    delayMutations: (): (() => void) => {
+      const gate = deferred<void>();
+      mutations = gate.promise;
+      return (): void => gate.resolve();
+    },
+    disconnect: (): void => {
+      context = null;
+    },
+    reconnect: (): void => {
+      context = { connection, generation: 2, connectionName: "Cluster A" };
+    },
+    replace: (): void => {
+      context = { connection: new Connection(), generation: 1, connectionName: "Cluster A" };
+    },
+  };
+}
+
+describe("narrow mutation scopes", () => {
+  it("exposes only each operation's capabilities and omits unsupported operations", () => {
+    const f = mutationFixture();
+    expect(Object.keys(f.acl).sort()).toEqual([
+      "connectionName",
+      "describeBrokerConfiguration",
+      "describeClusterMetadata",
+      "isCurrent",
+      "listAcls",
+      "tryCreateAcl",
+      "tryDeleteAcl",
+    ]);
+    expect(Object.keys(f.reset).sort()).toEqual([
+      "connectionName",
+      "isCurrent",
+      "offsetResetExamples",
+      "offsetResetSnapshot",
+      "tryResetGroupOffset",
+    ]);
+    expect(Object.keys(f.write).sort()).toEqual([
+      "connectionName",
+      "isCurrent",
+      "reviewWrite",
+      "tryDispatchWrite",
+    ]);
+    const unavailable = fixture().scopes;
+    expect(Object.keys(unavailable.aclReview()!).sort()).toEqual([
+      "connectionName",
+      "describeBrokerConfiguration",
+      "describeClusterMetadata",
+      "isCurrent",
+    ]);
+    expect(Object.keys(unavailable.offsetReset()!).sort()).toEqual(["connectionName", "isCurrent"]);
+    f.disconnect();
+    expect(f.scopes.aclReview()).toBeNull();
+    expect(f.scopes.offsetReset()).toBeNull();
+  });
+
+  it.each(["disconnect", "reconnect", "replace"] as const)(
+    "revokes every retained mutation scope on %s without touching the adapter",
+    async (invalidate) => {
+      const f = mutationFixture();
+      f[invalidate]();
+      expect(f.acl.isCurrent()).toBe(false);
+      expect(f.reset.isCurrent()).toBe(false);
+      expect(f.write.isCurrent()).toBe(false);
+      expect(f.acl.tryCreateAcl!(acl)).toEqual({ started: false });
+      expect(f.acl.tryDeleteAcl!(acl)).toEqual({ started: false });
+      expect(f.reset.tryResetGroupOffset!(resetInput.groupId, resetTarget)).toEqual({
+        started: false,
+      });
+      expect(f.write.tryDispatchWrite!(write)).toEqual({ started: false });
+      const reads = [
+        f.acl.describeClusterMetadata(),
+        f.acl.describeBrokerConfiguration(1),
+        f.acl.listAcls!(),
+        f.reset.offsetResetSnapshot!(resetInput),
+        f.reset.offsetResetExamples!(resetInput),
+        f.write.reviewWrite!(write),
+      ];
+      await Promise.all(reads.map((read) => expect(read).rejects.toThrow("connection changed")));
+      for (const method of Object.values(f.methods)) expect(method).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects all late review reads after same-adapter reconnection", async () => {
+    const f = mutationFixture();
+    const complete = f.delayReads();
+    const reads = [
+      f.acl.describeClusterMetadata(),
+      f.acl.describeBrokerConfiguration(1),
+      f.acl.listAcls!(),
+      f.reset.offsetResetSnapshot!(resetInput),
+      f.reset.offsetResetExamples!(resetInput),
+      f.write.reviewWrite!(write),
+    ];
+    const rejections = reads.map((read) => expect(read).rejects.toThrow("connection changed"));
+    f.reconnect();
+    complete();
+    await Promise.all(rejections);
+  });
+
+  it("binds detached reads and forwards their inputs, signals and reviewed destination", async () => {
+    const f = mutationFixture();
+    const signal = new AbortController().signal;
+    const metadata = f.acl.describeClusterMetadata;
+    const config = f.acl.describeBrokerConfiguration;
+    const list = f.acl.listAcls!;
+    const snapshot = f.reset.offsetResetSnapshot!;
+    const examples = f.reset.offsetResetExamples!;
+    const review = f.write.reviewWrite!;
+    await metadata(signal);
+    await config(1, signal);
+    expect(await list(signal)).toEqual([acl]);
+    await snapshot(resetInput);
+    await examples(resetInput);
+    expect(await review(write)).toEqual(destination);
+    expect(f.methods.describeClusterMetadata).toHaveBeenCalledWith(signal);
+    expect(f.methods.describeBrokerConfiguration).toHaveBeenCalledWith(1, signal);
+    expect(f.methods.listAcls).toHaveBeenCalledWith(signal);
+    expect(f.methods.offsetResetSnapshot).toHaveBeenCalledWith(resetInput);
+    expect(f.methods.offsetResetExamples).toHaveBeenCalledWith(resetInput);
+  });
+
+  const dispatches = [
+    {
+      name: "create ACL",
+      dispatch: (f: ReturnType<typeof mutationFixture>): (() => MutationDispatch<void>) => {
+        const send = f.acl.tryCreateAcl!;
+        return () => send(acl);
+      },
+      method: "createAcl",
+      result: undefined,
+    },
+    {
+      name: "delete ACL",
+      dispatch: (f: ReturnType<typeof mutationFixture>): (() => MutationDispatch<void>) => {
+        const send = f.acl.tryDeleteAcl!;
+        return () => send(acl);
+      },
+      method: "deleteAcl",
+      result: undefined,
+    },
+    {
+      name: "reset offset",
+      dispatch: (
+        f: ReturnType<typeof mutationFixture>,
+      ): (() => MutationDispatch<OffsetResetResult>) => {
+        const send = f.reset.tryResetGroupOffset!;
+        return () => send(resetInput.groupId, resetTarget);
+      },
+      method: "resetGroupOffset",
+      result: resetResult,
+    },
+    {
+      name: "write record",
+      dispatch: (
+        f: ReturnType<typeof mutationFixture>,
+      ): (() => MutationDispatch<KafkaWriteOutcome>) => {
+        const send = f.write.tryDispatchWrite!;
+        return () => send(write);
+      },
+      method: "applyWrite",
+      result: acknowledged,
+    },
+  ] as const;
+
+  it.each(dispatches)(
+    "dispatches $name immediately and preserves its acknowledgement after revocation",
+    async ({ dispatch, method, result }) => {
+      const f = mutationFixture();
+      const complete = f.delayMutations();
+      const send = dispatch(f);
+      const admitted = send();
+      expect(f.methods[method]).toHaveBeenCalledTimes(1);
+      expect(admitted.started).toBe(true);
+      f.reconnect();
+      complete();
+      if (admitted.started) expect(await admitted.result).toEqual(result);
+      expect(send()).toEqual({ started: false });
+      expect(f.methods[method]).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(dispatches)(
+    "retains admission when $name throws synchronously",
+    async ({ dispatch, method }) => {
+      const f = mutationFixture();
+      const failure = new Error("Transport failed after admission.");
+      f.methods[method].mockImplementation(() => {
+        throw failure;
+      });
+      const result = dispatch(f)();
+      expect(result.started).toBe(true);
+      if (result.started) await expect(result.result).rejects.toBe(failure);
+      expect(f.methods[method]).toHaveBeenCalledTimes(1);
+    },
+  );
 });

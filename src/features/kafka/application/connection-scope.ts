@@ -1,13 +1,23 @@
 import type {
+  KafkaAclBinding,
+  KafkaConfigurationEntry,
   KafkaConsumerGroupDetails,
   KafkaFetchRequest,
   KafkaWriteInput,
   KafkaWriteOutcome,
 } from "../contracts";
 import type { ObservationGroupHealth, TopicHealth } from "../contracts/observations";
+import type {
+  OffsetResetInput,
+  OffsetResetResult,
+  OffsetResetReview,
+  OffsetResetSnapshot,
+  OffsetResetTarget,
+} from "../contracts/offset-reset";
+import type { KafkaWriteDestination } from "../contracts/reviewed-writes";
 
 import { ObservationOperationError, observationAborted } from "./observation-errors";
-import type { KafkaActiveConnection, KafkaMessageStream } from "./types";
+import type { KafkaActiveConnection, KafkaClusterMetadata, KafkaMessageStream } from "./types";
 
 export interface ConnectionScopeContext {
   readonly connection: KafkaActiveConnection;
@@ -15,16 +25,42 @@ export interface ConnectionScopeContext {
   readonly connectionName: string;
 }
 
-export type WriteDispatch =
-  | { readonly started: false }
-  | { readonly started: true; readonly result: Promise<KafkaWriteOutcome> };
+export type MutationDispatch<T> =
+  { readonly started: false } | { readonly started: true; readonly result: Promise<T> };
 
-/** Authorizes one reviewed attempt without exposing the adapter or its lifecycle. */
-export interface ReviewedWriteScope {
+export type WriteDispatch = MutationDispatch<KafkaWriteOutcome>;
+
+export interface ReviewAuthority {
   readonly connectionName: string;
   isCurrent(): boolean;
-  readonly reviewWrite?: (input: KafkaWriteInput) => Promise<void>;
+}
+
+/** Authorizes one reviewed attempt without exposing the adapter or its lifecycle. */
+export interface ReviewedWriteScope extends ReviewAuthority {
+  readonly reviewWrite?: (input: KafkaWriteInput) => Promise<KafkaWriteDestination | void>;
   readonly tryDispatchWrite?: (input: KafkaWriteInput) => WriteDispatch;
+}
+
+export interface AclReviewScope extends ReviewAuthority {
+  readonly describeClusterMetadata: (signal?: AbortSignal) => Promise<KafkaClusterMetadata>;
+  readonly describeBrokerConfiguration: (
+    brokerId: number,
+    signal?: AbortSignal,
+  ) => Promise<readonly KafkaConfigurationEntry[]>;
+  readonly listAcls?: (signal?: AbortSignal) => Promise<readonly KafkaAclBinding[]>;
+  readonly tryCreateAcl?: (binding: KafkaAclBinding) => MutationDispatch<void>;
+  readonly tryDeleteAcl?: (binding: KafkaAclBinding) => MutationDispatch<void>;
+}
+
+export interface OffsetResetScope extends ReviewAuthority {
+  readonly offsetResetSnapshot?: (input: OffsetResetInput) => Promise<OffsetResetSnapshot>;
+  readonly offsetResetExamples?: (
+    input: OffsetResetInput,
+  ) => Promise<Pick<OffsetResetReview, "examples" | "exampleStatus">>;
+  readonly tryResetGroupOffset?: (
+    groupId: string,
+    target: OffsetResetTarget,
+  ) => MutationDispatch<OffsetResetResult>;
 }
 
 export interface ObservationRecordReader {
@@ -69,20 +105,84 @@ export class KafkaConnectionScopes {
       ...(connection.reviewWrite === undefined
         ? {}
         : {
-            reviewWrite: async (input: KafkaWriteInput): Promise<void> => {
-              this.assertReviewedCurrent(context);
-              await connection.reviewWrite!(input);
-              this.assertReviewedCurrent(context);
-            },
+            reviewWrite: (input: KafkaWriteInput): Promise<KafkaWriteDestination | void> =>
+              this.readReviewed(context, () => connection.reviewWrite!(input)),
           }),
       ...(connection.applyWrite === undefined
         ? {}
         : {
-            tryDispatchWrite: (input: KafkaWriteInput): WriteDispatch => {
-              if (!this.current(context)) return { started: false };
-              // No await separates admission from dispatch. A started write keeps its receipt.
-              return { started: true, result: connection.applyWrite!(input) };
-            },
+            tryDispatchWrite: (input: KafkaWriteInput): WriteDispatch =>
+              this.dispatch(context, () => connection.applyWrite!(input)),
+          }),
+    };
+  }
+
+  aclReview(): AclReviewScope | null {
+    const active = this.context();
+    if (active === null) return null;
+    const context = { ...active };
+    const { connection } = context;
+    return {
+      connectionName: context.connectionName,
+      isCurrent: (): boolean => this.current(context),
+      describeClusterMetadata: (signal?: AbortSignal): Promise<KafkaClusterMetadata> =>
+        this.readReviewed(context, () => connection.describeClusterMetadata(signal)),
+      describeBrokerConfiguration: (
+        brokerId: number,
+        signal?: AbortSignal,
+      ): Promise<readonly KafkaConfigurationEntry[]> =>
+        this.readReviewed(context, () => connection.describeBrokerConfiguration(brokerId, signal)),
+      ...(connection.listAcls === undefined
+        ? {}
+        : {
+            listAcls: (signal?: AbortSignal): Promise<readonly KafkaAclBinding[]> =>
+              this.readReviewed(context, () => connection.listAcls!(signal)),
+          }),
+      ...(connection.createAcl === undefined
+        ? {}
+        : {
+            tryCreateAcl: (binding: KafkaAclBinding): MutationDispatch<void> =>
+              this.dispatch(context, () => connection.createAcl!(binding)),
+          }),
+      ...(connection.deleteAcl === undefined
+        ? {}
+        : {
+            tryDeleteAcl: (binding: KafkaAclBinding): MutationDispatch<void> =>
+              this.dispatch(context, () => connection.deleteAcl!(binding)),
+          }),
+    };
+  }
+
+  offsetReset(): OffsetResetScope | null {
+    const active = this.context();
+    if (active === null) return null;
+    const context = { ...active };
+    const { connection } = context;
+    return {
+      connectionName: context.connectionName,
+      isCurrent: (): boolean => this.current(context),
+      ...(connection.offsetResetSnapshot === undefined
+        ? {}
+        : {
+            offsetResetSnapshot: (input: OffsetResetInput): Promise<OffsetResetSnapshot> =>
+              this.readReviewed(context, () => connection.offsetResetSnapshot!(input)),
+          }),
+      ...(connection.offsetResetExamples === undefined
+        ? {}
+        : {
+            offsetResetExamples: (
+              input: OffsetResetInput,
+            ): Promise<Pick<OffsetResetReview, "examples" | "exampleStatus">> =>
+              this.readReviewed(context, () => connection.offsetResetExamples!(input)),
+          }),
+      ...(connection.resetGroupOffset === undefined
+        ? {}
+        : {
+            tryResetGroupOffset: (
+              groupId: string,
+              target: OffsetResetTarget,
+            ): MutationDispatch<OffsetResetResult> =>
+              this.dispatch(context, () => connection.resetGroupOffset!(groupId, target)),
           }),
     };
   }
@@ -173,5 +273,30 @@ export class KafkaConnectionScopes {
   private assertReviewedCurrent(expected: ConnectionScopeContext): void {
     if (!this.current(expected))
       throw new Error("The connection changed. Review the destination again.");
+  }
+
+  private async readReviewed<T>(
+    context: ConnectionScopeContext,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    this.assertReviewedCurrent(context);
+    const result = await read();
+    this.assertReviewedCurrent(context);
+    return result;
+  }
+
+  private dispatch<T>(
+    context: ConnectionScopeContext,
+    send: () => Promise<T>,
+  ): MutationDispatch<T> {
+    if (!this.current(context)) return { started: false };
+    // Admission and adapter invocation share this turn. Once admitted, preserve its outcome.
+    try {
+      return { started: true, result: send() };
+    } catch (error) {
+      // A synchronous adapter failure does not establish that nothing reached the broker.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Preserve the admitted adapter failure unchanged.
+      return { started: true, result: Promise.reject(error) };
+    }
   }
 }

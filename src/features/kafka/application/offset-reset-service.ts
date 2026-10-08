@@ -7,27 +7,29 @@ import {
   type OffsetResetResult,
 } from "../contracts/offset-reset";
 
-import { ConnectionPlans, type ReviewContext } from "./connection-plans";
+import { ConnectionPlans } from "./connection-plans";
+import type { OffsetResetScope } from "./connection-scope";
 
 export class OffsetResetService {
   private readonly plans: ConnectionPlans<
     { input: OffsetResetInput; baseline: OffsetResetSnapshot },
-    OffsetResetOutcome
+    OffsetResetOutcome,
+    OffsetResetScope
   >;
   private active = false;
   constructor(
-    context: () => ReviewContext | null,
+    context: () => OffsetResetScope | null,
     private readonly now = Date.now,
   ) {
-    this.plans = new ConnectionPlans(context, now);
+    this.plans = new ConnectionPlans(context, (scope) => scope.isCurrent(), now);
   }
   async review(input: OffsetResetInput): Promise<OffsetResetReview> {
     const parsed = parseOffsetResetInput(input);
     const context = this.plans.context();
-    if (!context?.connection.offsetResetSnapshot || !context.connection.resetGroupOffset)
+    if (!context?.offsetResetSnapshot || !context.tryResetGroupOffset)
       throw new Error("Offset resets are unavailable.");
-    const baseline = await context.connection.offsetResetSnapshot(parsed);
-    const samples = await context.connection
+    const baseline = await context.offsetResetSnapshot(parsed);
+    const samples = await context
       .offsetResetExamples?.(parsed)
       .catch(() => ({ examples: [], exampleStatus: "unavailable" as const }));
     const plan = this.plans.add(context, { input: parsed, baseline });
@@ -63,7 +65,7 @@ export class OffsetResetService {
             }
             let fresh: OffsetResetSnapshot;
             try {
-              fresh = await plan.context.connection.offsetResetSnapshot!(input);
+              fresh = await plan.context.offsetResetSnapshot!(input);
             } catch {
               detail =
                 "Could not recheck group state, offsets or permissions. Remaining partitions were not sent.";
@@ -95,7 +97,12 @@ export class OffsetResetService {
             }
             let result: OffsetResetResult;
             try {
-              result = await plan.context.connection.resetGroupOffset!(input.groupId, target);
+              const dispatched = plan.context.tryResetGroupOffset!(input.groupId, target);
+              if (!dispatched.started) {
+                detail = "Connection changed before dispatch; remaining partitions were not sent.";
+                break;
+              }
+              result = await dispatched.result;
             } catch {
               result = { ...target, state: "unknown", observed: null, verified: false };
             }

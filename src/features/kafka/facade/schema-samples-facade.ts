@@ -27,7 +27,7 @@ export class SchemaSamplesFacade {
     private readonly recordActivity?: (input: ActivityInput) => void,
   ) {
     if (codec && lookup) this.service = new RecordCodecService(lookup, codec);
-    this.batches = new RecordBatchService(() => session.writeContext());
+    this.batches = new RecordBatchService(() => session.reviewedWriteScope());
   }
   invalidate(): void {
     for (const controller of this.pending) controller.abort();

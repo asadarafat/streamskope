@@ -53,7 +53,7 @@ it("retains a real topic authorization rejection and leaves subsequent partition
       )
       .toBe(true);
     await session.connect(fixture.connection);
-    const service = new OffsetResetService(() => session.writeContext());
+    const service = new OffsetResetService(() => session.offsetResetScope());
     const review = await service.review({
       groupId,
       targets: [
@@ -118,7 +118,7 @@ it("previews real positions without committing, resets and reads back a stopped 
         tokenEndpoint: fixture.oauthEndpoint,
       },
     });
-    const service = new OffsetResetService(() => session.writeContext());
+    const service = new OffsetResetService(() => session.offsetResetScope());
     const input = { groupId, targets: [{ topic, partition: 0, offset: "0" }] };
     const review = await service.review(input);
     expect(review.baseline).toMatchObject({

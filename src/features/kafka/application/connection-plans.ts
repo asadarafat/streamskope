@@ -5,25 +5,22 @@ export interface ReviewContext {
   readonly generation: number;
   readonly connectionName: string;
 }
-export interface ConnectionPlan<T, O> {
+export interface ConnectionPlan<T, O, C> {
   readonly id: string;
-  readonly context: ReviewContext;
+  readonly context: C;
   readonly expiresAt: string;
   readonly value: T;
   operation?: Promise<O>;
 }
 /** Bounded connection-pinned reviews. One identifier authorizes at most one attempt. */
-export class ConnectionPlans<T, O> {
-  private readonly plans = new Map<string, ConnectionPlan<T, O>>();
+export class ConnectionPlans<T, O, C> {
+  private readonly plans = new Map<string, ConnectionPlan<T, O, C>>();
   constructor(
-    readonly context: () => ReviewContext | null,
+    readonly context: () => C | null,
+    readonly current: (expected: C) => boolean,
     private readonly now = Date.now,
   ) {}
-  current(expected: ReviewContext): boolean {
-    const actual = this.context();
-    return actual?.connection === expected.connection && actual.generation === expected.generation;
-  }
-  add(context: ReviewContext, value: T): ConnectionPlan<T, O> {
+  add(context: C, value: T): ConnectionPlan<T, O, C> {
     if (!this.current(context)) throw new Error("The connection changed. Review again.");
     if (this.plans.size >= 16) {
       const oldest = this.plans.keys().next().value;
@@ -41,7 +38,7 @@ export class ConnectionPlans<T, O> {
   apply(
     id: string,
     confirm: (value: T) => boolean,
-    run: (plan: ConnectionPlan<T, O>) => Promise<O>,
+    run: (plan: ConnectionPlan<T, O, C>) => Promise<O>,
   ): Promise<O> {
     const plan = this.plans.get(id);
     if (!plan || !confirm(plan.value))

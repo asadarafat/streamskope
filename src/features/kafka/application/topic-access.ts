@@ -1,7 +1,8 @@
 import type { KafkaAclBinding } from "../contracts/acl-types";
 import type { TopicAccessInput, TopicAccessExplanation } from "../contracts/acl-review";
+import type { KafkaConfigurationEntry } from "../contracts";
 
-import type { KafkaActiveConnection } from "./types";
+import type { KafkaClusterMetadata } from "./types";
 
 const standardAuthorizer = "org.apache.kafka.metadata.authorizer.StandardAuthorizer";
 export interface BrokerAccessPolicy {
@@ -10,9 +11,16 @@ export interface BrokerAccessPolicy {
   readonly allowIfNoAcl: boolean | null;
   readonly superUsers: readonly string[] | null;
 }
+interface AccessPolicyReader {
+  describeClusterMetadata(signal?: AbortSignal): Promise<KafkaClusterMetadata>;
+  describeBrokerConfiguration(
+    brokerId: number,
+    signal?: AbortSignal,
+  ): Promise<readonly KafkaConfigurationEntry[]>;
+}
 /** Only observed values count as evidence. Missing/redacted/custom policy is unknown. */
 export async function readAccessPolicy(
-  connection: KafkaActiveConnection,
+  connection: AccessPolicyReader,
 ): Promise<readonly BrokerAccessPolicy[]> {
   const signal = AbortSignal.timeout(15_000);
   try {

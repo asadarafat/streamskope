@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import { AclReviewService } from "../../src/features/kafka/application/acl-review-service";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import {
   explainTopicAccess,
   type BrokerAccessPolicy,
@@ -39,6 +40,20 @@ const policy: BrokerAccessPolicy = {
   superUsers: [],
 };
 const change: AclChangeInput = { action: "create", acl: binding, access };
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: Error): void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((complete, fail) => {
+    resolve = complete;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
 
 it("evaluates literal/wildcard/prefix resources, wildcard identities and exact hosts, with DENY preceding ALLOW", () => {
   expect(explainTopicAccess(access, [binding], [policy]).effective).toBe("allowed");
@@ -200,9 +215,14 @@ function fixture(): {
         })),
       ),
   });
+  const scopes = new KafkaConnectionScopes(() => ({
+    connection,
+    generation,
+    connectionName: "Fixture",
+  }));
   return {
     service: new AclReviewService(
-      () => ({ connection, generation, connectionName: "Fixture" }),
+      () => scopes.aclReview(),
       () => now,
     ),
     inventory,
@@ -298,4 +318,70 @@ it("preserves acknowledged outcomes when read-back is unavailable and avoids no-
     verification: "verified",
   });
   expect(f.create).toHaveBeenCalledTimes(1);
+});
+
+it.each(["review", "explain"] as const)(
+  "does not publish a late ACL %s after same-adapter reconnection",
+  async (operation) => {
+    const f = fixture();
+    const reading = deferred<readonly KafkaAclBinding[]>();
+    f.list.mockReturnValueOnce(reading.promise);
+    const pending = operation === "review" ? f.service.review(change) : f.service.explain(access);
+    const rejected = expect(pending).rejects.toThrow(/connection changed/iu);
+    f.changeConnection();
+    reading.resolve([]);
+    await rejected;
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.remove).not.toHaveBeenCalled();
+  },
+);
+
+it("retains a rejected plan when authority changes during ACL apply revalidation without sending a mutation", async () => {
+  const f = fixture();
+  const review = await f.service.review(change);
+  const reading = deferred<readonly KafkaAclBinding[]>();
+  f.list.mockReturnValueOnce(reading.promise);
+  const pending = f.service.apply(review.planId, aclChangeConfirmation(change));
+  await vi.waitFor(() => expect(f.list).toHaveBeenCalledTimes(2));
+  f.changeConnection();
+  reading.resolve([]);
+  expect(await pending).toMatchObject({ state: "rejected", verification: "not-applicable" });
+  expect(f.service.apply(review.planId, aclChangeConfirmation(change))).toBe(pending);
+  expect(f.create).not.toHaveBeenCalled();
+});
+
+it.each(["create", "delete"] as const)(
+  "retains an admitted ACL %s acknowledgement after reconnection, with no stale verification or repeated dispatch",
+  async (action) => {
+    const f = fixture();
+    if (action === "delete") f.inventory.push(binding);
+    const input = { ...change, action };
+    const review = await f.service.review(input);
+    const writing = deferred<void>();
+    const mutate = action === "create" ? f.create : f.remove;
+    mutate.mockReturnValueOnce(writing.promise);
+    const pending = f.service.apply(review.planId, aclChangeConfirmation(input));
+    await vi.waitFor(() => expect(mutate).toHaveBeenCalledOnce());
+    f.changeConnection();
+    f.expire();
+    writing.resolve();
+    expect(await pending).toMatchObject({ state: "acknowledged", verification: "unavailable" });
+    expect(f.service.apply(review.planId, aclChangeConfirmation(input))).toBe(pending);
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(f.list).toHaveBeenCalledTimes(2);
+  },
+);
+
+it("retains an admitted ACL mutation's uncertainty after reconnection without retrying", async () => {
+  const f = fixture();
+  const review = await f.service.review(change);
+  const writing = deferred<void>();
+  f.create.mockReturnValueOnce(writing.promise);
+  const pending = f.service.apply(review.planId, aclChangeConfirmation(change));
+  await vi.waitFor(() => expect(f.create).toHaveBeenCalledOnce());
+  f.changeConnection();
+  writing.reject(new Error("Acknowledgement lost"));
+  expect(await pending).toMatchObject({ state: "unknown", verification: "unavailable" });
+  expect(f.service.apply(review.planId, aclChangeConfirmation(change))).toBe(pending);
+  expect(f.create).toHaveBeenCalledOnce();
 });

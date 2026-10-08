@@ -64,7 +64,7 @@ it("replays frozen original bytes to the same topic, another topic and a separat
     },
   );
   const service = new RecordReplayService(
-    () => session.writeContext(),
+    () => session.reviewedWriteScope(),
     new SavedReplayDestinations(profiles, engine),
   );
   try {

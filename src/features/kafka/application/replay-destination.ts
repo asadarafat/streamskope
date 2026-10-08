@@ -1,4 +1,5 @@
 import type { KafkaProfileService } from "./profile-service";
+import { KafkaConnectionScopes, type ReviewedWriteScope } from "./connection-scope";
 import type { KafkaActiveConnection, KafkaConnectionPort } from "./types";
 
 export interface ReplayDestination {
@@ -10,12 +11,62 @@ export interface ReplayDestination {
 export interface ReplayDestinationPort {
   open(id: string, revision: number, signal: AbortSignal): Promise<ReplayDestination>;
 }
+export interface ReviewedReplayDestination {
+  readonly scope: ReviewedWriteScope;
+  close(): Promise<void>;
+}
+export interface ReviewedReplayDestinationPort {
+  openReviewed(
+    id: string,
+    revision: number,
+    signal: AbortSignal,
+  ): Promise<ReviewedReplayDestination>;
+}
 /** Resolve stored credentials in the host; never switches the active profile or runs plugin hooks. */
-export class SavedReplayDestinations implements ReplayDestinationPort {
+export class SavedReplayDestinations
+  implements ReplayDestinationPort, ReviewedReplayDestinationPort
+{
   constructor(
     private readonly profiles: KafkaProfileService,
     private readonly connections: KafkaConnectionPort,
   ) {}
+  async openReviewed(
+    id: string,
+    revision: number,
+    signal: AbortSignal,
+  ): Promise<ReviewedReplayDestination> {
+    const target = await this.open(id, revision, signal);
+    let closed = false;
+    let closing: Promise<void> | undefined;
+    // The opening signal owns admission only; its deadline must not expire a retained review.
+    const scopes = new KafkaConnectionScopes(() =>
+      !closed && target.current()
+        ? { connection: target.connection, generation: 0, connectionName: target.name }
+        : null,
+    );
+    const scope = scopes.reviewedWrite();
+    if (scope === null) {
+      try {
+        await target.close();
+      } catch (cleanupCause) {
+        throw Object.assign(new Error("Changed destination cleanup could not be confirmed."), {
+          cleanupCause:
+            cleanupCause === undefined
+              ? new Error("Destination cleanup rejected without a reason.", { cause: cleanupCause })
+              : cleanupCause,
+        });
+      }
+      throw new Error("Destination profile changed while opening.");
+    }
+    return {
+      scope,
+      close(): Promise<void> {
+        closed = true;
+        closing ??= Promise.resolve().then(() => target.close());
+        return closing;
+      },
+    };
+  }
   async open(id: string, revision: number, signal: AbortSignal): Promise<ReplayDestination> {
     await this.profiles.list(signal);
     const current = (): boolean =>
@@ -32,7 +83,10 @@ export class SavedReplayDestinations implements ReplayDestinationPort {
         await connection.close();
       } catch (cleanupCause) {
         throw Object.assign(new Error("Cancelled destination cleanup could not be confirmed."), {
-          cleanupCause,
+          cleanupCause:
+            cleanupCause === undefined
+              ? new Error("Destination cleanup rejected without a reason.", { cause: cleanupCause })
+              : cleanupCause,
         });
       }
       throw new Error("Destination profile changed while opening.");

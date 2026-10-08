@@ -37,7 +37,9 @@ import { KafkaSessionRequests } from "./session-requests";
 import type { KafkaLatencyProbeMeasurement } from "./latency-types";
 import {
   KafkaConnectionScopes,
+  type AclReviewScope,
   type ObservationScope,
+  type OffsetResetScope,
   type ReviewedWriteScope,
 } from "./connection-scope";
 
@@ -127,6 +129,14 @@ export class KafkaApplicationSession {
 
   reviewedWriteScope(): ReviewedWriteScope | null {
     return this.scopes.reviewedWrite();
+  }
+
+  aclReviewScope(): AclReviewScope | null {
+    return this.scopes.aclReview();
+  }
+
+  offsetResetScope(): OffsetResetScope | null {
+    return this.scopes.offsetReset();
   }
 
   observationScope(): ObservationScope | null {

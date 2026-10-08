@@ -2,6 +2,7 @@ import { Producer } from "@platformatic/kafka";
 import { expect, it } from "vitest";
 
 import { AclReviewService } from "../../src/features/kafka/application/acl-review-service";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import {
   aclChangeConfirmation,
   type AclChangeInput,
@@ -65,11 +66,12 @@ it("compares reviewed topic READ semantics and exact ACL application with a real
       AbortSignal.timeout(15_000),
     );
     const active = connection;
-    const service = new AclReviewService(() => ({
+    const scopes = new KafkaConnectionScopes(() => ({
       connection: active,
       connectionName: "Owned fixture",
       generation: 1,
     }));
+    const service = new AclReviewService(() => scopes.aclReview());
     const canRead = async (): Promise<boolean> => {
       let stream: Awaited<ReturnType<KafkaActiveConnection["openMessageStream"]>> | undefined;
       try {

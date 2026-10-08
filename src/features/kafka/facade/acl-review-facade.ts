@@ -10,7 +10,7 @@ export class AclReviewFacade {
     session: KafkaApplicationSession,
     private readonly activity: (input: ActivityInput) => void,
   ) {
-    this.service = new AclReviewService(() => session.writeContext());
+    this.service = new AclReviewService(() => session.aclReviewScope());
   }
   async execute(
     command: Extract<

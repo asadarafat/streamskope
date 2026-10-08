@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import { OffsetResetService } from "../../src/features/kafka/application/offset-reset-service";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import {
   parseOffsetResetInput,
   parseOffsetResetReview,
@@ -17,9 +18,24 @@ const input = {
     { topic: "events", partition: 1, offset: "3" },
   ],
 };
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: Error): void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((complete, fail) => {
+    resolve = complete;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
 function fixture(): {
   service: OffsetResetService;
   snapshot: OffsetResetSnapshot;
+  read: ReturnType<typeof vi.fn<() => Promise<OffsetResetSnapshot>>>;
   send: ReturnType<
     typeof vi.fn<
       (group: string, target: (typeof input.targets)[number]) => Promise<OffsetResetResult>
@@ -54,16 +70,24 @@ function fixture(): {
       });
     },
   );
+  const read = vi.fn((): Promise<OffsetResetSnapshot> =>
+    Promise.resolve(structuredClone(snapshot)),
+  );
   const connection = Object.assign(new RecordingActiveConnection(), {
-    offsetResetSnapshot: (): Promise<OffsetResetSnapshot> =>
-      Promise.resolve(structuredClone(snapshot)),
+    offsetResetSnapshot: read,
     resetGroupOffset: send,
   });
+  const scopes = new KafkaConnectionScopes(() => ({
+    connection,
+    generation,
+    connectionName: "Fixture",
+  }));
   return {
     snapshot,
+    read,
     send,
     service: new OffsetResetService(
-      () => ({ connection, generation, connectionName: "Fixture" }),
+      () => scopes.offsetReset(),
       () => now,
     ),
     change(): void {
@@ -124,8 +148,13 @@ it("does not dispatch when the revalidation itself crosses the execution deadlin
     },
     resetGroupOffset: f.send,
   });
+  const scopes = new KafkaConnectionScopes(() => ({
+    connection,
+    generation: 1,
+    connectionName: "Deadline fixture",
+  }));
   const service = new OffsetResetService(
-    () => ({ connection, generation: 1, connectionName: "Deadline fixture" }),
+    () => scopes.offsetReset(),
     () => now,
   );
   const review = await service.review(input);
@@ -172,3 +201,55 @@ it("validates bounds, exact keys and duplicate partitions on the host boundary",
     parseOffsetResetInput({ ...input, targets: [input.targets[0], input.targets[0]] }),
   ).toThrow();
 });
+
+it("rejects a reset review completed after same-adapter reconnection", async () => {
+  const f = fixture();
+  const reading = deferred<OffsetResetSnapshot>();
+  f.read.mockReturnValueOnce(reading.promise);
+  const pending = f.service.review(input);
+  const rejected = expect(pending).rejects.toThrow(/connection changed/iu);
+  f.change();
+  reading.resolve(f.snapshot);
+  await rejected;
+  expect(f.send).not.toHaveBeenCalled();
+});
+
+it("leaves every partition unsent when reset revalidation completes after reconnection", async () => {
+  const f = fixture();
+  const review = await f.service.review(input);
+  const reading = deferred<OffsetResetSnapshot>();
+  f.read.mockReturnValueOnce(reading.promise);
+  const pending = f.service.apply(review.planId, input.groupId);
+  await vi.waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  f.change();
+  reading.resolve(f.snapshot);
+  expect((await pending).partitions.map((p) => p.state)).toEqual(["unsent", "unsent"]);
+  expect(f.service.apply(review.planId, input.groupId)).toBe(pending);
+  expect(f.send).not.toHaveBeenCalled();
+});
+
+it.each(["acknowledged", "unknown"] as const)(
+  "retains an admitted partition's %s result after reconnection and leaves later partitions unsent",
+  async (state) => {
+    const f = fixture();
+    const review = await f.service.review(input);
+    const writing = deferred<OffsetResetResult>();
+    f.send.mockReturnValueOnce(writing.promise);
+    const pending = f.service.apply(review.planId, input.groupId);
+    await vi.waitFor(() => expect(f.send).toHaveBeenCalledOnce());
+    f.change();
+    f.expire();
+    if (state === "acknowledged")
+      writing.resolve({
+        ...input.targets[0]!,
+        state,
+        observed: input.targets[0]!.offset,
+        verified: true,
+      });
+    else writing.reject(new Error("Acknowledgement lost"));
+    expect((await pending).partitions.map((p) => p.state)).toEqual([state, "unsent"]);
+    expect(f.service.apply(review.planId, input.groupId)).toBe(pending);
+    expect(f.send).toHaveBeenCalledOnce();
+    expect(f.read).toHaveBeenCalledTimes(2);
+  },
+);
