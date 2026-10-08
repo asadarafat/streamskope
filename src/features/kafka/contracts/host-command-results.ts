@@ -10,6 +10,11 @@ import type {
   PluginChangePrompt,
 } from "../../../plugins/contracts";
 
+import {
+  isAclReviewCommandName,
+  type AclReviewCommandName,
+  type AclReviewResults,
+} from "./acl-review-commands";
 import type { KafkaQueryLibrarySnapshot } from "./query-library";
 import type { TrustAcquisitionCommandResults } from "./remote-trust-types";
 import type { TrustRecipeCommandResults } from "./trust-recipe-types";
@@ -19,7 +24,8 @@ import type { KafkaLatencyExportResult } from "./latency-types";
 import type { KafkaOperationalPreferenceResult } from "./operational-preference-types";
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
-interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRecipeCommandResults {
+interface SpecificCommandResults
+  extends TrustAcquisitionCommandResults, TrustRecipeCommandResults, AclReviewResults {
   readonly "relationships.capture": {
     readonly correlationId: string;
     readonly graph: import("./relationships").RelationshipGraph;
@@ -69,18 +75,6 @@ interface SpecificCommandResults extends TrustAcquisitionCommandResults, TrustRe
   readonly "schemas.client": {
     readonly correlationId: string;
     readonly client: import("./schema-client").SchemaClient;
-  };
-  readonly "acls.access.explain": {
-    readonly correlationId: string;
-    readonly explanation: import("./acl-review").TopicAccessExplanation;
-  };
-  readonly "acls.change.review": {
-    readonly correlationId: string;
-    readonly review: import("./acl-review").AclChangeReview;
-  };
-  readonly "acls.change.apply": {
-    readonly correlationId: string;
-    readonly outcome: import("./reviewed-writes").KafkaWriteOutcome;
   };
   readonly "consumerGroups.reset.review": {
     readonly correlationId: string;
@@ -203,9 +197,6 @@ const structuredResults = {
   "environments.apply": true,
 
   "schemas.client": true,
-  "acls.access.explain": true,
-  "acls.change.review": true,
-  "acls.change.apply": true,
   "records.replay.review": true,
   "records.replay.apply": true,
   "consumerGroups.reset.review": true,
@@ -255,7 +246,7 @@ const structuredResults = {
   "preferences.get": true,
   "preferences.update": true,
   "preferences.reset": true,
-} satisfies Record<keyof SpecificCommandResults, true>;
+} satisfies Record<Exclude<keyof SpecificCommandResults, AclReviewCommandName>, true>;
 
 export type HostAcknowledgementCommandName = Exclude<HostCommandName, keyof SpecificCommandResults>;
 export type HostCommandResultMap = {
@@ -267,5 +258,5 @@ export type HostCommandResultMap = {
 export function isHostAcknowledgementCommand(
   name: HostCommandName,
 ): name is HostAcknowledgementCommandName {
-  return !Object.hasOwn(structuredResults, name);
+  return !isAclReviewCommandName(name) && !Object.hasOwn(structuredResults, name);
 }

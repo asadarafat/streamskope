@@ -1,4 +1,5 @@
 import type { HostCommand, HostCommandName, HostError, HostCommandResponse } from "../contracts";
+import { ACL_REVIEW_COMMAND_ACCESS } from "../contracts/acl-review-commands";
 import type { KafkaOperationalPreferenceService } from "../application";
 import { hasRecordMasking } from "../application/record-protection";
 
@@ -75,9 +76,7 @@ export const KAFKA_COMMAND_ACCESS = {
   "schemas.compatibility.check": "remote-read",
   "schemas.register": "remote-write",
   "schemas.delete": "remote-write",
-  "acls.access.explain": "remote-read",
-  "acls.change.review": "remote-read",
-  "acls.change.apply": "remote-write",
+  ...ACL_REVIEW_COMMAND_ACCESS,
   "acls.list": "remote-read",
   "acls.create": "remote-write",
   "acls.delete": "remote-write",
