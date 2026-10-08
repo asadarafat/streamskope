@@ -4,7 +4,7 @@
   const sidebar = document.querySelector(".md-sidebar--primary");
   const drawer = document.querySelector("#__drawer");
   if (trigger && sidebar && drawer) {
-    // Keep Zensical's single navigation tree and native drawer/overlay behavior.
+    // Keep Zensical's single navigation tree and checkbox-driven drawer styling.
     const mobile = matchMedia("(max-width: 76.234375em)");
     sidebar.id = "documentation-navigation";
     const activeLinks = [...sidebar.querySelectorAll("a.md-nav__link--active")];
@@ -35,10 +35,20 @@
     close.className = "sk-nav-close";
     close.textContent = "Close navigation";
     sidebar.querySelector(".md-sidebar__inner").prepend(close);
+    // The theme's named label is not a valid accessible close control.
+    const backdrop = document.createElement("button");
+    backdrop.type = "button";
+    backdrop.className = "md-overlay";
+    backdrop.tabIndex = -1;
+    backdrop.setAttribute("aria-label", "Close navigation");
+    backdrop.setAttribute("aria-controls", sidebar.id);
+    document.querySelector(".md-overlay")?.replaceWith(backdrop);
     let wasOpen = false;
     function syncDrawer() {
       const open = mobile.matches && drawer.checked;
       sidebar.inert = mobile.matches && !open;
+      backdrop.hidden = !open;
+      backdrop.disabled = !open;
       trigger.setAttribute("aria-expanded", String(open));
       if (open && !wasOpen) close.focus();
       if (!open && wasOpen && mobile.matches) trigger.focus();
@@ -46,6 +56,7 @@
     }
     trigger.addEventListener("click", () => drawer.click());
     close.addEventListener("click", () => drawer.click());
+    backdrop.addEventListener("click", () => drawer.click());
     drawer.addEventListener("change", syncDrawer);
     mobile.addEventListener("change", () => {
       const focusWasInSidebar = wasOpen || sidebar.contains(document.activeElement);

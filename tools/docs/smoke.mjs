@@ -9,7 +9,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { checkNavigation, isReleasePreview } from "./navigation.mjs";
 import { serveSite } from "./server.mjs";
 import { checkMedia } from "./media.mjs";
-import { prepareSearchAudit, checkSearchKeyboard } from "./accessibility.mjs";
+import { prepareAccessibilityAudit, checkSearchKeyboard } from "./accessibility.mjs";
 
 const root = resolve("dist/site");
 const evidence = resolve(".artifacts/website");
@@ -66,7 +66,7 @@ try {
     }
   });
   async function accessible() {
-    await prepareSearchAudit(page);
+    await prepareAccessibilityAudit(page);
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
       .analyze();
@@ -714,7 +714,7 @@ try {
   const search = page.getByRole("combobox", { name: "Search documentation" });
   await search.fill("Secret retrieval");
   // Record the actual search audit; there are no rule or widget exemptions.
-  await prepareSearchAudit(page);
+  await prepareAccessibilityAudit(page);
   const searchAudit = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
     .analyze();

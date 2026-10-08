@@ -178,6 +178,14 @@ export async function checkNavigation(page, base, evidence, accessible) {
       const navigation = sidebar.getByRole("navigation", { name: "Navigation", exact: true });
       const trigger = page.getByRole("button", { name: "Open navigation", exact: true });
       const drawer = page.locator("#__drawer");
+      const backdrop = page.locator("button.md-overlay");
+      await expect(page.locator("label.md-overlay")).toHaveCount(0);
+      await expect(backdrop).toHaveAttribute("type", "button");
+      await expect(backdrop).toHaveAttribute("aria-label", "Close navigation");
+      await expect(backdrop).toHaveAttribute("aria-controls", "documentation-navigation");
+      await expect(backdrop).toHaveAttribute("tabindex", "-1");
+      await expect(backdrop).toBeHidden();
+      await expect(backdrop).toBeDisabled();
       const sectionToggle = (name) =>
         sidebar.locator("label.md-nav__link[for]").filter({ hasText: name });
       async function openDrawer() {
@@ -187,11 +195,16 @@ export async function checkNavigation(page, base, evidence, accessible) {
         await expect(trigger).toHaveAttribute("aria-expanded", "true");
         await expect(sidebar).toHaveJSProperty("inert", false);
         await expect(navigation).toBeInViewport();
+        await expect(backdrop).toBeVisible();
+        await expect(backdrop).toBeEnabled();
+        await expect(backdrop).toHaveAccessibleName("Close navigation");
       }
       async function closedDrawer() {
         await expect(drawer).not.toBeChecked();
         await expect(trigger).toHaveAttribute("aria-expanded", "false");
         await expect(sidebar).toHaveJSProperty("inert", true);
+        await expect(backdrop).toBeHidden();
+        await expect(backdrop).toBeDisabled();
       }
 
       await expect(page.getByRole("button", { name: "Browse docs", exact: true })).toHaveCount(0);
@@ -203,6 +216,15 @@ export async function checkNavigation(page, base, evidence, accessible) {
         await closedDrawer();
         await openDrawer();
         const close = sidebar.getByRole("button", { name: "Close navigation", exact: true });
+        await expect(close).toBeFocused();
+        const backdropBox = await backdrop.boundingBox();
+        assert(backdropBox, "The open drawer has a pointer-dismissal backdrop");
+        await backdrop.click({
+          position: { x: backdropBox.width - 20, y: backdropBox.height - 20 },
+        });
+        await closedDrawer();
+        await expect(trigger).toBeFocused();
+        await openDrawer();
         await expect(close).toBeFocused();
         await page.keyboard.press("Shift+Tab");
         await expect(navigation.getByRole("link", { name: "About", exact: true })).toBeFocused();
