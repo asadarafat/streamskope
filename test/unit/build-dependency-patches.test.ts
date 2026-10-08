@@ -57,6 +57,7 @@ function exercise(directory: string): {
   cookie: boolean;
   noCache: boolean;
   noStore: boolean;
+  privateEntry: boolean;
   publicStale: boolean;
 } {
   const program = `
@@ -73,7 +74,7 @@ function exercise(directory: string): {
       const at = policy.now(); policy.now = () => at + 120000;
       return policy.satisfiesWithoutRevalidation({...request,headers:{...request.headers,'cache-control':'max-stale=999999'}});
     };
-    console.log(JSON.stringify({nested, shallow:braces.expand('file-{one,two}.js'), cookie:reuse({'set-cookie':'fixture=only','cache-control':'max-age=60'}),noCache:reuse({'cache-control':'no-cache'}),noStore:reuse({'cache-control':'no-store'}),publicStale:reuse({'cache-control':'public, max-age=60'})}));
+    console.log(JSON.stringify({nested, shallow:braces.expand('file-{one,two}.js'), cookie:reuse({'set-cookie':'fixture=only','cache-control':'max-age=60'}),noCache:reuse({'cache-control':'no-cache'}),noStore:reuse({'cache-control':'no-store'}),privateEntry:reuse({'cache-control':'private, max-age=60'}),publicStale:reuse({'cache-control':'public, max-age=60'})}));
   `;
   const result = spawnSync(process.execPath, ["--stack-size=512", "-e", program, directory], {
     encoding: "utf8",
@@ -89,13 +90,20 @@ it("reproduces both stock failures and preserves ordinary behavior after mitigat
   const before = exercise(directory);
   expect(before.nested).toContain("RangeError: Maximum call stack size exceeded");
   expect(before.cookie).toBe(true);
+  expect(before.privateEntry).toBe(true);
   await expect(verifyBuildDependencyPatches(directory)).rejects.toThrow(/Missing or unreviewed/u);
   const verified = await applyBuildDependencyPatches(directory);
   expect(verified.map((p) => p.name)).toEqual(["braces", "http-cache-semantics"]);
   const after = exercise(directory);
   expect(after.nested).toContain("SyntaxError: Brace nesting exceeds");
   expect(after.shallow).toEqual(before.shallow);
-  expect(after).toMatchObject({ cookie: false, noCache: false, noStore: false, publicStale: true });
+  expect(after).toMatchObject({
+    cookie: false,
+    noCache: false,
+    noStore: false,
+    privateEntry: false,
+    publicStale: true,
+  });
   expect(await applyBuildDependencyPatches(directory)).toEqual(verified);
   expect(await verifyBuildDependencyPatches(directory)).toEqual(verified);
 });
