@@ -17,7 +17,8 @@ do not assign a product release version or merge automatically.
    focused regressions and `npm run check`. Record configured live checks and
    explicit skips using the [qualification procedure](qualification.md).
 4. Require the ordinary PR CI gate before merging. Changes affecting packaged
-   dependencies also need the relevant native/package evidence before release.
+   dependencies also need the relevant native/package evidence before
+   [release draft review](releases.md#review-and-publish-the-draft).
 
 The root [dependency policy](../tools/check/dependencies.ts) checks exact direct
 versions, lockfile agreement, registry integrity and reviewed licenses. Its
