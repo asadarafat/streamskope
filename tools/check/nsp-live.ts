@@ -137,6 +137,7 @@ async function main(): Promise<void> {
     method: string,
     value: unknown,
   ): Promise<ReturnType<typeof parseNspResult>> => {
+    await runtime.start();
     const active = (await runtime.list()).plugins.find((plugin) => plugin.id === NSP_PLUGIN_ID);
     assert(active?.activationId, "NSP plugin did not activate.");
     const response = await facade.execute({

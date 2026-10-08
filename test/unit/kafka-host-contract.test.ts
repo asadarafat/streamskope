@@ -43,7 +43,7 @@ const zeroRuleEvaluation = {
 
 describe("Kafka host contract", () => {
   it("declares the complete current command and event vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(52);
+    expect(HOST_PROTOCOL_VERSION).toBe(53);
     expect(HOST_COMMANDS).toEqual([
       "relationships.capture",
       "relationships.cancel",
@@ -201,32 +201,37 @@ describe("Kafka host contract", () => {
     ]);
   });
 
-  it("rejects protocol-51 renderer traffic at every current host boundary", () => {
-    const command = {
-      command: "observations.cancel",
-      id: "previous-renderer",
-      payload: {},
-      version: 51,
-    };
-    expect(() => parseHostCommand(command)).toThrow("command.version: must equal 52");
-    expect(() =>
-      parseHostCommandResponse({
-        command: command.command,
-        id: command.id,
-        ok: true,
-        result: { correlationId: "previous-renderer" },
-        version: 51,
-      }),
-    ).toThrow("response.version: must equal 52");
-    expect(() =>
-      parseHostEvent({
-        event: "connection.state",
-        payload: { connectionName: "Local validation", state: "connected" },
-        sequence: 1,
-        version: 51,
-      }),
-    ).toThrow("event.version: must equal 52");
-  });
+  it.each([51, 52])(
+    "rejects protocol-%s renderer traffic at every current host boundary",
+    (version) => {
+      const command = {
+        command: "observations.cancel",
+        id: "previous-renderer",
+        payload: {},
+        version,
+      };
+      expect(() => parseHostCommand(command)).toThrow(
+        `command.version: must equal ${HOST_PROTOCOL_VERSION}`,
+      );
+      expect(() =>
+        parseHostCommandResponse({
+          command: command.command,
+          id: command.id,
+          ok: true,
+          result: { correlationId: "previous-renderer" },
+          version,
+        }),
+      ).toThrow(`response.version: must equal ${HOST_PROTOCOL_VERSION}`);
+      expect(() =>
+        parseHostEvent({
+          event: "connection.state",
+          payload: { connectionName: "Local validation", state: "connected" },
+          sequence: 1,
+          version,
+        }),
+      ).toThrow(`event.version: must equal ${HOST_PROTOCOL_VERSION}`);
+    },
+  );
 
   it("keeps unimplemented integration names outside the public host vocabulary", () => {
     expect(HOST_COMMANDS.filter((name) => name.startsWith("integrations."))).toEqual([]);

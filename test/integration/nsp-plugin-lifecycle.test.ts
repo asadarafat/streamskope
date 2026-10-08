@@ -144,6 +144,7 @@ it("hot update drains the old NSP retrieval before the new backend reads recover
         true,
       ).error,
   });
+  await runtime.start();
   const old = (await runtime.list()).plugins[0]!;
   expect(old.activationId).toBeDefined();
   const requestId = randomUUID();
@@ -279,6 +280,7 @@ it("direct host shutdown permits final NSP cleanup and journal writes while reje
         true,
       ).error,
   });
+  await runtime.start();
   const current = (await runtime.list()).plugins[0]!;
   expect(current.activationId).toBeDefined();
   const operation = runtime.execute({

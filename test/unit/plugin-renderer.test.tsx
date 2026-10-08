@@ -21,11 +21,13 @@ import type {
   PluginViewMount,
 } from "../../src/plugins/renderer-api";
 import { PluginsProvider, usePlugins } from "../../src/features/kafka/ui/PluginsProvider";
+import type { LoadedPluginRenderer } from "../../src/features/kafka/ui/PluginsProvider";
 import { ProfilePanel } from "../../src/features/kafka/ui/ProfilePanel";
 import { ProfileWorkspace } from "../../src/features/kafka/ui/ProfileWorkspace";
 import { currentPluginHost, PluginView } from "../../src/features/kafka/ui/PluginView";
 import { testHostExecute } from "../support/host-response";
 import { formatPluginVersion } from "../../src/plugins/validation";
+import { pluginTransition } from "../support/plugin-management-fixture";
 
 afterEach(cleanup);
 
@@ -457,6 +459,85 @@ function MountedPlugin({ host }: { readonly host: StreamSkopeHost }): React.JSX.
     </>
   );
 }
+
+it("preserves a pending renderer import across progress revisions and retains the latest host warning", async () => {
+  let complete!: (value: { default: PluginRenderer }) => void;
+  const importer = vi.fn(
+    () =>
+      new Promise<{ default: PluginRenderer }>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  const installed = installation("pending");
+  const { host, publish } = observableHost({ revision: 1, plugins: [installed] });
+  render(
+    <PluginsProvider host={host} importer={importer}>
+      <Status />
+    </PluginsProvider>,
+  );
+  await waitFor(() => expect(importer).toHaveBeenCalledOnce());
+  await act(() =>
+    Promise.resolve(
+      publish({
+        revision: 2,
+        plugins: [{ ...installed, transition: pluginTransition({ state: "running" }) }],
+      }),
+    ),
+  );
+  await act(() =>
+    Promise.resolve(
+      publish({
+        revision: 3,
+        plugins: [
+          {
+            ...installed,
+            transition: pluginTransition(),
+            error: "Previous backend cleanup is still pending.",
+          },
+        ],
+      }),
+    ),
+  );
+  expect(importer).toHaveBeenCalledOnce();
+  expect(screen.getByText("Loading plugins")).toBeVisible();
+  await act(() => Promise.resolve(complete({ default: plugin })));
+  expect(await screen.findByText("Plugins loaded")).toBeVisible();
+  expect(screen.getByText(manifest.name)).toBeVisible();
+  expect(screen.getByRole("alert")).toHaveTextContent("Previous backend cleanup is still pending.");
+  expect(importer).toHaveBeenCalledOnce();
+});
+
+it("keeps mounted renderer authority across diagnostic updates and revokes it on actual removal", async () => {
+  let current: LoadedPluginRenderer | undefined;
+  function Authority(): React.JSX.Element {
+    current = usePlugins().plugins[0];
+    return <Status />;
+  }
+  const installed = installation("retained");
+  const { host, publish } = observableHost({ revision: 1, plugins: [installed] });
+  const importer = vi.fn(() => Promise.resolve({ default: plugin }));
+  render(
+    <PluginsProvider host={host} importer={importer}>
+      <Authority />
+    </PluginsProvider>,
+  );
+  await screen.findByText(manifest.name);
+  const original = current!;
+  const stylesheet = document.querySelector('link[href*="/retained/"]');
+  await act(() =>
+    Promise.resolve(
+      publish({ revision: 2, plugins: [{ ...installed, transition: pluginTransition() }] }),
+    ),
+  );
+  expect(current).toBe(original);
+  expect(original.lifetime.aborted).toBe(false);
+  expect(screen.getByText("Plugins loaded")).toBeVisible();
+  expect(document.querySelector('link[href*="/retained/"]')).toBe(stylesheet);
+  expect(importer).toHaveBeenCalledOnce();
+  await act(() => Promise.resolve(publish({ revision: 3, plugins: [] })));
+  expect(original.lifetime.aborted).toBe(true);
+  expect(document.querySelector('link[href*="/retained/"]')).toBeNull();
+});
 
 it("hot installs, replaces and removes one renderer while preserving other views and styles", async () => {
   const stable = { ...manifest, id: "stable.connection", name: "Stable connection" };

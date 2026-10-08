@@ -25,9 +25,137 @@ import {
   manifest,
   catalogGate,
   approvePackage,
+  pluginTransition,
 } from "../support/plugin-management-fixture";
 
 afterEach(cleanup);
+
+it.each(["queued", "waiting"] as const)(
+  "restores host-owned %s progress after Preferences reopen and prevents conflicting local changes",
+  async (state) => {
+    const entry = {
+      id: manifest.id,
+      installed: manifest,
+      active: manifest,
+      pending: null,
+      restartRequired: false,
+    } as const;
+    const { host, commands, emitSnapshot } = fixture({
+      snapshot: {
+        revision: 2,
+        plugins: [
+          {
+            ...entry,
+            transition: pluginTransition({
+              state,
+              stage: state === "queued" ? "queued" : "retire-previous",
+              commit: state === "queued" ? "not-started" : "confirmed",
+            }),
+          },
+        ],
+      },
+      delivery: {
+        fileInstallationAvailable: true,
+        cachedPackages: [
+          {
+            manifest,
+            sha256: "a".repeat(64),
+            cachedAt: new Date().toISOString(),
+            trust: "official",
+          },
+        ],
+      },
+    });
+    const first = render(<PluginsPanel host={host} />);
+    expect(await screen.findByRole("group", { name: "Plugin change progress" })).toHaveTextContent(
+      state === "queued" ? "Queued" : "Still waiting",
+    );
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Use cached package" })).toBeDisabled();
+    first.unmount();
+    render(<PluginsPanel host={host} />);
+    const progress = await screen.findByRole("group", { name: "Plugin change progress" });
+    expect(progress).toHaveTextContent("2 requests · 1 connection");
+    if (state === "waiting") expect(progress).toHaveTextContent("The storage change is saved");
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /restart|cancel/iu })).not.toBeInTheDocument();
+    expect(commands.some((command) => command.command === "plugins.change.prepare")).toBe(false);
+    await act(() => Promise.resolve(emitSnapshot({ revision: 3, plugins: [entry] })));
+    expect(screen.queryByRole("group", { name: "Plugin change progress" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled();
+  },
+);
+
+it("shows a transition-only removal row without inventing an activation failure", async () => {
+  const id = "removed.connection";
+  const { host } = fixture({
+    snapshot: {
+      revision: 1,
+      plugins: [
+        {
+          id,
+          pending: null,
+          restartRequired: false,
+          transition: pluginTransition({
+            pluginId: id,
+            operation: "remove",
+            stage: "commit-storage",
+            commit: "in-progress",
+          }),
+        },
+      ],
+    },
+    catalog: () => Promise.resolve({ plugins: [], source: "cache" }),
+  });
+  render(<PluginsPanel host={host} />);
+  const progress = await screen.findByRole("group", { name: "Plugin change progress" });
+  expect(progress).toHaveTextContent("Removing plugin");
+  expect(progress).toHaveTextContent("storage completion is not yet confirmed");
+  expect(screen.queryByText("This plugin could not be activated.")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+});
+
+it("blocks an unsubmitted package review when a host transition starts without presenting its dismissal as cancellation", async () => {
+  const { host, commands, emitSnapshot } = fixture({
+    delivery: { fileInstallationAvailable: true, cachedPackages: [] },
+  });
+  const user = userEvent.setup();
+  render(<PluginsPanel host={host} />);
+  const chooseFile = await screen.findByRole("button", { name: "Install from file" });
+  await waitFor(() => expect(chooseFile).toBeEnabled());
+  await user.click(chooseFile);
+  const review = await screen.findByRole("dialog", { name: "Review plugin" });
+  await act(() =>
+    Promise.resolve(
+      emitSnapshot({
+        revision: 3,
+        plugins: [
+          {
+            id: manifest.id,
+            pending: null,
+            restartRequired: false,
+            transition: pluginTransition(),
+          },
+        ],
+      }),
+    ),
+  );
+  expect(within(review).getByRole("button", { name: "Install plugin" })).toBeDisabled();
+  await user.click(within(review).getByRole("button", { name: "Close review" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Review plugin" })).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole("group", { name: "Plugin change progress" })).toHaveTextContent(
+    "Still waiting",
+  );
+  expect(
+    commands.some(
+      (command) =>
+        command.command === "plugins.package.install" ||
+        command.command === "plugins.network.cancel",
+    ),
+  ).toBe(false);
+});
 it("shows installed plugins and completes removal while a network refresh is still pending", async () => {
   const remote = catalogGate();
   const { host, commands } = fixture({

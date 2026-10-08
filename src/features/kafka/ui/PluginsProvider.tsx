@@ -96,6 +96,9 @@ export function PluginsProvider({
     let active = true;
     let revision = -1;
     let operation = 0;
+    let rendererIdentity: string | undefined;
+    let hostErrors: Record<string, string> = {};
+    let desired: readonly PluginInstallation[] = [];
     const loaded = new Map<
       string,
       {
@@ -112,18 +115,52 @@ export function PluginsProvider({
       loaded.delete(id);
     };
     const generation = (entry: PluginInstallation): string | undefined => entry.activationId;
+    const currentErrors = (): Record<string, string> => {
+      const errors = { ...hostErrors };
+      for (const installation of desired) {
+        const message = rejected.get(`${installation.id}:${installation.activationId}`);
+        if (message !== undefined && errors[installation.id] === undefined)
+          errors[installation.id] = message;
+      }
+      return errors;
+    };
 
     async function reconcile(snapshot: PluginSnapshot, force = false): Promise<void> {
       if (!active || snapshot.revision < revision || (!force && snapshot.revision === revision))
         return;
       revision = snapshot.revision;
-      const currentOperation = ++operation;
       const installations = snapshot.plugins.filter(
         (entry) =>
           entry.active !== undefined &&
           entry.rendererUrl !== undefined &&
           generation(entry) !== undefined,
       );
+      desired = installations;
+      hostErrors = {};
+      if (snapshot.error !== undefined) hostErrors.host = snapshot.error;
+      for (const installation of snapshot.plugins) {
+        if (installation.error !== undefined) hostErrors[installation.id] = installation.error;
+      }
+      const nextIdentity = JSON.stringify(
+        installations
+          .map((entry) => [
+            entry.id,
+            entry.activationId,
+            entry.rendererUrl,
+            entry.stylesUrl,
+            entry.active?.apiVersion,
+          ])
+          .sort(([a], [b]) => String(a).localeCompare(String(b))),
+      );
+      const retry =
+        force && installations.some((entry) => rejected.has(`${entry.id}:${entry.activationId}`));
+      if (rendererIdentity === nextIdentity && !retry) {
+        // Progress revisions update information, not renderer authority or a pending import.
+        setState((current) => ({ ...current, errors: currentErrors() }));
+        return;
+      }
+      rendererIdentity = nextIdentity;
+      const currentOperation = ++operation;
       // Revocation is synchronous: detached renderers cannot dispatch while React catches up.
       for (const [id, entry] of loaded) {
         if (
@@ -134,14 +171,9 @@ export function PluginsProvider({
         )
           retire(id);
       }
-      const errors: Record<string, string> = {};
-      if (snapshot.error !== undefined) errors.host = snapshot.error;
-      for (const installation of snapshot.plugins) {
-        if (installation.error !== undefined) errors[installation.id] = installation.error;
-      }
       setState({
         plugins: [...loaded.values()].map((entry) => entry.plugin),
-        errors,
+        errors: currentErrors(),
         loading: true,
       });
       for (const installation of installations) {
@@ -157,9 +189,9 @@ export function PluginsProvider({
         const activationKey = `${installation.id}:${activationId}`;
         const rejectedMessage = rejected.get(activationKey);
         if (!force && rejectedMessage !== undefined) {
-          errors[installation.id] = rejectedMessage;
           continue;
         }
+        rejected.delete(activationKey);
         try {
           const module = await importer(pluginAssetUrl(installation.rendererUrl, "js"));
           if (!active || currentOperation !== operation) return;
@@ -204,7 +236,6 @@ export function PluginsProvider({
         } catch (error) {
           if (!active || currentOperation !== operation) return;
           const message = error instanceof Error ? error.message : "Plugin UI failed to load.";
-          errors[installation.id] = message;
           rejected.set(activationKey, message);
           try {
             const response = await host.execute({
@@ -222,7 +253,7 @@ export function PluginsProvider({
       if (active && currentOperation === operation) {
         setState({
           plugins: [...loaded.values()].map((entry) => entry.plugin),
-          errors,
+          errors: currentErrors(),
           loading: false,
         });
       }

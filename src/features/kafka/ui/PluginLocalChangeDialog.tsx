@@ -1,5 +1,6 @@
 import { Stack, Typography } from "@mui/material";
 
+import type { PluginTransition } from "../../../plugins/contracts";
 import {
   StudioButton as Button,
   StudioDialog as Dialog,
@@ -9,15 +10,18 @@ import {
 } from "../../../platform/ui/controls";
 
 import type { PluginLocalConfirmation } from "./usePluginChanges";
+import { PluginTransitionStatus } from "./PluginTransitionStatus";
 
 export function PluginLocalChangeDialog({
   confirmation,
   pending,
+  transition,
   onCancel,
   onConfirm,
 }: {
   readonly confirmation: PluginLocalConfirmation | undefined;
   readonly pending: boolean;
+  readonly transition: PluginTransition | undefined;
   readonly onCancel: () => void;
   readonly onConfirm: () => Promise<void>;
 }): React.JSX.Element {
@@ -32,6 +36,7 @@ export function PluginLocalChangeDialog({
       </DialogTitle>
       <DialogContent>
         <Stack spacing={1}>
+          {transition === undefined ? null : <PluginTransitionStatus transition={transition} />}
           {confirmation?.prompt == null ? null : (
             <>
               <Typography variant="body2">{confirmation.prompt.message}</Typography>
@@ -47,10 +52,10 @@ export function PluginLocalChangeDialog({
       </DialogContent>
       <DialogActions>
         <Button disabled={pending} onClick={onCancel}>
-          Cancel
+          {transition !== undefined && !pending ? "Close review" : "Cancel"}
         </Button>
         <Button
-          disabled={pending}
+          disabled={pending || transition !== undefined}
           color={confirmation?.command === "plugins.remove" ? "error" : "primary"}
           variant="contained"
           onClick={(): void => {

@@ -19,6 +19,7 @@ import type {
   PluginNetworkSnapshot,
   PluginNetworkTestResult,
   PluginAcquisitionProgress,
+  PluginTransition,
 } from "../../src/plugins/contracts";
 
 import { testHostExecute } from "./host-response";
@@ -31,6 +32,23 @@ export const manifest: PluginManifest = {
   backend: "backend.cjs",
   renderer: "renderer.js",
 };
+
+export function pluginTransition(overrides: Partial<PluginTransition> = {}): PluginTransition {
+  const startedAt = new Date(Date.now() - 12_000).toISOString();
+  return {
+    operationId: "11111111-1111-4111-8111-111111111111",
+    pluginId: manifest.id,
+    operation: "install",
+    stage: "retire-previous",
+    state: "waiting",
+    startedAt,
+    stageStartedAt: startedAt,
+    outstandingRequests: 2,
+    outstandingConnections: 1,
+    commit: "confirmed",
+    ...overrides,
+  };
+}
 
 export const networkSnapshot: PluginNetworkSnapshot = {
   revision: 0,
@@ -62,6 +80,7 @@ export function fixture(
   host: StreamSkopeHost;
   commands: HostCommand[];
   emitProgress: (progress: PluginAcquisitionProgress) => void;
+  emitSnapshot: (snapshot: PluginSnapshot) => void;
 } {
   const availableManifest = options.manifest ?? manifest;
   let snapshot = options.snapshot ?? { revision: 0, plugins: [] };
@@ -251,6 +270,16 @@ export function fixture(
   return {
     host,
     commands,
+    emitSnapshot: (next): void => {
+      snapshot = next;
+      for (const listener of listeners)
+        listener({
+          version: HOST_PROTOCOL_VERSION,
+          sequence: ++sequence,
+          event: "plugins.changed",
+          payload: next,
+        });
+    },
     emitProgress: (progress): void => {
       for (const listener of listeners)
         listener({

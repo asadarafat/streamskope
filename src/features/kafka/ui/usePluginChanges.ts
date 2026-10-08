@@ -94,6 +94,18 @@ export function usePluginChanges(
   }, [host, discard]);
   const current = (operation: number): boolean =>
     lifetime.current.active && operation === lifetime.current.operation;
+  function busy(pluginId: string): boolean {
+    if (
+      !inventory.snapshot.plugins.some(
+        (entry) => entry.id === pluginId && entry.transition !== undefined,
+      )
+    )
+      return false;
+    setFailure(
+      "A change is already in progress for this plugin. Wait for its current step to finish.",
+    );
+    return true;
+  }
   function begin(id: string, message: string): number {
     const operation = ++lifetime.current.operation;
     setPending(id);
@@ -148,6 +160,7 @@ export function usePluginChanges(
     command: PluginLocalCommand,
     plugin: PluginActionTarget,
   ): Promise<void> {
+    if (busy(plugin.id)) return;
     void cancelInspection();
     const operation = begin(plugin.id, `Checking ${plugin.name}…`);
     try {
@@ -177,7 +190,7 @@ export function usePluginChanges(
     }
   }
   async function confirmLocal(): Promise<void> {
-    if (confirmation === undefined) return;
+    if (confirmation === undefined || busy(confirmation.plugin.id)) return;
     const operation = begin(confirmation.plugin.id, "Applying plugin change…");
     try {
       await executeLocal(
@@ -202,6 +215,7 @@ export function usePluginChanges(
       });
   }
   async function inspect(input: PluginInspectionInput): Promise<void> {
+    if (input.source !== "file" && busy(input.pluginId)) return;
     const cancelling = cancelInspection();
     const operation = ++lifetime.current.inspection;
     const inspecting = (): boolean =>
@@ -303,7 +317,8 @@ export function usePluginChanges(
     if (
       review === undefined ||
       review.status === "blocked" ||
-      review.status === "already-installed"
+      review.status === "already-installed" ||
+      busy(review.manifest.id)
     )
       return;
     const operation = begin(review.manifest.id, `Installing verified ${review.manifest.name}…`);

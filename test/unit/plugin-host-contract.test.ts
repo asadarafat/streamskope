@@ -33,6 +33,95 @@ const event = {
 };
 
 describe("generic plugin host protocol", () => {
+  it("pairs transition metadata with protocol 53 while accepting snapshots without it", () => {
+    const payload = {
+      revision: 1,
+      plugins: [{ id: "example.capture", pending: null, restartRequired: false }],
+    };
+    const changed = { ...event, event: "plugins.changed", payload };
+    expect(HOST_PROTOCOL_VERSION).toBe(53);
+    expect(parseHostEvent(changed)).toEqual(changed);
+    expect(() => parseHostEvent({ ...changed, version: 52 })).toThrow(HostContractValidationError);
+    expect(() => parseHostCommand({ ...command, version: 52 })).toThrow(
+      HostContractValidationError,
+    );
+    const transition = {
+      operationId: "12345678-1234-1234-1234-123456789abc",
+      pluginId: "example.capture",
+      activationId: "87654321-4321-4321-4321-cba987654321",
+      operation: "install",
+      stage: "prepare-unload",
+      state: "waiting",
+      startedAt: "2026-10-08T12:00:00.000Z",
+      stageStartedAt: "2026-10-08T12:00:01.000Z",
+      outstandingRequests: 2,
+      outstandingConnections: 1,
+      commit: "not-started",
+    };
+    const snapshot = {
+      ...payload,
+      plugins: [{ ...payload.plugins[0]!, transition }],
+    };
+    const progress = { ...changed, payload: snapshot };
+    expect(parseHostEvent(progress)).toEqual(progress);
+    const listed = {
+      ...response,
+      command: "plugins.list",
+      result: { pluginSnapshot: snapshot, correlationId: "list" },
+    };
+    expect(parseHostCommandResponse(listed)).toEqual(listed);
+    expect(() => parseHostCommandResponse({ ...listed, version: 52 })).toThrow(
+      HostContractValidationError,
+    );
+    for (const patch of [
+      { operationId: "unbounded-or-arbitrary" },
+      { activationId: "not-a-uuid" },
+      { pluginId: "example.other" },
+      { operation: "force-remove" },
+      { stage: "credentials" },
+      { state: "completed" },
+      { commit: true },
+      { startedAt: "today" },
+      { stageStartedAt: "2026-10-08T11:00:00.000Z" },
+      { state: "queued" },
+      { stage: "queued" },
+      { stage: "queued", state: "queued", commit: "confirmed" },
+      { outstandingRequests: -1 },
+      { outstandingRequests: 0.5 },
+      { outstandingRequests: Number.MAX_SAFE_INTEGER + 1 },
+      { outstandingConnections: "1" },
+      { outstandingConnections: Number.NaN },
+      { password: "must-never-cross-this-boundary" },
+    ]) {
+      expect(() =>
+        parseHostEvent({
+          ...progress,
+          payload: {
+            ...snapshot,
+            plugins: [{ ...snapshot.plugins[0]!, transition: { ...transition, ...patch } }],
+          },
+        }),
+      ).toThrow(HostContractValidationError);
+    }
+    const queued = {
+      ...progress,
+      payload: {
+        ...snapshot,
+        plugins: [
+          {
+            ...snapshot.plugins[0]!,
+            transition: {
+              ...transition,
+              stage: "queued",
+              state: "queued",
+              stageStartedAt: transition.startedAt,
+            },
+          },
+        ],
+      },
+    };
+    expect(parseHostEvent(queued)).toEqual(queued);
+  });
   it("validates cache-only requests, local retry and dated catalog provenance", () => {
     const cached = {
       ...command,

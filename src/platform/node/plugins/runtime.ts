@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 
 import {
   HOST_PROTOCOL_VERSION,
@@ -23,7 +22,6 @@ import type {
   PluginChangePrompt,
   PluginEvent,
   PluginExitPrompt,
-  PluginInstallation,
   PluginManifest,
   PluginProfileSource,
   PluginRequest,
@@ -46,30 +44,24 @@ import { OfficialPluginCatalog, type PluginCatalogSource } from "./catalog";
 import { PluginCatalogDiscovery } from "./catalog-discovery";
 import { PluginDeliveryController, type InstalledPluginReview } from "./delivery";
 import { PluginInstaller, type PluginCandidateAuthority } from "./installer";
+import { PluginRuntimeInventory } from "./runtime-inventory";
+import { PluginChangeAuthority } from "./change-authority";
+import {
+  PluginTransitions,
+  type PluginTransitionHandle,
+  type PluginTransitionMetadata,
+} from "./transition";
 import { pluginProblem as problem } from "./problem";
 import { PluginStore, type ActivePlugin } from "./store";
 import { PluginNetworkController } from "./network";
 import type { PluginNetworkTransport } from "./network-transport";
-import { assertPluginBackend, loadPluginBackendModule, probePluginTopics } from "./backend-loader";
-
-interface LoadedPlugin {
-  readonly installation: ActivePlugin;
-  readonly backend: PluginBackend;
-  readonly activationId: string;
-  readonly authority: { active: boolean; retired: boolean; draining: boolean };
-  readonly requests: Set<Promise<unknown>>;
-  readonly connections: Set<Promise<unknown>>;
-}
-
-interface ChangeConfirmation {
-  readonly pluginId: string;
-  readonly operation: PluginChangeOperation;
-  readonly activationId: string;
-  readonly fingerprint: string;
-  readonly expires: number;
-  readonly candidateId?: string;
-  readonly candidateSha256?: string;
-}
+import {
+  assertPluginBackend,
+  loadPluginBackendModule,
+  probePluginTopics,
+  retirePluginBackend,
+  type LoadedPlugin,
+} from "./backend-loader";
 
 export interface PluginRuntimeOptions {
   readonly store: PluginStore;
@@ -85,6 +77,8 @@ export interface PluginRuntimeOptions {
   readonly networkProtector?: ProfileProtector;
   /** Persist plugin download policy independently of native proxy capability. */
   readonly durableSettings?: boolean;
+  /** Observation threshold only; a waiting hook retains its actual cleanup barrier. */
+  readonly transitionWaitingAfterMs?: number;
 }
 
 export interface PluginRendererAsset {
@@ -103,12 +97,10 @@ export class PluginRuntime implements PluginRuntimePort {
   private readonly listeners = new Set<(event: PluginEvent) => void>();
   private readonly exitResolved = new Set<string>();
   private readonly exitPrompted = new Map<string, string>();
-  private readonly changeListeners = new Set<(snapshot: PluginSnapshot) => void>();
-  private readonly confirmations = new Map<string, ChangeConfirmation>();
-  private readonly changing = new Set<string>();
-  private readonly mutationIntents = new Map<string, symbol>();
-  private mutations: Promise<unknown> = Promise.resolve();
-  private revision = 0;
+  private readonly confirmations = new PluginChangeAuthority();
+  private readonly inventory: PluginRuntimeInventory;
+  private readonly transitions: PluginTransitions;
+  private inventoryReady: Promise<readonly ActivePlugin[]> | undefined;
   private readonly catalogSource: PluginCatalogSource;
   private bindings: PluginHostBindings | undefined;
   private starting: Promise<void> | undefined;
@@ -120,6 +112,15 @@ export class PluginRuntime implements PluginRuntimePort {
   private readonly network: PluginNetworkController;
 
   constructor(private readonly options: PluginRuntimeOptions) {
+    this.inventory = new PluginRuntimeInventory(options.store);
+    this.transitions = new PluginTransitions({
+      changed: (): void => {
+        this.publish();
+      },
+      ...(options.transitionWaitingAfterMs === undefined
+        ? {}
+        : { waitingAfterMs: options.transitionWaitingAfterMs }),
+    });
     this.catalogSource =
       options.catalog ??
       new OfficialPluginCatalog(
@@ -147,17 +148,11 @@ export class PluginRuntime implements PluginRuntimePort {
       compatible: this.assertCompatible.bind(this),
       current: (id): LoadedPlugin | undefined => this.modules.get(id),
       healthy: (id): boolean => !this.errors.has(id),
-      enter: (id): void => {
-        this.changing.add(id);
-      },
-      leave: (id): void => {
-        this.changing.delete(id);
-      },
-      serial: <T>(operation: () => Promise<T>): Promise<T> => this.serial(operation),
-      snapshot: this.snapshot.bind(this),
-      changed: this.changed.bind(this),
-      confirm: (id, loaded, token, candidate): Promise<void> =>
-        this.confirmChange(id, "install", loaded, token, candidate),
+      transitions: this.transitions,
+      snapshot: (): PluginSnapshot => this.inventory.snapshot(),
+      refresh: (): Promise<boolean> => this.inventory.refresh(),
+      confirm: (id, loaded, handle, token, candidate): Promise<void> =>
+        this.confirmChange(id, "install", loaded, handle, token, candidate),
       replace: this.replaceInstalled.bind(this),
     });
     this.deliveryController = new PluginDeliveryController({
@@ -171,7 +166,7 @@ export class PluginRuntime implements PluginRuntimePort {
       prepare: (id, candidate): Promise<PluginChangePrompt | null> =>
         this.prepareChangeAuthority(id, "install", candidate),
       install: (id, bytes, sha256, token, candidate): Promise<PluginSnapshot> =>
-        this.withMutationIntent(id, async (assertCurrent) => {
+        this.transitions.withIntent(id, async (assertCurrent) => {
           await this.start();
           assertCurrent();
           return this.installer.apply(id, bytes, sha256, token, assertCurrent, candidate);
@@ -281,7 +276,10 @@ export class PluginRuntime implements PluginRuntimePort {
     };
   }
 
-  private async load(installation: ActivePlugin): Promise<LoadedPlugin> {
+  private async load(
+    installation: ActivePlugin,
+    handle: PluginTransitionHandle,
+  ): Promise<LoadedPlugin> {
     this.assertCompatible(installation.manifest);
     const module = await (this.options.loadModule ?? loadPluginBackendModule)(
       installation.backendPath,
@@ -293,7 +291,10 @@ export class PluginRuntime implements PluginRuntimePort {
       assertPluginBackend(backend);
     } catch (error) {
       authority.retired = true;
-      if (typeof backend?.close === "function") await backend.close().catch(() => undefined);
+      if (typeof backend?.close === "function") {
+        const rejected = backend;
+        await handle.wait("close-candidate", () => rejected.close()).catch(() => undefined);
+      }
       throw error;
     }
     return {
@@ -323,53 +324,51 @@ export class PluginRuntime implements PluginRuntimePort {
     this.exitPrompted.delete(loaded.installation.manifest.id);
   }
 
-  private async retire(loaded: LoadedPlugin): Promise<void> {
-    // Only a previously active backend may persist its final cleanup. Discarding
-    // an inactive staged candidate must never grant it recovery write authority.
-    loaded.authority.draining = loaded.authority.active && !loaded.authority.retired;
-    loaded.authority.active = false;
-    try {
-      try {
-        await loaded.backend.close();
-      } finally {
-        await Promise.allSettled([...loaded.requests]);
-      }
-    } finally {
-      loaded.authority.draining = false;
-      loaded.authority.retired = true;
-      // Bundles are self-contained; do not retain removed plugin factories in Node's cache.
-      delete createRequire(loaded.installation.backendPath).cache[loaded.installation.backendPath];
-    }
+  private async waitConnections(
+    loaded: LoadedPlugin | undefined,
+    handle: PluginTransitionHandle,
+  ): Promise<void> {
+    if (loaded !== undefined)
+      await handle.wait(
+        "wait-connections",
+        () => Promise.allSettled([...loaded.connections]),
+        this.observation(loaded),
+      );
   }
 
-  private serial<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.mutations.then(() => {
-      this.assertOpen();
-      return operation();
+  private async prepareUnload(
+    loaded: LoadedPlugin,
+    reason: "update" | "remove",
+    handle: PluginTransitionHandle,
+  ): Promise<void> {
+    await handle.wait(
+      "prepare-unload",
+      () => loaded.backend.prepareUnload(reason),
+      this.observation(loaded),
+    );
+    await handle.wait(
+      "drain-requests",
+      () => Promise.allSettled([...loaded.requests]),
+      this.observation(loaded),
+    );
+  }
+
+  private observation(loaded: LoadedPlugin | undefined): PluginTransitionMetadata {
+    return loaded === undefined
+      ? {}
+      : {
+          activationId: loaded.activationId,
+          counts: () => ({ requests: loaded.requests.size, connections: loaded.connections.size }),
+        };
+  }
+
+  private publish(): PluginSnapshot {
+    return this.inventory.publish({
+      active: [...this.modules.values()].filter((loaded) => !loaded.authority.retired),
+      errors: this.errors,
+      transitions: this.transitions.snapshot(),
+      ...(this.startupError === undefined ? {} : { error: this.startupError }),
     });
-    this.mutations = result.catch(() => undefined);
-    return result;
-  }
-
-  private async withMutationIntent<T>(
-    pluginId: string,
-    operation: (assertCurrent: () => void) => Promise<T>,
-  ): Promise<T> {
-    const intent = Symbol();
-    this.mutationIntents.set(pluginId, intent);
-    const assertCurrent = (): void => {
-      this.assertOpen();
-      if (this.mutationIntents.get(pluginId) !== intent)
-        throw problem(
-          "This plugin change was superseded by a newer install or removal.",
-          "The latest plugin change takes priority. Review its current state in Preferences > Plugins.",
-        );
-    };
-    try {
-      return await operation(assertCurrent);
-    } finally {
-      if (this.mutationIntents.get(pluginId) === intent) this.mutationIntents.delete(pluginId);
-    }
   }
 
   private async tracked<T>(loaded: LoadedPlugin, operation: () => Promise<T>): Promise<T> {
@@ -378,74 +377,97 @@ export class PluginRuntime implements PluginRuntimePort {
       return operation();
     });
     loaded.requests.add(request);
+    this.transitions.refresh(loaded.installation.manifest.id);
     try {
       return await request;
     } finally {
       loaded.requests.delete(request);
+      this.transitions.refresh(loaded.installation.manifest.id);
     }
   }
 
   private assertDispatchable(loaded: LoadedPlugin): void {
     this.assertOpen();
     const id = loaded.installation.manifest.id;
-    if (this.changing.has(id))
+    if (this.transitions.isChanging(id))
       throw problem("The plugin is being changed. Retry when the operation finishes.");
     if (loaded.authority.retired || this.modules.get(id) !== loaded)
       throw problem("This plugin instance is no longer active.");
   }
 
-  private async changed(): Promise<PluginSnapshot> {
-    this.revision += 1;
-    const snapshot = await this.snapshot();
-    for (const listener of this.changeListeners) {
-      try {
-        listener(snapshot);
-      } catch {
-        /* UI observers cannot roll back a committed change. */
-      }
-    }
-    return snapshot;
-  }
-
   start(): Promise<void> {
     if (this.closing !== undefined) return Promise.reject(problem("The plugin host is closing."));
-    this.starting ??= this.startInstalled();
+    if (this.starting === undefined) {
+      this.inventoryReady = this.initializeInventory();
+      this.starting = this.startInstalled(this.inventoryReady);
+    }
     return this.starting;
   }
 
-  private async startInstalled(): Promise<void> {
+  private async initializeInventory(): Promise<readonly ActivePlugin[]> {
     try {
-      const installed = await this.options.store.activatePending();
-      for (const installation of installed) {
-        try {
-          this.assertCompatible(installation.manifest);
-        } catch (error) {
-          // A host downgrade does not invalidate a verified package. Preserve it so
-          // upgrading the desktop can activate it again without reinstalling.
-          this.errors.set(installation.manifest.id, summary(error));
-          continue;
-        }
-        try {
-          this.activate(await this.load(installation));
-        } catch (error) {
-          this.errors.set(installation.manifest.id, summary(error));
-          try {
-            const previous = await this.options.store.rollback(installation.manifest.id);
-            if (previous !== undefined) {
-              this.activate(await this.load(previous));
-              this.errors.set(
-                installation.manifest.id,
-                `The update could not start; the previous version was restored. ${summary(error)}`,
-              );
-            }
-          } catch (rollbackError) {
-            this.errors.set(installation.manifest.id, summary(rollbackError));
-          }
-        }
-      }
+      return await this.options.store.activatePending();
     } catch (error) {
-      // Corrupt plugin storage must never prevent ordinary Kafka workflows from starting.
       this.startupError = summary(error);
+      return [];
+    } finally {
+      await this.inventory.refresh();
+      this.publish();
+    }
+  }
+
+  private async startInstalled(ready: Promise<readonly ActivePlugin[]>): Promise<void> {
+    for (const installation of await ready) {
+      if (this.closing !== undefined) break;
+      const pluginId = installation.manifest.id;
+      try {
+        await this.transitions.run({ pluginId, operation: "startup" }, async (handle) => {
+          try {
+            this.assertCompatible(installation.manifest);
+          } catch (error) {
+            // Host downgrades preserve the verified package for a compatible host.
+            this.errors.set(pluginId, summary(error));
+            return;
+          }
+          try {
+            const loaded = await handle.wait("load-candidate", () =>
+              this.load(installation, handle),
+            );
+            handle.phase("activate-candidate", this.observation(loaded));
+            this.activate(loaded);
+          } catch (error) {
+            this.errors.set(pluginId, summary(error));
+            try {
+              const previous = await handle.wait(
+                "startup-recovery",
+                async () => {
+                  const restored = await this.options.store.rollback(pluginId);
+                  if (await this.inventory.refresh())
+                    handle.phase("startup-recovery", { commit: "confirmed" });
+                  return restored;
+                },
+                { commit: "in-progress" },
+              );
+              if (previous !== undefined) {
+                const loaded = await handle.wait("load-candidate", () =>
+                  this.load(previous, handle),
+                );
+                handle.phase("activate-candidate", this.observation(loaded));
+                this.activate(loaded);
+                this.errors.set(
+                  pluginId,
+                  `The update could not start; the previous version was restored. ${summary(error)}`,
+                );
+              }
+            } catch (rollbackError) {
+              this.errors.set(pluginId, summary(rollbackError));
+            }
+          }
+        });
+      } catch (error) {
+        if (this.closing === undefined) this.errors.set(pluginId, summary(error));
+      }
+      this.publish();
     }
   }
 
@@ -454,7 +476,7 @@ export class PluginRuntime implements PluginRuntimePort {
     if (this.closing !== undefined) throw problem("The plugin host is closing.");
     await this.start();
     this.assertOpen();
-    if (this.changing.has(id))
+    if (this.transitions.isChanging(id))
       throw problem("The plugin is being changed. Retry when the operation finishes.");
     const loaded = this.modules.get(id);
     if (loaded === undefined)
@@ -501,10 +523,12 @@ export class PluginRuntime implements PluginRuntimePort {
       return connect();
     });
     loaded.connections.add(connection);
+    this.transitions.refresh(loaded.installation.manifest.id);
     try {
       return await connection;
     } finally {
       loaded.connections.delete(connection);
+      this.transitions.refresh(loaded.installation.manifest.id);
     }
   }
 
@@ -514,54 +538,13 @@ export class PluginRuntime implements PluginRuntimePort {
   }
 
   subscribeChanges(listener: (snapshot: PluginSnapshot) => void): () => void {
-    this.changeListeners.add(listener);
-    return () => this.changeListeners.delete(listener);
+    return this.inventory.subscribe(listener);
   }
 
   async list(): Promise<PluginSnapshot> {
-    await this.start();
-    return this.serial(() => this.snapshot());
-  }
-
-  private async snapshot(): Promise<PluginSnapshot> {
-    try {
-      const installations = await this.options.store.list();
-      const plugins = installations.map((installation): PluginInstallation => {
-        const loaded = this.modules.get(installation.id);
-        const error = this.errors.get(installation.id) ?? installation.error;
-        return {
-          id: installation.id,
-          pending: installation.pending,
-          restartRequired: installation.restartRequired,
-          ...(installation.installed ? { installed: installation.installed } : {}),
-          ...(installation.previous ? { previous: installation.previous } : {}),
-          ...(loaded
-            ? {
-                active: loaded.installation.manifest,
-                activationId: loaded.activationId,
-                rendererUrl: `/plugins/${installation.id}/${loaded.installation.sha256}/${loaded.activationId}/renderer.js`,
-                ...(loaded.installation.stylesPath
-                  ? {
-                      stylesUrl: `/plugins/${installation.id}/${loaded.installation.sha256}/${loaded.activationId}/renderer.css`,
-                    }
-                  : {}),
-              }
-            : {}),
-          ...(error ? { error } : {}),
-        };
-      });
-      for (const [id, error] of this.errors) {
-        if (!plugins.some((plugin) => plugin.id === id))
-          plugins.push({ id, pending: null, restartRequired: false, error });
-      }
-      return {
-        revision: this.revision,
-        plugins,
-        ...(this.startupError ? { error: this.startupError } : {}),
-      };
-    } catch (error) {
-      return { revision: this.revision, plugins: [], error: summary(error) };
-    }
+    if (this.starting === undefined && this.closing === undefined) void this.start();
+    await this.inventoryReady;
+    return this.inventory.snapshot();
   }
 
   catalog(refresh = true, requestId?: string): Promise<PluginCatalogSnapshot> {
@@ -615,6 +598,7 @@ export class PluginRuntime implements PluginRuntimePort {
   }
 
   private async installedReview(pluginId: string): Promise<InstalledPluginReview> {
+    await this.start();
     const installation = (await this.list()).plugins.find((value) => value.id === pluginId);
     const loaded = this.modules.get(pluginId);
     let healthy = loaded !== undefined && !this.errors.has(pluginId);
@@ -646,50 +630,26 @@ export class PluginRuntime implements PluginRuntimePort {
   ): Promise<PluginChangePrompt | null> {
     parsePluginId(pluginId);
     await this.start();
-    return this.serial(async () => {
+    return this.transitions.run({ pluginId, operation: `review-${operation}` }, async (handle) => {
       candidate?.assertCurrent();
       const loaded = this.modules.get(pluginId);
       if (loaded === undefined) return null;
       // A healthy backend only needs a renderer retry; it will not stop active work.
       if (operation === "retry" && !this.errors.has(pluginId)) return null;
-      const warning = await loaded.backend.beforeChange();
+      const warning = await handle.wait(
+        "review-change",
+        () => loaded.backend.beforeChange(),
+        this.observation(loaded),
+      );
       candidate?.assertCurrent();
       if (warning === undefined) return null;
-      const now = Date.now();
-      for (const [token, entry] of this.confirmations) {
-        if (entry.expires <= now || entry.pluginId === pluginId) this.confirmations.delete(token);
-      }
-      if (this.confirmations.size >= 32)
-        this.confirmations.delete(this.confirmations.keys().next().value!);
-      const token = randomUUID();
-      this.confirmations.set(token, {
+      return this.confirmations.prepare(
         pluginId,
         operation,
-        activationId: loaded.activationId,
-        fingerprint: JSON.stringify(warning),
-        expires: now + 5 * 60_000,
-        ...(candidate === undefined
-          ? {}
-          : { candidateId: candidate.candidateId, candidateSha256: candidate.sha256 }),
-      });
-      return {
-        pluginId,
-        token,
-        title:
-          operation === "install"
-            ? "Update plugin?"
-            : operation === "retry"
-              ? "Retry plugin?"
-              : "Remove plugin?",
-        message: warning.message,
-        detail: warning.detail,
-        confirmLabel:
-          operation === "install"
-            ? "Stop capture and update"
-            : operation === "retry"
-              ? "Stop capture and retry"
-              : "Stop capture and remove",
-      };
+        loaded.activationId,
+        warning,
+        candidate,
+      );
     });
   }
 
@@ -697,34 +657,28 @@ export class PluginRuntime implements PluginRuntimePort {
     pluginId: string,
     operation: PluginChangeOperation,
     loaded: LoadedPlugin | undefined,
+    handle: PluginTransitionHandle,
     token?: string,
     candidate?: PluginCandidateAuthority,
   ): Promise<void> {
-    const confirmation = token === undefined ? undefined : this.confirmations.get(token);
-    if (token !== undefined) this.confirmations.delete(token);
-    if (loaded === undefined) return;
-    const warning = await loaded.backend.beforeChange();
-    if (warning === undefined) return;
-    if (
-      confirmation === undefined ||
-      confirmation.pluginId !== pluginId ||
-      confirmation.operation !== operation ||
-      confirmation.activationId !== loaded.activationId ||
-      confirmation.expires <= Date.now() ||
-      confirmation.fingerprint !== JSON.stringify(warning) ||
-      confirmation.candidateId !== candidate?.candidateId ||
-      confirmation.candidateSha256 !== candidate?.sha256
-    ) {
-      throw problem(
-        "Plugin work changed or requires confirmation. Review the change again before continuing.",
-        "Retry the plugin update or removal and confirm stopping its active work.",
-      );
-    }
+    await this.confirmations.confirm(
+      pluginId,
+      operation,
+      loaded?.activationId,
+      token,
+      candidate,
+      () =>
+        handle.wait(
+          "review-change",
+          () => loaded!.backend.beforeChange(),
+          this.observation(loaded),
+        ),
+    );
   }
 
   async install(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot> {
     parsePluginId(pluginId);
-    return this.withMutationIntent(pluginId, async (assertCurrent) => {
+    return this.transitions.withIntent(pluginId, async (assertCurrent) => {
       await this.start();
       assertCurrent();
       const downloaded = await this.network.acquire(undefined, "inspect", true, (context) =>
@@ -746,62 +700,81 @@ export class PluginRuntime implements PluginRuntimePort {
 
   async retryActivation(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot> {
     parsePluginId(pluginId);
-    return this.withMutationIntent(pluginId, async (assertCurrent) => {
+    return this.transitions.withIntent(pluginId, async (assertIntent) => {
       await this.start();
-      return this.serial(async () => {
-        assertCurrent();
-        const previous = this.modules.get(pluginId);
-        // Healthy retries are idempotent; a rejected renderer needs a fresh activation authority.
-        if (previous !== undefined && !this.errors.has(pluginId)) return this.snapshot();
-        this.changing.add(pluginId);
-        try {
-          const installation = await this.options.store.getInstalled(pluginId);
-          if (installation === undefined)
-            throw problem(
-              "There is no verified installed plugin to retry.",
-              "Install or repair the plugin in Preferences > Plugins.",
+      await this.transitions.run(
+        { pluginId, operation: "retry" },
+        async (handle) => {
+          const previous = this.modules.get(pluginId);
+          // Healthy retries retain the same active backend and all of its work.
+          if (previous !== undefined && !this.errors.has(pluginId)) return;
+          try {
+            const installation = await handle.wait(
+              "verify-package",
+              () => this.options.store.getInstalled(pluginId),
+              this.observation(previous),
             );
-          this.assertCompatible(installation.manifest);
-          if (previous !== undefined && installation.sha256 !== previous.installation.sha256)
-            throw problem("The stored plugin changed. Review its installation before retrying.");
-          if (previous !== undefined) await Promise.allSettled([...previous.connections]);
-          await this.confirmChange(pluginId, "retry", previous, confirmationToken);
-          assertCurrent();
-          await this.replaceInstalled(installation, previous, assertCurrent);
-          this.changing.delete(pluginId);
-          return await this.changed();
-        } catch (error) {
-          this.errors.set(pluginId, summary(error));
-          throw error;
-        } finally {
-          this.changing.delete(pluginId);
-        }
-      });
+            if (installation === undefined)
+              throw problem(
+                "There is no verified installed plugin to retry.",
+                "Install or repair the plugin in Preferences > Plugins.",
+              );
+            this.assertCompatible(installation.manifest);
+            if (previous !== undefined && installation.sha256 !== previous.installation.sha256)
+              throw problem("The stored plugin changed. Review its installation before retrying.");
+            await this.waitConnections(previous, handle);
+            await this.confirmChange(pluginId, "retry", previous, handle, confirmationToken);
+            handle.assertCurrent();
+            await this.replaceInstalled(installation, previous, handle);
+          } catch (error) {
+            this.errors.set(pluginId, summary(error));
+            throw error;
+          }
+        },
+        assertIntent,
+      );
+      return this.inventory.snapshot();
     });
   }
 
-  /** Installation and local recovery use the same candidate activation, cleanup and commit boundary. */
+  /** Installation and local recovery share candidate activation, cleanup and storage ownership. */
   private async replaceInstalled(
     installation: ActivePlugin,
     previous: LoadedPlugin | undefined,
-    assertCurrent: () => void,
+    handle: PluginTransitionHandle,
   ): Promise<void> {
     const pluginId = installation.manifest.id;
     let candidate: LoadedPlugin | undefined;
     try {
-      candidate = await this.load(installation);
-      assertCurrent();
+      candidate = await handle.wait(
+        "load-candidate",
+        () => this.load(installation, handle),
+        this.observation(previous),
+      );
+      handle.assertCurrent();
       if (previous !== undefined) {
-        await previous.backend.prepareUnload("update");
-        await Promise.allSettled([...previous.requests]);
+        await this.prepareUnload(previous, "update", handle);
       }
-      assertCurrent();
-      const cleanupError = await this.options.store.commitInstall(pluginId, installation.sha256);
+      handle.assertCurrent();
+      const cleanupError = await handle.wait(
+        "commit-storage",
+        async () => {
+          const warning = await this.options.store.commitInstall(pluginId, installation.sha256);
+          if (await this.inventory.refresh())
+            handle.phase("commit-storage", { commit: "confirmed" });
+          return warning;
+        },
+        { commit: "in-progress" },
+      );
       this.errors.delete(pluginId);
       if (cleanupError !== undefined) this.errors.set(pluginId, cleanupError);
       if (previous !== undefined) {
         try {
-          await this.retire(previous);
+          await handle.wait(
+            "retire-previous",
+            () => retirePluginBackend(previous),
+            this.observation(previous),
+          );
         } catch (error) {
           this.errors.set(
             pluginId,
@@ -809,60 +782,67 @@ export class PluginRuntime implements PluginRuntimePort {
           );
         }
       }
+      handle.phase("activate-candidate", this.observation(candidate));
       this.activate(candidate);
       candidate = undefined;
     } finally {
-      if (candidate !== undefined) await this.retire(candidate).catch(() => undefined);
+      if (candidate !== undefined) {
+        const rejected = candidate;
+        await handle
+          .wait("close-candidate", () => retirePluginBackend(rejected), this.observation(rejected))
+          .catch(() => undefined);
+      }
     }
   }
 
   async remove(pluginId: string, confirmationToken?: string): Promise<PluginSnapshot> {
     parsePluginId(pluginId);
-    return this.withMutationIntent(pluginId, (assertCurrent) =>
-      this.removeCurrent(pluginId, confirmationToken, assertCurrent),
-    );
-  }
-
-  private async removeCurrent(
-    pluginId: string,
-    confirmationToken: string | undefined,
-    assertCurrent: () => void,
-  ): Promise<PluginSnapshot> {
-    await this.start();
-    return this.serial(async () => {
-      assertCurrent();
-      this.changing.add(pluginId);
-      try {
-        const loaded = this.modules.get(pluginId);
-        if (loaded !== undefined) await Promise.allSettled([...loaded.connections]);
-        await this.confirmChange(pluginId, "remove", loaded, confirmationToken);
-        assertCurrent();
-        if (loaded !== undefined) {
-          await loaded.backend.prepareUnload("remove");
-          await Promise.allSettled([...loaded.requests]);
-        }
-        assertCurrent();
-        const cleanupError = await this.options.store.uninstall(pluginId);
-        this.errors.delete(pluginId);
-        if (cleanupError !== undefined) this.errors.set(pluginId, cleanupError);
-        if (loaded !== undefined) {
-          this.modules.delete(pluginId);
-          try {
-            await this.retire(loaded);
-          } catch (error) {
-            this.errors.set(
-              pluginId,
-              `The plugin was removed, but instance cleanup failed: ${summary(error)}`,
-            );
+    return this.transitions.withIntent(pluginId, async (assertIntent) => {
+      await this.start();
+      await this.transitions.run(
+        { pluginId, operation: "remove" },
+        async (handle) => {
+          const loaded = this.modules.get(pluginId);
+          await this.waitConnections(loaded, handle);
+          await this.confirmChange(pluginId, "remove", loaded, handle, confirmationToken);
+          handle.assertCurrent();
+          if (loaded !== undefined) {
+            await this.prepareUnload(loaded, "remove", handle);
           }
-        }
-        this.exitResolved.delete(pluginId);
-        this.exitPrompted.delete(pluginId);
-        this.changing.delete(pluginId);
-        return await this.changed();
-      } finally {
-        this.changing.delete(pluginId);
-      }
+          handle.assertCurrent();
+          const cleanupError = await handle.wait(
+            "commit-storage",
+            async () => {
+              const warning = await this.options.store.uninstall(pluginId);
+              if (await this.inventory.refresh())
+                handle.phase("commit-storage", { commit: "confirmed" });
+              return warning;
+            },
+            { commit: "in-progress" },
+          );
+          this.errors.delete(pluginId);
+          if (cleanupError !== undefined) this.errors.set(pluginId, cleanupError);
+          if (loaded !== undefined) {
+            this.modules.delete(pluginId);
+            try {
+              await handle.wait(
+                "close-backend",
+                () => retirePluginBackend(loaded),
+                this.observation(loaded),
+              );
+            } catch (error) {
+              this.errors.set(
+                pluginId,
+                `The plugin was removed, but instance cleanup failed: ${summary(error)}`,
+              );
+            }
+          }
+          this.exitResolved.delete(pluginId);
+          this.exitPrompted.delete(pluginId);
+        },
+        assertIntent,
+      );
+      return this.inventory.snapshot();
     });
   }
 
@@ -873,28 +853,54 @@ export class PluginRuntime implements PluginRuntimePort {
   ): Promise<PluginSnapshot> {
     parsePluginId(pluginId);
     await this.start();
-    return this.serial(async () => {
-      const loaded = this.modules.get(pluginId);
-      if (loaded === undefined || loaded.activationId !== activationId) return this.snapshot();
-      this.changing.add(pluginId);
-      try {
-        await Promise.allSettled([...loaded.connections]);
-        if (await loaded.backend.beforeChange()) {
+    await this.transitions.run(
+      { pluginId, operation: "renderer-recovery", activationId },
+      async (handle) => {
+        const loaded = this.modules.get(pluginId);
+        if (loaded === undefined || loaded.activationId !== activationId) return;
+        await handle.wait(
+          "wait-connections",
+          () => Promise.allSettled([...loaded.connections]),
+          this.observation(loaded),
+        );
+        if (
+          await handle.wait(
+            "review-change",
+            () => loaded.backend.beforeChange(),
+            this.observation(loaded),
+          )
+        ) {
           this.errors.set(
             pluginId,
             `Plugin UI could not load. Active work was retained; confirm an update or removal to stop it. ${error.slice(0, 1024)}`,
           );
-          this.changing.delete(pluginId);
-          return await this.changed();
+          return;
         }
-        await loaded.backend.prepareUnload("update");
-        await Promise.allSettled([...loaded.requests]);
-        const previous = await this.options.store.rollback(pluginId);
+        await this.prepareUnload(loaded, "update", handle);
+        handle.assertCurrent();
+        const previous = await handle.wait(
+          "rollback-storage",
+          async () => {
+            const restored = await this.options.store.rollback(pluginId);
+            if (await this.inventory.refresh())
+              handle.phase("rollback-storage", { commit: "confirmed" });
+            return restored;
+          },
+          { commit: "in-progress" },
+        );
         this.modules.delete(pluginId);
         let rollbackError: string | undefined;
         try {
-          await this.retire(loaded);
-          if (previous !== undefined) this.activate(await this.load(previous));
+          await handle.wait(
+            "retire-previous",
+            () => retirePluginBackend(loaded),
+            this.observation(loaded),
+          );
+          if (previous !== undefined) {
+            const restored = await handle.wait("load-candidate", () => this.load(previous, handle));
+            handle.phase("activate-candidate", this.observation(restored));
+            this.activate(restored);
+          }
         } catch (failure) {
           rollbackError = summary(failure);
         }
@@ -902,12 +908,9 @@ export class PluginRuntime implements PluginRuntimePort {
           pluginId,
           `Plugin UI could not load.${rollbackError ? ` Recovery failed: ${rollbackError}.` : previous ? " The previous version was restored." : " Retry activation in Preferences > Plugins."} ${error.slice(0, 1024)}`,
         );
-        this.changing.delete(pluginId);
-        return await this.changed();
-      } finally {
-        this.changing.delete(pluginId);
-      }
-    });
+      },
+    );
+    return this.inventory.snapshot();
   }
 
   async restart(): Promise<void> {
@@ -923,44 +926,57 @@ export class PluginRuntime implements PluginRuntimePort {
 
   async prepareExit(): Promise<PluginExitPrompt | null> {
     await this.start();
-    return this.serial(async () => {
-      try {
-        for (const [pluginId, loaded] of this.modules) {
-          if (this.exitResolved.has(pluginId)) continue;
-          const prompt = await loaded.backend.beforeExit();
-          if (prompt !== undefined) {
-            this.exitPrompted.set(pluginId, loaded.activationId);
-            return { ...prompt, pluginId };
+    try {
+      return await this.transitions.reviewExit(
+        [...this.modules.values()].map((loaded) => ({
+          pluginId: loaded.installation.manifest.id,
+          operation: "review-exit" as const,
+          activationId: loaded.activationId,
+        })),
+        async (handles) => {
+          for (const [pluginId, handle] of handles) {
+            const loaded = this.modules.get(pluginId);
+            if (loaded === undefined || this.exitResolved.has(pluginId)) continue;
+            const prompt = await handle.wait(
+              "review-exit",
+              () => loaded.backend.beforeExit(),
+              this.observation(loaded),
+            );
+            if (prompt !== undefined) {
+              this.exitPrompted.set(pluginId, loaded.activationId);
+              return { ...prompt, pluginId };
+            }
           }
-        }
-        return null;
-      } catch (error) {
-        this.exitResolved.clear();
-        throw error;
-      }
-    });
+          return null;
+        },
+      );
+    } catch (error) {
+      this.exitResolved.clear();
+      throw error;
+    }
   }
 
   async resolveExit(pluginId: string, action: string): Promise<boolean> {
     parsePluginId(pluginId);
     await this.start();
-    return this.serial(async () => {
-      const loaded = await this.requirePlugin(pluginId);
-      if (this.exitPrompted.get(pluginId) !== loaded.activationId)
+    return this.transitions.run({ pluginId, operation: "resolve-exit" }, async (handle) => {
+      const loaded = this.modules.get(pluginId);
+      if (loaded === undefined || this.exitPrompted.get(pluginId) !== loaded.activationId)
         throw problem(
           "The plugin changed after this exit prompt. Review its current work before exiting.",
         );
-      this.changing.add(pluginId);
       try {
-        const allowed = await loaded.backend.resolveExit(action);
+        const allowed = await handle.wait(
+          "resolve-exit",
+          () => loaded.backend.resolveExit(action),
+          this.observation(loaded),
+        );
         if (allowed) this.exitResolved.add(pluginId);
         else this.exitResolved.clear();
         return allowed;
       } catch (error) {
         this.exitResolved.clear();
         throw error;
-      } finally {
-        this.changing.delete(pluginId);
       }
     });
   }
@@ -995,20 +1011,35 @@ export class PluginRuntime implements PluginRuntimePort {
 
   close(): Promise<void> {
     this.deliveryController.close();
+    this.transitions.beginClose();
     this.closing ??= (async (): Promise<void> => {
       const networkClosing = this.network.close();
       void networkClosing.catch(() => undefined);
       if (this.starting !== undefined) await this.starting;
-      await this.mutations;
+      await this.transitions.settled();
       const results = await Promise.allSettled([
         networkClosing,
-        ...[...this.modules.values()].map((loaded) => this.retire(loaded)),
+        ...[...this.modules.values()].map((loaded) =>
+          this.transitions.observeShutdown(
+            {
+              pluginId: loaded.installation.manifest.id,
+              operation: "shutdown",
+              activationId: loaded.activationId,
+            },
+            (handle) =>
+              handle.wait(
+                "close-backend",
+                () => retirePluginBackend(loaded),
+                this.observation(loaded),
+              ),
+          ),
+        ),
       ]);
       this.modules.clear();
       this.listeners.clear();
-      this.changeListeners.clear();
+      this.publish();
+      this.inventory.close();
       this.confirmations.clear();
-      this.mutationIntents.clear();
       this.exitPrompted.clear();
       const failures = results.filter(
         (result): result is PromiseRejectedResult => result.status === "rejected",

@@ -9,7 +9,9 @@ import type {
   PluginPackagePublisher,
   PluginPackageReference,
   PluginSnapshot,
+  PluginTransition,
 } from "../../../plugins/contracts";
+import { PLUGIN_TRANSITION_OPERATIONS, PLUGIN_TRANSITION_STAGES } from "../../../plugins/contracts";
 import {
   comparePluginVersions,
   parsePluginId,
@@ -227,6 +229,87 @@ function inspection(value: unknown): PluginPackageInspection | null {
     ...(reason === undefined ? {} : { reason }),
   };
 }
+function transition(value: unknown, pluginId: string): PluginTransition {
+  const input = record(value, "plugin.transition");
+  exactKeys(
+    input,
+    [
+      "operationId",
+      "pluginId",
+      "activationId",
+      "operation",
+      "stage",
+      "state",
+      "startedAt",
+      "stageStartedAt",
+      "outstandingRequests",
+      "outstandingConnections",
+      "commit",
+    ],
+    "plugin.transition",
+  );
+  const uuid = (value: unknown, path: string): string => {
+    const result = text(value, path, 36);
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(result))
+      throw new HostContractValidationError(path, "must be a canonical UUID");
+    return result;
+  };
+  const transitionId = id(input.pluginId, "plugin.transition.pluginId");
+  if (transitionId !== pluginId)
+    throw new HostContractValidationError("plugin.transition.pluginId", "must match its plugin");
+  const stage = declaredValue(input.stage, PLUGIN_TRANSITION_STAGES, "plugin.transition.stage");
+  const state = declaredValue(
+    input.state,
+    ["queued", "running", "waiting"] as const,
+    "plugin.transition.state",
+  );
+  const commit = declaredValue(
+    input.commit,
+    ["not-started", "in-progress", "confirmed"] as const,
+    "plugin.transition.commit",
+  );
+  const startedAt = canonicalIsoTimestamp(input.startedAt, "plugin.transition.startedAt");
+  const stageStartedAt = canonicalIsoTimestamp(
+    input.stageStartedAt,
+    "plugin.transition.stageStartedAt",
+  );
+  if (
+    (stage === "queued") !== (state === "queued") ||
+    (state === "queued" && commit !== "not-started")
+  )
+    throw new HostContractValidationError("plugin.transition", "has inconsistent queued state");
+  if (Date.parse(stageStartedAt) < Date.parse(startedAt))
+    throw new HostContractValidationError(
+      "plugin.transition.stageStartedAt",
+      "must not precede its operation",
+    );
+  return {
+    operationId: uuid(input.operationId, "plugin.transition.operationId"),
+    pluginId: transitionId,
+    ...(input.activationId === undefined
+      ? {}
+      : { activationId: uuid(input.activationId, "plugin.transition.activationId") }),
+    operation: declaredValue(
+      input.operation,
+      PLUGIN_TRANSITION_OPERATIONS,
+      "plugin.transition.operation",
+    ),
+    stage,
+    state,
+    startedAt,
+    stageStartedAt,
+    outstandingRequests: nonNegativeInteger(
+      input.outstandingRequests,
+      "plugin.transition.outstandingRequests",
+    ),
+    outstandingConnections: nonNegativeInteger(
+      input.outstandingConnections,
+      "plugin.transition.outstandingConnections",
+    ),
+    commit,
+  };
+}
+
 function installation(value: unknown): PluginInstallation {
   const input = record(value, "plugin");
   exactKeys(
@@ -242,6 +325,7 @@ function installation(value: unknown): PluginInstallation {
       "error",
       "rendererUrl",
       "stylesUrl",
+      "transition",
     ],
     "plugin",
   );
@@ -249,8 +333,9 @@ function installation(value: unknown): PluginInstallation {
   const activationId = optionalText(input, "activationId", "plugin", 128);
   const rendererUrl = optionalText(input, "rendererUrl", "plugin", 4096);
   const stylesUrl = optionalText(input, "stylesUrl", "plugin", 4096);
+  const pluginId = id(input.id, "plugin.id");
   return {
-    id: id(input.id, "plugin.id"),
+    id: pluginId,
     ...(activationId === undefined ? {} : { activationId }),
     pending:
       input.pending === null
@@ -269,6 +354,9 @@ function installation(value: unknown): PluginInstallation {
     ...(error === undefined ? {} : { error }),
     ...(rendererUrl === undefined ? {} : { rendererUrl }),
     ...(stylesUrl === undefined ? {} : { stylesUrl }),
+    ...(input.transition === undefined
+      ? {}
+      : { transition: transition(input.transition, pluginId) }),
   };
 }
 function snapshot(value: unknown): PluginSnapshot {
