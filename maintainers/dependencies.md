@@ -27,6 +27,28 @@ evidence was assessed; they are not a claim that upstream status can never chang
 This root-lock policy does not validate the separate promotional-media dependency
 graph under `website/promo`.
 
+### Qualify the dependency graph that changed
+
+The fixture and promotional tooling have separate installation inputs. Passing
+root checks alone does not qualify an update to either graph:
+
+- **Kafka OAuth fixture:** rebuild the [OAuth image](../aio-kafka/images/oauth-service/Dockerfile)
+  from its digest-pinned Python base and exact requirements, then run `pip check`
+  inside that image. Exercise valid and invalid credentials against the running
+  service and verify its RS256 token through its published JWKS, including the
+  expected issuer, audience and expiry. Record the actual image ID and input
+  hashes; tests against a previously running image do not validate changed pins.
+- **Promotional media:** install the separate lock with
+  `npm --prefix website/promo ci`, then exercise its native image processing and
+  render a bounded sample with the installed renderer. Verify decoded frames,
+  dimensions and duration. `npm run docs -- qualify` checks the documentation and
+  existing media playback; it does not install or execute the promotional
+  renderer. A sample render qualifies the changed tooling, not a new public video.
+
+Record the tested platform and dependency versions, relevant audit findings and
+any untested platforms. Keep disposable qualification outputs separate from
+approved documentation assets.
+
 ## Automated proposals
 
 [Dependabot configuration](../.github/dependabot.yml) checks weekly for updates:
