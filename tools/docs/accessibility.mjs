@@ -10,7 +10,9 @@ export async function prepareAccessibilityAudit(page) {
       ?.shadowRoot?.querySelector(".l");
     return (
       modal &&
-      modal.getAnimations().every((animation) => animation.playState !== "running") &&
+      modal
+        .getAnimations({ subtree: true })
+        .every((animation) => animation.playState !== "running") &&
       [...document.querySelectorAll(".md-sidebar--primary, .md-overlay")].every((element) =>
         element
           .getAnimations({ subtree: true })
