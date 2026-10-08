@@ -158,9 +158,12 @@ it.each(["eda", "nsp"] as const)(
     if (component === "nsp")
       expect(notes).toContain("Included resource: nsp-capture.workflow.yaml (SHA256");
     // The CLI has no environment mechanism to trust an ephemeral fixture signer.
-    await expect(execute(process.execPath, args, { timeout: 15000 })).rejects.toThrow(
-      /publisher|signature/u,
-    );
+    await expect(
+      execute(process.execPath, args, {
+        timeout: 15000,
+        env: { ...process.env, GITHUB_ACTIONS: "false" },
+      }),
+    ).rejects.toThrow(/publisher|signature/u);
     await expect(readFile(files.output)).rejects.toMatchObject({ code: "ENOENT" });
   },
 );
@@ -201,7 +204,7 @@ it.each(["component", "version", "sourceSha", "tag", "schemaVersion", "markdown"
           files.tag,
           files.changelog,
         ],
-        { timeout: 15000 },
+        { timeout: 15000, env: { ...process.env, GITHUB_ACTIONS: "false" } },
       ),
     ).rejects.toThrow("Generated release notes do not match");
     await expect(readFile(files.output)).rejects.toMatchObject({ code: "ENOENT" });
@@ -238,7 +241,7 @@ it("includes generated changes alongside the reviewed desktop summary and instal
       files.tag,
       files.changelog,
     ],
-    { timeout: 15000 },
+    { timeout: 15000, env: { ...process.env, GITHUB_ACTIONS: "false" } },
   );
   const notes = await readFile(files.output, "utf8");
   expect(notes).toContain("Known limitations.");

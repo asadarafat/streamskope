@@ -305,7 +305,7 @@ function liveSummary(stage: LocalStage, data: Record<string, unknown>): Summary 
   const target = stage === "eda-live" ? data.targetVersion : object(data.target ?? {}).product;
   assert(
     (data.outcome === "failed" && target === undefined) ||
-      (typeof target === "string" && /^\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?$/u.test(target)),
+      (typeof target === "string" && /^v?\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?$/u.test(target)),
     "Live evidence needs the API target version.",
   );
   assert(
@@ -530,7 +530,7 @@ function validateSummary(stage: LocalStage, summary: Summary): void {
     assert(
       (summary.outcome === "failed" && summary.targetVersion === null) ||
         (typeof summary.targetVersion === "string" &&
-          /^\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?$/u.test(summary.targetVersion)),
+          /^v?\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?$/u.test(summary.targetVersion)),
     );
     assert(
       Array.isArray(summary.checkIds) &&

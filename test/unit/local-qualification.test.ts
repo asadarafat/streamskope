@@ -119,7 +119,7 @@ async function report(root: string, stage: LocalStage, live = false): Promise<vo
             outcome: "passed",
             checkedAt: timestamp,
             checks: LOCAL_LIVE_CHECKS[stage],
-            targetVersion: "26.8.2",
+            targetVersion: "v26.8.2",
             target: { product: "26.4.0", raw: "private-build-description" },
             apiCertificateVerification: true,
             apiTrust: "provided-ca",
@@ -161,7 +161,7 @@ it("retains successful source-bound checks and explicit unavailable live tests i
   expect(first.stages[3]!.reason).toBe("not-configured");
 });
 
-it("publishes only allowed live measurements, actual API versions and certificate policies", async () => {
+it("preserves the API v-prefixed EDA release in validated live evidence without exposing private data", async () => {
   const root = await fixture();
   const receipt = await successful(root, true);
   await validateLocalQualificationBundle(bundle(root, receipt));
@@ -169,7 +169,7 @@ it("publishes only allowed live measurements, actual API versions and certificat
   expect(projection).not.toMatch(/private|password|endpoint|payload|ownedTopic|knownRecord/u);
   expect(receipt.stages[3]!.reports[0]!.summary).toMatchObject({
     checks: LOCAL_LIVE_CHECKS["eda-live"].length,
-    targetVersion: "26.8.2",
+    targetVersion: "v26.8.2",
     apiTrust: "provided-ca",
   });
   expect(receipt.stages[4]!.reports[0]!.summary).toMatchObject({
@@ -177,6 +177,10 @@ it("publishes only allowed live measurements, actual API versions and certificat
     targetVersion: "26.4.0",
     scope: "development-host-plugin-lifecycle",
   });
+  const eda: unknown = JSON.parse(
+    await readFile(join(bundle(root, receipt), "evidence/eda-live.json"), "utf8"),
+  );
+  expect(eda).toMatchObject({ summary: { targetVersion: "v26.8.2" } });
   const shared = await readFile(join(bundle(root, receipt), "evidence/shared.json"), "utf8");
   expect(shared).not.toContain("never-export-this");
 });
