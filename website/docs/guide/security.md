@@ -73,7 +73,7 @@ the enclosed package; an embedded key or an adjacent checksum cannot establish
 that trust. Older repository-delivered packages remain supported through their
 existing integrity checks. File imports require that signed portable format; older catalog archives cannot
 be imported from a user-supplied file. Use the [offline installation guide](../plugins/offline.md)
-for the documented desktop, and check its availability notice before using an older installer.
+for the documented StreamSkope release, and check its availability notice before using an older installer.
 
 The plugin backend runs as trusted code inside the application host
 with that process's permissions. It is not a sandbox for arbitrary extensions.

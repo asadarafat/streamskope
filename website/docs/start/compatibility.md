@@ -1,7 +1,8 @@
 # Check compatibility before connecting
 
 The capabilities below describe this source snapshot. The site banner identifies
-its desktop release or marks it as development documentation. Plugin requirements differ by generation,
+its StreamSkope release or marks it as development documentation. Desktop and
+browser delivery share that application version. Plugin requirements differ by generation,
 as described below. Implemented means
 the application exposes the capability; it does not qualify every vendor/version.
 See [qualification evidence](../guide/qualification.md) for what was actually exercised.
@@ -60,7 +61,8 @@ server-side network connections and an encrypted, browser-unlocked profile vault
 It starts locked, expires sessions after two hours, and disconnects when explicitly
 locked. Its direct plugin networking and signed-file imports are separate from
 Electron's native proxy service. Offline policy is durable; custom proxy mode is
-unavailable. A Linux-host test does not establish Mac browser/VM reachability.
+unavailable. A Linux-host test does not establish browser reachability from a
+Mac or Windows host outside that Linux environment.
 
 ## Plugin compatibility declarations
 

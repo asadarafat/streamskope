@@ -2,34 +2,37 @@
 <meta name="streamskope-docs-revision" content="{{ config.extra.documentation.revision }}" />
 {% endblock %} {% block content %}
 <aside class="sk-version" aria-label="Documentation version">
-  <p>{{ config.extra.documentation.status }}</p>
+  <p>
+    {% if config.extra.documentation.status == 'Published documentation' %}Documentation for
+    StreamSkope
+    <a href="{{ ('releases/' ~ config.extra.desktop_release ~ '/') | url }}"
+      ><strong>{{ config.extra.desktop_release }}</strong></a
+    >.{% else %}{{ config.extra.documentation.status }}{% endif %}
+  </p>
   {% if page.meta.release_tag %}
   <p>
     {% if page.meta.release_tag in config.extra.release_navigation.pending_tags %}Release preview:{%
     elif page.meta.release_tag != config.extra.desktop_release %}Historical release notes:{% else
     %}Release notes:{% endif %}
     <strong>{{ page.meta.release_tag }}</strong>.
-    <a href="{{ 'releases/' | url }}">Compare desktop releases</a>.
+    <a href="{{ 'releases/' | url }}">Compare releases</a>.
   </p>
   {% elif page.meta.unreleased or config.extra.documentation.source_release == 'development' %}
   <p>
-    Unreleased source changes; release version not yet assigned. Published desktop:
+    Unreleased source changes; release version not yet assigned. Latest release:
     <strong>{{ config.extra.desktop_release }}</strong>.
     <a href="{{ 'start/compatibility/' | url }}">Compatibility</a> ·
     <a href="{{ 'releases/' | url }}">Release history</a>.
   </p>
   {% elif config.extra.documentation.status != 'Published documentation' %}
   <p>
-    Preview for desktop <strong>{{ config.extra.documentation.source_release }}</strong>. Published
-    downloads: <strong>{{ config.extra.desktop_release }}</strong>.
+    Preview for StreamSkope <strong>{{ config.extra.documentation.source_release }}</strong>. Latest
+    release: <strong>{{ config.extra.desktop_release }}</strong>.
     <a href="{{ 'releases/' | url }}">Release history</a>.
   </p>
   {% else %}
   <p>
-    {% if page.meta.plugin_scope %}Desktop release:{% else %}Applies to desktop{% endif %}
-    <a href="{{ ('releases/' ~ config.extra.desktop_release ~ '/') | url }}"
-      ><strong>{{ config.extra.desktop_release }}</strong></a
-    >. <a href="{{ 'plugins/' | url }}">Plugin requirements</a> ·
+    <a href="{{ 'plugins/' | url }}">Plugin requirements</a> ·
     <a href="{{ 'start/compatibility/' | url }}">Compatibility</a> ·
     <a href="{{ 'releases/' | url }}">Release history</a>.
   </p>

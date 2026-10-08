@@ -1,8 +1,8 @@
 # Release history
 
 Choose a version to read its features, fixes, upgrade instructions and recorded
-qualification limits. The sidebar shows the five newest published stable desktop
-releases. This overview includes the complete desktop history, including prereleases.
+qualification limits. The sidebar shows the five newest releases, excluding
+prereleases. This overview includes the complete StreamSkope history, including prereleases.
 
 <!-- release-history -->
 
@@ -14,16 +14,17 @@ filenames and source identity. Obtain historical installers and `SHA256SUMS` fro
 that exact tagged [GitHub release](https://github.com/asadarafat/streamskope/releases).
 A tag or draft does not establish download availability.
 
-The public guide describes the highest published stable desktop release.
+The public guide describes the latest StreamSkope release, excluding prereleases.
 Opening an older release note shows historical changes; it does not switch the
 whole guide to that version. Check the version notice on each page and the
 [compatibility matrix](../start/compatibility.md) before following a procedure.
 
-## Desktop and plugins release independently
+## StreamSkope and plugins release independently
 
-Desktop versions use Semantic Versioning. EDA Connector and NSP Connector each have
-their own versions and declared desktop, plugin API and target-system compatibility.
-A desktop release does not publish new plugin packages or widen existing package
+StreamSkope versions use Semantic Versioning; desktop and browser delivery share
+the application version. EDA Connector and NSP Connector each have their own
+versions and declared StreamSkope, plugin API and target-system compatibility.
+A StreamSkope release does not publish new plugin packages or widen existing package
 compatibility. See [plugin versioning and compatibility](../plugins/versioning.md).
 
 <!-- plugin-release-history -->
@@ -48,5 +49,5 @@ environments and retained results.
 
 Maintainers can find the release process and changelog selection rules in the
 [contributor guide](https://github.com/asadarafat/streamskope/blob/main/CONTRIBUTING.md#release-notes).
-Documentation is published with stable desktop releases; PR merges qualify source
+Documentation is published with StreamSkope releases, excluding prereleases; PR merges qualify source
 documentation without replacing the public site.

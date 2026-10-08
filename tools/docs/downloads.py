@@ -82,10 +82,13 @@ def browser_installation_capability(root):
                 or source.count(BROWSER_INSTALLER_MARKER) != 1
                 or not declares(source, "browser_installer")):
             raise ValueError("Browser quickstart requires one installer marker and browser_installer: true")
-        manual = docs / "guide/browser-host.md"
-        if (containers != [(manual, 1)]
-                or not declares(pages.get(manual, ""), "container_downloads")):
-            raise ValueError("Browser operations guide requires one manual download marker and container_downloads: true")
+        # Earlier installer releases kept manual deployment in the operations
+        # guide. Newer docs separate that reference from everyday browser use.
+        manual_pages = {docs / "guide/browser-deployment.md", docs / "guide/browser-host.md"}
+        if (len(containers) != 1 or containers[0][0] not in manual_pages
+                or containers[0][1] != 1
+                or not declares(pages[containers[0][0]], "container_downloads")):
+            raise ValueError("Browser deployment reference requires one manual download marker and container_downloads: true")
         return True
     if containers != [(quickstart, 1)]:
         raise ValueError("Historical Containerlab guide requires exactly one browser download marker")

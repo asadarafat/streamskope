@@ -29,12 +29,11 @@ automated checks and identifies workflows that still need recorded evidence.
 
 Prefer a browser workbench on a Linux Docker host? Follow
 [Install the browser workbench](https://asadarafat.github.io/streamskope/start/containerlab/).
-The documented release determines its available installation method. Published
-browser delivery provides a public AMD64/ARM64 GHCR image and a Containerlab
-topology pinned to its version and digest; use the
-[manual deployment guide](website/docs/guide/browser-host.md)
-for those files. Saved credentials use a browser-unlocked vault. Offline delivery
-includes Docker save archives and a separate local-image topology.
+The installer downloads the released Linux AMD64/ARM64 image from public GHCR;
+you do not need to build from source. Saved credentials use a browser-unlocked
+vault. See [Use the browser workbench](website/docs/guide/browser-host.md) to
+reopen and maintain it, or [manual deployment](website/docs/guide/browser-deployment.md)
+for offline files and custom hosting.
 
 StreamSkope also includes **NATS** as a built-in messaging provider.
 Open **Connection Profiles → Add connection → NATS server** to save a
@@ -81,7 +80,7 @@ and latency probes can write to your services.
 ## Documentation and help
 
 These repository guides describe this checkout. The
-[published documentation](https://asadarafat.github.io/streamskope/) is built from the exact published desktop release source. Its version notice and
+[published documentation](https://asadarafat.github.io/streamskope/) is built from the exact published StreamSkope release source. Its version notice and
 downloads identify that release; unreleased changes stay in repository/local previews.
 Installer availability is verified before the site is published.
 

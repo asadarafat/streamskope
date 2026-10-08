@@ -16,7 +16,7 @@ const evidence = resolve(".artifacts/website");
 const desktopRelease = /^desktop_release = "([^"]+)"$/mu.exec(
   await readFile("website/zensical.toml", "utf8"),
 )?.[1];
-assert(desktopRelease, "The site declares its documented desktop release");
+assert(desktopRelease, "The site declares its documented StreamSkope release");
 const developmentSource =
   JSON.parse(await readFile("package.json", "utf8")).version === "0.0.0-dev";
 const published = process.env.STREAMSKOPE_DOCS_PUBLISH === "1";
@@ -114,19 +114,26 @@ try {
       assert.equal(
         (await installer.locator("code").innerText()).trim(),
         "curl -fsSL https://github.com/asadarafat/streamskope/releases/latest/download/install-browser-workbench.sh | sudo -E bash",
-        "Published onboarding uses the stable latest installer entry point",
+        "Published onboarding uses the latest release installer entry point",
       );
     }
-    const manual = content.locator('a[href$="/guide/browser-host/"]').first();
-    await expect(manual).toBeVisible();
-    await manual.click();
+    await expect(installer.locator('a[href$="browser-deployment/"]')).toBeVisible();
+    const everyday = content.locator('a[href$="browser-host/"]').first();
+    await expect(everyday).toBeVisible();
+    await everyday.click();
     await page.waitForURL(base + "guide/browser-host/");
     await expect(page.locator(".md-path")).toContainText("Operate safely");
     await expect(
       page
         .locator(".md-sidebar--primary")
-        .getByRole("link", { name: "Operate the browser host", exact: true }),
+        .getByRole("link", { name: "Use the browser workbench", exact: true }),
     ).toHaveAttribute("aria-current", "page");
+    const advanced = content.locator('a[href$="browser-deployment/"]').first();
+    await expect(advanced).toBeVisible();
+    await advanced.click();
+    await page.waitForURL(base + "guide/browser-deployment/");
+    await expect(page.locator(".md-path")).toContainText("Advanced");
+    await expect(page.locator('.md-sidebar--primary a[aria-current="page"]')).toHaveCount(1);
     await page.goto(base + "guide/recovery/");
     await content
       .getByRole("link", { name: "browser host backup and restore", exact: true })
@@ -136,10 +143,8 @@ try {
     await page.goto(quickstart + "#back-up-and-restore");
     await page.waitForURL(quickstart + "#back-up-and-restore");
     await expect(page.locator('[id="back-up-and-restore"]')).toHaveCount(1);
-    await content
-      .getByRole("link", { name: "browser host backup and restore", exact: true })
-      .click();
-    await page.waitForURL(base + "guide/browser-host/#back-up-and-restore");
+    await content.getByRole("link", { name: "complete backup", exact: true }).click();
+    await page.waitForURL(base + "guide/browser-deployment/#back-up-and-restore");
     await expect(page.locator('[id="back-up-and-restore"]')).toHaveCount(1);
 
     // Exercise the actual template and site enhancement with synthetic uploaded
@@ -199,6 +204,8 @@ try {
             await page.locator(`label[title="Switch to ${theme} mode"]`).click();
           await expect(installer).toHaveAttribute("data-desktop-release", fixtureTag);
           await expect(installer.locator("code")).toHaveText(command);
+          await expect(installer).toContainText("A new installation uses the latest release.");
+          await expect(installer).toContainText("preserves the installed version and private data");
           await installer.scrollIntoViewIfNeeded();
           const copy = installer.getByRole("button", { name: "Copy to clipboard", exact: true });
           await expect(copy).toBeVisible();
@@ -229,6 +236,7 @@ try {
     for (const [route, label] of [
       [quickstart, "browser-quickstart"],
       [base + "guide/browser-host/", "browser-host"],
+      [base + "guide/browser-deployment/", "browser-deployment"],
     ]) {
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
@@ -368,7 +376,13 @@ try {
     assert(await page.locator("h1").first().innerText());
     const versionNotice = page.getByRole("complementary", { name: "Documentation version" });
     assert(await versionNotice.isVisible(), `${route}: release context is visible`);
-    assert.match(await versionNotice.innerText(), /(?:Development|Published) documentation/);
+    if (published) {
+      await expect(versionNotice.locator("p").first()).toHaveText(
+        `Documentation for StreamSkope ${desktopRelease}.`,
+      );
+    } else {
+      await expect(versionNotice).toContainText("Development documentation");
+    }
     const sourcePath = route ? route.replace(/\/$/u, "") : "index";
     const source = await readFile(`website/docs/${sourcePath}.md`, "utf8").catch(() =>
       readFile(`website/docs/${route}index.md`, "utf8"),
@@ -391,9 +405,9 @@ try {
       `${route}: the version notice matches its documented release status`,
     );
     assert.equal(
-      (await versionNotice.innerText()).includes("Applies to desktop"),
-      published && !unreleased && releaseTag === undefined && pluginScope === undefined,
-      `${route}: only a published release snapshot can claim desktop applicability`,
+      (await versionNotice.innerText()).includes("Documentation for StreamSkope"),
+      published,
+      `${route}: only a published release snapshot claims a documented StreamSkope version`,
     );
     if (published) {
       assert.doesNotMatch(
@@ -415,7 +429,9 @@ try {
         if (!published) await expect(row).toContainText("Availability not checked in this preview");
       }
       if (published) {
-        await expect(versionNotice).toContainText(`Desktop release: ${desktopRelease}`);
+        await expect(versionNotice).toContainText(
+          `Documentation for StreamSkope ${desktopRelease}`,
+        );
         await expect(pluginNotice).toContainText("Catalog checked");
         await expect(pluginNotice).not.toContainText("Availability not checked in this preview");
       }

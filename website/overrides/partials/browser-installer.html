@@ -13,9 +13,9 @@
     code shown in that terminal to create your vault. An existing vault asks for its passphrase.
   </p>
   <p>
-    A new installation uses the latest stable desktop release. The installer verifies that release's
-    matching files. Repeating the command preserves the installed version and private data.
-    <a href="{{ 'guide/browser-host/' | url }}">Manual installation and operations</a>.
+    A new installation uses the latest release. The installer verifies that release's matching
+    files. Repeating the command preserves the installed version and private data.
+    <a href="{{ 'guide/browser-deployment/' | url }}">Advanced deployment and operations</a>.
   </p>
   {% else %}
   <p>
@@ -23,7 +23,7 @@
     has no verified one-command installer.{% else %}This source preview does not verify published
     installer availability.{% endif %} Check
     <a href="{{ downloads.release_url | e }}">{{ downloads.tag | e }} release assets</a> or use the
-    <a href="{{ 'guide/browser-host/' | url }}">manual installation instructions</a>.
+    <a href="{{ 'guide/browser-deployment/' | url }}">advanced installation instructions</a>.
   </p>
   {% endif %}
 </section>
