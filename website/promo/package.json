@@ -11,6 +11,6 @@
     "render": "node render-themes.mjs"
   },
   "devDependencies": {
-    "hyperframes": "0.8.40"
+    "hyperframes": "0.8.133"
   }
 }
