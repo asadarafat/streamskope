@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { assertDependencyMaintenance } from "./dependency-maintenance";
+
 const ALLOWED_LICENSES = new Set([
   "0BSD",
   "Apache-2.0",
@@ -169,9 +171,14 @@ async function main(): Promise<void> {
     readFile(resolve("package.json"), "utf8"),
     readFile(resolve("package-lock.json"), "utf8"),
   ]);
-  const result = assertDependencyPolicy(JSON.parse(manifest), JSON.parse(lock));
+  const lockValue: unknown = JSON.parse(lock);
+  const result = assertDependencyPolicy(JSON.parse(manifest), lockValue);
+  const maintenance = await assertDependencyMaintenance(resolve("."), lockValue);
   process.stdout.write(
     `Verified ${String(result.directDependencyCount)} direct dependencies and ${String(result.packageCount)} locked packages across licenses: ${result.licenses.join(", ")}.\n`,
+  );
+  process.stdout.write(
+    `Verified ${String(maintenance.mitigationCount)} reviewed dependency mitigations across ${String(maintenance.lockedInstanceCount)} locked instances.\n`,
   );
 }
 

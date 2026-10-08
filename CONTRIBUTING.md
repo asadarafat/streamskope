@@ -357,92 +357,24 @@ and `execute()` inference enforce the existing wire result shapes; this type ref
 did not increment protocol 26. Runtime validation still checks result shapes and
 request identifiers at host boundaries.
 
-## Temporary Forge security backport
+## Dependency maintenance
 
-`node-forge@1.4.0` has no published fix for
-[GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv).
-StreamSkope applies the narrow RSA validation change from
-[upstream PR #1152](https://github.com/digitalbazaar/forge/pull/1152), pinned to
-commit `ceba34402e329f0365134f23fe19898756527d65`. This is a local backport of an
-unmerged upstream patch, not a new upstream version. Registry versions, lockfile
-integrity, and the dependency's existing licenses remain unchanged.
+Follow the [dependency maintenance runbook](maintainers/dependencies.md) for
+updates, ownership, upstream evidence, qualification and mitigation retirement.
+Weekly dependency proposals use the normal PR checks; package updates do not
+merge automatically or assign a product version.
 
-The `dev`, `build`, `check`, and `package` entry points apply the backport before
-using application dependencies. This also covers development dependency caches
-and the fresh production install used by native packaging. Packaging verifies the
-patched bytes again after extracting the final ASAR and records the hash in its
-verification report. `tools/check/forge-patch.ts` pins the entire original and
-patched RSA file hashes; unknown versions, changed files, missing copies, or
-unlisted dependency resolutions fail verification. No install lifecycle script
-or additional public npm command is needed.
+### Temporary Forge security backport
 
-Raw `npm audit` still reports the upstream advisory because the package retains
-its real version. `tools/check/audit.ts` runs the registry audit and accepts this
-specific advisory only after checking every installed affected copy against the
-backport hash. Indirect findings are accepted only when all their underlying
-advisories are accounted for. Other high/critical findings, malformed reports,
-and audit-service failures still fail CI. Signature regression tests demonstrate
-that stock Forge accepts the malformed signature and the patched copy rejects it;
-existing JKS/PKCS12 tests continue to qualify truststore handling.
+See [Forge backport scope and evidence](maintainers/dependencies.md#forge-security-backport).
 
-When a fixed upstream release is available, review and upgrade both direct and
-transitive Forge dependencies, remove the temporary patch hooks and advisory
-handling, restore the direct audit command, and retain the signature regression.
+### Temporary build dependency mitigations
 
-## Temporary build dependency mitigations
+See [build mitigations and the reviewed cache-policy candidate](maintainers/dependencies.md#build-dependency-mitigations).
 
-Two development dependencies currently have no published patched version:
-[braces 3.0.3](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) and
-[http-cache-semantics 4.2.0](https://github.com/advisories/GHSA-ch52-4w7c-c8xp).
-The former receives a depth guard in its parser and recursive AST walkers. The
-latter requires revalidation when cache safety reduced freshness to zero, even
-when a client permits stale responses. Positive-lifetime public cache entries
-retain normal stale-response behavior.
+### Temporary NATS runtime dependency corrections
 
-These are local mitigations, not upstream fixes. `check`, `build` and native
-`package` apply the pinned changes before using these build tools. The helper
-verifies locked package identity, development-only classification, full original
-and patched file hashes and actual dependency resolution. Repeated application
-is idempotent; changed or unlisted copies fail verification. Both packages remain
-excluded from production dependencies. This does not alter the Forge backport
-used by the desktop itself.
-
-The complete npm audit remains mandatory. Only these exact advisory/version/path
-combinations and indirect findings whose causes are all verified can be accounted
-for; new advisories and unverified copies still fail. Regression tests reproduce
-the stock stack overflow and unsafe cookie-cache reuse, then confirm the patched
-behavior. Once fixed upstream versions are qualified, remove the corresponding
-data, helper hooks and audit handling. Keep the regression tests.
-
-## Temporary NATS runtime dependency corrections
-
-The pinned public `@nats-io/transport-node` 3.4.0 SDK can leave its initial socket
-open when connection setup fails before it marks the transport connected. Real
-silent, delayed-INFO and stalled-TLS peers reproduce this through public `connect()`.
-That would make StreamSkope's cancellation and shutdown guarantees untrue.
-Its INFO-to-TLS upgrade also omits the selected host from Node's TLS options.
-For an IP destination, Node can then verify the default `localhost` identity and
-accept a trusted DNS-only certificate. An independent public TLS peer reproduces
-that mismatch while confirming the matching DNS identity succeeds.
-
-`tools/check/runtime-dependency-patch-data.ts` records a narrow exact-source
-correction against the [published transport source](https://github.com/nats-io/nats.js/blob/v3.4.0/transport-node/src/node_transport.ts).
-It retains the socket as soon as dialing begins and destroys it on early close,
-preserving existing handshake error observation and TLS verification. Early
-cleanup leaves the SDK's connected lifecycle notification untouched, so a failed
-address or server does not retire a subsequent valid fallback. This is a
-runtime lifecycle and TLS identity correction, separate from the build-only advisory mitigations.
-It grants no npm-audit exemption.
-The TLS upgrade passes the selected DNS name or IP as the verification host and
-preserves the SDK's DNS SNI value; verification cannot be disabled by profiles.
-
-`dev`, `check`, `build` and `package` apply and verify the allowlisted version,
-registry integrity, consumer resolution and complete source hashes. Unknown or
-altered copies fail closed. Qualification reproduces the stock failure, verifies
-idempotent correction, confirms fallback and TLS identity against independent
-peers, and exercises the public SDK in the bundled host. Remove
-the correction and its hooks once a qualified upstream release fixes these cases;
-retain the independent socket-lifecycle regression.
+See [NATS socket lifecycle and TLS identity corrections](maintainers/dependencies.md#nats-runtime-corrections).
 
 ## GitHub builds
 

@@ -1,5 +1,6 @@
 // Local exact-source mitigations, not upstream releases. See the linked advisories.
-// Remove after qualifying fixed upstream versions. Original dependency licenses remain intact.
+// Retire only after unpatched upstream behavior passes the owned regressions; see
+// dependency-maintenance.ts for the reviewed status and criteria. Original licenses remain intact.
 export const BUILD_DEPENDENCY_PATCHES = [
   {
     name: "braces",

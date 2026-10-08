@@ -1,0 +1,63 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      production-minor-patch:
+        applies-to: version-updates
+        dependency-type: production
+        update-types: [minor, patch]
+        exclude-patterns:
+          - node-forge
+          - "@nats-io/transport-node"
+          - braces
+          - http-cache-semantics
+      development-minor-patch:
+        applies-to: version-updates
+        dependency-type: development
+        update-types: [minor, patch]
+        exclude-patterns:
+          - node-forge
+          - "@nats-io/transport-node"
+          - braces
+          - http-cache-semantics
+  - package-ecosystem: npm
+    directory: /website/promo
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
+  - package-ecosystem: pip
+    directories:
+      - /website
+      - /aio-kafka/images/oauth-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
+  - package-ecosystem: gomod
+    directory: /vendors/streamskope/apps/capture/agent
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
