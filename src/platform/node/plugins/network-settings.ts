@@ -23,7 +23,8 @@ import type {
 } from "./network-transport";
 import { pluginProblem } from "./problem";
 
-const MAX_SETTINGS_BYTES = 32 * 1024;
+export const PLUGIN_NETWORK_SETTINGS_MAX_BYTES = 32 * 1024;
+const MAX_SETTINGS_BYTES = PLUGIN_NETWORK_SETTINGS_MAX_BYTES;
 const DEFAULT_CONFIGURATION: PluginNetworkConfiguration = {
   mode: "system",
   proxyUrl: null,
@@ -51,6 +52,47 @@ function object(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid plugin network settings.");
   return value as Record<string, unknown>;
+}
+
+export interface PluginNetworkSettingsDocument {
+  readonly formatVersion: 1;
+  readonly revision: number;
+  readonly configuration: PluginNetworkConfiguration;
+  readonly protectedCredentials?: string;
+}
+
+/** Shared persisted-envelope parser; transport support and decryption remain runtime-owned. */
+export function parsePluginNetworkSettingsDocument(value: unknown): PluginNetworkSettingsDocument {
+  const raw = object(value);
+  if (
+    raw.formatVersion !== 1 ||
+    typeof raw.revision !== "number" ||
+    !Number.isSafeInteger(raw.revision) ||
+    raw.revision < 0 ||
+    Object.keys(raw).some(
+      (key) =>
+        !["formatVersion", "revision", "configuration", "protectedCredentials"].includes(key),
+    )
+  )
+    throw new Error("Invalid plugin network settings metadata.");
+  const configuration = parsePluginNetworkConfiguration(raw.configuration);
+  if (
+    raw.protectedCredentials !== undefined &&
+    (typeof raw.protectedCredentials !== "string" ||
+      raw.protectedCredentials.length > 24 * 1024 ||
+      raw.protectedCredentials.length === 0 ||
+      Buffer.from(raw.protectedCredentials, "base64").toString("base64") !==
+        raw.protectedCredentials)
+  )
+    throw new Error("Invalid protected proxy credential envelope.");
+  return {
+    formatVersion: 1,
+    revision: raw.revision,
+    configuration,
+    ...(raw.protectedCredentials === undefined
+      ? {}
+      : { protectedCredentials: raw.protectedCredentials }),
+  };
 }
 
 /** Public configuration is durable; proxy credentials are protected or strictly session-only. */
@@ -134,7 +176,7 @@ export class PluginNetworkSettings {
       if (this.durableSettings) {
         try {
           await this.safePath(false);
-          const raw = object(
+          const raw = parsePluginNetworkSettingsDocument(
             JSON.parse(
               (
                 await readBoundedFile(this.options.path, MAX_SETTINGS_BYTES, {
@@ -143,32 +185,12 @@ export class PluginNetworkSettings {
               ).toString("utf8"),
             ),
           );
-          if (
-            raw.formatVersion !== 1 ||
-            typeof raw.revision !== "number" ||
-            !Number.isSafeInteger(raw.revision) ||
-            raw.revision < 0 ||
-            Object.keys(raw).some(
-              (key) =>
-                !["formatVersion", "revision", "configuration", "protectedCredentials"].includes(
-                  key,
-                ),
-            )
-          )
-            throw new Error("Invalid plugin network settings metadata.");
-          const configuration = parsePluginNetworkConfiguration(raw.configuration);
+          const configuration = raw.configuration;
           this.assertSupportedConfiguration(configuration);
           let credentials: Credentials | undefined;
           let protectedCredentials: string | undefined;
           if (raw.protectedCredentials !== undefined) {
-            if (
-              typeof raw.protectedCredentials !== "string" ||
-              raw.protectedCredentials.length > 24 * 1024 ||
-              raw.protectedCredentials.length === 0 ||
-              Buffer.from(raw.protectedCredentials, "base64").toString("base64") !==
-                raw.protectedCredentials ||
-              this.options.protector === undefined
-            )
+            if (this.options.protector === undefined)
               throw new Error("Protected proxy credentials are unavailable.");
             const decrypted = await this.options.protector.unprotect(
               Buffer.from(raw.protectedCredentials, "base64"),

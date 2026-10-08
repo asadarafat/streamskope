@@ -7,7 +7,13 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { readBoundedFile } from "../bounded-file";
 import type { ProfileProtectionCapability, ProfileProtector } from "../profile-protector";
 
-import { decryptVaultValue, deriveVaultKey, encryptVaultValue, VAULT_KDF } from "./vault-crypto";
+import {
+  assertVaultValueEnvelope,
+  decryptVaultValue,
+  deriveVaultKey,
+  encryptVaultValue,
+  VAULT_KDF,
+} from "./vault-crypto";
 
 const METADATA_BYTES = 4096;
 const VERIFIER = "StreamSkope passphrase vault v1";
@@ -150,7 +156,7 @@ function parseMetadata(contents: Buffer): VaultMetadata {
     throw new PassphraseVaultError("unavailable");
   base64(metadata.salt, 32);
   base64(metadata.vaultId, 16);
-  base64(metadata.verifier, 32 + Buffer.byteLength(VERIFIER));
+  assertVaultValueEnvelope(base64(metadata.verifier, 32 + Buffer.byteLength(VERIFIER)));
   return metadata as unknown as VaultMetadata;
 }
 

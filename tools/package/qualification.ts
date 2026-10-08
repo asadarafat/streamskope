@@ -21,6 +21,7 @@ import {
 
 import { releaseIdentity, type ReleaseComponent } from "./release-version";
 import {
+  browserInstallerTargets,
   validateBrowserInstallerEvidence,
   type BrowserInstallerEvidence,
 } from "./browser-installer-evidence";
@@ -259,14 +260,9 @@ export async function assembleReleaseQualification(options: {
         ).toString("utf8"),
       ),
     );
-    const image = object(manifest.registry).reference;
-    if (
-      typeof image !== "string" ||
-      manifest.version !== identity.version ||
-      manifest.sourceRevision !== source.commit
-    )
-      throw new Error("Browser manifest differs from the release source.");
-    for (const arch of ["amd64", "arm64"] as const) {
+    const targets = browserInstallerTargets(manifest, identity.version, source.commit);
+    for (const target of targets) {
+      const arch = target.platform.slice("linux/".length);
       const bytes = await readBoundedFile(
         join(
           options.installerDirectory,
@@ -278,10 +274,7 @@ export async function assembleReleaseQualification(options: {
       );
       browserInstallers.push(
         validateBrowserInstallerEvidence(JSON.parse(bytes.toString("utf8")), {
-          version: identity.version,
-          sourceRevision: source.commit,
-          platform: `linux/${arch}`,
-          image,
+          ...target,
           execution: options.execution,
         }),
       );

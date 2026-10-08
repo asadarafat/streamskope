@@ -44,6 +44,30 @@ afterEach(async () => {
 });
 
 describe("verified plugin delivery cache", () => {
+  it("inspects retained unindexed bytes without repairing provenance or touching metadata", async () => {
+    const { root, store } = await setup();
+    await store.packageCache.put(bytes(), reference().sha256, "official");
+    const index = join(root, ".packages", "index.json");
+    const original = await readFile(index);
+    expect((await store.packageCache.inspect()).indexed[0]?.trust).toBe("official");
+    expect(await readFile(index)).toEqual(original);
+    await rm(index);
+    expect(await store.packageCache.inspect()).toEqual({
+      indexed: [],
+      retainedDigests: [reference().sha256],
+    });
+    expect(await readdir(join(root, ".packages"))).toEqual([`${reference().sha256}.skope-plugin`]);
+  });
+  it("refuses damaged cache metadata without invoking the runtime repair path", async () => {
+    const { root, store } = await setup();
+    await store.packageCache.put(bytes(), reference().sha256, "official");
+    const index = join(root, ".packages", "index.json");
+    const corrupt = '{"formatVersion":99,"packages":[]}';
+    await writeFile(index, corrupt);
+    await expect(store.packageCache.inspect()).rejects.toThrow();
+    expect(await readFile(index, "utf8")).toBe(corrupt);
+    expect(await readdir(join(root, ".packages"))).toHaveLength(2);
+  });
   it("persists bounded private original release copies independently of installed packages", async () => {
     const { root, store } = await setup();
     expect(await store.packageCache.list()).toEqual([]);

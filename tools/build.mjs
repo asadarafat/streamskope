@@ -49,6 +49,11 @@ const entries = [
           input: resolve(repositoryRoot, "src/platform/node/browser-entry.ts"),
           name: "server",
         },
+        {
+          emptyOutDir: false,
+          input: resolve(repositoryRoot, "src/platform/node/browser-data-preflight-entry.ts"),
+          name: "data-preflight",
+        },
       ]
     : [
         {

@@ -11,7 +11,10 @@ import { prepareBrowserReleaseAssets } from "./browser-release";
 import { BROWSER_INSTALLER_NAME } from "./browser-installer";
 import { parseBrowserRegistryMetadata } from "./browser-registry-metadata";
 import { verifyBrowserContainer } from "./container-smoke";
-import { browserInstallerEvidence } from "./browser-installer-evidence";
+import {
+  browserInstallerEvidence,
+  type BrowserDataPreflightEvidence,
+} from "./browser-installer-evidence";
 
 interface CommandResult {
   readonly code: number;
@@ -107,6 +110,9 @@ export async function verifyBrowserInstaller(
     (process.env.EXPECTED_ARCH !== undefined && process.env.EXPECTED_ARCH !== architecture)
   )
     throw new Error("Installer qualification requires the selected native AMD64 or ARM64 host.");
+  const evidenceRoot = resolve(".artifacts/ci");
+  const evidenceFile = join(evidenceRoot, `browser-installer-${architecture}.json`);
+  await rm(evidenceFile, { force: true });
   const registry = parseBrowserRegistryMetadata(
     JSON.parse(await readFile(registryReceipt, "utf8")),
     version,
@@ -129,6 +135,7 @@ export async function verifyBrowserInstaller(
   const originalDockerContext = process.env.DOCKER_CONTEXT;
   let cleaned = false;
   let installationStarted = false;
+  let preflight: BrowserDataPreflightEvidence | undefined;
   try {
     // Empty credentials ensure this exercises public GHCR delivery, rather than
     // silently borrowing the maintainer's or release publisher's registry login.
@@ -235,20 +242,33 @@ with open(${JSON.stringify(fixtureCalls)},'a',encoding='utf8') as receipt:
       .split("\n")
       .map((line) => JSON.parse(line) as string);
     assert.deepEqual([...new Set(delivered)].sort(), Object.keys(deliveries).sort());
-    await verifyBrowserContainer(registry.reference, {
-      container,
-      data,
-      port: saved.port,
-      restart: async () => {
-        const vault = await readFile(join(data, "vault.json"));
-        const profiles = await readFile(join(data, "nats-profiles.json"));
-        const resumed = await install();
-        assert.ok(resumed.stdout.includes("Unlock"));
-        assert.deepEqual(await readFile(join(state, "installation.json")), installation);
-        assert.deepEqual(await readFile(join(data, "vault.json")), vault);
-        assert.deepEqual(await readFile(join(data, "nats-profiles.json")), profiles);
+    preflight = await verifyBrowserContainer(
+      registry.reference,
+      {
+        version,
+        sourceRevision,
+        platform: `linux/${architecture}`,
+        image: registry.reference,
+        imageId: registry.platforms.find((item) => item.platform === `linux/${architecture}`)!
+          .imageId,
       },
-    });
+      {
+        container,
+        data,
+        port: saved.port,
+        uid,
+        gid,
+        restart: async () => {
+          const vault = await readFile(join(data, "vault.json"));
+          const profiles = await readFile(join(data, "nats-profiles.json"));
+          const resumed = await install();
+          assert.ok(resumed.stdout.includes("Unlock"));
+          assert.deepEqual(await readFile(join(state, "installation.json")), installation);
+          assert.deepEqual(await readFile(join(data, "vault.json")), vault);
+          assert.deepEqual(await readFile(join(data, "nats-profiles.json")), profiles);
+        },
+      },
+    );
     const vault = await readFile(join(data, "vault.json"));
     const profiles = await readFile(join(data, "nats-profiles.json"));
     const repeated = await install();
@@ -361,20 +381,17 @@ with open(${JSON.stringify(fixtureCalls)},'a',encoding='utf8') as receipt:
       }
     }
   }
+  assert.ok(preflight !== undefined, "Native data preflight must finish before publication.");
   const evidence = browserInstallerEvidence({
     version,
     sourceRevision,
     platform: `linux/${architecture}`,
     image: registry.reference,
     startedAt,
+    preflight,
   });
-  const evidenceRoot = resolve(".artifacts/ci");
   await mkdir(evidenceRoot, { recursive: true });
-  await writeFile(
-    join(evidenceRoot, `browser-installer-${architecture}.json`),
-    `${JSON.stringify(evidence, null, 2)}\n`,
-    { mode: 0o644 },
-  );
+  await writeFile(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o644 });
   process.stdout.write(`Native ${architecture} browser installer qualification passed.\n`);
 }
 

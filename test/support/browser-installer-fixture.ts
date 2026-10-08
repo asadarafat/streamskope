@@ -32,6 +32,7 @@ export interface InstallerControl {
 interface InstallerArtifact {
   file: string;
   version: string;
+  sourceRevision: string;
   image: string;
   topology: string;
   manifest: Record<string, unknown>;
@@ -110,7 +111,8 @@ if (command === "id") {
   else if (args[0] === "image" && args[1] === "inspect") {
     const version = args.at(-1).match(/streamskope:([^@]+)/)?.[1];
     const architecture = control.architecture === "aarch64" ? "arm64" : "amd64";
-    out([{ Id: "sha256:" + (architecture === "arm64" ? "4" : "3").repeat(64), Os: "linux", Architecture: architecture, Config: { Labels: { "org.opencontainers.image.version": version, "org.opencontainers.image.revision": "${INSTALL_SOURCE}" } }, RepoDigests: ["ghcr.io/asadarafat/streamskope@${INSTALL_DIGEST}"] }]);
+    const identity = JSON.parse(readFileSync(join(root, "assets", version, "fixture-identity.json"), "utf8"));
+    out([{ Id: identity.platforms.find(p => p.platform === "linux/" + architecture).imageId, Os: "linux", Architecture: architecture, Config: { Labels: { "org.opencontainers.image.version": version, "org.opencontainers.image.revision": identity.sourceRevision } }, RepoDigests: [identity.image + "@" + identity.digest] }]);
   }
   else if (args[0] === "container" && args[1] === "ls") { if (control.container) out(control.container.Id || "fixture-container"); }
   else if (args[0] === "inspect") {
@@ -138,11 +140,13 @@ if (command === "id") {
     mkdirSync(data, { recursive: true, mode: 0o700 });
     const port = String(process.env.STREAMSKOPE_HOST_PORT || "8080");
     const version = image.match(/streamskope:([^@]+)/)[1];
+    const identity = JSON.parse(readFileSync(join(root, "assets", version, "fixture-identity.json"), "utf8"));
+    const architecture = control.architecture === "aarch64" ? "arm64" : "amd64";
     control.container = {
-      Name: "/clab-streamskope-app", Id: "fixture-container", Image: "sha256:" + (control.architecture === "aarch64" ? "4" : "3").repeat(64),
+      Name: "/clab-streamskope-app", Id: "fixture-container", Image: identity.platforms.find(p => p.platform === "linux/" + architecture).imageId,
       Config: { Image: image, User: process.env.SUDO_UID + ":" + process.env.SUDO_GID,
         Env: ["STREAMSKOPE_PUBLIC_ORIGIN=http://127.0.0.1:" + port],
-        Labels: { "containerlab": "streamskope", "clab-node-name": "app", "clab-topo-file": args[flag + 1], "io.streamskope.deployment": "browser", "org.opencontainers.image.version": version, "org.opencontainers.image.revision": "${INSTALL_SOURCE}" } },
+        Labels: { "containerlab": "streamskope", "clab-node-name": "app", "clab-topo-file": args[flag + 1], "io.streamskope.deployment": "browser", "org.opencontainers.image.version": version, "org.opencontainers.image.revision": identity.sourceRevision } },
       State: { Running: true, Status: "running" },
       Mounts: [{ Type: "bind", Source: data, Destination: "/data", RW: true }],
       HostConfig: { Privileged: false, PortBindings: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: port }] } },
@@ -264,17 +268,20 @@ export async function browserInstallerFixture(
     version = "0.10.1",
     metadata?: (value: Record<string, unknown>) => void,
   ): Promise<InstallerArtifact> {
+    const sourceRevision =
+      version === "0.10.1" ? INSTALL_SOURCE : hash(`source:${version}`).slice(0, 40);
+    const digest = version === "0.10.1" ? INSTALL_DIGEST : `sha256:${hash(`registry:${version}`)}`;
     const registry = {
       schemaVersion: 1 as const,
       version,
-      sourceRevision: INSTALL_SOURCE,
+      sourceRevision,
       image: `ghcr.io/asadarafat/streamskope:${version}`,
-      reference: `ghcr.io/asadarafat/streamskope:${version}@${INSTALL_DIGEST}`,
-      digest: INSTALL_DIGEST,
+      reference: `ghcr.io/asadarafat/streamskope:${version}@${digest}`,
+      digest,
       platforms: (["amd64", "arm64"] as const).map((architecture, index) => ({
         platform: `linux/${architecture}` as const,
-        manifestDigest: `sha256:${String(index + 1).repeat(64)}`,
-        imageId: `sha256:${String(index + 3).repeat(64)}`,
+        manifestDigest: `sha256:${hash(`manifest:${version}:${index}`)}`,
+        imageId: `sha256:${hash(`image:${version}:${index}`)}`,
       })),
     };
     const topology = browserRegistryTopology(
@@ -282,17 +289,23 @@ export async function browserInstallerFixture(
       registry,
     );
     const manifest: Record<string, unknown> = {
-      schemaVersion: 2,
+      schemaVersion: 4,
       version,
-      sourceRevision: INSTALL_SOURCE,
+      sourceRevision,
       image: `streamskope:${version}`,
       format: "docker-save-gzip",
       topology: { file: `streamskope-${version}.clab.yml`, sha256: hash(topology) },
       registry,
+      installer: { file: "install-browser-workbench.sh" },
+      dataCompatibility: {
+        contract: "streamskope-browser-data-v1",
+        inspector: "dist/web/data-preflight.cjs",
+        reportSchemaVersion: 1,
+      },
       offlineTopology: { file: `streamskope-${version}-offline.clab.yml`, sha256: "d".repeat(64) },
       archives: registry.platforms.map((platform, index) => ({
         version,
-        sourceRevision: INSTALL_SOURCE,
+        sourceRevision,
         image: `streamskope:${version}`,
         imageId: platform.imageId,
         platform: platform.platform,
@@ -305,6 +318,7 @@ export async function browserInstallerFixture(
     const contents = `${JSON.stringify(manifest)}\n`;
     const assets = join(root, "assets", version);
     await mkdir(assets, { recursive: true });
+    await writeFile(join(assets, "fixture-identity.json"), JSON.stringify(registry));
     await writeFile(join(assets, `streamskope-${version}.clab.yml`), topology);
     await writeFile(join(assets, `streamskope-${version}-container.json`), contents);
     await writeFile(
@@ -314,7 +328,7 @@ export async function browserInstallerFixture(
     let source = renderBrowserWorkbenchInstaller(
       {
         version,
-        sourceRevision: INSTALL_SOURCE,
+        sourceRevision,
         topologySha256: hash(topology),
         manifestSha256: hash(contents),
       },
@@ -346,7 +360,7 @@ export async function browserInstallerFixture(
     }
     const file = join(root, `install-${version}.sh`);
     await writeFile(file, source);
-    return { file, version, image: registry.reference, topology, manifest };
+    return { file, version, sourceRevision, image: registry.reference, topology, manifest };
   }
   async function run(file: string, args: string[] = []): Promise<InstallerResult> {
     try {
