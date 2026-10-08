@@ -9,6 +9,7 @@ import { gzipSync } from "node:zlib";
 import { Header } from "tar";
 import { afterEach, expect, it } from "vitest";
 
+import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
 import { BROWSER_INSTALLER_NAME } from "../../tools/package/browser-installer";
 import {
   browserReleaseNames,
@@ -182,7 +183,7 @@ it("assembles both independently inspected Docker save archives, one topology an
     format: string;
     archives: { platform: string; sha256: string; bytes: number; archive: string }[];
   };
-  expect(manifest.schemaVersion).toBe(1);
+  expect(manifest.schemaVersion).toBe(4);
   expect(manifest.format).toBe("docker-save-gzip");
   expect(manifest.archives.map((record) => record.platform)).toEqual([
     "linux/amd64",
@@ -199,7 +200,7 @@ it("assembles both independently inspected Docker save archives, one topology an
   );
 });
 
-it("assembles schema 3 with a version-bound installer, pinned registry delivery and matching offline archives", async () => {
+it("assembles schema 4 with a bound data contract, installer, registry and matching offline archives", async () => {
   const { root, staging, output, topology: offline } = await fixture();
   const registry = await registryFixture(root, staging);
   await prepareBrowserReleaseAssets(
@@ -216,7 +217,8 @@ it("assembles schema 3 with a version-bound installer, pinned registry delivery 
   expect(browserReleaseNames(version, true, true)).toHaveLength(6);
   const manifestBytes = await readFile(join(output, `streamskope-${version}-container.json`));
   const manifest = JSON.parse(manifestBytes.toString("utf8")) as BrowserReleaseManifest;
-  expect(manifest.schemaVersion).toBe(3);
+  expect(manifest.schemaVersion).toBe(4);
+  expect(manifest.dataCompatibility).toEqual(BROWSER_DATA_COMPATIBILITY);
   expect(manifest.installer).toEqual({ file: BROWSER_INSTALLER_NAME });
   expect(manifest.registry).toEqual(registry.metadata);
   expect(manifest.registry!.platforms.map((platform) => platform.imageId)).toEqual(
@@ -266,6 +268,7 @@ it("continues qualifying historical schema 2 registry assets without inventing a
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
   manifest.schemaVersion = 2;
   delete manifest.installer;
+  delete manifest.dataCompatibility;
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   await rm(join(output, BROWSER_INSTALLER_NAME));
   expect(await validateBrowserReleaseAssets(output, version, commit)).toEqual(
@@ -284,6 +287,61 @@ it("continues qualifying historical schema 2 registry assets without inventing a
   expect(checksums.trim().split("\n")).toHaveLength(8);
   expect(checksums).not.toContain(BROWSER_INSTALLER_NAME);
 });
+
+it("continues qualifying historical offline schema1 without claiming a data inspector", async () => {
+  const { output, staging } = await fixture();
+  await prepareBrowserReleaseAssets(staging, output, version, commit);
+  const path = join(output, `streamskope-${version}-container.json`);
+  const manifest = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+  manifest.schemaVersion = 1;
+  delete manifest.dataCompatibility;
+  await writeFile(path, JSON.stringify(manifest));
+  expect(await validateBrowserReleaseAssets(output, version, commit)).toEqual(
+    browserReleaseNames(version),
+  );
+});
+
+it("requires historical source verification for schema3 instead of trusting today's installer template", async () => {
+  const { root, output, staging } = await fixture();
+  const registry = await registryFixture(root, staging);
+  await prepareBrowserReleaseAssets(
+    staging,
+    output,
+    version,
+    commit,
+    "streamskope.clab.yml",
+    registry.path,
+  );
+  const path = join(output, `streamskope-${version}-container.json`);
+  const manifest = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+  manifest.schemaVersion = 3;
+  delete manifest.dataCompatibility;
+  await writeFile(path, JSON.stringify(manifest));
+  await expect(validateBrowserReleaseAssets(output, version, commit)).rejects.toThrow(
+    /Historical schema 3.*source-matched/u,
+  );
+});
+
+it.each([
+  undefined,
+  { ...BROWSER_DATA_COMPATIBILITY, contract: "unreviewed" },
+  { ...BROWSER_DATA_COMPATIBILITY, inspector: "dist/web/server.cjs" },
+  { ...BROWSER_DATA_COMPATIBILITY, reportSchemaVersion: 2 },
+  { ...BROWSER_DATA_COMPATIBILITY, extra: true },
+])(
+  "rejects missing, altered or extended current data compatibility: %j",
+  async (dataCompatibility) => {
+    const { output, staging } = await fixture();
+    await prepareBrowserReleaseAssets(staging, output, version, commit);
+    const path = join(output, `streamskope-${version}-container.json`);
+    const manifest = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+    manifest.dataCompatibility = dataCompatibility;
+    await writeFile(path, JSON.stringify(manifest));
+    await expect(validateBrowserReleaseAssets(output, version, commit)).rejects.toThrow(
+      /manifest does not match/u,
+    );
+  },
+);
 
 it("rejects a validly shaped registry receipt whose native image differs from its qualified archive", async () => {
   const { root, staging, output } = await fixture();

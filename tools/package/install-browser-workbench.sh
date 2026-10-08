@@ -308,9 +308,37 @@ fi
 topology="streamskope-$version.clab.yml"
 manifest="streamskope-$version-container.json"
 base="https://github.com/asadarafat/streamskope/releases/download/v$version"
+checksum_cache="SHA256SUMS-$version-$source"
+download_release_asset() {
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 15 --max-time 120 --max-filesize 1048576 --output "$STAGING/$1" "$base/$1" || fail "Cannot retrieve v$version release assets. Check HTTPS/proxy access to GitHub, then retry."
+}
+# Old installers kept one checksum file for every release. Reuse it only when it
+# identifies this exact pinned topology and manifest; retain the old file itself.
+legacy_checksums_match() {
+  python3 - "$STATE_ROOT/SHA256SUMS" "$topology" "$topology_hash" "$manifest" "$manifest_hash" <<'PY'
+import re,sys
+try:
+    path,topology,topology_hash,manifest,manifest_hash=sys.argv[1:]
+    with open(path,encoding='utf8') as source: contents=source.read(1048577)
+    assert len(contents.encode('utf8'))<=1048576
+    checks={}
+    for line in contents.splitlines():
+        match=re.fullmatch(r'([a-f0-9]{64}) [ *]([^/\\\0]+)',line)
+        assert match and match[2] not in checks
+        checks[match[2]]=match[1]
+    assert checks.get(topology)==topology_hash and checks.get(manifest)==manifest_hash
+except (AssertionError,OSError,ValueError,UnicodeError): sys.exit(1)
+PY
+}
 for file in SHA256SUMS "$topology" "$manifest"; do
-  if [[ -e "$STATE_ROOT/$file" || -L "$STATE_ROOT/$file" ]]; then safe_file "$STATE_ROOT/$file"; cp -- "$STATE_ROOT/$file" "$STAGING/$file";
-  else curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 15 --max-time 120 --max-filesize 1048576 --output "$STAGING/$file" "$base/$file" || fail "Cannot retrieve v$version release assets. Check HTTPS/proxy access to GitHub, then retry."; fi
+  cached="$STATE_ROOT/$file"
+  [[ "$file" != SHA256SUMS ]] || cached="$STATE_ROOT/$checksum_cache"
+  if [[ -e "$cached" || -L "$cached" ]]; then safe_file "$cached"; cp -- "$cached" "$STAGING/$file";
+  elif [[ "$file" == SHA256SUMS && ( -e "$STATE_ROOT/SHA256SUMS" || -L "$STATE_ROOT/SHA256SUMS" ) ]]; then
+    safe_file "$STATE_ROOT/SHA256SUMS"
+    if legacy_checksums_match; then cp -- "$STATE_ROOT/SHA256SUMS" "$STAGING/$file";
+    else download_release_asset "$file"; fi
+  else download_release_asset "$file"; fi
 done
 printf '%s  %s\n%s  %s\n' "$topology_hash" "$topology" "$manifest_hash" "$manifest" >"$STAGING/expected.sha256"
 (cd "$STAGING" && sha256sum --check --status expected.sha256) || fail 'Release metadata hashes do not match the stamped installer; no deployment was changed.'
@@ -327,8 +355,12 @@ try:
         checks[match[2]]=match[1]
     assert checks.get(topology)==topology_hash and checks.get(manifest)==manifest_hash
     value=json.loads((root/manifest).read_text()); registry=value['registry']
-    assert value['schemaVersion'] in [2,3] and value['version']==version and value['sourceRevision']==source
-    if value['schemaVersion']==3: assert value['installer']=={'file':'install-browser-workbench.sh'}
+    assert type(value['schemaVersion']) is int and value['schemaVersion'] in [2,3,4] and value['version']==version and value['sourceRevision']==source
+    if value['schemaVersion'] in [3,4]: assert value['installer']=={'file':'install-browser-workbench.sh'}
+    if value['schemaVersion']==4:
+        compatibility=value['dataCompatibility']
+        assert compatibility=={'contract':'streamskope-browser-data-v1','inspector':'dist/web/data-preflight.cjs','reportSchemaVersion':1}
+        assert type(compatibility['reportSchemaVersion']) is int
     assert value['format']=='docker-save-gzip' and value['image']=='streamskope:'+version
     assert value['topology']=={'file':topology,'sha256':topology_hash}
     assert registry['schemaVersion']==1 and registry['version']==version and registry['sourceRevision']==source
@@ -369,7 +401,8 @@ PY
   )
 fi
 origin="http://127.0.0.1:$port"
-for file in SHA256SUMS "$topology" "$manifest"; do install -m 0600 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$STAGING/$file" "$STATE_ROOT/$file"; done
+install -m 0600 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$STAGING/SHA256SUMS" "$STATE_ROOT/$checksum_cache"
+for file in "$topology" "$manifest"; do install -m 0600 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$STAGING/$file" "$STATE_ROOT/$file"; done
 if [[ "$saved" == false ]]; then
   python3 - "$state" "$version" "$source" "$topology_hash" "$manifest_hash" "$owner_uid" "$owner_gid" "$owner_home" "$operator_uid" "$port" <<'PY'
 import json,os,sys,tempfile

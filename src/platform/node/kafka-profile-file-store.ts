@@ -37,7 +37,8 @@ const SERVICES_PROFILE_FILE_VERSION = 2 as const;
 const PROFILE_FILE_VERSION = 3 as const;
 const ACQUISITION_PROTECTED_PROFILE_VERSION = 4 as const;
 const TRANSPORT_PROTECTED_PROFILE_VERSION = 5 as const;
-const DEFAULT_MAXIMUM_FILE_BYTES = 64 * 1_048_576;
+export const KAFKA_PROFILE_FILE_MAX_BYTES = 64 * 1_048_576;
+const DEFAULT_MAXIMUM_FILE_BYTES = KAFKA_PROFILE_FILE_MAX_BYTES;
 const MAXIMUM_PROTECTED_VALUE_BYTES = 32 * 1_048_576;
 const TRANSPORT_ROLLBACK_GENERATIONS = 100;
 
@@ -338,6 +339,28 @@ function parseDocument(value: unknown): StoredProfileDocument {
     profiles: document.profiles.map((profile) => parseSafeProfile(profile, version)),
     ...(rollbackGeneration === undefined ? {} : { rollbackGeneration }),
     version,
+  };
+}
+
+export interface KafkaProfileEnvelope extends Omit<StoredProfileDocument, "profiles"> {
+  readonly profiles: readonly (SafeStoredProfile & { readonly protectedBytes: Buffer })[];
+}
+
+/** Parse only persisted metadata/ciphertext; never decrypt, migrate or re-encrypt. */
+export function inspectKafkaProfileEnvelope(
+  contents: Uint8Array,
+  maximumFileBytes = KAFKA_PROFILE_FILE_MAX_BYTES,
+): KafkaProfileEnvelope {
+  if (contents.byteLength > maximumFileBytes) throw new KafkaProfileFileCorruptError();
+  const document = parseDocument(
+    JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(contents)) as unknown,
+  );
+  return {
+    ...document,
+    profiles: document.profiles.map((profile) => ({
+      ...profile,
+      protectedBytes: base64Buffer(profile.protectedValue),
+    })),
   };
 }
 
@@ -691,12 +714,12 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
     }
 
     try {
-      const document = parseDocument(JSON.parse(contents.toString("utf8")) as unknown);
+      const document = inspectKafkaProfileEnvelope(contents, this.maximumFileBytes);
       const restored: KafkaProfileRecord[] = [];
       let shouldReEncrypt = false;
       for (const profile of document.profiles) {
         signal?.throwIfAborted();
-        const result = await this.protector.unprotect(base64Buffer(profile.protectedValue));
+        const result = await this.protector.unprotect(profile.protectedBytes);
         shouldReEncrypt ||= result.shouldReEncrypt;
         restored.push(
           restoredRecord(

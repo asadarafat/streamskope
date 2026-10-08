@@ -40,20 +40,51 @@ verifies source/run identity and evidence hashes, and records local checks as
 unrecorded until a compatible local bundle is supplied. Publication never turns
 an unexecuted check into a pass.
 
-| Change or claim                                        | Evidence required                                                                                                   |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Any source change                                      | Successful required PR CI for the current base; local qualification and explicit skips in the PR                    |
-| Desktop distribution                                   | Exact release source, three native package/launch jobs and the downloaded installer hashes                          |
-| Browser distribution                                   | Native AMD64/ARM64 archive and installer lifecycle jobs, image identity, encrypted persistence and graceful restart |
-| Local pipeline performance                             | The unchanged 60-second pipeline soak; this does not measure broker throughput or rendered UI endurance             |
-| EDA or NSP connection/lifecycle behavior               | Configured live checks for the affected target version, known record receipt and confirmed owned-resource cleanup   |
-| Native protected-storage or installed upgrade behavior | An explicit installed/native rehearsal; source-host live checks do not establish it                                 |
-| Long-running broker or UI behavior                     | A separate real-provider/rendered-product endurance run; a one-minute pipeline run does not establish it            |
+| Change or claim                                        | Evidence required                                                                                                                              |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any source change                                      | Successful required PR CI for the current base; local qualification and explicit skips in the PR                                               |
+| Desktop distribution                                   | Exact release source, three native package/launch jobs and the downloaded installer hashes                                                     |
+| Browser distribution                                   | Native AMD64/ARM64 archive and installer lifecycle jobs, image identity, read-only data inspection, encrypted persistence and graceful restart |
+| Local pipeline performance                             | The unchanged 60-second pipeline soak; this does not measure broker throughput or rendered UI endurance                                        |
+| EDA or NSP connection/lifecycle behavior               | Configured live checks for the affected target version, known record receipt and confirmed owned-resource cleanup                              |
+| Native protected-storage or installed upgrade behavior | An explicit installed/native rehearsal; source-host live checks do not establish it                                                            |
+| Long-running broker or UI behavior                     | A separate real-provider/rendered-product endurance run; a one-minute pipeline run does not establish it                                       |
 
 The report separates these scopes. Review gaps against the changed behavior before
 publishing. A passing source gate alone is insufficient evidence for a native,
 live-system or recovery claim. Existing historical reports retain their original
 scope and identity.
+
+## Browser data compatibility
+
+Browser images contain a standalone read-only data inspector. Native archive and
+installer qualification run it after a confirmed graceful stop, using the exact
+image ID with a read-only root and data mount, no network or capabilities, and the
+application's non-root UID/GID. Qualification compares the complete disposable
+data inventory before and after inspection, then restarts and unlocks the host to
+verify the saved profile. The receipt binds inspection to the source, image and
+architecture that actually ran.
+
+The inspector checks supported outer storage formats and retained plugin package
+integrity without opening the vault or executing plugins. It reports encrypted
+content authenticity, protected profile schemas, remote resource cleanup and host
+quiescence as unverified. The native lifecycle checks establish their own stop and
+unlock results; a standalone successful inspection does not establish those facts.
+Unsafe paths, unknown formats, pending plugin changes, nonempty recovery journals
+and saved plugin-managed profile sources block inspection. Preserve those records
+and resolve ownership through the supported application or recovery procedure;
+deleting profile metadata is not proof of cleanup.
+
+Current browser manifests declare the data contract and inspector in schema 4.
+Historical manifests remain readable for pinned resume; they do not acquire this
+capability retrospectively. New release assembly validates the current inspector
+and exact installer bytes. An older schema 3 installer requires qualification from
+its own source, rather than reconstruction using today's template.
+
+Local staged-image receipts are separate from public-registry delivery evidence
+and cannot satisfy release acceptance. This inspection work does not yet provide
+an installer-managed upgrade, rollback or complete backup procedure. Continue
+using the existing [browser operations guide](../website/docs/guide/browser-host.md).
 
 ## Attach local acceptance to a draft
 

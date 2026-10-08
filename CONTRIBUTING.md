@@ -400,7 +400,9 @@ ARM64 and Windows x64. Two additional native Linux jobs build AMD64 and ARM64
 browser images, save gzip-compressed Docker save archives, reload them and check
 their image identity. Each exercises an authenticated gateway, encrypted profile
 persistence, native workers, vault lock/unlock and graceful restart with disposable
-data. A registry job publishes those exact native images as a public multi-platform
+data. At the stopped checkpoint, the bundled read-only inspector verifies supported
+storage envelopes and unchanged data; [qualification limits](maintainers/qualification.md#browser-data-compatibility)
+remain explicit. A registry job publishes those exact native images as a public multi-platform
 image at `ghcr.io/asadarafat/streamskope:VERSION`. It verifies the AMD64/ARM64 index
 and anonymous pulls before promoting the version tag. Published deployment uses
 the exact version and index digest; no floating `latest` image is used.
@@ -451,10 +453,12 @@ installers and six browser assets: AMD64 and ARM64 Docker save archives, a
 version/digest-pinned online Containerlab topology, a separate offline topology,
 a combined registry/image/archive manifest and `install-browser-workbench.sh`.
 One `SHA256SUMS` covers all nine payloads and the source-specific qualification
-report. The schema 3 manifest identifies the
+report. The schema 4 manifest identifies the data contract, read-only inspector and
 installer; its script embeds the assigned version, source revision and exact
 manifest/topology hashes. Assembly verifies it against the reviewed template.
-Historical schema 1/2 browser packages remain verifiable without an installer. Release assembly independently inspects
+Historical schema 1/2 browser packages remain verifiable without an installer.
+Schema 3 metadata remains readable for pinned resume; full verification of its
+installer requires the historical source. Release assembly independently inspects
 each archive and checks its version, source, architecture and image identity;
 both builds must supply the identical reviewed topology. Online deployment pulls
 the matching public image without a registry login. Offline deployment loads an
@@ -987,11 +991,13 @@ Source deployments reveal the code through the manual guide's trusted-host
 configured URL. If your VM does not provide automatic loopback access, follow the
 matching-origin [host access procedure](website/docs/guide/browser-deployment.md#vm-and-remote-host-access).
 
-`npm run build -- web` builds the shared renderer, Node host and two worker bundles
+`npm run build -- web` builds the shared renderer, Node host, read-only data inspector
+and two worker bundles
 without an image. Append `--archive` to `npm run package -- container` to write a
 gzip-compressed Docker save archive, native build receipt and matched topology
 under `dist/container-package/`. Archive mode reloads the image and qualifies a
-disposable gateway and vault lifecycle. Local results cover the tested native
+disposable gateway, vault lifecycle and read-only data inspection. Local staged-image
+receipts cannot stand in for public-registry release evidence. Local results cover the tested native
 architecture; release CI uses one native runner for each architecture. These
 targets use the existing five npm scripts.
 

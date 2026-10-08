@@ -35,6 +35,18 @@ export interface ActivePlugin {
   readonly stylesPath?: string;
 }
 
+export interface PluginStoreInspection {
+  readonly installations: number;
+  readonly pending: boolean;
+  readonly unresolved: boolean;
+  readonly packages: readonly {
+    readonly id: string;
+    readonly sha256: string;
+    readonly manifest: PluginManifest;
+    readonly referenced: boolean;
+  }[];
+}
+
 interface InstallationState {
   active?: string;
   inactive?: string;
@@ -81,7 +93,8 @@ function parseState(bytes: Uint8Array): StoreState {
     !("plugins" in value) ||
     value.plugins === null ||
     typeof value.plugins !== "object" ||
-    Array.isArray(value.plugins)
+    Array.isArray(value.plugins) ||
+    Object.keys(value).some((key) => !["formatVersion", "plugins"].includes(key))
   ) {
     throw new Error("Invalid plugin installation state.");
   }
@@ -293,6 +306,60 @@ export class PluginStore {
     return Promise.all(
       Object.entries(state.plugins).map(([id, entry]) => this.#describe(id, entry)),
     );
+  }
+
+  /** Strict, read-only storage qualification, including retained generations without pointers. */
+  async inspectInstalled(): Promise<PluginStoreInspection> {
+    const state = await this.#state();
+    const references = new Set<string>();
+    for (const [id, entry] of Object.entries(state.plugins)) {
+      for (const digest of [entry.active, entry.inactive, entry.previous, entry.pending]) {
+        if (typeof digest !== "string") continue;
+        await this.#verified(id, digest);
+        references.add(`${id}/${digest}`);
+      }
+    }
+    let names: string[];
+    try {
+      names = await readdir(this.#root);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      names = [];
+    }
+    const packages: PluginStoreInspection["packages"][number][] = [];
+    for (const id of names.sort()) {
+      if (["state.json", "catalog.json", "network.json", ".packages", ".recovery"].includes(id))
+        continue;
+      validId(id);
+      const parent = join(this.#root, id);
+      await directory(parent, false);
+      for (const digest of (await readdir(parent)).sort()) {
+        if (packages.length >= 1024) throw new Error("Too many retained plugin packages.");
+        const verified = await this.#verified(id, digest);
+        const manifest = verified.manifest;
+        const expected = [
+          "package.skope-plugin",
+          manifest.backend,
+          manifest.renderer,
+          ...(manifest.styles === undefined ? [] : [manifest.styles]),
+          ...(manifest.resources ?? []).map((resource) => resource.path),
+        ].sort();
+        if (JSON.stringify((await readdir(verified.directory)).sort()) !== JSON.stringify(expected))
+          throw new Error("Installed package directory contains unexpected files.");
+        packages.push({
+          id,
+          sha256: digest,
+          manifest,
+          referenced: references.has(`${id}/${digest}`),
+        });
+      }
+    }
+    return {
+      installations: Object.keys(state.plugins).length,
+      pending: Object.values(state.plugins).some((entry) => entry.pending !== undefined),
+      unresolved: Object.values(state.plugins).some((entry) => entry.error !== undefined),
+      packages,
+    };
   }
 
   async #stage(plugin: VerifiedPluginPackage, bytes: Uint8Array): Promise<void> {

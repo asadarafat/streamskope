@@ -54,6 +54,61 @@ function publicRecord(value: RecordEntry): PluginCachedPackage {
   };
 }
 
+function parseIndex(contents: Uint8Array): RecordEntry[] {
+  const raw = record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(contents)));
+  if (
+    raw.formatVersion !== 1 ||
+    !Array.isArray(raw.packages) ||
+    raw.packages.length > MAX_CACHED_PLUGIN_PACKAGES ||
+    Object.keys(raw).some((key) => !["formatVersion", "packages"].includes(key))
+  )
+    throw new Error("Invalid plugin package cache index.");
+  const identities = new Set<string>();
+  return (raw.packages as unknown[]).map((value): RecordEntry => {
+    const entry = record(value);
+    if (
+      typeof entry.sha256 !== "string" ||
+      !DIGEST.test(entry.sha256) ||
+      identities.has(entry.sha256) ||
+      !timestamp(entry.cachedAt) ||
+      !timestamp(entry.lastUsedAt) ||
+      typeof entry.size !== "number" ||
+      !Number.isSafeInteger(entry.size) ||
+      entry.size <= 0 ||
+      entry.size > MAX_PLUGIN_ARCHIVE_BYTES ||
+      !["publisher", "official", "development"].includes(String(entry.trust)) ||
+      Object.keys(entry).some(
+        (key) =>
+          !["manifest", "sha256", "cachedAt", "lastUsedAt", "size", "trust", "publisher"].includes(
+            key,
+          ),
+      )
+    )
+      throw new Error("Invalid plugin package cache entry.");
+    const publisher = entry.publisher === undefined ? undefined : record(entry.publisher);
+    if (
+      (entry.trust === "publisher") !== (publisher !== undefined) ||
+      (publisher !== undefined &&
+        (typeof publisher.keyId !== "string" ||
+          typeof publisher.name !== "string" ||
+          Object.keys(publisher).some((key) => !["keyId", "name"].includes(key))))
+    )
+      throw new Error("Invalid cached publisher provenance.");
+    identities.add(entry.sha256);
+    return {
+      manifest: parsePluginManifest(entry.manifest),
+      sha256: entry.sha256,
+      cachedAt: entry.cachedAt,
+      lastUsedAt: entry.lastUsedAt,
+      size: entry.size,
+      trust: entry.trust as PluginPackageTrust,
+      ...(publisher === undefined
+        ? {}
+        : { publisher: { keyId: publisher.keyId as string, name: publisher.name as string } }),
+    };
+  });
+}
+
 /** Private delivery copies preserve reviewed bytes independently of the user's original file. */
 export class PluginPackageCache {
   private queue: Promise<unknown> = Promise.resolve();
@@ -102,68 +157,7 @@ export class PluginPackageCache {
       throw error;
     }
     try {
-      const raw = record(
-        JSON.parse(
-          (await readBoundedFile(path, MAX_INDEX_BYTES, { rejectSymlinks: true })).toString("utf8"),
-        ),
-      );
-      if (
-        raw.formatVersion !== 1 ||
-        !Array.isArray(raw.packages) ||
-        raw.packages.length > MAX_CACHED_PLUGIN_PACKAGES ||
-        Object.keys(raw).some((key) => !["formatVersion", "packages"].includes(key))
-      )
-        throw new Error("Invalid plugin package cache index.");
-      const identities = new Set<string>();
-      return (raw.packages as unknown[]).map((value): RecordEntry => {
-        const entry = record(value);
-        if (
-          typeof entry.sha256 !== "string" ||
-          !DIGEST.test(entry.sha256) ||
-          identities.has(entry.sha256) ||
-          !timestamp(entry.cachedAt) ||
-          !timestamp(entry.lastUsedAt) ||
-          typeof entry.size !== "number" ||
-          !Number.isSafeInteger(entry.size) ||
-          entry.size <= 0 ||
-          entry.size > MAX_PLUGIN_ARCHIVE_BYTES ||
-          !["publisher", "official", "development"].includes(String(entry.trust)) ||
-          Object.keys(entry).some(
-            (key) =>
-              ![
-                "manifest",
-                "sha256",
-                "cachedAt",
-                "lastUsedAt",
-                "size",
-                "trust",
-                "publisher",
-              ].includes(key),
-          )
-        )
-          throw new Error("Invalid plugin package cache entry.");
-        const publisher = entry.publisher === undefined ? undefined : record(entry.publisher);
-        if (
-          (entry.trust === "publisher") !== (publisher !== undefined) ||
-          (publisher !== undefined &&
-            (typeof publisher.keyId !== "string" ||
-              typeof publisher.name !== "string" ||
-              Object.keys(publisher).some((key) => !["keyId", "name"].includes(key))))
-        )
-          throw new Error("Invalid cached publisher provenance.");
-        identities.add(entry.sha256);
-        return {
-          manifest: parsePluginManifest(entry.manifest),
-          sha256: entry.sha256,
-          cachedAt: entry.cachedAt,
-          lastUsedAt: entry.lastUsedAt,
-          size: entry.size,
-          trust: entry.trust as PluginPackageTrust,
-          ...(publisher === undefined
-            ? {}
-            : { publisher: { keyId: publisher.keyId as string, name: publisher.name as string } }),
-        };
-      });
+      return parseIndex(await readBoundedFile(path, MAX_INDEX_BYTES, { rejectSymlinks: true }));
     } catch (error) {
       // Invalid private metadata is recoverable. Unindexed archives remain untrusted:
       // never reconstruct provenance by scanning files in this directory.
@@ -210,6 +204,47 @@ export class PluginPackageCache {
     )
       throw new Error("Cached plugin package does not match its verified provenance.");
     return { bytes, verified, record: publicRecord(entry) };
+  }
+  /** Inspect without repairing metadata, updating recency or granting unindexed provenance. */
+  async inspect(): Promise<{
+    readonly indexed: readonly PluginCachedPackage[];
+    readonly retainedDigests: readonly string[];
+  }> {
+    try {
+      await this.directory(false);
+    } catch (error) {
+      if (missing(error)) return { indexed: [], retainedDigests: [] };
+      throw error;
+    }
+    let entries: RecordEntry[];
+    try {
+      entries = parseIndex(
+        await readBoundedFile(join(this.root, "index.json"), MAX_INDEX_BYTES, {
+          rejectSymlinks: true,
+        }),
+      );
+    } catch (error) {
+      if (!missing(error)) throw error;
+      entries = [];
+    }
+    const indexed: PluginCachedPackage[] = [];
+    for (const entry of entries) indexed.push((await this.readEntry(entry, true)).record);
+    const retainedDigests: string[] = [];
+    for (const name of (await readdir(this.root)).sort()) {
+      if (name === "index.json") continue;
+      const digest = name.slice(0, -".skope-plugin".length);
+      if (!name.endsWith(".skope-plugin") || !DIGEST.test(digest) || retainedDigests.length >= 1024)
+        throw new Error("Unexpected or excessive retained plugin package archives.");
+      if (!entries.some((entry) => entry.sha256 === digest))
+        this.verify(
+          await readBoundedFile(join(this.root, name), MAX_PLUGIN_ARCHIVE_BYTES, {
+            rejectSymlinks: true,
+          }),
+          digest,
+        );
+      retainedDigests.push(digest);
+    }
+    return { indexed, retainedDigests };
   }
   list(allowDevelopment = false): Promise<readonly PluginCachedPackage[]> {
     return this.serial(async () => {
