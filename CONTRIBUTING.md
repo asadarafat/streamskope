@@ -65,7 +65,10 @@ under `test-results/web/`; the combined `qualification` artifact retains those
 reports and a source-bound evidence index under `.artifacts/ci/`.
 The soak exercises the application pipeline at 1,000 records/s with mixed payloads
 and clone round trips. Results are in `dist/performance/qualification-soak.json`;
-docs results are in `.artifacts/website/`.
+docs results are in `.artifacts/website/`. Each default local run also records its
+source, stage outcomes and fresh copied evidence in a separate bundle under
+`.artifacts/qualification/`. See [qualification and release evidence](maintainers/qualification.md)
+for clean-source acceptance, explicit skips, scope limits and draft enrichment.
 Public docs lead with the installed desktop workflow; the optional source checkout
 walkthrough lives in `website/docs/start/development.md`. Keep operator facts in
 the security, recovery, EDA, NSP and data-handling references, and link to them from
@@ -498,7 +501,8 @@ packaging pass, a desktop release creates a **draft** with exactly three unsigne
 installers and six browser assets: AMD64 and ARM64 Docker save archives, a
 version/digest-pinned online Containerlab topology, a separate offline topology,
 a combined registry/image/archive manifest and `install-browser-workbench.sh`.
-One `SHA256SUMS` covers all nine files. The schema 3 manifest identifies the
+One `SHA256SUMS` covers all nine payloads and the source-specific qualification
+report. The schema 3 manifest identifies the
 installer; its script embeds the assigned version, source revision and exact
 manifest/topology hashes. Assembly verifies it against the reviewed template.
 Historical schema 1/2 browser packages remain verifiable without an installer. Release assembly independently inspects
@@ -513,10 +517,14 @@ CI assigns the title and exact
 version metadata in the build checkout. A SemVer prerelease marks the draft as a
 prerelease; an ordinary version does not. Signing is a separate property: these
 desktop installers remain unsigned. Desktop releases do not republish plugins.
-Review the draft, its source and qualification evidence. Attach the sanitized,
-source-specific `qualification-vVERSION.json` report and add its digest to
-`SHA256SUMS` before publication. Record each executed check, skipped/failed checks,
-environment conditions and material limits; do not infer live passes from packaging.
+Release assembly includes the source-specific `qualification-vVERSION.json`
+report and its digest automatically. It validates CI and package evidence from
+the same release run and leaves local checks explicitly unrecorded. Before
+publication, attach a compatible clean-source local bundle with
+`npm run package -- qualification vVERSION --local .artifacts/qualification/RUN_ID`.
+Review its executed checks, skips, environment conditions and scope limits using
+the [qualification procedure](maintainers/qualification.md); packaging does not
+establish live EDA/NSP acceptance.
 Pages links this exact report only when it appears in the publication event's assets.
 Then publish the reviewed draft on GitHub.
 For stable desktop publication, select **Set as the latest release**. Publish

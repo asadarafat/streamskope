@@ -81,28 +81,43 @@ async function completeLane(
       report.path,
       report.kind === "accessibility"
         ? []
-        : report.kind === "vitest"
+        : report.kind === "docs"
           ? {
-              startTime: Date.now(),
-              success: true,
-              numTotalTests: 3,
-              numPassedTests: 3,
-              numFailedTests: 0,
-              numFailedTestSuites: 0,
-              numPendingTests: 0,
-              numTodoTests: 0,
-            }
-          : {
-              errors: [],
-              stats: {
-                startTime: new Date().toISOString(),
-                duration: 100,
-                expected: 2,
-                unexpected: 0,
-                flaky: 0,
-                skipped: 0,
+              schemaVersion: 1,
+              outcome: "passed",
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              htmlPages: 10,
+              routes: 8,
+              browserSha256: "a".repeat(64),
+              media: {
+                outcome: "skipped",
+                reason: "unchanged-media-inputs",
+                fingerprint: "b".repeat(64),
               },
-            },
+            }
+          : report.kind === "vitest"
+            ? {
+                startTime: Date.now(),
+                success: true,
+                numTotalTests: 3,
+                numPassedTests: 3,
+                numFailedTests: 0,
+                numFailedTestSuites: 0,
+                numPendingTests: 0,
+                numTodoTests: 0,
+              }
+            : {
+                errors: [],
+                stats: {
+                  startTime: new Date().toISOString(),
+                  duration: 100,
+                  expected: 2,
+                  unexpected: 0,
+                  flaky: 0,
+                  skipped: 0,
+                },
+              },
     );
   }
   return recordCiLane({ root, lane, env, startedAt, exitCode: 0 });
@@ -248,6 +263,46 @@ it("rejects a copied old execution even when its file modification time is fresh
   const result = await recordCiLane({ root, lane: "shared", env, startedAt, exitCode: 0 });
   expect(result.outcome).toBe("failed");
   expect(result.errors).toEqual([`Missing, invalid or stale evidence: ${path}`]);
+});
+
+it("records documentation scope and the explicit media skip in the CI index", async () => {
+  const { root, env } = await fixture();
+  await completeAll(root, env);
+  const index = await aggregateCiEvidence({ root, env, results: success });
+  expect(index.outcome).toBe("passed");
+  expect(index.lanes.find(({ lane }) => lane === "docs")?.reports).toContainEqual(
+    expect.objectContaining({
+      path: ".artifacts/website/qualification.json",
+      summary: {
+        htmlPages: 10,
+        routes: 8,
+        media: "skipped",
+        mediaReason: "unchanged-media-inputs",
+        mediaFingerprint: "b".repeat(64),
+      },
+    }),
+  );
+});
+
+it.each([
+  { routes: 0 },
+  { htmlPages: "ten" },
+  { media: { outcome: "skipped", fingerprint: "b".repeat(64) } },
+  { browserSha256: "missing" },
+  { startedAt: "2020-01-01T00:00:00.000Z" },
+  { completedAt: "2100-01-01T00:00:00.000Z" },
+])("rejects incomplete or stale documentation evidence: %j", async (change) => {
+  const { root, env } = await fixture();
+  const receipt = await completeLane(root, "docs", env);
+  const definition = CI_REPORTS.docs.find(({ kind }) => kind === "docs")!;
+  const data = JSON.parse(await readFile(join(root, definition.path), "utf8")) as Record<
+    string,
+    unknown
+  >;
+  await json(root, definition.path, { ...data, ...change });
+  await expect(
+    readReportEvidence(root, definition, receipt.startedAt, receipt.completedAt),
+  ).rejects.toThrow();
 });
 
 it("retains a failed lane receipt without promoting reports from its earlier steps", async () => {

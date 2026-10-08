@@ -19,6 +19,7 @@ import {
   TRUSTED_PLUGIN_PUBLISHERS,
   type TrustedPluginPublisher,
 } from "../../src/platform/node/plugins/publishers";
+import { ciExecution } from "../check/ci-evidence";
 
 import {
   prepareUnsignedRelease,
@@ -27,6 +28,11 @@ import {
 } from "./release-policy";
 import { prepareBrowserReleaseAssets } from "./browser-release";
 import { releaseIdentity, type ReleaseComponent } from "./release-version";
+import {
+  assembleReleaseQualification,
+  qualificationFile,
+  type ReleaseQualification,
+} from "./qualification";
 
 /** Refuse changes collected for another component, source, or release identity. */
 export async function readReleaseChangelog(
@@ -185,10 +191,10 @@ async function main(): Promise<void> {
       !reviewed ||
       !changelog ||
       !output ||
-      extra.length
+      (extra.length !== 0 && (extra.length !== 2 || extra[0] !== "--qualification" || !extra[1]))
     )
       throw new Error(
-        "Usage: release.ts plugin <assets-directory> <component> <version> <commit> <reviewed-notes> <changelog> <notes-output>",
+        "Usage: release.ts plugin <assets-directory> <component> <version> <commit> <reviewed-notes> <changelog> <notes-output> [--qualification <ci-evidence>]",
       );
     const notes = await preparePluginReleaseNotes(
       directory,
@@ -198,7 +204,28 @@ async function main(): Promise<void> {
       reviewed,
       changelog,
     );
-    await writeFile(output, notes, { flag: "wx", mode: 0o600 });
+    const evidence = extra[1];
+    if (process.env.GITHUB_ACTIONS === "true" && !evidence)
+      throw new Error("Release CI requires source qualification evidence.");
+    let evidenceNotes = "";
+    if (evidence)
+      evidenceNotes = qualificationNotes(
+        await assembleReleaseQualification({
+          root: process.cwd(),
+          evidenceDirectory: evidence,
+          assetDirectories: [directory],
+          outputDirectory: directory,
+          component: releaseIdentity(component, version).component,
+          version,
+          commit,
+          execution: ciExecution(),
+          prerequisites: releasePrerequisites(),
+        }),
+      );
+    await writeFile(output, notes + evidenceNotes, {
+      flag: "wx",
+      mode: 0o600,
+    });
     process.stdout.write("Prepared reviewed plugin notes, compatibility and generated changes.\n");
     return;
   }
@@ -210,16 +237,22 @@ async function main(): Promise<void> {
     const key = optional[index]!;
     const value = optional[index + 1];
     if (
-      !["--containers", "--registry"].includes(key) ||
+      !["--containers", "--registry", "--qualification", "--installer-evidence"].includes(key) ||
       !value ||
       value.startsWith("--") ||
       options.has(key)
     )
-      throw new Error("Release options require unique --containers or --registry paths.");
+      throw new Error("Release options require unique recognized evidence or payload paths.");
     options.set(key, value);
   }
   const containerStaging = options.get("--containers");
   const registryPath = options.get("--registry");
+  const evidence = options.get("--qualification");
+  const installerDirectory = options.get("--installer-evidence");
+  if (process.env.GITHUB_ACTIONS === "true" && !evidence)
+    throw new Error("Release CI requires source qualification evidence.");
+  if (Boolean(evidence) !== Boolean(installerDirectory))
+    throw new Error("Desktop qualification requires CI and native installer evidence together.");
   if (registryPath !== undefined && containerStaging === undefined)
     throw new Error("Registry delivery requires the qualified native archive staging directory.");
   const [directory, version, commit, source, output, tag, changelog, ...extra] =
@@ -249,11 +282,53 @@ async function main(): Promise<void> {
   const downloads = (
     await prepareUnsignedRelease(directory, version, commit, tag, containerDirectory)
   ).replace(/^# StreamSkope [^\n]+\n/u, "## Distribution\n");
-  await writeFile(output, `${body.trimEnd()}\n\n${downloads}${changes ? `\n${changes}` : ""}`, {
-    flag: "wx",
-    mode: 0o600,
-  });
+  let evidenceNotes = "";
+  if (evidence) {
+    if (!containerDirectory || !installerDirectory)
+      throw new Error("Desktop qualification requires browser payloads and installer receipts.");
+    evidenceNotes = qualificationNotes(
+      await assembleReleaseQualification({
+        root: process.cwd(),
+        evidenceDirectory: evidence,
+        assetDirectories: [directory, containerDirectory],
+        outputDirectory: directory,
+        component: "desktop",
+        version,
+        commit,
+        execution: ciExecution(),
+        prerequisites: releasePrerequisites(),
+        installerDirectory,
+        browserManifest: join(containerDirectory, `streamskope-${version}-container.json`),
+      }),
+    );
+  }
+  await writeFile(
+    output,
+    `${body.trimEnd()}\n\n${downloads}${changes ? `\n${changes}` : ""}${evidenceNotes}`,
+    {
+      flag: "wx",
+      mode: 0o600,
+    },
+  );
   process.stdout.write("Prepared reviewed release notes, download notices and SHA256SUMS.\n");
+}
+
+function releasePrerequisites(): unknown {
+  if (!process.env.STREAMSKOPE_RELEASE_PREREQUISITES)
+    throw new Error("Release qualification requires executed prerequisite job outcomes.");
+  return JSON.parse(process.env.STREAMSKOPE_RELEASE_PREREQUISITES);
+}
+
+export function qualificationNotes(
+  report: ReleaseQualification,
+  repository = process.env.GITHUB_REPOSITORY ?? "asadarafat/streamskope",
+): string {
+  if (
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository) ||
+    !/^[1-9]\d*$/u.test(report.execution.runId ?? "")
+  )
+    throw new Error("Qualification notes require the repository and executed workflow identity.");
+  return `\n## Build evidence\n\n[Source checks and packaging qualification](https://github.com/${repository}/actions/runs/${report.execution.runId}) passed for source \`${report.source.commit}\`. Download \`${qualificationFile(report.version)}\` and \`SHA256SUMS\` for the exact source, CI results and packaged payload digests. Local soak and live EDA/NSP checks remain explicitly unrecorded until a matching local receipt is attached to this draft. Publication alone does not establish those checks.\n`;
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

@@ -18,16 +18,19 @@ async function evidence(
   outcome: string,
   checks: readonly string[],
   reason?: string,
+  details: Record<string, unknown> = {},
 ): Promise<void> {
   await mkdir("dist/ci", { recursive: true });
   await writeFile(
     "dist/ci/eda-live.json",
     JSON.stringify(
       {
+        schemaVersion: 1,
         outcome,
         checkedAt: new Date().toISOString(),
         checks,
         ...(reason ? { reason } : {}),
+        ...details,
       },
       null,
       2,
@@ -40,7 +43,9 @@ async function main(): Promise<void> {
   assert(!process.env.GITHUB_ACTIONS, "Live EDA tests run only on the local maintainer host.");
   const client = await localEdaClient();
   if (!client) {
-    await evidence("skipped", [], "Local EDA connection is not configured.");
+    await evidence("skipped", [], "Local EDA connection is not configured.", {
+      reasonCode: "not-configured",
+    });
     process.stdout.write("Live EDA: skipped (local EDA connection is not configured).\n");
     return;
   }
@@ -58,8 +63,14 @@ async function main(): Promise<void> {
   let connection: Awaited<ReturnType<StreamSkopeKafkaEngine["openConnection"]>> | undefined;
   let stream: Awaited<ReturnType<NonNullable<typeof connection>["openMessageStream"]>> | undefined;
   let failure: Error | undefined;
+  const details: Record<string, unknown> = {
+    apiCertificateVerification: true,
+    apiTrust: process.env.STREAMSKOPE_EDA_API_CA ? "provided-ca" : "system-trust",
+  };
   try {
-    requireTargetEdaVersion((await client.clusterVersion()).releaseVersion);
+    const targetVersion = (await client.clusterVersion()).releaseVersion;
+    requireTargetEdaVersion(targetVersion);
+    details.targetVersion = targetVersion;
     checks.push("cluster-version");
     assert.equal(
       (await client.captureApplicationStatus()).state,
@@ -209,7 +220,7 @@ async function main(): Promise<void> {
       }
     }
   }
-  await evidence(failure ? "failed" : "passed", checks);
+  await evidence(failure ? "failed" : "passed", checks, undefined, details);
   if (failure) throw failure;
   process.stdout.write(
     "Live EDA: passed (discovery, capture, Kafka receipt, stop and owned-resource cleanup).\n",

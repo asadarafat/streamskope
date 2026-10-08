@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 
 export const CI_LANES = ["shared", "docs", "runtime"] as const;
 export type CiLane = (typeof CI_LANES)[number];
-type ReportKind = "vitest" | "playwright" | "accessibility";
+type ReportKind = "vitest" | "playwright" | "accessibility" | "docs";
 interface ReportDefinition {
   readonly path: string;
   readonly kind: ReportKind;
@@ -18,7 +18,10 @@ const browserReport = (suite: string): ReportDefinition => ({
 });
 export const CI_REPORTS: Record<CiLane, readonly ReportDefinition[]> = {
   shared: [{ path: ".artifacts/ci/vitest.json", kind: "vitest" }],
-  docs: [{ path: ".artifacts/website/search-accessibility.json", kind: "accessibility" }],
+  docs: [
+    { path: ".artifacts/website/search-accessibility.json", kind: "accessibility" },
+    { path: ".artifacts/website/qualification.json", kind: "docs" },
+  ],
   runtime: [
     { path: ".artifacts/ci/observations-real.json", kind: "vitest" },
     { path: ".artifacts/ci/nats-real.json", kind: "vitest" },
@@ -40,7 +43,7 @@ export interface ReportEvidence {
   readonly path: string;
   readonly sha256: string;
   readonly bytes: number;
-  readonly summary: Readonly<Record<string, number | boolean>>;
+  readonly summary: Readonly<Record<string, number | boolean | string | null>>;
 }
 export interface LaneReceipt {
   readonly schemaVersion: 1;
@@ -100,6 +103,37 @@ function reportSummary(value: unknown, kind: ReportKind): ReportEvidence["summar
   const data = object(value);
   const count = (value: unknown, minimum = 0): boolean =>
     Number.isSafeInteger(value) && Number(value) >= minimum;
+  if (kind === "docs") {
+    const media = object(data.media);
+    if (
+      data.schemaVersion !== 1 ||
+      data.outcome !== "passed" ||
+      !count(data.htmlPages, 1) ||
+      !count(data.routes, 1) ||
+      typeof data.browserSha256 !== "string" ||
+      !/^[a-f0-9]{64}$/u.test(data.browserSha256) ||
+      typeof data.startedAt !== "string" ||
+      typeof data.completedAt !== "string" ||
+      !Number.isFinite(Date.parse(data.startedAt)) ||
+      !Number.isFinite(Date.parse(data.completedAt)) ||
+      Date.parse(data.startedAt) > Date.parse(data.completedAt) ||
+      Date.parse(data.completedAt) > Date.now() ||
+      !(
+        (media.outcome === "passed" && media.reason === undefined) ||
+        (media.outcome === "skipped" && media.reason === "unchanged-media-inputs")
+      ) ||
+      typeof media.fingerprint !== "string" ||
+      !/^[a-f0-9]{64}$/u.test(media.fingerprint)
+    )
+      throw new Error("Documentation evidence must contain successful page and browser checks.");
+    return {
+      htmlPages: Number(data.htmlPages),
+      routes: Number(data.routes),
+      media: String(media.outcome),
+      mediaReason: media.outcome === "skipped" ? "unchanged-media-inputs" : null,
+      mediaFingerprint: media.fingerprint,
+    };
+  }
   if (kind === "vitest") {
     if (
       data.success !== true ||
@@ -166,11 +200,16 @@ export async function readReportEvidence(
     const timestamp =
       definition.kind === "vitest"
         ? Number(data.startTime)
-        : Date.parse(String(object(data.stats).startTime));
+        : definition.kind === "docs"
+          ? Date.parse(String(data.startedAt))
+          : Date.parse(String(object(data.stats).startTime));
     if (
       !Number.isFinite(timestamp) ||
       timestamp < Date.parse(startedAt) ||
-      (completedAt !== undefined && timestamp > Date.parse(completedAt))
+      (completedAt !== undefined && timestamp > Date.parse(completedAt)) ||
+      (definition.kind === "docs" &&
+        completedAt !== undefined &&
+        Date.parse(String(data.completedAt)) > Date.parse(completedAt))
     )
       throw new Error("The test execution is outside this qualification interval.");
   }

@@ -11,6 +11,7 @@ import { prepareBrowserReleaseAssets } from "./browser-release";
 import { BROWSER_INSTALLER_NAME } from "./browser-installer";
 import { parseBrowserRegistryMetadata } from "./browser-registry-metadata";
 import { verifyBrowserContainer } from "./container-smoke";
+import { browserInstallerEvidence } from "./browser-installer-evidence";
 
 interface CommandResult {
   readonly code: number;
@@ -93,6 +94,7 @@ export async function verifyBrowserInstaller(
   sourceRevision: string,
   registryReceipt: string,
 ): Promise<void> {
+  const startedAt = new Date().toISOString();
   if (process.platform !== "linux" || process.getuid?.() !== 0)
     throw new Error("Installer qualification requires sudo on a native Linux Docker host.");
   const uid = Number(process.env.SUDO_UID);
@@ -359,26 +361,13 @@ with open(${JSON.stringify(fixtureCalls)},'a',encoding='utf8') as receipt:
       }
     }
   }
-  const evidence = {
-    schemaVersion: 1,
+  const evidence = browserInstallerEvidence({
     version,
     sourceRevision,
     platform: `linux/${architecture}`,
     image: registry.reference,
-    releaseTransport: "private staged exact-release assets; public GHCR image",
-    checks: [
-      "native installer deployment",
-      "anonymous pinned registry image",
-      "qualified topology unchanged",
-      "setup code absent from captured output",
-      "authenticated gateway",
-      "encrypted profile persistence",
-      "native workers",
-      "graceful restart through installer",
-      "running installer idempotency",
-      "graceful disposable deployment cleanup",
-    ],
-  };
+    startedAt,
+  });
   const evidenceRoot = resolve(".artifacts/ci");
   await mkdir(evidenceRoot, { recursive: true });
   await writeFile(

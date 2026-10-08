@@ -38,6 +38,7 @@ async function evidence(
     "dist/ci/nsp-live.json",
     JSON.stringify(
       {
+        schemaVersion: 1,
         outcome,
         checkedAt: new Date().toISOString(),
         checks,
@@ -50,17 +51,20 @@ async function evidence(
 }
 
 async function main(): Promise<void> {
+  await evidence("running", []);
   assert(
     !process.env.GITHUB_ACTIONS,
     "Live NSP qualification runs only on the local maintainer host.",
   );
   const path = process.env.STREAMSKOPE_NSP_CONFIG;
   if (!path) {
-    await evidence("skipped", []);
+    await evidence("skipped", [], {
+      reasonCode: "not-configured",
+      reason: "Local NSP connection is not configured.",
+    });
     process.stdout.write("Live NSP: skipped (STREAMSKOPE_NSP_CONFIG is not configured).\n");
     return;
   }
-  await evidence("running", []);
   const input = parseNspConnectInput(JSON.parse(await readFile(path, "utf8")));
   const credentials = {
     apiUrl: input.apiUrl,
@@ -381,9 +385,14 @@ async function main(): Promise<void> {
   process.stdout.write(`Live NSP: passed (${checks.join(", ")}; ${topics.length} topics).\n`);
 }
 
-void main().catch((error: unknown) => {
+void main().catch(async () => {
+  const previous = JSON.parse(await readFile("dist/ci/nsp-live.json", "utf8")) as {
+    outcome: string;
+  };
+  if (previous.outcome === "running")
+    await evidence("failed", [], { reasonCode: "configuration-invalid" });
   process.stderr.write(
-    `${error instanceof Error ? error.message : "Live NSP qualification failed."}\n`,
+    "Live NSP qualification failed. Inspect completed checks in dist/ci/nsp-live.json and reconcile any retained cleanup state.\n",
   );
   process.exitCode = 1;
 });
