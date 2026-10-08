@@ -7,8 +7,10 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { CI_LANES, CI_REPORTS, type ReportEvidence } from "../check/ci-evidence";
 
 import {
+  browserInstallerTargets,
   validateBrowserInstallerEvidence,
   type BrowserInstallerEvidence,
+  type BrowserInstallerTarget,
 } from "./browser-installer-evidence";
 import {
   attachLocalQualification,
@@ -91,6 +93,7 @@ function validateDraftPayloads(state: DraftReleaseState, report: ReleaseQualific
 function publicDraftReport(
   value: unknown,
   identity: ReturnType<typeof releaseIdentity>,
+  installerTargets: readonly BrowserInstallerTarget[],
 ): ReleaseQualification {
   const report = object(value) as unknown as ReleaseQualification;
   if (
@@ -167,24 +170,15 @@ function publicDraftReport(
       ]),
     ),
   );
-  const platforms = identity.component === "desktop" ? ["linux/amd64", "linux/arm64"] : [];
   if (
     !Array.isArray(report.packaging.browserInstallers) ||
-    report.packaging.browserInstallers.length !== platforms.length
+    report.packaging.browserInstallers.length !== installerTargets.length
   )
     throw new Error("Draft native installer evidence is incomplete.");
   const browserInstallers = report.packaging.browserInstallers.map(
     (item: BrowserInstallerEvidence, index) => {
-      if (
-        typeof item.image !== "string" ||
-        !/^ghcr\.io\/[a-z0-9_./-]+@sha256:[a-f0-9]{64}$/u.test(item.image)
-      )
-        throw new Error("Native installer image is not digest-pinned.");
       return validateBrowserInstallerEvidence(item, {
-        version: identity.version,
-        sourceRevision: report.source.commit,
-        platform: platforms[index]!,
-        image: item.image,
+        ...installerTargets[index]!,
         execution: report.execution,
       });
     },
@@ -250,7 +244,32 @@ export async function enrichDraftQualification(options: {
     originalChecksums = await port.download(tag, "SHA256SUMS");
   if (originalBytes.length > MAX_REPORT || originalChecksums.length > 64 * 1024)
     throw new Error("Draft qualification exceeds its bound.");
-  const original = publicDraftReport(JSON.parse(originalBytes.toString("utf8")), identity);
+  const value: unknown = JSON.parse(originalBytes.toString("utf8"));
+  let installerTargets: readonly BrowserInstallerTarget[] = [];
+  if (identity.component === "desktop") {
+    const source = object(object(value).source).commit;
+    if (typeof source !== "string" || !COMMIT.test(source))
+      throw new Error("Draft browser qualification requires an exact source identity.");
+    const name = `streamskope-${identity.version}-container.json`;
+    const asset = before.assets.find((item) => item.name === name);
+    if (
+      !asset ||
+      !Number.isSafeInteger(asset.size) ||
+      asset.size <= 0 ||
+      asset.size > 128 * 1024 ||
+      !/^sha256:[a-f0-9]{64}$/u.test(asset.digest)
+    )
+      throw new Error("Draft browser manifest requires a bounded, digest-bound payload.");
+    const manifest = await port.download(tag, name);
+    if (manifest.length !== asset.size || `sha256:${digest(manifest)}` !== asset.digest)
+      throw new Error("Draft browser manifest download differs from GitHub's digest.");
+    installerTargets = browserInstallerTargets(
+      JSON.parse(manifest.toString("utf8")),
+      identity.version,
+      source,
+    );
+  }
+  const original = publicDraftReport(value, identity, installerTargets);
   validateDraftPayloads(before, original);
   for (const [name, bytes] of [
     [file, originalBytes],

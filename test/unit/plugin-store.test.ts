@@ -56,6 +56,25 @@ async function install(store: PluginStore, bytes = bundle()): Promise<void> {
 }
 
 describe("plugin installation storage", () => {
+  it("inspects retained generations independently of activation pointers and rejects extra extracted contents", async () => {
+    const { root, store } = await setup();
+    await install(store);
+    await store.activatePending();
+    const digest = pluginPackageSha256(bundle());
+    const statePath = join(root, "state.json");
+    await writeFile(statePath, JSON.stringify({ formatVersion: 1, plugins: {} }));
+    const state = await readFile(statePath);
+    expect(await store.inspectInstalled()).toMatchObject({
+      installations: 0,
+      pending: false,
+      unresolved: false,
+      packages: [{ sha256: digest, referenced: false }],
+    });
+    expect(await readFile(statePath)).toEqual(state);
+    await writeFile(join(root, manifest.id, digest, "unexpected-secret"), "private");
+    await expect(store.inspectInstalled()).rejects.toThrow("unexpected files");
+    expect(await readFile(statePath)).toEqual(state);
+  });
   it.each(["unsigned", "signed"] as const)(
     "retains %s archive authority and publisher provenance across equivalent portable delivery",
     async (first) => {

@@ -31,13 +31,17 @@ export function encryptVaultValue(key: Buffer, aad: Buffer, plaintext: string): 
   return Buffer.concat([PREFIX, nonce, cipher.getAuthTag(), ciphertext]);
 }
 
-export function decryptVaultValue(key: Buffer, aad: Buffer, protectedValue: Buffer): string {
+export function assertVaultValueEnvelope(protectedValue: Buffer): void {
   if (
     protectedValue.length < HEADER_BYTES ||
     protectedValue.length > HEADER_BYTES + MAXIMUM_VAULT_VALUE_BYTES ||
     !protectedValue.subarray(0, PREFIX.length).equals(PREFIX)
   )
     throw new Error("Vault value is corrupt or unsupported.");
+}
+
+export function decryptVaultValue(key: Buffer, aad: Buffer, protectedValue: Buffer): string {
+  assertVaultValueEnvelope(protectedValue);
   const decipher = createDecipheriv(
     "aes-256-gcm",
     key,

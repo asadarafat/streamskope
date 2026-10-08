@@ -36,6 +36,7 @@ COPY --from=build /build/dist/web/THIRD_PARTY_LICENSES.json ./THIRD_PARTY_LICENS
 COPY --from=build /build/node_modules ./node_modules
 COPY --from=build /build/dist/renderer ./dist/renderer
 COPY --from=build /build/dist/web/server.cjs ./dist/web/server.cjs
+COPY --from=build /build/dist/web/data-preflight.cjs ./dist/web/data-preflight.cjs
 COPY --from=build /build/dist/web/record-codec-worker.cjs ./dist/web/record-codec-worker.cjs
 COPY --from=build /build/dist/web/trust-material-worker.cjs ./dist/web/trust-material-worker.cjs
 ENV NODE_ENV=production \

@@ -1,4 +1,14 @@
-import { access, chmod, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 
@@ -153,6 +163,8 @@ describe.skipIf(process.platform !== "linux")("released browser installer", () =
     expect(same.exitCode, same.stderr).toBe(0);
     expect(same.stdout).toMatch(/unlock/i);
     const newer = await host.installer("0.10.2");
+    expect(newer.sourceRevision).not.toBe(original.sourceRevision);
+    expect(newer.image).not.toBe(original.image);
     const result = await host.run(newer.file);
     expect(result.exitCode, result.stderr).toBe(0);
     expect(`${result.stdout}${result.stderr}`).toContain("0.10.1");
@@ -166,6 +178,154 @@ describe.skipIf(process.platform !== "linux")("released browser installer", () =
           call.args.some((argument) => argument.includes("/download/v0.10.2/")),
       ),
     ).toHaveLength(0);
+  });
+
+  it.each([2, 3])(
+    "resumes historical schema %i without inferring an inspector or selecting a newer release",
+    async (schemaVersion) => {
+      const host = await fixture();
+      const original = await host.installer("0.10.1", (manifest) => {
+        manifest.schemaVersion = schemaVersion;
+        delete manifest.dataCompatibility;
+        if (schemaVersion === 2) delete manifest.installer;
+      });
+      const first = await host.run(original.file);
+      expect(first.exitCode, first.stderr).toBe(0);
+      const before = await readFile(join(host.state, "installation.json"));
+      const newer = await host.installer("0.10.2");
+      const resumed = await host.run(newer.file);
+      expect(resumed.exitCode, resumed.stderr).toBe(0);
+      expect(await readFile(join(host.state, "installation.json"))).toEqual(before);
+      expect(deployments(await host.calls())).toHaveLength(1);
+      expect(
+        (await host.calls()).some((call) => call.command === "docker" && call.args.includes("run")),
+      ).toBe(false);
+      expect(
+        (await host.calls()).some((call) =>
+          call.args.some((arg) => arg.includes("/download/v0.10.2/")),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    undefined,
+    { contract: "unreviewed", inspector: "dist/web/data-preflight.cjs", reportSchemaVersion: 1 },
+    { contract: "streamskope-browser-data-v1", inspector: "/other.cjs", reportSchemaVersion: 1 },
+    { contract: "streamskope-browser-data-v1", inspector: "../other.cjs", reportSchemaVersion: 1 },
+    {
+      contract: "streamskope-browser-data-v1",
+      inspector: "dist/web/data-preflight.cjs",
+      reportSchemaVersion: 2,
+    },
+    {
+      contract: "streamskope-browser-data-v1",
+      inspector: "dist/web/data-preflight.cjs",
+      reportSchemaVersion: true,
+    },
+    {
+      contract: "streamskope-browser-data-v1",
+      inspector: "dist/web/data-preflight.cjs",
+      reportSchemaVersion: 1,
+      extra: true,
+    },
+  ])(
+    "rejects unsupported schema4 data compatibility %j before adopting or deploying data",
+    async (compatibility) => {
+      const host = await fixture();
+      const installer = await host.installer("0.10.1", (manifest) => {
+        if (compatibility === undefined) delete manifest.dataCompatibility;
+        else manifest.dataCompatibility = compatibility;
+      });
+      expect((await host.run(installer.file)).exitCode).not.toBe(0);
+      expect(deployments(await host.calls())).toHaveLength(0);
+      expect(
+        await access(join(host.state, "installation.json")).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false);
+      expect(
+        await access(host.data).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("retains matching legacy checksums and reuses them without a download while creating the release-scoped cache", async () => {
+    const host = await fixture();
+    const installer = await host.installer();
+    expect((await host.run(installer.file)).exitCode).toBe(0);
+    const scoped = join(host.state, `SHA256SUMS-${installer.version}-${installer.sourceRevision}`);
+    const legacy = join(host.state, "SHA256SUMS");
+    await rename(scoped, legacy);
+    const before = await readFile(legacy);
+    const previousCalls = (await host.calls()).length;
+    await host.control({ failedDownload: "SHA256SUMS" });
+    const resumed = await host.run(installer.file);
+    expect(resumed.exitCode, resumed.stderr).toBe(0);
+    expect(await readFile(scoped)).toEqual(before);
+    expect(await readFile(legacy)).toEqual(before);
+    expect(
+      (await host.calls())
+        .slice(previousCalls)
+        .some(
+          (call) => call.command === "curl" && call.args.some((arg) => arg.includes("/download/")),
+        ),
+    ).toBe(false);
+  });
+
+  it.each([false, true])(
+    "a different release's legacy checksums cannot shadow the selected release (download failure=%s)",
+    async (failedDownload) => {
+      const host = await fixture();
+      const original = await host.installer();
+      expect((await host.run(original.file)).exitCode).toBe(0);
+      const newer = await host.installer("0.10.2");
+      const foreign = await readFile(join(host.root, "assets", newer.version, "SHA256SUMS"));
+      const legacy = join(host.state, "SHA256SUMS");
+      await writeFile(legacy, foreign, { mode: 0o600 });
+      const scoped = join(host.state, `SHA256SUMS-${original.version}-${original.sourceRevision}`);
+      await rm(scoped);
+      const state = await readFile(join(host.state, "installation.json"));
+      await writeFile(join(host.data, "vault.json"), "private-existing-vault", { mode: 0o600 });
+      const previousCalls = (await host.calls()).length;
+      if (failedDownload) await host.control({ failedDownload: "SHA256SUMS" });
+      const resumed = await host.run(newer.file);
+      expect(resumed.exitCode === 0, resumed.stderr).toBe(!failedDownload);
+      expect(await readFile(legacy)).toEqual(foreign);
+      expect(await readFile(join(host.state, "installation.json"))).toEqual(state);
+      expect(await readFile(join(host.data, "vault.json"), "utf8")).toBe("private-existing-vault");
+      expect(deployments(await host.calls())).toHaveLength(1);
+      const downloads = (await host.calls())
+        .slice(previousCalls)
+        .filter(
+          (call) => call.command === "curl" && call.args.some((arg) => arg.includes("/download/")),
+        );
+      expect(downloads).toHaveLength(1);
+      expect(downloads[0]?.args).toContain(
+        "https://github.com/asadarafat/streamskope/releases/download/v0.10.1/SHA256SUMS",
+      );
+      if (!failedDownload)
+        expect(await readFile(scoped)).toEqual(
+          await readFile(join(host.root, "assets", original.version, "SHA256SUMS")),
+        );
+    },
+  );
+
+  it("refuses corrupt release-scoped checksums without replacing a saved deployment", async () => {
+    const host = await fixture();
+    const installer = await host.installer();
+    expect((await host.run(installer.file)).exitCode).toBe(0);
+    const state = await readFile(join(host.state, "installation.json"));
+    const scoped = join(host.state, `SHA256SUMS-${installer.version}-${installer.sourceRevision}`);
+    await writeFile(scoped, "corrupt-cache\n");
+    expect((await host.run(installer.file)).exitCode).not.toBe(0);
+    expect(await readFile(scoped, "utf8")).toBe("corrupt-cache\n");
+    expect(await readFile(join(host.state, "installation.json"))).toEqual(state);
+    expect(deployments(await host.calls())).toHaveLength(1);
   });
 
   it("resumes an interrupted deployment without replacing its private data", async () => {
@@ -367,6 +527,7 @@ it.each([
         ...change,
       },
       "@STREAMSKOPE_INSTALL_VERSION@\n@STREAMSKOPE_INSTALL_SOURCE@\n@STREAMSKOPE_TOPOLOGY_SHA256@\n@STREAMSKOPE_MANIFEST_SHA256@\n",
+      "invalid helper for invalid identity",
     ),
   ).toThrow();
 });

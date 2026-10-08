@@ -21,6 +21,11 @@ import {
   LOCAL_STAGES,
 } from "../../tools/check/qualification";
 import { browserInstallerEvidence } from "../../tools/package/browser-installer-evidence";
+import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
+import {
+  browserDataEvidenceFixture,
+  browserUpgradeEvidenceFixture,
+} from "../support/browser-data-evidence";
 import {
   assembleReleaseQualification,
   attachLocalQualification,
@@ -143,6 +148,29 @@ async function ci(root: string): Promise<void> {
     ).outcome,
   ).toBe("passed");
 }
+function browserManifest(sourceRevision: string): object {
+  const version = "1.2.3";
+  const image = `ghcr.io/asadarafat/streamskope:${version}`;
+  return {
+    schemaVersion: 4,
+    version,
+    sourceRevision,
+    dataCompatibility: BROWSER_DATA_COMPATIBILITY,
+    registry: {
+      schemaVersion: 1,
+      version,
+      sourceRevision,
+      image,
+      digest: `sha256:${"a".repeat(64)}`,
+      reference: `${image}@sha256:${"a".repeat(64)}`,
+      platforms: ["amd64", "arm64"].map((arch, index) => ({
+        platform: `linux/${arch}`,
+        imageId: `sha256:${(index ? "c" : "b").repeat(64)}`,
+        manifestDigest: `sha256:${(index ? "e" : "d").repeat(64)}`,
+      })),
+    },
+  };
+}
 async function report(
   root: string,
   component: "desktop" | "eda" = "desktop",
@@ -152,12 +180,14 @@ async function report(
   const output = join(root, "dist/assets");
   await mkdir(output, { recursive: true });
   await writeFile(join(output, "payload.bin"), "packaged bytes");
-  const image = `ghcr.io/asadarafat/streamskope@sha256:${"a".repeat(64)}`;
-  await json(root, "dist/browser.json", {
-    version: "1.2.3",
-    sourceRevision: source.commit,
-    registry: { reference: image },
-  });
+  const image = `ghcr.io/asadarafat/streamskope:1.2.3@sha256:${"a".repeat(64)}`;
+  await json(root, "dist/browser.json", browserManifest(source.commit));
+  if (component === "desktop")
+    await json(
+      root,
+      "dist/assets/streamskope-1.2.3-container.json",
+      browserManifest(source.commit),
+    );
   for (const arch of ["amd64", "arm64"])
     await json(
       root,
@@ -169,6 +199,14 @@ async function report(
           platform: `linux/${arch}`,
           image,
           startedAt: new Date(Date.now() - 1000).toISOString(),
+          preflight: browserDataEvidenceFixture(
+            "1.2.3",
+            `sha256:${(arch === "amd64" ? "b" : "c").repeat(64)}`,
+          ),
+          transition: browserUpgradeEvidenceFixture(
+            `linux/${arch}`,
+            `sha256:${(arch === "amd64" ? "b" : "c").repeat(64)}`,
+          ),
         },
         env,
       ),
@@ -256,9 +294,12 @@ it("assembles hashed source and native receipts without claiming local or live q
   expect(await readFile(join(root, "dist/assets/SHA256SUMS"), "utf8")).toBe(
     qualificationChecksums(result, content),
   );
-  expect(result.payloads).toEqual([
-    { file: "payload.bin", bytes: 14, sha256: sha("packaged bytes") },
-  ]);
+  expect(result.payloads).toContainEqual({
+    file: "payload.bin",
+    bytes: 14,
+    sha256: sha("packaged bytes"),
+  });
+  expect(result.payloads).toHaveLength(2);
   const notes = qualificationNotes(result, "asadarafat/streamskope");
   expect(notes).toContain("https://github.com/asadarafat/streamskope/actions/runs/1234");
   expect(notes).toContain(result.source.commit);
@@ -345,6 +386,11 @@ class Draft implements DraftQualificationPort {
   constructor(readonly report: ReleaseQualification) {
     const content = bytes(report);
     this.assets.set("payload.bin", Buffer.from("packaged bytes"));
+    if (report.component === "desktop")
+      this.assets.set(
+        `streamskope-${report.version}-container.json`,
+        bytes(browserManifest(report.source.commit)),
+      );
     this.assets.set(qualificationFile(report.version), content);
     this.assets.set("SHA256SUMS", Buffer.from(qualificationChecksums(report, content)));
   }
@@ -425,6 +471,32 @@ it.each(["published", "immutable", "payload drift"])(
     expect(port.uploads).toEqual([]);
   },
 );
+it.each(["wrong-native-image", "local-staged", "old-receipt"])(
+  "refuses %s even when the uploaded report and checksums agree",
+  async (failure) => {
+    const { port, options } = await draftFixture();
+    const changed = structuredClone(port.report);
+    const native = changed.packaging.browserInstallers[0]!;
+    if (failure === "wrong-native-image")
+      Object.assign(native.preflight, { imageId: `sha256:${"f".repeat(64)}` });
+    if (failure === "local-staged") Object.assign(native, { deliveryScope: "local-staged" });
+    if (failure === "old-receipt") Object.assign(native, { schemaVersion: 2 });
+    const content = bytes(changed);
+    port.assets.set(qualificationFile(changed.version), content);
+    port.assets.set("SHA256SUMS", Buffer.from(qualificationChecksums(changed, content)));
+    await expect(enrichDraftQualification(options)).rejects.toThrow();
+    expect(port.uploads).toEqual([]);
+  },
+);
+it("verifies downloaded manifest bytes against GitHub's digest before trusting its native images", async () => {
+  const { port, options } = await draftFixture();
+  port.onDownload = (name): void => {
+    if (name.endsWith("-container.json"))
+      port.assets.set(name, Buffer.from("substituted manifest"));
+  };
+  await expect(enrichDraftQualification(options)).rejects.toThrow(/manifest download differs/u);
+  expect(port.uploads).toEqual([]);
+});
 it.each(["publication", "checksum-upload"])(
   "fails explicitly with retained recovery files after concurrent %s",
   async (failure) => {

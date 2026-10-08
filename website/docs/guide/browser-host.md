@@ -66,11 +66,59 @@ Finish cleanup and lock the vault, then follow
 [the graceful stop and resume procedure](browser-deployment.md#stop-and-resume).
 Resume an installer-managed host by rerunning the trusted installer from its
 original Linux account. It preserves the owner, port, vault and pinned release.
-There is no supported browser-host upgrade procedure.
+To change the release, use the explicit [upgrade procedure](#upgrade-an-installer-managed-host).
 
 With Docker running, the container's `unless-stopped` policy restarts it after a
 Docker restart unless it was explicitly stopped. The vault starts locked;
 unlock and connect explicitly to resume work.
+
+## Upgrade an installer-managed host
+
+Download `install-browser-workbench.sh` from the release you intend to install
+and save it on the Linux host. Use the original Linux account. A normal rerun
+still resumes the saved release; it never silently upgrades the workbench.
+
+Finish active work and owned plugin cleanup, then check the target release:
+
+```sh
+sudo bash install-browser-workbench.sh check
+```
+
+The check leaves the running workbench in place. It verifies the release, local
+deployment ownership, supported data formats and backup space. If it refuses,
+follow the reported action and keep the existing data and deployment records.
+
+When the check succeeds, run:
+
+```sh
+sudo bash install-browser-workbench.sh upgrade
+```
+
+The installer gracefully stops the owned host, makes a private backup, checks
+the stopped data, and starts the target release with the same owner, port and
+browser URL. It records the new version only after the host starts locked and
+passes readiness checks. Open the URL, unlock with your original passphrase,
+and test a saved connection before resuming work. Readiness alone does not
+verify your passphrase or broker access.
+
+Use the same command with the operation you need:
+
+| Operation  | Result                                                            |
+| ---------- | ----------------------------------------------------------------- |
+| `check`    | Checks the target without stopping the host.                      |
+| `upgrade`  | Backs up current data and replaces the verified owned host.       |
+| `rollback` | Uses the previous recorded image with current compatible data.    |
+| `recover`  | Continues a recorded transaction or explains why it needs review. |
+
+Rollback does not restore old messages, rewind target systems or replace current
+data with an older backup. If current data is incompatible, it stops instead.
+Backups remain private on the Linux host; they are not an off-host backup.
+
+This procedure requires an initialized vault and an installer-managed deployment.
+Saved plugin-managed profiles, unresolved recovery or unsafe/unknown data formats
+can block maintenance. Do not delete ownership metadata or lock files to bypass
+a refusal. Follow [maintenance limits and recovery](browser-deployment.md#maintenance-limits-and-recovery)
+for the supported starting release and retained evidence.
 
 ## Back up and restore
 

@@ -21,6 +21,7 @@ import { list, type ReadEntry } from "tar";
 
 import { parseReleaseVersion } from "../../src/plugins/compatibility";
 import { readBoundedFile } from "../../src/platform/node/bounded-file";
+import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
 
 import {
   parseBrowserRegistryMetadata,
@@ -50,7 +51,7 @@ interface ArchiveRecord extends ImageRecord {
 }
 
 export interface BrowserReleaseManifest {
-  readonly schemaVersion: 1 | 2 | 3;
+  readonly schemaVersion: 1 | 2 | 3 | 4;
   readonly version: string;
   readonly sourceRevision: string;
   readonly image: string;
@@ -60,6 +61,7 @@ export interface BrowserReleaseManifest {
   readonly registry?: BrowserRegistryMetadata;
   readonly offlineTopology?: { readonly file: string; readonly sha256: string };
   readonly installer?: { readonly file: typeof BROWSER_INSTALLER_NAME };
+  readonly dataCompatibility?: typeof BROWSER_DATA_COMPATIBILITY;
 }
 
 export function browserReleaseNames(
@@ -382,7 +384,8 @@ export async function prepareBrowserReleaseAssets(
           sha256: createHash("sha256").update(offline).digest("hex"),
         };
   const manifest: BrowserReleaseManifest = {
-    schemaVersion: registry === undefined ? 1 : 3,
+    schemaVersion: 4,
+    dataCompatibility: BROWSER_DATA_COMPATIBILITY,
     version,
     sourceRevision: commit,
     image: `streamskope:${version}`,
@@ -426,6 +429,7 @@ export async function prepareBrowserReleaseAssets(
             manifestSha256: createHash("sha256").update(manifestContent).digest("hex"),
           },
           await readFile("tools/package/install-browser-workbench.sh", "utf8"),
+          await readFile("tools/package/browser-maintenance.py", "utf8"),
         ),
         { flag: "wx", mode: 0o755 },
       );
@@ -450,11 +454,16 @@ export async function validateBrowserReleaseAssets(
   );
   const manifest: unknown = JSON.parse(manifestBytes.toString("utf8"));
   const input = object(manifest);
+  if (input.schemaVersion === 3)
+    throw new Error(
+      "Historical schema 3 installer assets require source-matched verification; current tooling qualifies schema 4 installers. Saved installations remain readable.",
+    );
+  const current = input.schemaVersion === 4;
   const registry =
-    input.schemaVersion === 2 || input.schemaVersion === 3
+    input.schemaVersion === 2 || (current && input.registry !== undefined)
       ? parseBrowserRegistryMetadata(input.registry, version, commit)
       : undefined;
-  const hasInstaller = input.schemaVersion === 3;
+  const hasInstaller = current && registry !== undefined;
   const names = browserReleaseNames(version, registry !== undefined, hasInstaller);
   await directoryNames(directory, names);
   const source = await readFile(topologySource, "utf8");
@@ -502,7 +511,8 @@ export async function validateBrowserReleaseAssets(
   )
     throw new Error("Registry native images differ from the qualified offline archives.");
   const expected: BrowserReleaseManifest = {
-    schemaVersion: hasInstaller ? 3 : registry === undefined ? 1 : 2,
+    schemaVersion: current ? 4 : registry === undefined ? 1 : 2,
+    ...(current ? { dataCompatibility: BROWSER_DATA_COMPATIBILITY } : {}),
     version,
     sourceRevision: commit,
     image: `streamskope:${version}`,
@@ -535,6 +545,7 @@ export async function validateBrowserReleaseAssets(
         manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
       },
       await readFile("tools/package/install-browser-workbench.sh", "utf8"),
+      await readFile("tools/package/browser-maintenance.py", "utf8"),
     );
     if (!installer.equals(Buffer.from(reviewed)))
       throw new Error("Browser installer does not match the reviewed template and release assets.");

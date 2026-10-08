@@ -27,11 +27,17 @@ export interface InstallerControl {
   missingDocker?: boolean;
   installedPackages?: string[];
   dockerInfoFailures?: number;
+  stopExitCode?: number;
+  stopOomKilled?: boolean;
+  crashAfter?: "before-stop" | "stop" | "remove" | "deploy" | "status";
+  verifyLeaseDuringDeploy?: boolean;
+  leaseContenderBlocked?: boolean;
 }
 
 interface InstallerArtifact {
   file: string;
   version: string;
+  sourceRevision: string;
   image: string;
   topology: string;
   manifest: Record<string, unknown>;
@@ -61,7 +67,9 @@ export interface BrowserInstallerFixture {
 }
 
 const commandMock = String.raw`
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { basename, join } from "node:path";
 const root = process.env.INSTALL_FIXTURE_ROOT;
 if (!root || !root.startsWith("/tmp/")) throw new Error("Missing isolated installer fixture.");
@@ -72,6 +80,16 @@ const control = JSON.parse(readFileSync(controlPath, "utf8"));
 const stateRoot = join(root, "state");
 appendFileSync(join(root, "calls.jsonl"), JSON.stringify({ command, args }) + "\n");
 const save = () => writeFileSync(controlPath, JSON.stringify(control));
+const hash = value => createHash("sha256").update(value).digest("hex");
+const imageConfig = (version, source) => ({ Entrypoint: ["tini", "--"], Cmd: ["node", "dist/web/browser-entry.cjs"], Env: [], Labels: { "org.opencontainers.image.version": version, "org.opencontainers.image.revision": source } });
+const crash = phase => {
+  if (control.crashAfter !== phase) return;
+  delete control.crashAfter;
+  save();
+  // Kill only this fixture command's immediate transaction-helper parent.
+  process.kill(process.ppid, "SIGKILL");
+  process.exit(0);
+};
 const out = value => process.stdout.write(typeof value === "string" ? value + "\n" : JSON.stringify(value) + "\n");
 const fail = (message, code = 1) => { process.stderr.write(message + "\n"); process.exit(code); };
 if (command === "id") {
@@ -110,12 +128,43 @@ if (command === "id") {
   else if (args[0] === "image" && args[1] === "inspect") {
     const version = args.at(-1).match(/streamskope:([^@]+)/)?.[1];
     const architecture = control.architecture === "aarch64" ? "arm64" : "amd64";
-    out([{ Id: "sha256:" + (architecture === "arm64" ? "4" : "3").repeat(64), Os: "linux", Architecture: architecture, Config: { Labels: { "org.opencontainers.image.version": version, "org.opencontainers.image.revision": "${INSTALL_SOURCE}" } }, RepoDigests: ["ghcr.io/asadarafat/streamskope@${INSTALL_DIGEST}"] }]);
+    const identity = JSON.parse(readFileSync(join(root, "assets", version, "fixture-identity.json"), "utf8"));
+    out([{ Id: identity.platforms.find(p => p.platform === "linux/" + architecture).imageId, Os: "linux", Architecture: architecture, Config: imageConfig(version, identity.sourceRevision), RepoDigests: [identity.image + "@" + identity.digest] }]);
   }
-  else if (args[0] === "container" && args[1] === "ls") { if (control.container) out(control.container.Id || "fixture-container"); }
-  else if (args[0] === "inspect") {
+  else if (args[0] === "container" && args[1] === "ls") {
+    const filter = args.indexOf("--filter");
+    if (control.container && (filter < 0 || args[filter + 1] === "name=^/" + control.container.Name.slice(1) + "$")) out(control.container.Id || "f".repeat(64));
+  }
+  else if (args[0] === "inspect" || (args[0] === "container" && args[1] === "inspect")) {
     if (!control.container) fail("No such container: clab-streamskope-app");
     out([control.container]);
+  } else if (args[0] === "stop") {
+    crash("before-stop");
+    if (!control.container || args.at(-1) !== control.container.Id) fail("Unexpected stopped container.");
+    Object.assign(control.container.State, { Running: false, Status: "exited", ExitCode: control.stopExitCode || 0, OOMKilled: control.stopOomKilled || false });
+    save();
+    crash("stop");
+    out(control.container.Id);
+  } else if (args[0] === "rm") {
+    if (!control.container || control.container.State.Running || args.at(-1) !== control.container.Id) fail("Only the exact stopped fixture container can be removed.");
+    delete control.container;
+    save();
+    crash("remove");
+    out("removed");
+  } else if (args[0] === "run") {
+    const mount = args[args.indexOf("--mount") + 1];
+    const match = /^type=bind,source=(.*),target=\/data,readonly$/.exec(mount || "");
+    if (!match || !match[1].startsWith(stateRoot + "/") || !args.includes("--read-only") || !args.includes("none") || !args.includes("ALL")) fail("Unsafe fixture inspector invocation.");
+    const imageId = args[args.indexOf("--entrypoint") + 2];
+    let selected;
+    for (const version of readdirSync(join(root, "assets"))) {
+      const identity = JSON.parse(readFileSync(join(root, "assets", version, "fixture-identity.json"), "utf8"));
+      if (identity.platforms.some(item => item.imageId === imageId)) selected = identity;
+    }
+    if (!selected) fail("Inspector image is not a known fixture image.");
+    const repo = process.env.INSTALL_FIXTURE_SOURCE;
+    const output = execFileSync(process.execPath, ["--import", join(repo, "node_modules/tsx/dist/loader.mjs"), join(repo, "test/support/browser-maintenance-inspector.ts"), match[1], selected.version], { env: process.env });
+    process.stdout.write(output);
   } else if (args[0] === "start") {
     if (!control.container) fail("Cannot start an absent fixture container.");
     control.container.State.Running = true;
@@ -138,21 +187,29 @@ if (command === "id") {
     mkdirSync(data, { recursive: true, mode: 0o700 });
     const port = String(process.env.STREAMSKOPE_HOST_PORT || "8080");
     const version = image.match(/streamskope:([^@]+)/)[1];
+    const identity = JSON.parse(readFileSync(join(root, "assets", version, "fixture-identity.json"), "utf8"));
+    const architecture = control.architecture === "aarch64" ? "arm64" : "amd64";
     control.container = {
-      Name: "/clab-streamskope-app", Id: "fixture-container", Image: "sha256:" + (control.architecture === "aarch64" ? "4" : "3").repeat(64),
-      Config: { Image: image, User: process.env.SUDO_UID + ":" + process.env.SUDO_GID,
+      Name: "/clab-streamskope-app", Id: hash("container:" + version), Image: identity.platforms.find(p => p.platform === "linux/" + architecture).imageId,
+      Config: { ...imageConfig(version, identity.sourceRevision), Image: image, User: process.env.SUDO_UID + ":" + process.env.SUDO_GID,
         Env: ["STREAMSKOPE_PUBLIC_ORIGIN=http://127.0.0.1:" + port],
-        Labels: { "containerlab": "streamskope", "clab-node-name": "app", "clab-topo-file": args[flag + 1], "io.streamskope.deployment": "browser", "org.opencontainers.image.version": version, "org.opencontainers.image.revision": "${INSTALL_SOURCE}" } },
-      State: { Running: true, Status: "running" },
+        Labels: { "containerlab": "streamskope", "clab-node-name": "app", "clab-topo-file": args[flag + 1], "io.streamskope.deployment": "browser", "org.opencontainers.image.version": version, "org.opencontainers.image.revision": identity.sourceRevision } },
+      State: { Running: true, Status: "running", ExitCode: 0, OOMKilled: false, StartedAt: "2026-10-08T12:00:00.000000000Z" }, RestartCount: 0,
       Mounts: [{ Type: "bind", Source: data, Destination: "/data", RW: true }],
-      HostConfig: { Privileged: false, PortBindings: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: port }] } },
+      HostConfig: { Privileged: false, CapAdd: [], SecurityOpt: ["no-new-privileges:true"], RestartPolicy: { Name: "unless-stopped" }, PortBindings: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: port }] } },
       NetworkSettings: { Ports: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: port }] } }
     };
     if (!existsSync(join(data, "vault.json"))) {
       writeFileSync(join(data, "setup-code"), "${INSTALL_SETUP_CODE}\n", { mode: 0o600 });
       chmodSync(join(data, "setup-code"), 0o600);
     }
+    if (control.verifyLeaseDuringDeploy) {
+      const result = execFileSync("python3", ["-c", "import fcntl,sys; f=open(sys.argv[1]);\ntry: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); print('acquired')\nexcept BlockingIOError: print('blocked')", join(data, "vault.lock")], { encoding: "utf8" }).trim();
+      control.leaseContenderBlocked = result === "blocked";
+      if (!control.leaseContenderBlocked) fail("The transaction released its data lease before deployment.");
+    }
     save();
+    crash("deploy");
     out("Fixture deployment completed.");
   } else fail("Unexpected fixture Containerlab invocation: " + args.join(" "));
 } else if (command === "curl") {
@@ -161,7 +218,8 @@ if (command === "id") {
   const parsed = new URL(url);
   let contents;
   if (parsed.hostname === "127.0.0.1") {
-    contents = parsed.pathname === "/health" ? JSON.stringify({ status: "locked" }) : JSON.stringify({ state: "locked", setupRequired: control.setupRequired !== false && !existsSync(join(stateRoot, "streamskope-data/vault.json")) });
+    crash("status");
+    contents = parsed.pathname === "/health" ? JSON.stringify({ status: "locked" }) : JSON.stringify({ state: "locked", setupRequired: control.setupRequired ?? !existsSync(join(stateRoot, "streamskope-data/vault.json")) });
   } else if (parsed.hostname === "github.com") {
     const file = basename(parsed.pathname);
     if (control.failedDownload === file) fail("Fixture HTTP 404", 22);
@@ -264,17 +322,20 @@ export async function browserInstallerFixture(
     version = "0.10.1",
     metadata?: (value: Record<string, unknown>) => void,
   ): Promise<InstallerArtifact> {
+    const sourceRevision =
+      version === "0.10.1" ? INSTALL_SOURCE : hash(`source:${version}`).slice(0, 40);
+    const digest = version === "0.10.1" ? INSTALL_DIGEST : `sha256:${hash(`registry:${version}`)}`;
     const registry = {
       schemaVersion: 1 as const,
       version,
-      sourceRevision: INSTALL_SOURCE,
+      sourceRevision,
       image: `ghcr.io/asadarafat/streamskope:${version}`,
-      reference: `ghcr.io/asadarafat/streamskope:${version}@${INSTALL_DIGEST}`,
-      digest: INSTALL_DIGEST,
+      reference: `ghcr.io/asadarafat/streamskope:${version}@${digest}`,
+      digest,
       platforms: (["amd64", "arm64"] as const).map((architecture, index) => ({
         platform: `linux/${architecture}` as const,
-        manifestDigest: `sha256:${String(index + 1).repeat(64)}`,
-        imageId: `sha256:${String(index + 3).repeat(64)}`,
+        manifestDigest: `sha256:${hash(`manifest:${version}:${index}`)}`,
+        imageId: `sha256:${hash(`image:${version}:${index}`)}`,
       })),
     };
     const topology = browserRegistryTopology(
@@ -282,17 +343,23 @@ export async function browserInstallerFixture(
       registry,
     );
     const manifest: Record<string, unknown> = {
-      schemaVersion: 2,
+      schemaVersion: 4,
       version,
-      sourceRevision: INSTALL_SOURCE,
+      sourceRevision,
       image: `streamskope:${version}`,
       format: "docker-save-gzip",
       topology: { file: `streamskope-${version}.clab.yml`, sha256: hash(topology) },
       registry,
+      installer: { file: "install-browser-workbench.sh" },
+      dataCompatibility: {
+        contract: "streamskope-browser-data-v1",
+        inspector: "dist/web/data-preflight.cjs",
+        reportSchemaVersion: 1,
+      },
       offlineTopology: { file: `streamskope-${version}-offline.clab.yml`, sha256: "d".repeat(64) },
       archives: registry.platforms.map((platform, index) => ({
         version,
-        sourceRevision: INSTALL_SOURCE,
+        sourceRevision,
         image: `streamskope:${version}`,
         imageId: platform.imageId,
         platform: platform.platform,
@@ -305,6 +372,7 @@ export async function browserInstallerFixture(
     const contents = `${JSON.stringify(manifest)}\n`;
     const assets = join(root, "assets", version);
     await mkdir(assets, { recursive: true });
+    await writeFile(join(assets, "fixture-identity.json"), JSON.stringify(registry));
     await writeFile(join(assets, `streamskope-${version}.clab.yml`), topology);
     await writeFile(join(assets, `streamskope-${version}-container.json`), contents);
     await writeFile(
@@ -314,11 +382,12 @@ export async function browserInstallerFixture(
     let source = renderBrowserWorkbenchInstaller(
       {
         version,
-        sourceRevision: INSTALL_SOURCE,
+        sourceRevision,
         topologySha256: hash(topology),
         manifestSha256: hash(contents),
       },
       await readFile("tools/package/install-browser-workbench.sh", "utf8"),
+      await readFile("tools/package/browser-maintenance.py", "utf8"),
     );
     for (const [constant, value] of Object.entries({
       INSTALL_ROOT: join(root, "state"),
@@ -346,7 +415,7 @@ export async function browserInstallerFixture(
     }
     const file = join(root, `install-${version}.sh`);
     await writeFile(file, source);
-    return { file, version, image: registry.reference, topology, manifest };
+    return { file, version, sourceRevision, image: registry.reference, topology, manifest };
   }
   async function run(file: string, args: string[] = []): Promise<InstallerResult> {
     try {
@@ -357,6 +426,7 @@ export async function browserInstallerFixture(
           PATH: bin,
           TMPDIR: root,
           INSTALL_FIXTURE_ROOT: root,
+          INSTALL_FIXTURE_SOURCE: process.cwd(),
           SUDO_UID: String(owner.uid),
           SUDO_GID: String(owner.gid),
           SUDO_USER: "operator",

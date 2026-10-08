@@ -104,6 +104,26 @@ function protectedBytes(value: string): Buffer {
   return decoded;
 }
 
+export interface NatsProfileEnvelope {
+  readonly version: 1;
+  readonly profiles: readonly (ProtectedProfile & { readonly protectedBytes: Buffer })[];
+}
+
+/** Validates the stored envelope without entering the decrypting/re-encrypting loader. */
+export function inspectNatsProfileEnvelope(contents: Uint8Array): NatsProfileEnvelope {
+  if (contents.byteLength > NATS_LIMITS.profileFileBytes) throw new NatsProfileFileCorruptError();
+  const profiles = protectedDocument(
+    JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(contents)) as unknown,
+  );
+  return {
+    version: PROFILE_FILE_VERSION,
+    profiles: profiles.map((profile) => ({
+      ...profile,
+      protectedBytes: protectedBytes(profile.protectedValue),
+    })),
+  };
+}
+
 function restoredProfile(plaintext: string, expected: ProtectedProfile): NatsProfileRecord {
   if (
     Buffer.byteLength(plaintext, "utf8") >
@@ -174,14 +194,12 @@ export class AtomicNatsProfileFileStore implements NatsProfileStore {
     }
     try {
       signal?.throwIfAborted();
-      const entries = protectedDocument(
-        JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(contents)) as unknown,
-      );
+      const entries = inspectNatsProfileEnvelope(contents).profiles;
       const restored: NatsProfileRecord[] = [];
       let shouldReEncrypt = false;
       for (const entry of entries) {
         signal?.throwIfAborted();
-        const result = await this.protector.unprotect(protectedBytes(entry.protectedValue));
+        const result = await this.protector.unprotect(entry.protectedBytes);
         signal?.throwIfAborted();
         restored.push(restoredProfile(result.plaintext, entry));
         shouldReEncrypt ||= result.shouldReEncrypt;

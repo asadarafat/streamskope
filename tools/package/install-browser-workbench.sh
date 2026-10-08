@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release CI stamps this installer; installation never builds or upgrades source.
+# Release CI stamps this installer; maintenance uses qualified release images.
 set +x
 set -Eeuo pipefail
 umask 077
@@ -29,7 +29,12 @@ cleanup() { if [[ -n "$STAGING" ]]; then rm -rf -- "$STAGING"; fi; }
 trap cleanup EXIT
 trap 'fail "Installation stopped. Saved deployment and vault data were preserved; resolve the reported problem and run the installer again."' ERR
 
-[[ $# -eq 0 ]] || fail 'This installer accepts no arguments.'
+operation=install
+case $# in
+  0) ;;
+  1) case "$1" in check|upgrade|rollback|recover) operation=$1 ;; *) fail 'Use no arguments to install or resume, or one operation: check, upgrade, rollback, recover.' ;; esac ;;
+  *) fail 'Use no arguments to install or resume, or one operation: check, upgrade, rollback, recover.' ;;
+esac
 [[ "$STREAMSKOPE_INSTALL_VERSION" != @* && "$STREAMSKOPE_INSTALL_SOURCE" != @* && "$STREAMSKOPE_TOPOLOGY_SHA256" != @* && "$STREAMSKOPE_MANIFEST_SHA256" != @* ]] || fail 'Download the stamped installer from a published StreamSkope release; the source template cannot install.'
 [[ "$STREAMSKOPE_INSTALL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ && "$STREAMSKOPE_INSTALL_SOURCE" =~ ^[a-f0-9]{40}$ && "$STREAMSKOPE_TOPOLOGY_SHA256" =~ ^[a-f0-9]{64}$ && "$STREAMSKOPE_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]] || fail 'Installer release identity is invalid.'
 [[ $(id -u) -eq 0 ]] || fail 'Run this installer with sudo from the account that will own the workbench.'
@@ -37,6 +42,61 @@ trap 'fail "Installation stopped. Saved deployment and vault data were preserved
 case $(uname -m) in x86_64|amd64) ARCHITECTURE=amd64 ;; aarch64|arm64) ARCHITECTURE=arm64 ;; *) fail 'The browser image requires Linux AMD64 or ARM64.' ;; esac
 [[ -z ${DOCKER_CONTEXT:-} || ${DOCKER_CONTEXT:-} == default ]] || fail 'Select the local default Docker context before installing; remote contexts are not supported.'
 [[ -z ${DOCKER_HOST:-} || ${DOCKER_HOST:-} == unix:///var/run/docker.sock || ${DOCKER_HOST:-} == unix:///run/docker.sock ]] || fail 'Use the local Linux Docker daemon; remote Docker endpoints are not supported.'
+
+browser_maintenance() {
+  python3 - "$@" <<'STREAMSKOPE_MAINTENANCE_PY'
+@STREAMSKOPE_MAINTENANCE_HELPER@
+STREAMSKOPE_MAINTENANCE_PY
+}
+
+# The helper returns a bounded machine receipt; only finite presentation fields
+# reach the terminal. Native qualification reads the durable records directly.
+maintenance_result() {
+  python3 - "$1" "$operation" "$STREAMSKOPE_INSTALL_VERSION" <<'PY_RESULT'
+import json,re,sys
+try:
+    value=json.loads(sys.argv[1]); operation=sys.argv[2]; target=sys.argv[3]
+    assert isinstance(value,dict) and value.get('schemaVersion')==1 and value.get('operation')==operation
+    outcome=value.get('outcome')
+    if outcome=='blocked':
+        messages={
+            'invalid-state':'Saved maintenance state could not be verified. Preserve the deployment files and review recovery before retrying.',
+            'unsupported-target':'This release cannot safely maintain the installed deployment. Keep the current installation and review supported upgrades.',
+            'ownership-unconfirmed':'Deployment ownership could not be verified. No foreign resource will be adopted or removed.',
+            'lease-missing':'Initialize and unlock the existing browser vault, then lock it before retrying maintenance.',
+            'lease-held':'The vault is still in use. Wait for its owner to finish; do not delete or replace the vault lock.',
+            'preflight-blocked':'Saved data did not pass compatibility inspection. Preserve the data and review its supported format before upgrading.',
+            'cleanup-unconfirmed':'The workbench did not confirm a clean stop. Preserve the deployment and inspect its shutdown before recovery.',
+            'backup-unavailable':'A complete verified backup is unavailable. Check free space and retained evidence before recovery.',
+            'recovery-required':'An interrupted transaction needs review. Run this installer with recover; preserve the current data and retained backups.',
+            'candidate-unavailable':'The selected workbench did not confirm locked readiness. Preserve the data and use recover after resolving the deployment issue.',
+        }
+        assert value.get('reason') in messages
+        print('StreamSkope: '+messages[value['reason']],file=sys.stderr)
+    else:
+        assert outcome in ('checked','unchanged','committed','recovered')
+        version=value['current']['version']; url=value['url']
+        assert isinstance(version,str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?',version)
+        assert isinstance(url,str) and re.fullmatch(r'http://127\.0\.0\.1:[0-9]{4,5}/',url)
+        if outcome=='checked':
+            print('StreamSkope v'+target+' compatibility check completed. The running v'+version+' workbench was not changed.')
+        elif outcome=='unchanged':
+            print('StreamSkope v'+version+' is already selected. The deployment was not changed.')
+        elif operation=='recover':
+            print('Maintenance recovery completed. StreamSkope v'+version+' is selected; retained backups were preserved.')
+        else:
+            print(('Upgrade' if operation=='upgrade' else 'Rollback')+' completed. StreamSkope v'+version+' uses your existing data; the verified backup was retained.')
+        print('Open '+url+(' and unlock your existing vault.' if outcome in ('committed','recovered') else ''))
+except (AssertionError,ValueError,TypeError,KeyError):
+    sys.exit('StreamSkope: Maintenance returned an invalid result. Preserve the saved deployment and review recovery before retrying.')
+PY_RESULT
+}
+
+# A pending transaction must be resolved before ordinary resume can bootstrap or
+# touch deployment state. The helper repeats this guard under the installer lock.
+if [[ "$operation" == install && ( -e "$STATE_ROOT/maintenance.json" || -L "$STATE_ROOT/maintenance.json" ) ]]; then
+  fail 'A browser maintenance transaction needs recovery. Run this installer with recover; saved data and evidence were preserved.'
+fi
 
 # Docker repositories: https://docs.docker.com/engine/install/{ubuntu,debian}/
 # Containerlab repository: https://containerlab.dev/install/#package-managers
@@ -204,9 +264,6 @@ install_missing_prerequisites() (
     fail 'Prerequisite installation did not provide Containerlab.'
 )
 
-check_prerequisites
-install_missing_prerequisites >&2
-
 safe_directory() {
   local path=$1 owner=$2
   [[ -d "$path" && ! -L "$path" ]] || fail "A regular directory is required at $path; no existing paths were replaced."
@@ -220,12 +277,46 @@ safe_directory() {
 safe_file() {
   [[ -f "$1" && ! -L "$1" && $(stat -c '%u:%a:%h' "$1") == "$STATE_OWNER_UID:600:1" ]] || fail "A private, singly linked deployment file is required at $1; no file was replaced."
 }
+# Maintenance never bootstraps prerequisites, creates an account, or initializes
+# application data. It only operates on an already recorded installation.
+if [[ "$operation" != install ]]; then
+  trap 'fail "Browser maintenance stopped. Preserve deployment data and retained backups; review the problem and use recover for an interrupted transaction."' ERR
+  for prerequisite in python3 flock curl docker stat dirname mktemp; do
+    command -v "$prerequisite" >/dev/null 2>&1 ||
+      fail 'Browser maintenance requires the existing host prerequisites. Restore the missing tool, then retry; no packages were installed.'
+  done
+  command -v containerlab >/dev/null 2>&1 || command -v clab >/dev/null 2>&1 ||
+    fail 'Browser maintenance requires the existing Containerlab installation; no packages were installed.'
+  safe_directory "$(dirname "$STATE_ROOT")" "$STATE_OWNER_UID"
+  safe_directory "$STATE_ROOT" "$STATE_OWNER_UID"
+  [[ $(stat -c '%a' "$STATE_ROOT") == 700 ]] || fail 'Deployment state must have mode 0700.'
+  safe_file "$STATE_ROOT/installation.json"
+  safe_file "$STATE_ROOT/installer.lock"
+  exec 9<>"$STATE_ROOT/installer.lock"
+  flock --nonblock 9 || fail 'Another StreamSkope installer is running. Wait for it to finish and retry.'
+  STAGING=$(mktemp -d "$STATE_ROOT/.install-XXXXXXXX")
+  if receipt=$(browser_maintenance maintain "$operation" "$STATE_ROOT" "$STATE_OWNER_UID" "$STATE_OWNER_GID" \
+    "$ARCHITECTURE" "$LAB_NAME" "$NETWORK_NAME" "$CONTAINER_NAME" "$STREAMSKOPE_INSTALL_VERSION" \
+    "$STREAMSKOPE_INSTALL_SOURCE" "$STREAMSKOPE_TOPOLOGY_SHA256" "$STREAMSKOPE_MANIFEST_SHA256" "$STAGING" 2>"$STAGING/maintenance-error"); then
+    maintenance_result "$receipt"
+    exit 0
+  else
+    result=$?
+    if [[ -n "$receipt" ]]; then maintenance_result "$receipt";
+    else log 'Maintenance was interrupted. Preserve deployment data and retained backups; use recover to inspect and resume the saved transaction.'; fi
+    exit "$result"
+  fi
+fi
+
+check_prerequisites
+install_missing_prerequisites >&2
+
 parent=$(dirname "$STATE_ROOT")
 if [[ -e "$parent" || -L "$parent" ]]; then safe_directory "$parent" "$STATE_OWNER_UID"; else install -d -m 0755 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$parent"; fi
 if [[ -e "$STATE_ROOT" || -L "$STATE_ROOT" ]]; then safe_directory "$STATE_ROOT" "$STATE_OWNER_UID"; [[ $(stat -c '%a' "$STATE_ROOT") == 700 ]] || fail 'Deployment state must have mode 0700.'; else install -d -m 0700 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$STATE_ROOT"; fi
 lock="$STATE_ROOT/installer.lock"
 if [[ -e "$lock" || -L "$lock" ]]; then safe_file "$lock"; fi
-exec 9>"$lock"
+exec 9<>"$lock"
 flock --nonblock 9 || fail 'Another StreamSkope installer is running. Wait for it to finish and retry.'
 STAGING=$(mktemp -d "$STATE_ROOT/.install-XXXXXXXX")
 state="$STATE_ROOT/installation.json"
@@ -237,24 +328,10 @@ topology_hash=$STREAMSKOPE_TOPOLOGY_SHA256
 manifest_hash=$STREAMSKOPE_MANIFEST_SHA256
 if [[ -e "$state" || -L "$state" ]]; then
   safe_file "$state"
-  values=$(python3 - "$state" <<'PY'
-import json,re,sys
-try:
-    value=json.load(open(sys.argv[1],encoding='utf8'))
-    fields=['schemaVersion','version','sourceRevision','topologySha256','manifestSha256','uid','gid','home','operatorUid','port']
-    assert isinstance(value,dict) and set(value)==set(fields) and type(value['schemaVersion']) is int and value['schemaVersion']==1
-    assert isinstance(value['version'],str) and re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?',value['version'])
-    for field,size in [('sourceRevision',40),('topologySha256',64),('manifestSha256',64)]:
-        assert isinstance(value[field],str) and re.fullmatch('[a-f0-9]{%d}'%size,value[field])
-    assert all(type(value[field]) is int and value[field]>=0 for field in ['uid','gid','operatorUid']) and value['uid']>0
-    assert type(value['port']) is int and 1024<=value['port']<=65535
-    assert isinstance(value['home'],str) and value['home'].startswith('/') and not any(c in value['home'] for c in '\r\n\0')
-    for field in fields[1:]: print(value[field])
-except (AssertionError,ValueError,OSError,TypeError,KeyError):
-    sys.exit('Saved installation metadata is invalid; preserve it and recover the trusted deployment record before retrying.')
-PY
-  )
+  if values=$(browser_maintenance read-current "$STATE_ROOT" "$STATE_OWNER_UID" "$STATE_OWNER_GID"); then :;
+  else result=$?; exit "$result"; fi
   mapfile -t pinned <<<"$values"
+  [[ ${#pinned[@]} -eq 9 ]] || fail 'Saved installation metadata could not be read; preserve it and recover the trusted deployment record.'
   version=${pinned[0]}; source=${pinned[1]}; topology_hash=${pinned[2]}; manifest_hash=${pinned[3]}
   saved_uid=${pinned[4]}; saved_gid=${pinned[5]}; saved_home=${pinned[6]}; saved_operator=${pinned[7]}; port=${pinned[8]}
   saved=true
@@ -308,9 +385,37 @@ fi
 topology="streamskope-$version.clab.yml"
 manifest="streamskope-$version-container.json"
 base="https://github.com/asadarafat/streamskope/releases/download/v$version"
+checksum_cache="SHA256SUMS-$version-$source"
+download_release_asset() {
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 15 --max-time 120 --max-filesize 1048576 --output "$STAGING/$1" "$base/$1" || fail "Cannot retrieve v$version release assets. Check HTTPS/proxy access to GitHub, then retry."
+}
+# Old installers kept one checksum file for every release. Reuse it only when it
+# identifies this exact pinned topology and manifest; retain the old file itself.
+legacy_checksums_match() {
+  python3 - "$STATE_ROOT/SHA256SUMS" "$topology" "$topology_hash" "$manifest" "$manifest_hash" <<'PY'
+import re,sys
+try:
+    path,topology,topology_hash,manifest,manifest_hash=sys.argv[1:]
+    with open(path,encoding='utf8') as source: contents=source.read(1048577)
+    assert len(contents.encode('utf8'))<=1048576
+    checks={}
+    for line in contents.splitlines():
+        match=re.fullmatch(r'([a-f0-9]{64}) [ *]([^/\\\0]+)',line)
+        assert match and match[2] not in checks
+        checks[match[2]]=match[1]
+    assert checks.get(topology)==topology_hash and checks.get(manifest)==manifest_hash
+except (AssertionError,OSError,ValueError,UnicodeError): sys.exit(1)
+PY
+}
 for file in SHA256SUMS "$topology" "$manifest"; do
-  if [[ -e "$STATE_ROOT/$file" || -L "$STATE_ROOT/$file" ]]; then safe_file "$STATE_ROOT/$file"; cp -- "$STATE_ROOT/$file" "$STAGING/$file";
-  else curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 15 --max-time 120 --max-filesize 1048576 --output "$STAGING/$file" "$base/$file" || fail "Cannot retrieve v$version release assets. Check HTTPS/proxy access to GitHub, then retry."; fi
+  cached="$STATE_ROOT/$file"
+  [[ "$file" != SHA256SUMS ]] || cached="$STATE_ROOT/$checksum_cache"
+  if [[ -e "$cached" || -L "$cached" ]]; then safe_file "$cached"; cp -- "$cached" "$STAGING/$file";
+  elif [[ "$file" == SHA256SUMS && ( -e "$STATE_ROOT/SHA256SUMS" || -L "$STATE_ROOT/SHA256SUMS" ) ]]; then
+    safe_file "$STATE_ROOT/SHA256SUMS"
+    if legacy_checksums_match; then cp -- "$STATE_ROOT/SHA256SUMS" "$STAGING/$file";
+    else download_release_asset "$file"; fi
+  else download_release_asset "$file"; fi
 done
 printf '%s  %s\n%s  %s\n' "$topology_hash" "$topology" "$manifest_hash" "$manifest" >"$STAGING/expected.sha256"
 (cd "$STAGING" && sha256sum --check --status expected.sha256) || fail 'Release metadata hashes do not match the stamped installer; no deployment was changed.'
@@ -327,8 +432,12 @@ try:
         checks[match[2]]=match[1]
     assert checks.get(topology)==topology_hash and checks.get(manifest)==manifest_hash
     value=json.loads((root/manifest).read_text()); registry=value['registry']
-    assert value['schemaVersion'] in [2,3] and value['version']==version and value['sourceRevision']==source
-    if value['schemaVersion']==3: assert value['installer']=={'file':'install-browser-workbench.sh'}
+    assert type(value['schemaVersion']) is int and value['schemaVersion'] in [2,3,4] and value['version']==version and value['sourceRevision']==source
+    if value['schemaVersion'] in [3,4]: assert value['installer']=={'file':'install-browser-workbench.sh'}
+    if value['schemaVersion']==4:
+        compatibility=value['dataCompatibility']
+        assert compatibility=={'contract':'streamskope-browser-data-v1','inspector':'dist/web/data-preflight.cjs','reportSchemaVersion':1}
+        assert type(compatibility['reportSchemaVersion']) is int
     assert value['format']=='docker-save-gzip' and value['image']=='streamskope:'+version
     assert value['topology']=={'file':topology,'sha256':topology_hash}
     assert registry['schemaVersion']==1 and registry['version']==version and registry['sourceRevision']==source
@@ -369,7 +478,8 @@ PY
   )
 fi
 origin="http://127.0.0.1:$port"
-for file in SHA256SUMS "$topology" "$manifest"; do install -m 0600 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$STAGING/$file" "$STATE_ROOT/$file"; done
+install -m 0600 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$STAGING/SHA256SUMS" "$STATE_ROOT/$checksum_cache"
+for file in "$topology" "$manifest"; do install -m 0600 -o "$STATE_OWNER_UID" -g "$STATE_OWNER_GID" "$STAGING/$file" "$STATE_ROOT/$file"; done
 if [[ "$saved" == false ]]; then
   python3 - "$state" "$version" "$source" "$topology_hash" "$manifest_hash" "$owner_uid" "$owner_gid" "$owner_home" "$operator_uid" "$port" <<'PY'
 import json,os,sys,tempfile

@@ -1,4 +1,17 @@
+import { isDeepStrictEqual } from "node:util";
+
+import {
+  BROWSER_DATA_COMPATIBILITY,
+  parseBrowserDataInspection,
+  type BrowserDataInspection,
+} from "../../src/platform/node/browser-data-compatibility";
 import { ciExecution, type CiExecution } from "../check/ci-evidence";
+
+import {
+  validateBrowserUpgradeEvidence,
+  type BrowserUpgradeEvidence,
+} from "./browser-upgrade-evidence";
+import { parseBrowserRegistryMetadata } from "./browser-registry-metadata";
 
 export const BROWSER_INSTALLER_CHECKS = [
   "native installer deployment",
@@ -8,13 +21,102 @@ export const BROWSER_INSTALLER_CHECKS = [
   "authenticated gateway",
   "encrypted profile persistence",
   "native workers",
+  "read-only bundled data preflight",
   "graceful restart through installer",
   "running installer idempotency",
   "graceful disposable deployment cleanup",
 ] as const;
 
+export interface BrowserInstallerTarget {
+  readonly version: string;
+  readonly sourceRevision: string;
+  readonly platform: string;
+  readonly image: string;
+  readonly imageId: string;
+}
+
+export interface BrowserDataPreflightEvidence {
+  readonly imageId: string;
+  readonly dataSnapshotSha256: string;
+  readonly inspection: BrowserDataInspection;
+}
+
+function object(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Browser qualification metadata must be an object.");
+  return value as Record<string, unknown>;
+}
+
+/** Derive native authority from the qualified manifest, never from a submitted receipt. */
+export function browserInstallerTargets(
+  value: unknown,
+  version: string,
+  sourceRevision: string,
+): readonly BrowserInstallerTarget[] {
+  const manifest = object(value);
+  if (
+    manifest.schemaVersion !== 4 ||
+    manifest.version !== version ||
+    manifest.sourceRevision !== sourceRevision ||
+    !isDeepStrictEqual(manifest.dataCompatibility, BROWSER_DATA_COMPATIBILITY)
+  )
+    throw new Error("Current native qualification requires matching schema 4 browser metadata.");
+  const registry = parseBrowserRegistryMetadata(manifest.registry, version, sourceRevision);
+  return registry.platforms.map(({ platform, imageId }) => ({
+    version,
+    sourceRevision,
+    platform,
+    image: registry.reference,
+    imageId,
+  }));
+}
+
+export function validateBrowserDataPreflight(
+  value: unknown,
+  expected: Pick<BrowserInstallerTarget, "version" | "imageId">,
+): BrowserDataPreflightEvidence {
+  const input = object(value);
+  if (
+    !isDeepStrictEqual(Object.keys(input).sort(), [
+      "dataSnapshotSha256",
+      "imageId",
+      "inspection",
+    ]) ||
+    input.imageId !== expected.imageId ||
+    !/^sha256:[a-f0-9]{64}$/u.test(expected.imageId) ||
+    typeof input.dataSnapshotSha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(input.dataSnapshotSha256)
+  )
+    throw new Error("Native data preflight does not match the qualified image or data snapshot.");
+  const inspection = parseBrowserDataInspection(input.inspection);
+  if (inspection.hostRelease !== `v${expected.version}` || inspection.outcome !== "eligible")
+    throw new Error("Native data preflight did not qualify this host release's data envelopes.");
+  const filesystem = inspection.documents.find((item) => item.kind === "filesystem")!;
+  if (
+    filesystem.state !== "verified" ||
+    filesystem.count < 3 ||
+    ["vault", "nats-profiles"].some((kind) => {
+      const document = inspection.documents.find((item) => item.kind === kind)!;
+      return (
+        document.state !== "verified" ||
+        document.count !== 1 ||
+        !isDeepStrictEqual(document.formats, [1])
+      );
+    })
+  )
+    throw new Error(
+      "Native data preflight must inspect the created vault and encrypted NATS profile fixture.",
+    );
+  return {
+    imageId: expected.imageId,
+    dataSnapshotSha256: input.dataSnapshotSha256,
+    inspection,
+  };
+}
+
 export interface BrowserInstallerEvidence {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 4;
+  readonly deliveryScope: "public-registry";
   readonly outcome: "passed";
   readonly version: string;
   readonly sourceRevision: string;
@@ -24,18 +126,21 @@ export interface BrowserInstallerEvidence {
   readonly startedAt: string;
   readonly completedAt: string;
   readonly releaseTransport: string;
+  readonly preflight: BrowserDataPreflightEvidence;
+  readonly transition: BrowserUpgradeEvidence;
   readonly checks: readonly string[];
 }
 
 export function browserInstallerEvidence(
   input: Pick<
     BrowserInstallerEvidence,
-    "version" | "sourceRevision" | "platform" | "image" | "startedAt"
+    "version" | "sourceRevision" | "platform" | "image" | "startedAt" | "preflight" | "transition"
   >,
   env: NodeJS.ProcessEnv = process.env,
 ): BrowserInstallerEvidence {
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
+    deliveryScope: "public-registry",
     outcome: "passed",
     ...input,
     execution: ciExecution(env),
@@ -52,6 +157,7 @@ export function validateBrowserInstallerEvidence(
     sourceRevision: string;
     platform: string;
     image: string;
+    imageId: string;
     execution: CiExecution;
   },
 ): BrowserInstallerEvidence {
@@ -59,7 +165,8 @@ export function validateBrowserInstallerEvidence(
     throw new Error("Missing native installer qualification.");
   const input = value as BrowserInstallerEvidence;
   if (
-    input.schemaVersion !== 2 ||
+    input.schemaVersion !== 4 ||
+    input.deliveryScope !== "public-registry" ||
     input.outcome !== "passed" ||
     input.version !== expected.version ||
     input.sourceRevision !== expected.sourceRevision ||
@@ -79,7 +186,11 @@ export function validateBrowserInstallerEvidence(
     !Array.isArray(input.checks) ||
     JSON.stringify(input.checks) !== JSON.stringify(BROWSER_INSTALLER_CHECKS)
   )
-    throw new Error("Native installer qualification does not match this release, source and run.");
+    throw new Error(
+      "Current native installer qualification requires schema 4 public-registry evidence for this release, source and run.",
+    );
+  const preflight = validateBrowserDataPreflight(input.preflight, expected);
+  const transition = validateBrowserUpgradeEvidence(input.transition, expected);
   // Return only public fields, never arbitrary additions to an uploaded receipt.
   return {
     ...browserInstallerEvidence(
@@ -89,6 +200,8 @@ export function validateBrowserInstallerEvidence(
         platform: expected.platform,
         image: expected.image,
         startedAt: input.startedAt,
+        preflight,
+        transition,
       },
       {},
     ),

@@ -6,6 +6,8 @@ import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
+import { ciExecution } from "../check/ci-evidence";
+
 import { verifyBrowserContainer } from "./container-smoke";
 import { browserReleaseTopology } from "./browser-release";
 
@@ -98,6 +100,13 @@ export async function packageBrowserContainer(args: readonly string[] = []): Pro
   ]);
   const inspection = inspect(image, manifest.version, revision);
   if (args[0] === "--archive") {
+    const startedAt = new Date().toISOString();
+    const evidenceDirectory = resolve(".artifacts/ci");
+    const evidenceFile = join(
+      evidenceDirectory,
+      `browser-data-preflight-${inspection.Architecture}.json`,
+    );
+    await rm(evidenceFile, { force: true });
     const output = resolve("dist/container-package");
     await mkdir(output, { recursive: true });
     const archive = join(
@@ -110,7 +119,13 @@ export async function packageBrowserContainer(args: readonly string[] = []): Pro
     run("docker", ["image", "load", "--input", archive]);
     if (inspect(image, manifest.version, revision).Id !== inspection.Id)
       throw new Error("Loaded container archive does not match the built image.");
-    await verifyBrowserContainer(image);
+    const preflight = await verifyBrowserContainer(image, {
+      version: manifest.version,
+      sourceRevision: revision,
+      image,
+      imageId: inspection.Id,
+      platform: `${inspection.Os}/${inspection.Architecture}`,
+    });
     await writeFile(
       join(output, `streamskope-${manifest.version}.clab.yml`),
       browserReleaseTopology(await readFile("streamskope.clab.yml", "utf8"), manifest.version),
@@ -129,6 +144,27 @@ export async function packageBrowserContainer(args: readonly string[] = []): Pro
         null,
         2,
       ) + "\n",
+    );
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(
+      evidenceFile,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          outcome: "passed",
+          deliveryScope: "local-staged",
+          version: manifest.version,
+          sourceRevision: revision,
+          platform: `${inspection.Os}/${inspection.Architecture}`,
+          image: inspection.Id,
+          execution: ciExecution(),
+          startedAt,
+          completedAt: new Date().toISOString(),
+          preflight,
+        },
+        null,
+        2,
+      )}\n`,
     );
     process.stdout.write(`Built browser archive: ${archive}\n`);
   }
