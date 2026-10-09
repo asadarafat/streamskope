@@ -8,6 +8,7 @@ import {
   type KafkaLiveRuleUnavailableReason,
   type StreamSkopeHost,
 } from "../contracts";
+import { kafkaRecordLocator } from "../contracts/record-locator";
 import { StudioDetailRow } from "../../../platform/ui/StudioPropertyRow";
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
 import { StudioPanelHeader } from "../../../platform/ui/StudioPanel";
@@ -38,6 +39,7 @@ import { formatRecordJson, recordCodecLabels } from "./record-presentation";
 
 export interface MessageInspectorProperties {
   readonly baseline?: KafkaExploredMessage | null;
+  readonly onBookmark?: ((message: KafkaExploredMessage) => void) | undefined;
   readonly onPin?: (message: KafkaExploredMessage | null) => void;
   readonly host?: StreamSkopeHost;
   readonly decodingAvailable?: boolean;
@@ -127,6 +129,12 @@ function unavailableRuleExplanation(reason: KafkaLiveRuleUnavailableReason): {
   readonly title: string;
 } {
   switch (reason) {
+    case "not-evaluated":
+      return {
+        title: "Rules not evaluated",
+        detail:
+          "Reloading saved record positions does not evaluate live rules or send notifications.",
+      };
     case "catalog-unavailable":
       return {
         detail:
@@ -258,6 +266,7 @@ function MessageScratchEditor({
 export function MessageInspector({
   baseline = null,
   onPin,
+  onBookmark,
   host,
   decodingAvailable = false,
   message,
@@ -393,6 +402,23 @@ export function MessageInspector({
           {message.topic} ·{" "}
           <time dateTime={message.timestamp}>{formatUtcTimestamp(message.timestamp)}</time>
         </Typography>
+        {onBookmark ? (
+          <Box sx={{ pt: 0.5 }}>
+            <Button
+              size="small"
+              disabled={!decodingAvailable || kafkaRecordLocator(message) === null}
+              onClick={() => onBookmark(message)}
+            >
+              Bookmark record
+            </Button>
+            {kafkaRecordLocator(message) === null ? (
+              <Typography variant="caption" component="p">
+                Durable bookmarking is unavailable without verified source identity. Use a finite
+                read to capture a supported record.
+              </Typography>
+            ) : null}
+          </Box>
+        ) : null}
       </Box>
       <Tabs
         aria-label="Message evidence"

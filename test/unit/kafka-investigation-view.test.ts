@@ -29,7 +29,11 @@ const defaultView = {
   },
 } as const;
 const legacy = { id: "incident", name: "Incident", profileId: "production", configuration: query };
-const saved = { ...legacy, view: defaultView };
+const saved = {
+  ...legacy,
+  view: defaultView,
+  records: { selected: null, comparison: null, bookmarks: [] },
+};
 
 describe("versioned investigation view contracts", () => {
   it("converts the literal legacy disk shape purely and reports its real format", () => {
@@ -40,7 +44,7 @@ describe("versioned investigation view contracts", () => {
       queries: [saved],
     });
     expect(parseKafkaQueryLibraryDocument(document)).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       queries: [saved],
     });
     expect(JSON.stringify(document)).toBe(original);
@@ -49,9 +53,9 @@ describe("versioned investigation view contracts", () => {
 
   it("compacts only default disk descriptors without weakening wire entries or snapshots", () => {
     const stored = serializeKafkaQueryLibraryDocument([saved]);
-    expect(JSON.parse(stored)).toEqual({ schemaVersion: 2, queries: [legacy] });
+    expect(JSON.parse(stored)).toEqual({ schemaVersion: 3, queries: [legacy] });
     expect(inspectKafkaQueryLibraryDocument(JSON.parse(stored))).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       queries: [saved],
     });
     expect(() => parseKafkaSavedView(legacy)).toThrow();
@@ -189,13 +193,13 @@ describe("versioned investigation view contracts", () => {
   });
 
   it.each([
-    { schemaVersion: 3, queries: [saved] },
+    { schemaVersion: 4, queries: [saved] },
     { schemaVersion: 1, queries: [saved] },
     { schemaVersion: 1, queries: [{ ...legacy, configuration: null }] },
-    { schemaVersion: 2, queries: [saved, { ...saved, name: "Other" }] },
-    { schemaVersion: 2, queries: [saved, { ...saved, id: "other", name: "  INCIDENT  " }] },
+    { schemaVersion: 3, queries: [saved, { ...saved, name: "Other" }] },
+    { schemaVersion: 3, queries: [saved, { ...saved, id: "other", name: "  INCIDENT  " }] },
     {
-      schemaVersion: 2,
+      schemaVersion: 3,
       queries: Array.from({ length: 101 }, (_, index) => ({
         ...saved,
         id: String(index),

@@ -18,21 +18,31 @@ import { HostContractValidationError } from "../contracts/validation-error";
 import type { RecordReadSettings } from "../contracts/finite-record-read";
 import type { RecordAnalysisCommand } from "../contracts/record-analysis-protocol";
 import type { RecordExportCommand } from "../contracts/record-export-protocol";
+import type { RecordLocatorCommand } from "../contracts/record-locator-protocol";
+import { parseKafkaRecordLocatorOutcome } from "../contracts/record-locator-protocol";
+import {
+  RecordLocatorService,
+  RecordLocatorOperationError,
+  UnknownRecordLocatorRequestError,
+} from "../application/record-locator-service";
 
 import { failureResponse, type ActivityInput } from "./facade-support";
 
-type RangeCommand = RecordExportCommand | RecordAnalysisCommand;
+type RangeCommand = RecordExportCommand | RecordAnalysisCommand | RecordLocatorCommand;
 
 export function isRecordRangeCommand(command: HostCommand): command is RangeCommand {
   return (
-    command.command.startsWith("records.export.") || command.command.startsWith("records.analysis.")
+    command.command.startsWith("records.export.") ||
+    command.command.startsWith("records.analysis.") ||
+    command.command.startsWith("records.locator.")
   );
 }
 
-/** Owns the shared authority and settings boundary for finite export and analysis. */
+/** Owns the shared authority and settings boundary for export, analysis and record reloads. */
 export class RecordRangeFacade {
   private readonly exports: RecordExportService;
   private readonly analysis: RecordAnalysisService;
+  private readonly locators: RecordLocatorService;
 
   constructor(
     session: Pick<KafkaApplicationSession, "recordReadScope">,
@@ -49,6 +59,7 @@ export class RecordRangeFacade {
       if (snapshot.store.state !== "ready") throw new Error("Record preferences are unavailable.");
       return { codecs: snapshot.preferences.codecs, protection: snapshot.preferences.protection };
     };
+    this.locators = new RecordLocatorService({ scope, settings });
     this.exports = new RecordExportService({
       scope,
       settings,
@@ -93,7 +104,7 @@ export class RecordRangeFacade {
 
   invalidate(): void {
     const failures: Error[] = [];
-    for (const owner of [this.exports, this.analysis]) {
+    for (const owner of [this.exports, this.analysis, this.locators]) {
       try {
         owner.invalidate();
       } catch {
@@ -104,12 +115,22 @@ export class RecordRangeFacade {
   }
 
   async idle(): Promise<void> {
-    const outcomes = await Promise.allSettled([this.exports.idle(), this.analysis.idle()]);
+    const outcomes = await Promise.allSettled([
+      this.exports.idle(),
+      this.analysis.idle(),
+      this.locators.idle(),
+    ]);
     if (outcomes.some((outcome) => outcome.status === "rejected"))
       throw new Error("Record range cleanup could not be confirmed.");
   }
 
-  async execute(command: RangeCommand, correlationId: string): Promise<HostCommandResponse> {
+  async execute(
+    command: RangeCommand,
+    correlationId: string,
+    suppressedLocatorLoad: boolean | Promise<boolean> = false,
+  ): Promise<HostCommandResponse> {
+    if (command.command === "records.locator.load" || command.command === "records.locator.cancel")
+      return this.executeLocator(command, correlationId, suppressedLocatorLoad);
     try {
       switch (command.command) {
         case "records.export.start":
@@ -184,6 +205,82 @@ export class RecordRangeFacade {
         correlationId,
         operation: command.command,
         object: `Record ${feature}`,
+        detail: `${error.summary} ${error.recovery}`,
+        outcome: "failed",
+        severity: "error",
+      });
+      return failureResponse(command, error);
+    }
+  }
+
+  private async executeLocator(
+    command: RecordLocatorCommand,
+    correlationId: string,
+    suppressed: boolean | Promise<boolean>,
+  ): Promise<HostCommandResponse> {
+    try {
+      if (command.command === "records.locator.load") {
+        const outcome = parseKafkaRecordLocatorOutcome(await this.locators.load(command.payload));
+        return {
+          command: command.command,
+          id: command.id,
+          version: HOST_PROTOCOL_VERSION,
+          ok: true,
+          result: { correlationId, outcome },
+        };
+      }
+      try {
+        await this.locators.cancel(command.payload.requestId);
+      } catch (error) {
+        // Admission can prove a pending request never handed a reader to the service.
+        // Every dispatched owner still requires the service's actual cleanup result.
+        if (!(error instanceof UnknownRecordLocatorRequestError && (await suppressed))) throw error;
+      }
+      // Abort the actual owner immediately, then join every suppressed duplicate admission.
+      await suppressed;
+      return {
+        command: command.command,
+        id: command.id,
+        version: HOST_PROTOCOL_VERSION,
+        ok: true,
+        result: { correlationId, requestId: command.payload.requestId, stopped: true },
+      };
+    } catch (failure) {
+      if (
+        command.command === "records.locator.load" &&
+        failure instanceof RecordLocatorOperationError &&
+        failure.reason === "busy"
+      ) {
+        // This distinct request never acquired a reader; the existing owner's cleanup remains its own.
+        return {
+          command: command.command,
+          id: command.id,
+          version: HOST_PROTOCOL_VERSION,
+          ok: true,
+          result: {
+            correlationId,
+            outcome: { ...command.payload, state: "unavailable", detail: failure.message },
+          },
+        };
+      }
+      const error = {
+        code: "VALIDATION" as const,
+        stage: "query" as const,
+        correlationId,
+        activeStateChanged: false,
+        retryable: true,
+        summary:
+          failure instanceof RecordLocatorOperationError ||
+          failure instanceof UnknownRecordLocatorRequestError
+            ? failure.message
+            : "The host could not confirm the record reload or its cleanup.",
+        recovery:
+          "Retry Stop for the same reload before starting another; reconnect only after cleanup is confirmed.",
+      };
+      this.activity({
+        correlationId,
+        operation: command.command,
+        object: "Saved record",
         detail: `${error.summary} ${error.recovery}`,
         outcome: "failed",
         severity: "error",

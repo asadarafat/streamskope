@@ -74,6 +74,7 @@ interface WorkbenchTopicController {
   readonly requestTopics: () => Promise<void>;
   readonly startConsumption: (topic: string, search?: KafkaSearchFilter) => Promise<void>;
   readonly activateTopic: (topic: string) => void;
+  readonly openRecordTopic: (topic: string) => void;
   readonly openObservedRecord: NonNullable<ObservationNavigation["onOpenRecord"]>;
   readonly stopConsumption: () => Promise<void>;
 }
@@ -381,6 +382,18 @@ export function useWorkbenchTopics(
     [connected, setNavigation, startConsumption],
   );
 
+  const openRecordTopic = useCallback(
+    (topic: string): void => {
+      restoredTopic.current = topic;
+      setSelectedTopic(topic);
+      setSelectedMessageId(null);
+      setSelectionNotice(undefined);
+      setTopicWorkspace("messages");
+      setNavigation("topics");
+    },
+    [setNavigation],
+  );
+
   const openObservedRecord = useCallback<NonNullable<ObservationNavigation["onOpenRecord"]>>(
     (locator): void => {
       if (!connected) return;
@@ -492,6 +505,7 @@ export function useWorkbenchTopics(
     startConsumption,
     activateTopic,
     openObservedRecord,
+    openRecordTopic,
     stopConsumption,
   };
 }

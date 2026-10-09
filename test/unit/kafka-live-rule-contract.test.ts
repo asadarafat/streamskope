@@ -80,6 +80,7 @@ describe("Kafka live rule contract", () => {
     expect(KAFKA_LIVE_RULE_CAPABILITY_STATES).toEqual(["idle", "ready", "partial", "unavailable"]);
     expect(KAFKA_LIVE_RULE_EVALUATION_STATES).toEqual(["evaluated", "partial", "unavailable"]);
     expect(KAFKA_LIVE_RULE_UNAVAILABLE_REASONS).toEqual([
+      "not-evaluated",
       "catalog-unavailable",
       "payload-null",
       "payload-truncated",
@@ -314,6 +315,16 @@ describe("Kafka live rule contract", () => {
         state: "partial",
         suppressedMatchCount: 1,
         suppressedMatches: [{ level: "info", name: "Cooldown" }],
+      },
+    },
+    {
+      label: "explicit record reload without live rule evaluation",
+      result: {
+        ...zeroEvaluated,
+        durationMicros: 0,
+        evaluatedRules: 0,
+        reason: "not-evaluated",
+        state: "unavailable",
       },
     },
     {

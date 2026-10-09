@@ -3,6 +3,11 @@ import type { HostCommand, HostCommandResponse } from "../contracts";
 
 import type { KafkaCommandProtection } from "./command-protection";
 import { failureResponse } from "./facade-support";
+import { RecordLocatorAdmission } from "./record-locator-admission";
+
+export interface KafkaDispatchContext {
+  readonly suppressedLocatorLoad: Promise<boolean>;
+}
 
 interface DispatchBindings {
   readonly correlationId: string;
@@ -10,7 +15,7 @@ interface DispatchBindings {
   readonly protection: Pick<KafkaCommandProtection, "execute">;
   readonly unavailable: () => HostCommandResponse;
   readonly superseded: () => HostCommandResponse;
-  readonly dispatch: () => Promise<HostCommandResponse>;
+  readonly dispatch: (context?: KafkaDispatchContext) => Promise<HostCommandResponse>;
 }
 
 /** Owns command intent across asynchronous protection checks and connection cleanup. */
@@ -18,6 +23,12 @@ export class KafkaCommandAdmission extends ProviderCommandAdmission {
   private connectionChanges = 0;
   private authorizationIntent = 0;
   private consumptionIntent = 0;
+  private readonly locators = new RecordLocatorAdmission();
+
+  override close(): void {
+    this.locators.revoke();
+    super.close();
+  }
 
   interruptConsumption(): void {
     this.consumptionIntent += 1;
@@ -27,17 +38,25 @@ export class KafkaCommandAdmission extends ProviderCommandAdmission {
     if (!this.accepts(bindings.internal)) return bindings.unavailable();
     if (
       (command.command === "records.export.start" ||
-        command.command === "records.analysis.start") &&
+        command.command === "records.analysis.start" ||
+        command.command === "records.locator.load") &&
       this.connectionChanges > 0
     ) {
-      const feature = command.command === "records.export.start" ? "export" : "analysis";
+      if (command.command === "records.locator.load")
+        this.locators.reject(command.payload.requestId);
+      const feature =
+        command.command === "records.export.start"
+          ? "export"
+          : command.command === "records.analysis.start"
+            ? "analysis"
+            : "record reload";
       return failureResponse(command, {
         code: "VALIDATION",
         stage: "validation",
         correlationId: bindings.correlationId,
         retryable: false,
         activeStateChanged: false,
-        summary: `Wait for the connection change before starting an ${feature}.`,
+        summary: `Wait for the connection change before starting ${feature === "record reload" ? "a" : "an"} ${feature}.`,
         recovery: `Confirm the connected profile, then start a new ${feature} from that connection.`,
       });
     }
@@ -50,20 +69,79 @@ export class KafkaCommandAdmission extends ProviderCommandAdmission {
       this.authorizationIntent += 1;
       this.connectionChanges += 1;
     }
+    if (
+      changesConnection ||
+      command.command === "preferences.reset" ||
+      (command.command === "preferences.update" &&
+        (command.payload.patch.protection !== undefined ||
+          command.payload.patch.codecs !== undefined))
+    )
+      this.locators.revoke();
+    const locatorLoad =
+      command.command === "records.locator.load"
+        ? this.locators.load(command.payload.requestId)
+        : undefined;
+    const locatorCancel =
+      command.command === "records.locator.cancel"
+        ? this.locators.cancel(command.payload.requestId)
+        : undefined;
+    if (
+      (command.command === "records.locator.load" && locatorLoad === undefined) ||
+      (command.command === "records.locator.cancel" && locatorCancel === undefined)
+    )
+      return failureResponse(command, {
+        code: "VALIDATION",
+        stage: "query",
+        correlationId: bindings.correlationId,
+        activeStateChanged: false,
+        retryable: true,
+        summary: "A record reload admission or cancellation is already pending.",
+        recovery: "Wait for the pending operation before retrying with a fresh request identifier.",
+      });
     const intent = this.authorizationIntent;
     const beginsConsumption =
       command.command === "messages.start" || command.command === "messages.continue";
     if (beginsConsumption || command.command === "messages.stop") this.interruptConsumption();
     const consumptionIntent = this.consumptionIntent;
+    let locatorCleanupConfirmed = false;
     try {
-      return await bindings.protection.execute(command, bindings.correlationId, () => {
-        if (!this.accepts(bindings.internal)) return Promise.resolve(bindings.unavailable());
-        return intent === this.authorizationIntent &&
-          (!beginsConsumption || consumptionIntent === this.consumptionIntent)
-          ? bindings.dispatch()
-          : Promise.resolve(bindings.superseded());
-      });
+      const response = await bindings.protection.execute(
+        command,
+        bindings.correlationId,
+        async () => {
+          if (!this.accepts(bindings.internal)) return Promise.resolve(bindings.unavailable());
+          if (
+            intent !== this.authorizationIntent ||
+            (beginsConsumption && consumptionIntent !== this.consumptionIntent)
+          )
+            return bindings.superseded();
+          if (locatorLoad !== undefined && !locatorLoad.enter())
+            return failureResponse(command, {
+              code: "CANCELLED",
+              stage: "query",
+              correlationId: bindings.correlationId,
+              activeStateChanged: false,
+              retryable: true,
+              summary: "The record reload was cancelled before it opened a reader.",
+              recovery: "Use the current connection and settings to start a new reload when ready.",
+            });
+          return bindings.dispatch(
+            locatorCancel === undefined
+              ? undefined
+              : {
+                  suppressedLocatorLoad: locatorCancel.suppressed,
+                },
+          );
+        },
+      );
+      locatorCleanupConfirmed =
+        command.command === "records.locator.load" &&
+        response.command === "records.locator.load" &&
+        response.ok;
+      return response;
     } finally {
+      locatorLoad?.finish(locatorCleanupConfirmed);
+      locatorCancel?.finish();
       if (changesConnection) this.connectionChanges -= 1;
     }
   }

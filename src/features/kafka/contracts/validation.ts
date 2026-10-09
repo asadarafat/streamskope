@@ -3,6 +3,8 @@ import {
   parseRecordAnalysisResponse,
 } from "./record-analysis-protocol";
 import { parseRecordAnalysisSnapshot } from "./record-analysis-validation";
+import { parseRecordLocatorCommand, parseRecordLocatorResponse } from "./record-locator-protocol";
+import { sameKafkaRecordLocator } from "./record-locator";
 import { parseRecordExportCommand, parseRecordExportResponse } from "./record-export-protocol";
 import { parseRecordExportSnapshot } from "./record-export-validation";
 import { parseKafkaExploredMessage } from "./message-validation";
@@ -231,6 +233,7 @@ export function parseHostCommand(value: unknown): HostCommand {
     parseEnvironmentCommand(command, id, envelope.payload, version) ??
     parseRecoveryCommand(command, id, envelope.payload, version) ??
     parseCorrelationCommand(command, id, envelope.payload, version) ??
+    parseRecordLocatorCommand(command, id, envelope.payload, version) ??
     parseRecordAnalysisCommand(command, id, envelope.payload, version) ??
     parseRecordExportCommand(command, id, envelope.payload, version) ??
     parseSampleCommand(command, id, envelope.payload, version) ??
@@ -296,8 +299,23 @@ export function parseHostCommand(value: unknown): HostCommand {
       };
     case "queries.put": {
       const payload = record(envelope.payload, "command.payload");
-      exactKeys(payload, ["query"], "command.payload");
-      return { command, id, version, payload: { query: parseKafkaSavedQuery(payload.query) } };
+      exactKeys(payload, ["query", "expected"], "command.payload");
+      return {
+        command,
+        id,
+        version,
+        payload: {
+          query: parseKafkaSavedQuery(payload.query),
+          ...(payload.expected === undefined
+            ? {}
+            : {
+                expected:
+                  payload.expected === null
+                    ? null
+                    : parseKafkaSavedQuery(payload.expected, "expectedView"),
+              }),
+        },
+      };
     }
     case "queries.delete": {
       const payload = record(envelope.payload, "command.payload");
@@ -491,6 +509,7 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
     parseEnvironmentResponse(command, id, result, version) ??
     parseRecoveryResponse(command, id, result, version) ??
     parseCorrelationResponse(command, id, result, version) ??
+    parseRecordLocatorResponse(command, id, result, version) ??
     parseRecordAnalysisResponse(command, id, result, version) ??
     parseRecordExportResponse(command, id, result, version) ??
     parseSampleResponse(command, id, version, result);
@@ -658,6 +677,27 @@ export function parseCorrelatedHostResponse<Command extends HostCommand>(
       "must match the submitted command identifier and name",
     );
   }
+  if (
+    response.ok &&
+    response.command === "records.locator.load" &&
+    command.command === "records.locator.load" &&
+    (response.result.outcome.requestId !== command.payload.requestId ||
+      !sameKafkaRecordLocator(response.result.outcome.locator, command.payload.locator))
+  )
+    throw new HostContractValidationError(
+      "response.result.outcome",
+      "must match the submitted record reload and saved position",
+    );
+  if (
+    response.ok &&
+    response.command === "records.locator.cancel" &&
+    command.command === "records.locator.cancel" &&
+    response.result.requestId !== command.payload.requestId
+  )
+    throw new HostContractValidationError(
+      "response.result.requestId",
+      "must match the submitted record cancellation",
+    );
   // The parser validated the result shape, and the checks above established its discriminant.
   return response as HostCommandResponse<Command["command"]>;
 }

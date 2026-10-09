@@ -11,6 +11,7 @@ import type {
 } from "../../../plugins/contracts";
 
 import type { RecordAnalysisResults } from "./record-analysis-protocol";
+import type { RecordLocatorResults } from "./record-locator-protocol";
 import type { RecordExportResults } from "./record-export-protocol";
 import {
   isAclReviewCommandName,
@@ -32,7 +33,8 @@ interface SpecificCommandResults
     TrustRecipeCommandResults,
     AclReviewResults,
     RecordExportResults,
-    RecordAnalysisResults {
+    RecordAnalysisResults,
+    RecordLocatorResults {
   readonly "relationships.capture": {
     readonly correlationId: string;
     readonly graph: import("./relationships").RelationshipGraph;
@@ -191,6 +193,8 @@ interface SpecificCommandResults
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
   "records.analysis.start": true,
+  "records.locator.load": true,
+  "records.locator.cancel": true,
   "records.analysis.status": true,
   "records.analysis.cancel": true,
   "records.analysis.discard": true,

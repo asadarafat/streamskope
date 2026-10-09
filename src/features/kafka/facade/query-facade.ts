@@ -14,7 +14,7 @@ export async function executeQueryCommand(
   try {
     const snapshot =
       command.command === "queries.put"
-        ? await library.put(command.payload.query)
+        ? await library.put(command.payload.query, command.payload.expected)
         : command.command === "queries.delete"
           ? await library.delete(command.payload.id)
           : await library.list();

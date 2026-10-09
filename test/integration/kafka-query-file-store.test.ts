@@ -51,7 +51,11 @@ const defaults = {
     filtersOpen: false,
   },
 } as const;
-const canonical: KafkaSavedView = { ...legacyEntry, view: defaults };
+const canonical: KafkaSavedView = {
+  ...legacyEntry,
+  view: defaults,
+  records: { selected: null, comparison: null, bookmarks: [] },
+};
 const legacyBytes = ` { "schemaVersion": 1, "queries": [\n${JSON.stringify(legacyEntry)}\n] }\n`;
 async function seed(file: string): Promise<void> {
   await writeFile(file, legacyBytes, { mode: 0o600 });
@@ -88,7 +92,7 @@ it("loads exact legacy bytes without migration, including a no-change save and a
   ]);
 });
 
-it("preserves the exact private predecessor once, then reconstructs topic and standalone-group views from format 2", async () => {
+it("preserves the exact private predecessor once, then reconstructs topic and standalone-group views from format 3", async () => {
   const file = await location();
   await seed(file);
   const library = new KafkaQueryLibrary(new AtomicKafkaQueryFileStore(file));
@@ -111,12 +115,16 @@ it("preserves the exact private predecessor once, then reconstructs topic and st
     id: "group",
     name: "Group only",
     configuration: null,
+    records: { selected: null, comparison: null, bookmarks: [] },
     view: { ...defaults, destination: { kind: "consumer-group", groupId: "payments" } },
   };
   await library.put(group);
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-    schemaVersion: 2,
-    queries: [changed, group],
+    schemaVersion: 3,
+    queries: [
+      { ...legacyEntry, view: changed.view },
+      { id: group.id, name: group.name, configuration: null, view: group.view },
+    ],
   });
   expect(await readFile(`${file}.pre-views-v1`, "utf8")).toBe(legacyBytes);
   expect((await readdir(dirname(file))).sort()).toEqual(
@@ -133,13 +141,13 @@ it("preserves the exact private predecessor once, then reconstructs topic and st
   }
 });
 
-it("does not create missing storage on reads and writes fresh format 2 without a fabricated backup", async () => {
+it("does not create missing storage on reads and writes fresh format 3 without a fabricated backup", async () => {
   const file = await location();
   const library = new KafkaQueryLibrary(new AtomicKafkaQueryFileStore(file));
   expect((await library.list()).queries).toEqual([]);
   expect(await readdir(dirname(file))).toEqual([]);
   await library.put(canonical);
-  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ schemaVersion: 2 });
+  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ schemaVersion: 3 });
   expect(await readdir(dirname(file))).toEqual([basename(file)]);
 });
 
@@ -195,7 +203,7 @@ it("reports uncertainty after a real replacement when directory sync fails and p
   expect(String(failure)).toMatch(/replacement occurred.*could not be confirmed/u);
   expect(String(failure)).not.toContain("sentinel-password");
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-    schemaVersion: 2,
+    schemaVersion: 3,
     queries: [{ ...legacyEntry, name: changed.name }],
   });
   expect(await readFile(`${file}.pre-views-v1`, "utf8")).toBe(legacyBytes);
@@ -293,7 +301,7 @@ it.each(["corrupt", "future", "canonical-in-legacy", "oversized"] as const)(
       kind === "corrupt"
         ? "{"
         : kind === "future"
-          ? JSON.stringify({ schemaVersion: 3, queries: [] })
+          ? JSON.stringify({ schemaVersion: 4, queries: [] })
           : kind === "canonical-in-legacy"
             ? JSON.stringify({ schemaVersion: 1, queries: [canonical] })
             : "x".repeat(1_048_577);
@@ -403,10 +411,148 @@ it("keeps near-capacity legacy libraries readable and mutable using compact defa
   const migrated = await readFile(file, "utf8");
   expect(Buffer.byteLength(migrated)).toBeLessThanOrEqual(1_048_576);
   expect(migrated).not.toContain('"view":');
-  expect(JSON.parse(migrated)).toMatchObject({ schemaVersion: 2 });
+  expect(JSON.parse(migrated)).toMatchObject({ schemaVersion: 3 });
   expect(await readFile(`${file}.pre-views-v1`, "utf8")).toBe(source);
   expect((await library.list()).queries[0]).toEqual(changed);
   await library.delete(changed.id);
   expect((await library.list()).queries).toHaveLength(99);
   expect(Buffer.byteLength(await readFile(file, "utf8"))).toBeLessThan(Buffer.byteLength(migrated));
+});
+
+const versionTwoBytes = ` { "schemaVersion": 2, "queries": [\n${JSON.stringify({ ...legacyEntry, view: defaults })}\n] }\n`;
+const savedLocator = {
+  schemaVersion: 1,
+  clusterId: "test-cluster",
+  topicId: "27c1c482-b9e0-43f2-abd0-ae257fd6a6df",
+  topic: "events",
+  partition: 1,
+  offset: "9007199254740993",
+  leaderEpoch: 9,
+} as const;
+
+it("leaves real format-2 views unchanged on inspection and no-op mutation, then preserves exact v2 bytes before storing locators", async () => {
+  const file = await location();
+  await writeFile(file, versionTwoBytes, { mode: 0o600 });
+  await writeFile(`${file}.pre-views-v1`, legacyBytes, { mode: 0o600 });
+  const before = await stat(file);
+  const store = new AtomicKafkaQueryFileStore(file);
+  const commit = vi.spyOn(store, "commit");
+  const library = new KafkaQueryLibrary(store);
+  expect((await library.list()).queries).toEqual([canonical]);
+  await library.put(canonical, canonical);
+  await library.delete("absent");
+  expect(commit).not.toHaveBeenCalled();
+  expect(await readFile(file, "utf8")).toBe(versionTwoBytes);
+  expect((await stat(file)).ino).toBe(before.ino);
+  const saved: KafkaSavedView = {
+    ...canonical,
+    records: {
+      selected: savedLocator,
+      comparison: { ...savedLocator, offset: "9007199254740994" },
+      bookmarks: [{ id: "bookmark", name: "Investigation position", locator: savedLocator }],
+    },
+  };
+  await library.put(saved, canonical);
+  expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+    schemaVersion: 3,
+    queries: [{ ...legacyEntry, records: saved.records }],
+  });
+  expect(await readFile(`${file}.pre-records-v2`, "utf8")).toBe(versionTwoBytes);
+  expect(await readFile(`${file}.pre-views-v1`, "utf8")).toBe(legacyBytes);
+  expect((await readdir(dirname(file))).sort()).toEqual(
+    [basename(file), `${basename(file)}.pre-records-v2`, `${basename(file)}.pre-views-v1`].sort(),
+  );
+  expect((await new KafkaQueryLibrary(new AtomicKafkaQueryFileStore(file)).list()).queries).toEqual(
+    [saved],
+  );
+  if (process.platform !== "win32")
+    expect((await stat(`${file}.pre-records-v2`)).mode & 0o777).toBe(0o600);
+});
+
+it("uses independent bounded generations for interrupted v2 migration without overwriting either predecessor family", async () => {
+  const file = await location();
+  await writeFile(file, versionTwoBytes, { mode: 0o600 });
+  await writeFile(`${file}.pre-views-v1`, legacyBytes, { mode: 0o600 });
+  const earlier = JSON.stringify({ schemaVersion: 2, queries: [] });
+  await writeFile(`${file}.pre-records-v2`, earlier, { mode: 0o600 });
+  const temporary = join(dirname(file), `.${basename(file)}.blocked.tmp`);
+  await writeFile(temporary, "occupied", { mode: 0o600 });
+  const library = new KafkaQueryLibrary(
+    new AtomicKafkaQueryFileStore(file, { createTempId: (): string => "blocked" }),
+  );
+  const updated = {
+    ...canonical,
+    name: "Recorded position",
+    records: { selected: savedLocator, comparison: null, bookmarks: [] },
+  };
+  await expect(library.put(updated, canonical)).rejects.toThrow("not replaced");
+  expect(await readFile(file, "utf8")).toBe(versionTwoBytes);
+  expect(await readFile(`${file}.pre-records-v2.1`, "utf8")).toBe(versionTwoBytes);
+  await unlink(temporary);
+  await library.put(updated, canonical);
+  expect(await readFile(`${file}.pre-records-v2`, "utf8")).toBe(earlier);
+  expect(await readFile(`${file}.pre-views-v1`, "utf8")).toBe(legacyBytes);
+  expect(
+    (await readdir(dirname(file))).filter((name) => name.includes("pre-records")),
+  ).toHaveLength(2);
+});
+
+it.each(["corrupt", "wrong-format", "current-format", "capacity"] as const)(
+  "preserves format-2 source when its predecessor family is %s",
+  async (kind) => {
+    const file = await location();
+    await writeFile(file, versionTwoBytes, { mode: 0o600 });
+    const backup = `${file}.pre-records-v2`;
+    if (kind === "capacity") {
+      for (let index = 0; index < 100; index++)
+        await writeFile(
+          `${backup}${index === 0 ? "" : `.${index}`}`,
+          JSON.stringify({ schemaVersion: 2, queries: [] }),
+          { mode: 0o600 },
+        );
+    } else
+      await writeFile(
+        backup,
+        kind === "corrupt"
+          ? "{"
+          : JSON.stringify({ schemaVersion: kind === "wrong-format" ? 1 : 3, queries: [] }),
+        { mode: 0o600 },
+      );
+    await expect(
+      new KafkaQueryLibrary(new AtomicKafkaQueryFileStore(file)).put(
+        { ...canonical, name: "Changed" },
+        canonical,
+      ),
+    ).rejects.toThrow("not replaced");
+    expect(await readFile(file, "utf8")).toBe(versionTwoBytes);
+  },
+);
+
+it("revalidates the exact v2 backup at replacement and keeps hidden record content out of storage", async () => {
+  const file = await location();
+  await writeFile(file, versionTwoBytes, { mode: 0o600 });
+  const changedBackup = JSON.stringify({ schemaVersion: 2, queries: [] });
+  const store = new AtomicKafkaQueryFileStore(file, {
+    createTempId: (): string => {
+      writeFileSync(`${file}.pre-records-v2`, changedBackup);
+      return "v2-race";
+    },
+  });
+  const library = new KafkaQueryLibrary(store);
+  await expect(library.put({ ...canonical, name: "Changed" }, canonical)).rejects.toThrow(
+    "not replaced",
+  );
+  expect(await readFile(file, "utf8")).toBe(versionTwoBytes);
+  expect(await readFile(`${file}.pre-records-v2`, "utf8")).toBe(changedBackup);
+  const unsafe = {
+    ...canonical,
+    records: {
+      selected: { ...savedLocator, payload: "private-record-sentinel" },
+      comparison: null,
+      bookmarks: [],
+    },
+  };
+  await expect(library.put(unsafe)).rejects.toThrow("inspect current state");
+  expect(await readFile(file, "utf8")).toBe(versionTwoBytes);
+  expect(await readFile(file, "utf8")).not.toContain("private-record-sentinel");
 });

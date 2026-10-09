@@ -384,7 +384,7 @@ describe.skipIf(process.platform !== "linux")(
       assertPrivate(rolledBack);
     }, 30_000);
 
-    it("retains both view generations and protected siblings in the complete ownership-held backup", async () => {
+    it("retains all three view generations and protected siblings in the complete ownership-held backup", async () => {
       const { host, next } = await initialized();
       const queries = join(host.data, "queries");
       await mkdir(queries, { mode: 0o700 });
@@ -406,7 +406,10 @@ describe.skipIf(process.platform !== "linux")(
         2,
       )}\n`;
       const path = join(queries, "kafka-queries.json");
-      await writeFile(path, source, { mode: 0o600 });
+      await writeFile(`${path}.pre-views-v1`, source, { mode: 0o600 });
+      // A genuine v2 disk document may compact the exact default presentation.
+      const versionTwo = source.replace('"schemaVersion": 1,', '"schemaVersion": 2,');
+      await writeFile(path, versionTwo, { mode: 0o600 });
       const store = new AtomicKafkaQueryFileStore(path);
       const [legacy] = await store.load();
       expect(legacy).toBeDefined();
@@ -428,9 +431,16 @@ describe.skipIf(process.platform !== "linux")(
       ]);
       const lease = await stat(join(host.data, "vault.lock"));
       const expected = await dataBytes(host);
-      for (const file of ["queries/kafka-queries.json", "queries/kafka-queries.json.pre-views-v1"])
+      for (const file of [
+        "queries/kafka-queries.json",
+        "queries/kafka-queries.json.pre-views-v1",
+        "queries/kafka-queries.json.pre-records-v2",
+      ])
         (expected as Map<string, Buffer>).set(file, await readFile(join(host.data, file)));
       expect(expected.get("queries/kafka-queries.json.pre-views-v1")?.toString()).toBe(source);
+      expect(expected.get("queries/kafka-queries.json.pre-records-v2")?.toString()).toBe(
+        versionTwo,
+      );
       await host.control({ verifyLeaseDuringDeploy: true });
       const result = await host.run(next.file, ["upgrade"]);
       expect(result.exitCode, result.stderr).toBe(0);

@@ -24,6 +24,10 @@ export interface LocalBrowserDelivery {
   readonly manifest: { readonly path: string; readonly sha256: string };
   readonly topology: { readonly path: string; readonly sha256: string };
 }
+interface LocalBrowserTransitionDelivery {
+  readonly schemaVersion: 1;
+  readonly releases: readonly [LocalBrowserDelivery, LocalBrowserDelivery];
+}
 
 function replace(source: string, key: string, value: string): string {
   const placeholder = `@${key}@`;
@@ -39,7 +43,7 @@ function render(
   identity: BrowserInstallerIdentity,
   template: string,
   helper: string,
-  local: LocalBrowserDelivery | null,
+  local: LocalBrowserDelivery | LocalBrowserTransitionDelivery | null,
 ): string {
   browserRegistryIdentity(identity.version, identity.sourceRevision);
   digest(identity.topologySha256);
@@ -89,12 +93,25 @@ export function renderLocalBrowserWorkbenchInstaller(
   template: string,
   transactionHelperSource: string,
 ): string {
+  validateLocalDelivery(local);
+  return renderLocalDelivery(local, template, transactionHelperSource, local);
+}
+
+function exactFields(value: object, expected: readonly string[]): void {
+  if (Object.keys(value).sort().join(",") !== [...expected].sort().join(","))
+    throw new Error("Local browser rehearsal requires closed artifact descriptors.");
+}
+
+function validateLocalDelivery(local: LocalBrowserDelivery): void {
+  exactFields(local, ["version", "sourceRevision", "platform", "imageId", "manifest", "topology"]);
+  browserRegistryIdentity(local.version, local.sourceRevision);
   if (
     (local.platform !== "linux/amd64" && local.platform !== "linux/arm64") ||
     !/^sha256:[a-f0-9]{64}$/u.test(local.imageId)
   )
     throw new Error("Local browser rehearsal requires an exact native image identity.");
   for (const artifact of [local.manifest, local.topology]) {
+    exactFields(artifact, ["path", "sha256"]);
     digest(artifact.sha256);
     if (
       !isAbsolute(artifact.path) ||
@@ -105,17 +122,46 @@ export function renderLocalBrowserWorkbenchInstaller(
     )
       throw new Error("Local browser rehearsal requires bounded absolute artifact paths.");
   }
+}
+
+function renderLocalDelivery(
+  target: LocalBrowserDelivery,
+  template: string,
+  transactionHelperSource: string,
+  delivery: LocalBrowserDelivery | LocalBrowserTransitionDelivery,
+): string {
   return render(
     {
-      version: local.version,
-      sourceRevision: local.sourceRevision,
-      topologySha256: local.topology.sha256,
-      manifestSha256: local.manifest.sha256,
+      version: target.version,
+      sourceRevision: target.sourceRevision,
+      topologySha256: target.topology.sha256,
+      manifestSha256: target.manifest.sha256,
     },
     template,
     transactionHelperSource,
-    local,
+    delivery,
   );
+}
+
+/** Closed two-image rehearsal only; public delivery never accepts this authority. */
+export function renderLocalBrowserTransitionInstaller(
+  target: LocalBrowserDelivery,
+  predecessor: LocalBrowserDelivery,
+  template: string,
+  transactionHelperSource: string,
+): string {
+  validateLocalDelivery(target);
+  validateLocalDelivery(predecessor);
+  if (
+    target.platform !== predecessor.platform ||
+    target.version === predecessor.version ||
+    target.imageId === predecessor.imageId
+  )
+    throw new Error("Local transition requires distinct releases on the same native platform.");
+  return renderLocalDelivery(target, template, transactionHelperSource, {
+    schemaVersion: 1,
+    releases: [target, predecessor],
+  });
 }
 
 /** Native lab runtimes require a named image; this closed tag remains bound to the sealed ID. */

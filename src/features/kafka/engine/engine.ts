@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import type { KafkaRecordLocator } from "../contracts/record-locator";
 import {
-  type KafkaReadCoverage,
+  KafkaReadOpenCleanupError,
+  type KafkaReadOpenCleanup,
+} from "../application/read-open-cleanup";
+import { KafkaRecordLocatorError } from "../application/record-locator-errors";
+import {
   HostContractValidationError,
   parseKafkaFetchRequest,
   parseKafkaLatencyProbeRequest,
@@ -33,6 +38,7 @@ import { testClusterServices } from "./service-connection-test";
 import { NodeBoundedJsonHttp } from "./bounded-json-http";
 import { PlatformaticOffsetReset } from "./platformatic-offset-reset";
 import { PlatformaticReviewedWrites } from "./platformatic-writes";
+import { TranslatedKafkaMessageStream } from "./translated-message-stream";
 import { translateKafkaRecord } from "./message-record";
 import {
   KafkaEngineFailure,
@@ -68,6 +74,19 @@ class OperationAborted extends Error {
     super("Kafka engine operation was aborted.");
     this.name = "OperationAborted";
   }
+}
+
+function openCleanupDiagnostic(
+  error: KafkaReadOpenCleanupError,
+  failure: KafkaEngineFailure,
+): KafkaReadOpenCleanupError {
+  return Object.assign(error, {
+    code: failure.code,
+    stage: failure.stage,
+    recovery: failure.recovery,
+    retryable: failure.retryable,
+    target: failure.target,
+  });
 }
 
 function cancelledFailure(stage: HostErrorStage, target: string): KafkaEngineFailure {
@@ -159,57 +178,6 @@ function withCleanupFailure(
   });
 }
 
-class TranslatedKafkaMessageStream implements KafkaMessageStream {
-  private readonly originals = new WeakMap<KafkaMessage, KafkaRawMessage>();
-
-  acknowledge(message: KafkaMessage): void {
-    const original = this.originals.get(message);
-    if (original !== undefined) {
-      this.rawStream.acknowledge?.(original);
-      this.originals.delete(message);
-    }
-  }
-
-  checkpoint(): KafkaReadCheckpoint | undefined {
-    return this.rawStream.checkpoint?.();
-  }
-
-  coverage(): KafkaReadCoverage | undefined {
-    return this.rawStream.coverage?.();
-  }
-
-  subscribeCoverage(listener: (coverage: KafkaReadCoverage) => void): () => void {
-    return this.rawStream.subscribeCoverage?.(listener) ?? ((): void => undefined);
-  }
-  private closePromise: Promise<void> | undefined;
-
-  constructor(
-    private readonly rawStream: KafkaRawMessageStream,
-    private readonly target: string,
-    private readonly onClose: () => void,
-    private readonly prepareRecord: (message: KafkaRawMessage) => Promise<KafkaMessage>,
-    private readonly preparationController: AbortController,
-  ) {}
-
-  close(): Promise<void> {
-    this.preparationController.abort();
-    this.closePromise ??= this.rawStream.close().then(this.onClose);
-    return this.closePromise;
-  }
-
-  async *[Symbol.asyncIterator](): AsyncIterator<KafkaMessage> {
-    try {
-      for await (const raw of this.rawStream) {
-        const message = await this.prepareRecord(raw);
-        this.originals.set(message, raw);
-        yield message;
-      }
-    } catch (error) {
-      throw mapKafkaAdminFailure(error, this.target);
-    }
-  }
-}
-
 class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   offsetResetSnapshot(
     input: import("../contracts/offset-reset").OffsetResetInput,
@@ -264,7 +232,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   private closePromise: Promise<void> | undefined;
   private readonly streams = new Set<TranslatedKafkaMessageStream>();
   private readonly pendingReaderOpens = new Set<Promise<void>>();
-  private readonly lateReaders = new Set<KafkaRawMessageStream>();
+  private readonly lateReaders = new Set<KafkaReadOpenCleanup>();
   private readonly serviceContexts = new Map<string, KafkaClusterServiceContext>();
 
   constructor(
@@ -451,6 +419,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     request: KafkaFetchRequest,
     cancellationSignal: AbortSignal,
     checkpoint?: KafkaReadCheckpoint,
+    expectedLocator?: KafkaRecordLocator,
   ): Promise<KafkaMessageStream> {
     let parsedRequest: KafkaFetchRequest;
     try {
@@ -519,6 +488,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     try {
       operation = this.consumerFactory.open({
         ...(checkpoint === undefined ? {} : { checkpoint }),
+        ...(expectedLocator === undefined ? {} : { expectedLocator }),
         prepareRecord: prepare,
         ...this.clientInput,
         groupId: `streamskope-${randomUUID()}`,
@@ -541,18 +511,27 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       preparationController.abort();
       if (error instanceof OperationAborted) {
         let cleanupFailure: unknown;
+        let lateCleanup: KafkaReadOpenCleanup | undefined;
         let lateStream: KafkaRawMessageStream | undefined;
+        let failedOpen: KafkaReadOpenCleanupError | undefined;
         try {
           lateStream = await operation;
-        } catch {
+        } catch (openingFailure) {
           lateStream = undefined;
+          if (openingFailure instanceof KafkaReadOpenCleanupError) failedOpen = openingFailure;
         }
         try {
           if (lateStream !== undefined) {
             // Preserve the original connection owner when cancellation wins the open race.
-            this.lateReaders.add(lateStream);
-            await lateStream.close();
-            this.lateReaders.delete(lateStream);
+            const owned = lateStream;
+            this.lateReaders.add(owned);
+            lateCleanup = {
+              close: async (): Promise<void> => {
+                await owned.close();
+                this.lateReaders.delete(owned);
+              },
+            };
+            await lateCleanup.close();
           }
         } catch (lateError) {
           cleanupFailure = lateError;
@@ -561,8 +540,26 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
           cancellationSignal.aborted || this.lifecycleController.signal.aborted
             ? cancelledFailure("broker", target)
             : timeoutFailure("broker", target);
+        if (failedOpen !== undefined)
+          throw openCleanupDiagnostic(
+            this.retainOpenCleanup(
+              new KafkaReadOpenCleanupError(failure, failedOpen.cleanupCause, failedOpen.cleanup),
+            ),
+            failure,
+          );
+        if (cleanupFailure !== undefined && lateCleanup !== undefined)
+          throw openCleanupDiagnostic(
+            new KafkaReadOpenCleanupError(failure, cleanupFailure, lateCleanup),
+            failure,
+          );
         throw cleanupFailure === undefined ? failure : withCleanupFailure(failure, cleanupFailure);
       }
+      if (error instanceof KafkaReadOpenCleanupError)
+        throw openCleanupDiagnostic(
+          this.retainOpenCleanup(error),
+          mapKafkaAdminFailure(error.cause, target),
+        );
+      if (error instanceof KafkaRecordLocatorError) throw error;
       if (error instanceof KafkaReadCheckpointError)
         throw new KafkaEngineFailure({
           cause: error,
@@ -579,6 +576,17 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       this.pendingReaderOpens.delete(openingSettled);
       settleOpening();
     }
+  }
+
+  private retainOpenCleanup(error: KafkaReadOpenCleanupError): KafkaReadOpenCleanupError {
+    const cleanup = error.cleanup;
+    this.lateReaders.add(cleanup);
+    return new KafkaReadOpenCleanupError(error.cause, error.cleanupCause, {
+      close: async (): Promise<void> => {
+        await cleanup.close();
+        this.lateReaders.delete(cleanup);
+      },
+    });
   }
 
   async runLatencyProbe(

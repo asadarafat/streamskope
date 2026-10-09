@@ -11,7 +11,7 @@ export const BROWSER_UPGRADE_CHECKS = [
   "target locked readiness and authenticated profile persistence",
   "target native workers",
   "genuine predecessor query remains unchanged until explicit view migration",
-  "saved view survives target vault lock and unlock",
+  "saved view and locator metadata survive target vault lock and unlock",
   "incompatible view rollback refuses without changing the running host",
   "explicit operator full-backup recovery preserves changed data and original lease",
   "rollback owns graceful stop and complete backup",
@@ -19,6 +19,7 @@ export const BROWSER_UPGRADE_CHECKS = [
   "predecessor native workers",
   "no-argument resume preserves rolled-back release",
   "graceful transition fixture cleanup",
+  "exact owned container and network absent after cleanup",
 ] as const;
 
 export function browserUpgradePredecessor(platform: string): BrowserInstallerTarget {

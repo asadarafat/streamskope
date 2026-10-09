@@ -117,6 +117,62 @@ def pointer(value):
     return dict(value)
 
 
+def local_delivery(value, selected, platform):
+    """Only embedded rehearsal authority can select one or two sealed local images."""
+    if value is None:
+        return None
+    require(isinstance(value, dict), "unsupported-target")
+    if "releases" in value:
+        exact(value, {"schemaVersion", "releases"})
+        require(type(value["schemaVersion"]) is int and value["schemaVersion"] == 1)
+        releases = value["releases"]
+        require(isinstance(releases, list) and len(releases) == 2, "unsupported-target")
+    else:
+        releases = [value]
+    versions, images = set(), set()
+    for release in releases:
+        exact(release, {"version", "sourceRevision", "platform", "imageId", "manifest", "topology"})
+        require(
+            isinstance(release["version"], str)
+            and len(release["version"]) <= 128
+            and VERSION.fullmatch(release["version"])
+            and isinstance(release["sourceRevision"], str)
+            and re.fullmatch(r"[a-f0-9]{40}", release["sourceRevision"])
+            and release["platform"] == platform
+            and isinstance(release["imageId"], str)
+            and re.fullmatch(r"sha256:[a-f0-9]{64}", release["imageId"]),
+            "unsupported-target",
+        )
+        require(release["version"] not in versions and release["imageId"] not in images)
+        versions.add(release["version"])
+        images.add(release["imageId"])
+        for field in ("manifest", "topology"):
+            artifact = exact(release[field], {"path", "sha256"})
+            require(
+                isinstance(artifact["sha256"], str)
+                and HEX.fullmatch(artifact["sha256"])
+                and isinstance(artifact["path"], str)
+                and Path(artifact["path"]).is_absolute()
+                and len(artifact["path"]) <= 4096
+                and all(ord(c) >= 32 and ord(c) != 127 for c in artifact["path"]),
+                "unsupported-target",
+            )
+    match = next(
+        (
+            release
+            for release in releases
+            if release["version"] == selected["version"]
+            and release["sourceRevision"] == selected["sourceRevision"]
+        ),
+        None,
+    )
+    require(
+        match is not None or all(release["version"] != selected["version"] for release in releases),
+        "unsupported-target",
+    )
+    return match
+
+
 def installation(value):
     require(isinstance(value, dict) and type(value.get("schemaVersion")) is int)
     if value["schemaVersion"] == 1:
@@ -332,7 +388,7 @@ def inspection(value, policy, version, target=None):
     legacy_target = target is not None and not target["inspector"]
     kafka_maximum = 3 if legacy_target else 4
     preference_maximum = 1 if legacy_target else 2
-    query_maximum = 1 if legacy_target else 2
+    query_maximum = 1 if legacy_target else 3
     exact(
         value,
         {"schemaVersion", "dataContract", "hostRelease", "outcome", "documents", "unverified"},
@@ -510,23 +566,23 @@ class Maintenance:
         return contents
 
     def local_release(self, selected):
-        if (
-            self.local is None
-            or self.local.get("version") != selected["version"]
-            or self.local.get("sourceRevision") != selected["sourceRevision"]
-        ):
+        local = local_delivery(self.local, selected, "linux/" + self.config["arch"])
+        if local is None:
+            # Rehearsal cannot silently reinterpret an omitted local source as a
+            # public release. Only the explicitly reviewed bootstrap may fall back.
+            if self.local is not None:
+                require(
+                    any(
+                        old["version"] == selected["version"]
+                        and old["sourceRevision"] == selected["sourceRevision"]
+                        for old in self.policy["predecessors"]
+                    ),
+                    "unsupported-target",
+                )
             return None
-        exact(
-            self.local, {"version", "sourceRevision", "platform", "imageId", "manifest", "topology"}
-        )
-        require(
-            self.local["platform"] == "linux/" + self.config["arch"]
-            and re.fullmatch(r"sha256:[a-f0-9]{64}", self.local["imageId"]),
-            "unsupported-target",
-        )
         inputs = {}
         for field, key in (("manifest", "manifestSha256"), ("topology", "topologySha256")):
-            descriptor = exact(self.local[field], {"path", "sha256"})
+            descriptor = exact(local[field], {"path", "sha256"})
             require(
                 descriptor["sha256"] == selected[key] and Path(descriptor["path"]).is_absolute(),
                 "unsupported-target",
@@ -555,8 +611,8 @@ class Maintenance:
                 "deliveryScope": "local-staged",
                 "version": selected["version"],
                 "sourceRevision": selected["sourceRevision"],
-                "platform": self.local["platform"],
-                "imageId": self.local["imageId"],
+                "platform": local["platform"],
+                "imageId": local["imageId"],
                 "dataCompatibility": self.policy["dataCompatibility"],
                 "topology": {
                     "file": "streamskope-" + selected["version"] + ".clab.yml",
@@ -610,6 +666,14 @@ class Maintenance:
                 "streamskope-" + version + ".clab.yml",
                 "streamskope-" + version + "-container.json",
             )
+            cached_manifest = self.root / manifest_name
+            if os.path.lexists(cached_manifest):
+                contents = private_read(cached_manifest, self.uid, self.gid, 1024 * 1024)
+                require(digest(contents) == selected["manifestSha256"], "unsupported-target")
+                require(
+                    decode(contents).get("deliveryScope") != "local-staged",
+                    "unsupported-target",
+                )
             checks = self.asset(
                 "SHA256SUMS-" + version + "-" + selected["sourceRevision"], version
             ).decode()
@@ -983,7 +1047,8 @@ class Maintenance:
             # Its actual format remains v1, but an old image never qualified this layout.
             require(
                 not any(
-                    os.path.lexists(path / "queries" / ("kafka-queries.json.pre-views-v1" + suffix))
+                    os.path.lexists(path / "queries" / ("kafka-queries.json." + family + suffix))
+                    for family in ("pre-views-v1", "pre-records-v2")
                     for suffix in [""] + ["." + str(number) for number in range(1, 100)]
                 ),
                 "preflight-blocked",

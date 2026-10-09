@@ -18,7 +18,9 @@ import {
   StudioMenuItem as MenuItem,
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
+import type { KafkaRecordLocator } from "../contracts/record-locator";
 
+import { SavedViewBookmarks } from "./SavedViewBookmarks";
 import { useInvestigationLibrary } from "./use-investigation-library";
 import { queryViewSettings, type KafkaViewSettings } from "./investigation-view-settings";
 import { QueryTransferControls } from "./QueryTransferControls";
@@ -39,6 +41,7 @@ export function SavedViewsDialog({
   onClose,
   transfer = browserTextDocumentTransfer,
   initialImport,
+  bookmarkCandidate,
 }: {
   readonly host: StreamSkopeHost;
   readonly profiles: readonly ProfileSummary[];
@@ -51,6 +54,7 @@ export function SavedViewsDialog({
   readonly onClose: () => void;
   readonly transfer?: TextDocumentTransferPort | undefined;
   readonly initialImport?: string | undefined;
+  readonly bookmarkCandidate?: KafkaRecordLocator | undefined;
 }): React.JSX.Element {
   const { snapshot, busy, error: hostError, execute, refresh } = useInvestigationLibrary(host);
   const [selectedId, setSelectedId] = useState("");
@@ -75,6 +79,27 @@ export function SavedViewsDialog({
     }
   }, [busy, status]);
 
+  async function write(
+    view: KafkaSavedView,
+    expected: KafkaSavedView | null,
+    statusText: string,
+  ): Promise<boolean> {
+    focusAfterWrite.current = true;
+    setError(undefined);
+    setStatus("");
+    const saved = await execute({
+      command: "queries.put",
+      payload: { query: view, expected },
+      id: globalThis.crypto.randomUUID(),
+      version: HOST_PROTOCOL_VERSION,
+    });
+    if (saved) {
+      setSelectedId(view.id);
+      setStatus(statusText);
+    }
+    return saved;
+  }
+
   async function save(replace: boolean): Promise<void> {
     try {
       focusAfterWrite.current = true;
@@ -86,17 +111,7 @@ export function SavedViewsDialog({
         ...(profileId.length === 0 ? {} : { profileId }),
         ...captureCurrent(),
       };
-      if (
-        await execute({
-          command: "queries.put",
-          payload: { query },
-          id: globalThis.crypto.randomUUID(),
-          version: HOST_PROTOCOL_VERSION,
-        })
-      ) {
-        setSelectedId(query.id);
-        setStatus("View saved.");
-      }
+      await write(query, replace ? (selected ?? null) : null, "View saved.");
     } catch (failure) {
       setError(
         failure instanceof HostContractValidationError
@@ -112,8 +127,9 @@ export function SavedViewsDialog({
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Typography variant="body2">
-            Save a topic task or consumer group with its query settings, columns and layout. Opening
-            restores the controls; connection and reads remain explicit actions.
+            Save a topic task or consumer group with query settings, columns, layout and record
+            positions. Opening restores controls and unloaded positions; connection and reads remain
+            explicit actions.
           </Typography>
           {snapshot?.durability === "session" ? (
             <Alert severity="info">
@@ -192,9 +208,9 @@ export function SavedViewsDialog({
             </Typography>
           )}
           <Typography variant="caption">
-            Views save settings only. Records, bookmarks, probe/configuration drafts, encodings,
-            protection policy and active jobs are not restored. Current host protection still
-            applies.
+            Views save settings and record positions, never record contents. Selected and baseline
+            positions reopen unloaded. Current encoding and protection apply when you reload.
+            Replace selected replaces its settings and saved positions.
           </Typography>
           <Typography variant="caption">
             {currentResource === null
@@ -235,6 +251,31 @@ export function SavedViewsDialog({
               Delete selected
             </Button>
           </Stack>
+          <SavedViewBookmarks
+            selected={selected}
+            candidate={bookmarkCandidate}
+            busy={busy || snapshot === undefined}
+            libraryCount={
+              snapshot?.queries.reduce(
+                (count, entry) => count + entry.records.bookmarks.length,
+                0,
+              ) ?? 0
+            }
+            newViewAllowed={
+              snapshot !== undefined &&
+              currentResource !== null &&
+              name.trim().length > 0 &&
+              !nameUsed &&
+              !profileMissing &&
+              snapshot.queries.length < 100
+            }
+            newViewName={name}
+            profileId={profileId.length === 0 ? undefined : profileId}
+            captureCurrent={captureCurrent}
+            write={write}
+            onRestore={onRestore}
+            readActive={readActive || profileMissing}
+          />
           {confirmDelete && selected !== undefined ? (
             <Alert severity="warning">
               Delete saved view “{selected.name}”? This removes only its saved settings.
@@ -299,7 +340,11 @@ export function SavedViewsDialog({
           onClick={() => {
             if (selected !== undefined)
               onRestore(
-                { configuration: selected.configuration, view: selected.view },
+                {
+                  configuration: selected.configuration,
+                  view: selected.view,
+                  records: selected.records,
+                },
                 profileId.length === 0 ? undefined : profileId,
               );
           }}

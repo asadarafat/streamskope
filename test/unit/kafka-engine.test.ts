@@ -296,10 +296,21 @@ describe("StreamSkope Kafka engine connection test", () => {
       new AbortController().signal,
     );
 
-    await expect(stream.close()).rejects.toBe(cleanupFailure);
-    await expect(activeConnection.close()).rejects.toMatchObject({ errors: [cleanupFailure] });
-    await expect(activeConnection.close()).rejects.toMatchObject({ errors: [cleanupFailure] });
+    const firstClose = stream.close();
+    expect(stream.close()).toBe(firstClose);
+    await expect(firstClose).rejects.toBe(cleanupFailure);
     expect(rawStream.closeCalls).toBe(1);
+
+    // The connection retains and retries its original reader's failed cleanup.
+    const closing = activeConnection.close();
+    expect(activeConnection.close()).toBe(closing);
+    await expect(closing).rejects.toMatchObject({ errors: [cleanupFailure] });
+    expect(rawStream.closeCalls).toBe(2);
+    expect(admin.closeCalls).toBe(1);
+
+    // Repeated connection close preserves its unresolved cleanup receipt.
+    await expect(activeConnection.close()).rejects.toMatchObject({ errors: [cleanupFailure] });
+    expect(rawStream.closeCalls).toBe(2);
     expect(admin.closeCalls).toBe(1);
   });
 

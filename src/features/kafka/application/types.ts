@@ -1,3 +1,4 @@
+import type { KafkaRecordLocator } from "../contracts/record-locator";
 import type {
   KafkaReadCoverage,
   ConnectionState,
@@ -115,6 +116,7 @@ export interface KafkaActiveConnection {
     request: KafkaFetchRequest,
     signal: AbortSignal,
     checkpoint?: KafkaReadCheckpoint,
+    expectedLocator?: KafkaRecordLocator,
   ): Promise<KafkaMessageStream>;
   runLatencyProbe?(
     request: KafkaLatencyProbeRequest,

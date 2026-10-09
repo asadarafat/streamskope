@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { KafkaFetchRequest, SecureConnectionInput } from "../../src/features/kafka/contracts";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine/engine";
+import { KafkaReadOpenCleanupError } from "../../src/features/kafka/application/read-open-cleanup";
 import type {
   KafkaAdminPort,
   KafkaRawMessage,
@@ -51,6 +52,71 @@ class RecordingRawMessageStream {
 }
 
 describe("engine late reader ownership", () => {
+  it("retains a translated reader after failed close and retries it through the original connection", async () => {
+    const raw = new RecordingRawMessageStream([]);
+    raw.close = (): Promise<void> => {
+      raw.closeCalls++;
+      return raw.closeCalls === 1
+        ? Promise.reject(new Error("first close failed"))
+        : Promise.resolve();
+    };
+    const admin = adminFixture();
+    const engine = new StreamSkopeKafkaEngine({
+      adminFactory: { create: (): KafkaAdminPort => admin },
+      consumerFactory: { open: (): Promise<RecordingRawMessageStream> => Promise.resolve(raw) },
+    });
+    const active = await engine.openConnection(connection, new AbortController().signal);
+    const reader = await active.openMessageStream(tailRequest(), new AbortController().signal);
+    const first = reader.close();
+    expect(reader.close()).toBe(first);
+    await expect(first).rejects.toThrow("first close failed");
+    await active.close();
+    expect(raw.closeCalls).toBe(2);
+    expect(admin.closeCalls).toBe(1);
+  });
+
+  it.each([true, false])(
+    "transfers a failed-open close capability while retaining parent ownership (cancelled=%s)",
+    async (cancelled) => {
+      let closeCalls = 0;
+      const cleanup = {
+        close: (): Promise<void> => {
+          closeCalls++;
+          return Promise.resolve();
+        },
+      };
+      let fail!: (error: unknown) => void;
+      const opening = new Promise<RecordingRawMessageStream>((_resolve, reject) => {
+        fail = reject;
+      });
+      const admin = adminFixture();
+      const engine = new StreamSkopeKafkaEngine({
+        adminFactory: { create: (): KafkaAdminPort => admin },
+        consumerFactory: { open: (): Promise<RecordingRawMessageStream> => opening },
+      });
+      const active = await engine.openConnection(connection, new AbortController().signal);
+      const controller = new AbortController();
+      const work = active
+        .openMessageStream(tailRequest(), controller.signal)
+        .catch((error: unknown) => error);
+      if (cancelled) controller.abort();
+      fail(
+        new KafkaReadOpenCleanupError(
+          new Error("opening failed"),
+          new Error("cleanup failed"),
+          cleanup,
+        ),
+      );
+      const error = await work;
+      expect(error).toBeInstanceOf(KafkaReadOpenCleanupError);
+      if (cancelled) expect(error).toMatchObject({ code: "CANCELLED" });
+      await (error as KafkaReadOpenCleanupError).cleanup.close();
+      expect(closeCalls).toBe(1);
+      await active.close();
+      expect(closeCalls).toBe(1);
+    },
+  );
+
   it.each([true, false])(
     "keeps a reader opened during cancellation owned through concurrent connection close (first close fails: %s)",
     async (failFirstClose) => {

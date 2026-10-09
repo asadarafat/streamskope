@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
 
 import { HostContractValidationError, type KafkaInvestigationQuery } from "../contracts";
+import {
+  createEmptyKafkaSavedRecordContext,
+  type KafkaSavedRecordContext,
+} from "../contracts/record-locator";
 import { createDefaultKafkaInvestigationView } from "../contracts/investigation-view";
 
 import { initialKafkaMessageFilters } from "./message-operations";
@@ -19,6 +23,8 @@ export function useInvestigationViews({
   topicWorkspace,
   selectedGroupId,
   captureQuery,
+  captureRecords = createEmptyKafkaSavedRecordContext,
+  restoreRecords,
   restoreQuery,
   clearQuery,
   restoreGroup,
@@ -42,6 +48,8 @@ export function useInvestigationViews({
   readonly topicWorkspace: TopicWorkspaceView;
   readonly selectedGroupId: string | null;
   readonly captureQuery: () => KafkaInvestigationQuery;
+  readonly captureRecords?: () => KafkaSavedRecordContext;
+  readonly restoreRecords?: (records: KafkaSavedRecordContext) => void;
   readonly restoreQuery: (query: KafkaInvestigationQuery, awaitConnection: boolean) => void;
   readonly clearQuery: () => void;
   readonly restoreGroup: (groupId: string) => void;
@@ -98,6 +106,7 @@ export function useInvestigationViews({
       throw new HostContractValidationError("View", "choose a topic task or consumer group first");
     return parseViewSettings({
       configuration: selectedTopic === null ? null : captureQuery(),
+      records: captureRecords(),
       view: {
         ...createDefaultKafkaInvestigationView(
           navigation === "consumer-groups" && selectedGroupId !== null
@@ -111,6 +120,7 @@ export function useInvestigationViews({
     currentResource,
     selectedTopic,
     captureQuery,
+    captureRecords,
     navigation,
     selectedGroupId,
     topicWorkspace,
@@ -118,6 +128,7 @@ export function useInvestigationViews({
   ]);
   const apply = useCallback(
     (settings: KafkaViewSettings, awaitConnection: boolean): void => {
+      restoreRecords?.(settings.records);
       if (settings.configuration !== null) restoreQuery(settings.configuration, awaitConnection);
       else clearQuery();
       presentation.restore(settings.view.messages);
@@ -140,6 +151,7 @@ export function useInvestigationViews({
       }
     },
     [
+      restoreRecords,
       restoreQuery,
       clearQuery,
       presentation.restore,

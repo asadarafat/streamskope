@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 import {
-  Consumer,
+  type Consumer,
   consumerFetchesChannel,
   type ClusterMetadata,
   type Message,
@@ -10,7 +10,12 @@ import {
 
 import { KAFKA_MESSAGE_LIMITS, KAFKA_QUERY_LIMITS, type KafkaReadCoverage } from "../contracts";
 import { KafkaReadCheckpointError, type KafkaReadCheckpoint } from "../application/read-checkpoint";
+import { parseKafkaRecordProvenance, type KafkaRecordLocator } from "../contracts/record-locator";
+import { KafkaReadOpenCleanupError } from "../application/read-open-cleanup";
+import { KafkaRecordLocatorError } from "../application/record-locator-errors";
+import { connectionErrorChain } from "../application/connection-diagnostics";
 
+import { RecordProvenanceConsumer } from "./record-provenance-consumer";
 import { KafkaReadTracker } from "./read-coverage";
 import { normalizeKafkaError } from "./failure";
 import { resolveKafkaFetchPlan, type KafkaFetchPlan } from "./fetch-plan";
@@ -125,16 +130,33 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   private readonly tracker: KafkaReadTracker | undefined;
   private readonly coverageListeners = new Set<(coverage: KafkaReadCoverage) => void>();
   private lastCoverageNotification: number | undefined;
+  private messagesClosed = false;
+  private consumerClosed = false;
+  private streamFailure: Error | undefined;
 
   constructor(
-    private readonly consumer: Consumer<Buffer, Buffer, Buffer, Buffer>,
+    private readonly consumer: RecordProvenanceConsumer,
     private readonly stream: MessagesStream<Buffer, Buffer, Buffer, Buffer> | null,
     private readonly plan: KafkaFetchPlan,
     private readonly cleanupDiagnostics: () => void,
+    private readonly closeConsumer: () => Promise<void>,
+    private priorConsumerClose: Promise<void> | undefined,
     private readonly prepareRecord?: KafkaConsumerInput["prepareRecord"],
     private readonly identity?: ReadIdentity,
+    private readonly expectedLocator?: KafkaRecordLocator,
   ) {
     this.tracker = plan.continuous ? undefined : new KafkaReadTracker(plan);
+    if (stream !== null) {
+      // Construction continues on a later tick. Own errors before the async iterator exists;
+      // iteration still reports them and close still joins the original stream's cleanup.
+      const observe = (error: Error): void => {
+        this.streamFailure ??= error;
+      };
+      stream.on("error", observe);
+      stream.once("close", (): void => {
+        stream.removeListener("error", observe);
+      });
+    }
   }
 
   coverage(): KafkaReadCoverage | undefined {
@@ -178,7 +200,10 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
     this.coverageListeners.clear();
     this.preparationController.abort();
     this.tracker?.finish("cancelled");
-    this.closePromise ??= this.closeResources();
+    this.closePromise ??= this.closeResources().catch((error: unknown) => {
+      this.closePromise = undefined;
+      throw error;
+    });
     return this.closePromise;
   }
 
@@ -193,6 +218,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
         }, KAFKA_QUERY_LIMITS.durationMs);
     deadline?.unref?.();
     try {
+      if (this.streamFailure !== undefined) throw this.streamFailure;
       if (this.stream !== null && !this.tracker?.finished) {
         for await (const message of this.stream) {
           const raw = this.toRawMessage(message);
@@ -245,15 +271,30 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   private async closeResources(): Promise<void> {
     const failures: unknown[] = [];
     this.cleanupDiagnostics();
-    if (this.stream !== null) {
+    if (this.priorConsumerClose !== undefined) {
+      // Consumer.close(force) may already be closing this SDK stream. Calling stream.close
+      // concurrently makes the SDK resolve its callbacks before its close event. Join first.
+      try {
+        await this.priorConsumerClose;
+      } catch (error) {
+        failures.push(error);
+      } finally {
+        this.priorConsumerClose = undefined;
+      }
+    }
+    if (this.stream !== null && !this.messagesClosed) {
       try {
         await Promise.resolve(this.stream.close());
+        this.messagesClosed = true;
       } catch (error) {
         failures.push(error);
       }
     }
     try {
-      await Promise.resolve(this.consumer.close(true));
+      if (!this.consumerClosed) {
+        await this.closeConsumer();
+        this.consumerClosed = true;
+      }
     } catch (error) {
       failures.push(error);
     }
@@ -282,7 +323,26 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   }
 
   private toRawMessage(message: Message<Buffer, Buffer, Buffer, Buffer>): KafkaRawMessage {
+    const provenance = this.consumer.recordProvenance(message.leaderEpoch);
+    const expected = this.expectedLocator;
+    if (expected !== undefined) {
+      if (provenance === undefined) throw new KafkaRecordLocatorError("unavailable");
+      if (
+        provenance.clusterId !== expected.clusterId ||
+        provenance.topicId !== expected.topicId ||
+        message.topic !== expected.topic
+      )
+        throw new KafkaRecordLocatorError("resource-replaced");
+      if (message.partition !== expected.partition)
+        throw new KafkaRecordLocatorError("unavailable");
+      if (
+        message.offset.toString() === expected.offset &&
+        provenance.leaderEpoch !== expected.leaderEpoch
+      )
+        throw new KafkaRecordLocatorError("record-replaced");
+    }
     return {
+      ...(provenance === undefined ? {} : { provenance }),
       headers: message.headers,
       ...(message.headerEntries === undefined ? {} : { headerEntries: message.headerEntries }),
       key: message.key,
@@ -298,31 +358,100 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
 export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
   async open(input: KafkaConsumerInput): Promise<KafkaRawMessageStream> {
     input.signal?.throwIfAborted();
-    const consumer = new Consumer<Buffer, Buffer, Buffer, Buffer>({
+    const consumer = new RecordProvenanceConsumer({
       ...platformaticClientOptions(input, `streamskope-consumer-${input.groupId}`),
       groupId: input.groupId,
       retries: 5,
       retryDelay: 200,
     });
-    const cleanupDiagnostics = fetchDiagnosticCleanup(consumer, input.onFetchSample);
+    const cleanupFetchDiagnostics = fetchDiagnosticCleanup(consumer, input.onFetchSample);
+    const cleanupDiagnostics = (): void => {
+      cleanupFetchDiagnostics();
+      consumer.releaseRecordProvenance();
+    };
+    let openedStream: PlatformaticMessageStream | undefined;
     let closing: Promise<void> | undefined;
-    const close = (force = false): Promise<void> =>
-      (closing ??= Promise.resolve(consumer.close(force)));
+    const close = (force = false): Promise<void> => {
+      if (closing !== undefined) return closing;
+      let resolve!: () => void;
+      let reject!: (error: unknown) => void;
+      const work = new Promise<void>((complete, fail) => {
+        resolve = complete;
+        reject = fail;
+      });
+      closing = work.catch((error: unknown) => {
+        closing = undefined;
+        throw error;
+      });
+      try {
+        Promise.resolve(consumer.close(force)).then(resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+      return closing;
+    };
     const abort = (): void => {
-      void close(true).catch(() => undefined);
+      void (openedStream?.close() ?? close(true)).catch(() => undefined);
     };
     input.signal?.addEventListener("abort", abort, { once: true });
     try {
-      const captureIdentity = async (): Promise<ReadIdentity | undefined> =>
-        readIdentity(
-          await consumer.metadata({
+      const captureIdentity = async (): Promise<ReadIdentity | undefined> => {
+        try {
+          const metadata = await consumer.metadata({
             topics: [input.request.topic],
             forceUpdate: true,
             autocreateTopics: false,
-          }),
-          input.request.topic,
-        );
-      const identity = input.request.mode === "tail" ? undefined : await captureIdentity();
+          });
+          if (input.expectedLocator !== undefined && !metadata.topics.get(input.request.topic))
+            throw new KafkaRecordLocatorError("topic-missing");
+          return readIdentity(metadata, input.request.topic);
+        } catch (error) {
+          if (
+            input.expectedLocator !== undefined &&
+            connectionErrorChain(error).some(
+              (item) =>
+                item !== null &&
+                typeof item === "object" &&
+                (("apiId" in item && item.apiId === "UNKNOWN_TOPIC_OR_PARTITION") ||
+                  // The SDK replaces this specific broker error with a cause-less UserError.
+                  // Match its exact generated signature only, never arbitrary remote text.
+                  ("code" in item &&
+                    item.code === "PLT_KFK_USER" &&
+                    "message" in item &&
+                    item.message === `Unknown topic ${input.request.topic}.`)),
+            )
+          )
+            throw new KafkaRecordLocatorError("topic-missing");
+          throw error;
+        }
+      };
+      const identity = await captureIdentity();
+      const assertExpected = (actual: ReadIdentity | undefined): void => {
+        const expected = input.expectedLocator;
+        if (expected === undefined) return;
+        if (actual === undefined) throw new KafkaRecordLocatorError("unavailable");
+        try {
+          parseKafkaRecordProvenance({
+            clusterId: actual.clusterId,
+            topicId: actual.topicId,
+            leaderEpoch: 0,
+          });
+        } catch {
+          throw new KafkaRecordLocatorError("unavailable");
+        }
+        if (actual.clusterId !== expected.clusterId || actual.topicId !== expected.topicId)
+          throw new KafkaRecordLocatorError("resource-replaced");
+        if (
+          input.request.topic !== expected.topic ||
+          input.request.mode === "tail" ||
+          input.request.search?.partition !== expected.partition ||
+          input.request.search.offsetExact !== expected.offset
+        )
+          throw new KafkaRecordLocatorError("unavailable");
+      };
+      assertExpected(identity);
+      let lower: readonly bigint[] | undefined;
+      let upper: readonly bigint[] | undefined;
       if (input.checkpoint !== undefined) assertReadIdentity(identity, input.checkpoint);
       const plan = await resolveKafkaFetchPlan(
         {
@@ -335,7 +464,13 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
             if (topicOffsets === undefined) {
               throw new Error(`Kafka returned no offset metadata for topic ${topic}.`);
             }
-            if (identity !== undefined && topicOffsets.length !== identity.partitionCount)
+            if (timestamp === -2n) lower = topicOffsets;
+            if (timestamp === -1n) upper = topicOffsets;
+            if (
+              input.expectedLocator === undefined &&
+              identity !== undefined &&
+              topicOffsets.length !== identity.partitionCount
+            )
               throw new KafkaReadCheckpointError("partitions-changed");
             return topicOffsets;
           },
@@ -344,7 +479,23 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
         Date.now(),
         input.checkpoint,
       );
-      if (identity !== undefined) assertReadIdentity(await captureIdentity(), identity);
+      if (identity !== undefined) {
+        const after = await captureIdentity();
+        assertExpected(after);
+        if (input.expectedLocator === undefined) assertReadIdentity(after, identity);
+      }
+      if (input.expectedLocator !== undefined) {
+        const expected = input.expectedLocator;
+        const low = lower?.[expected.partition];
+        const high = upper?.[expected.partition];
+        if (low === undefined || high === undefined)
+          throw new KafkaRecordLocatorError("unavailable");
+        if (low > BigInt(expected.offset)) throw new KafkaRecordLocatorError("expired");
+        if (high <= BigInt(expected.offset)) throw new KafkaRecordLocatorError("unavailable");
+      }
+      consumer.bindRecordIdentity(
+        identity === undefined ? undefined : { ...identity, topic: input.request.topic },
+      );
       input.signal?.throwIfAborted();
       const offsets = [...plan.startOffsets].map(([partition, offset]) => ({
         offset,
@@ -362,47 +513,70 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
           null,
           plan,
           cleanupDiagnostics,
+          () => close(true),
+          closing,
           input.prepareRecord,
           identity,
+          input.expectedLocator,
         );
       }
-      const stream = await consumer.consume({
-        autocommit: false,
-        highWaterMark: KAFKA_MESSAGE_LIMITS.batchMessages,
-        maxBytes: 4 * KAFKA_MESSAGE_LIMITS.messageBytes,
-        maxBytesPerPartition: KAFKA_MESSAGE_LIMITS.messageBytes,
-        fallbackMode: "fail",
-        ...(plan.continuous
-          ? {
-              maxWaitTime: continuousMaxWaitTime(input.operationTimeoutMs),
+      const stream = await new Promise<PlatformaticMessageStream>((resolve, reject) => {
+        consumer.consume(
+          {
+            autocommit: false,
+            highWaterMark: KAFKA_MESSAGE_LIMITS.batchMessages,
+            maxBytes: 4 * KAFKA_MESSAGE_LIMITS.messageBytes,
+            maxBytesPerPartition: KAFKA_MESSAGE_LIMITS.messageBytes,
+            fallbackMode: "fail",
+            ...(plan.continuous
+              ? {
+                  maxWaitTime: continuousMaxWaitTime(input.operationTimeoutMs),
+                }
+              : {
+                  maxFetches: FINITE_MAX_FETCHES,
+                  maxWaitTime: FINITE_MAX_WAIT_TIME_MS,
+                }),
+            mode: "manual",
+            offsets,
+            topics: [input.request.topic],
+          },
+          (error, raw): void => {
+            if (error !== null) {
+              reject(error);
+              return;
             }
-          : {
-              maxFetches: FINITE_MAX_FETCHES,
-              maxWaitTime: FINITE_MAX_WAIT_TIME_MS,
-            }),
-        mode: "manual",
-        offsets,
-        topics: [input.request.topic],
+            if (raw === undefined) {
+              reject(new Error("Kafka did not return a message stream."));
+              return;
+            }
+            // Capture the late stream synchronously. A cancelled consume may still return a
+            // stream after its consumer closed, before Node executes the stream's _construct.
+            openedStream = new PlatformaticMessageStream(
+              consumer,
+              raw,
+              plan,
+              cleanupDiagnostics,
+              () => close(true),
+              closing,
+              input.prepareRecord,
+              identity,
+              input.expectedLocator,
+            );
+            if (input.signal?.aborted) void openedStream.close().catch(() => undefined);
+            resolve(openedStream);
+          },
+        );
       });
       input.signal?.throwIfAborted();
-      return new PlatformaticMessageStream(
-        consumer,
-        stream,
-        plan,
-        cleanupDiagnostics,
-        input.prepareRecord,
-        identity,
-      );
+      return stream;
     } catch (error) {
       cleanupDiagnostics();
       try {
-        await close();
+        await (openedStream?.close() ?? close());
       } catch (cleanupError) {
-        throw new AggregateError(
-          [error, cleanupError],
-          "The Kafka consumer failed to start and did not close cleanly.",
-          { cause: cleanupError },
-        );
+        throw new KafkaReadOpenCleanupError(error, cleanupError, {
+          close: () => openedStream?.close() ?? close(true),
+        });
       }
       throw error;
     } finally {

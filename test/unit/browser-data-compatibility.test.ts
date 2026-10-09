@@ -92,9 +92,9 @@ describe("closed browser data evidence", () => {
   });
   it("recognizes actual legacy/current view formats without accepting future formats", () => {
     const report = evidence();
-    Object.assign(documents(report)[7]!, { state: "verified", count: 1, formats: [1, 2] });
-    expect(parseBrowserDataInspection(report).documents[7]?.formats).toEqual([1, 2]);
-    documents(report)[7]!.formats = [3];
+    Object.assign(documents(report)[7]!, { state: "verified", count: 1, formats: [1, 2, 3] });
+    expect(parseBrowserDataInspection(report).documents[7]?.formats).toEqual([1, 2, 3]);
+    documents(report)[7]!.formats = [4];
     expect(() => parseBrowserDataInspection(report)).toThrow();
   });
   it("accepts current security envelopes but rejects later unknown formats", () => {

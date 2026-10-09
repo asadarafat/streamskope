@@ -75,6 +75,11 @@ function structuredRetainedBytes(value: StructuredRecord | undefined): number {
 
 export function kafkaRawMessageRetainedBytes(message: KafkaMessage): number {
   return (
+    (message.provenance === undefined
+      ? 0
+      : 96 +
+        utf8ByteLength(message.provenance.clusterId) +
+        utf8ByteLength(message.provenance.topicId)) +
     utf8ByteLength(message.key) +
     utf8ByteLength(message.payload) +
     utf8ByteLength(message.preview) +

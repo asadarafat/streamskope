@@ -73,7 +73,8 @@ export function RecordComparisonPanel({
     <Stack spacing={2} sx={{ p: 2 }}>
       <Typography variant="body2">
         Pin one record, select another, then compare. The pinned snapshot survives rolling-window
-        eviction; switching topics, connections, encoding or protection settings clears it.
+        eviction and topic navigation in this connection. Changing connections, encoding or
+        protection settings clears loaded content; saved positions can be reloaded explicitly.
       </Typography>
       <Stack direction="row" spacing={1}>
         <Button disabled={!enabled} onClick={() => onPin(current)}>

@@ -5,7 +5,9 @@ import { expect, it } from "vitest";
 import {
   renderBrowserWorkbenchInstaller,
   renderLocalBrowserWorkbenchInstaller,
+  renderLocalBrowserTransitionInstaller,
   renderLocalBrowserTopology,
+  type LocalBrowserDelivery,
 } from "../../tools/package/browser-installer";
 
 const identity = {
@@ -71,6 +73,55 @@ it("uses a separate sealed local constructor with no fabricated registry identit
       helper,
     ),
   ).toThrow();
+});
+it("bounds native transition authority to two closed, distinct releases on one platform", () => {
+  const target: LocalBrowserDelivery = {
+    version: identity.version,
+    sourceRevision: identity.sourceRevision,
+    platform: "linux/arm64",
+    imageId: `sha256:${"d".repeat(64)}`,
+    manifest: { path: "/private/target.json", sha256: identity.manifestSha256 },
+    topology: { path: "/private/target.yml", sha256: identity.topologySha256 },
+  };
+  const predecessor: LocalBrowserDelivery = {
+    ...target,
+    version: "1.2.2",
+    sourceRevision: "e".repeat(40),
+    imageId: `sha256:${"f".repeat(64)}`,
+  };
+  const rendered = renderLocalBrowserTransitionInstaller(target, predecessor, template, helper);
+  const encoded = /LOCAL = "([^"]+)"/u.exec(rendered)![1]!;
+  expect(JSON.parse(Buffer.from(encoded, "base64").toString("utf8"))).toEqual({
+    schemaVersion: 1,
+    releases: [target, predecessor],
+  });
+  for (const invalid of [
+    { ...predecessor, version: target.version },
+    { ...predecessor, imageId: target.imageId },
+    { ...predecessor, platform: "linux/amd64" },
+    { ...predecessor, sourceRevision: "unsealed" },
+    { ...predecessor, imageId: "latest" },
+    { ...predecessor, image: "unreviewed" },
+    { ...predecessor, releases: [target, predecessor] },
+    { ...predecessor, manifest: { path: "/private/file", sha256: "unsealed" } },
+    { ...predecessor, topology: { ...predecessor.topology, path: "/private/line\nfeed" } },
+    { ...predecessor, topology: { ...predecessor.topology, extra: "not allowed" } },
+  ])
+    expect(() =>
+      renderLocalBrowserTransitionInstaller(
+        target,
+        invalid as LocalBrowserDelivery,
+        template,
+        helper,
+      ),
+    ).toThrow();
+  const untrustedPublicFields = {
+    ...identity,
+    local: { schemaVersion: 1, releases: [target, predecessor] },
+  };
+  expect(renderBrowserWorkbenchInstaller(untrustedPublicFields, template, helper)).toContain(
+    'LOCAL = "bnVsbA=="',
+  );
 });
 it("embeds the maintained production helper without another runtime download", async () => {
   const rendered = renderBrowserWorkbenchInstaller(

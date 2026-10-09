@@ -337,13 +337,13 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
     });
     for (const kind of ["rules", "topic-history", "trust-recipes", "observations"])
       expect(row(report, kind)).toMatchObject({ state: "verified", formats: [1] });
-    expect(row(report, "queries")).toMatchObject({ state: "verified", formats: [2] });
+    expect(row(report, "queries")).toMatchObject({ state: "verified", formats: [3] });
     expect(row(report, "preferences")).toMatchObject({ state: "verified", formats: [2] });
     for (const method of [kafkaLoad, natsLoad, network, fetch])
       expect(method).not.toHaveBeenCalled();
   });
 
-  it("inspects actual v1 and v2 libraries and every bounded predecessor generation without migration", async () => {
+  it("inspects actual v1, v2 and v3 libraries and both bounded predecessor families without migration", async () => {
     const root = await seed();
     const legacy = `${JSON.stringify({ schemaVersion: 1, queries: [legacyQuery] }, null, 2)}\n`;
     await write(root, "queries/kafka-queries.json", legacy);
@@ -371,6 +371,25 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
       count: 1,
       formats: [1, 2],
       reason: null,
+    });
+    for (const suffix of ["", ".1", ".99"])
+      await write(
+        root,
+        `queries/kafka-queries.json.pre-records-v2${suffix}`,
+        JSON.stringify({ schemaVersion: 2, queries: [currentView] }),
+      );
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({
+        schemaVersion: 3,
+        queries: [{ ...currentView, records: { selected: null, comparison: null, bookmarks: [] } }],
+      }),
+    );
+    expect(row(await check(root), "queries")).toMatchObject({
+      state: "verified",
+      count: 1,
+      formats: [1, 2, 3],
     });
     expect(load).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
@@ -459,6 +478,41 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
       });
     },
   );
+
+  it.each([".0", ".01", ".100", ".tmp"])(
+    "refuses unrecognized record predecessor suffix %s",
+    async (suffix) => {
+      const root = await seed();
+      await write(
+        root,
+        `queries/kafka-queries.json.pre-records-v2${suffix}`,
+        JSON.stringify({ schemaVersion: 2, queries: [currentView] }),
+      );
+      expect(row(await check(root), "filesystem")).toMatchObject({
+        state: "blocked",
+        reason: "unrecognized-path",
+      });
+    },
+  );
+
+  it.each([
+    JSON.stringify({ schemaVersion: 1, queries: [legacyQuery] }),
+    JSON.stringify({ schemaVersion: 3, queries: [] }),
+    JSON.stringify({ schemaVersion: 2, queries: [{ ...currentView, payload: secret }] }),
+    `{${secret}`,
+  ])("refuses invalid v2 predecessor bytes without changing siblings", async (contents) => {
+    const root = await seed();
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({ schemaVersion: 3, queries: [] }),
+    );
+    await write(root, "queries/kafka-queries.json.pre-records-v2", contents);
+    expect(row(await check(root), "queries")).toMatchObject({
+      state: "blocked",
+      reason: "unsupported-format",
+    });
+  });
 
   it.each([
     JSON.stringify({ schemaVersion: 2, queries: [currentView] }),

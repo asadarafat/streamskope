@@ -119,6 +119,11 @@ export function MessageWorkspace({
   recordExport,
   recordAnalysis,
   presentation,
+  recordPositions,
+  comparison,
+  onBookmark,
+  selectedRecordCurrent = false,
+  readBusy = false,
 }: {
   readonly host?: import("../contracts").StreamSkopeHost;
   readonly profiles?: readonly import("../contracts").ProfileSummary[];
@@ -166,6 +171,14 @@ export function MessageWorkspace({
   readonly recordExport?: RecordExportController;
   readonly recordAnalysis?: RecordAnalysisController;
   readonly presentation?: MessageViewPresentationController;
+  readonly recordPositions?: React.ReactNode;
+  readonly comparison?: {
+    readonly baseline: KafkaExploredMessage | null;
+    readonly onPin: (message: KafkaExploredMessage | null) => void;
+  };
+  readonly onBookmark?: ((message: KafkaExploredMessage) => void) | undefined;
+  readonly selectedRecordCurrent?: boolean;
+  readonly readBusy?: boolean;
 }): React.JSX.Element {
   const compactDesktop = useMediaQuery(
     `(max-width:${String(streamSkopeLayout.fullDesktopMinimumWidth - 0.05)}px)`,
@@ -337,10 +350,11 @@ export function MessageWorkspace({
         fallback={<Skeleton aria-label="Loading message inspector" variant="rectangular" />}
       >
         <LazyMessageInspector
-          baseline={baseline}
-          onPin={setBaseline}
+          baseline={comparison === undefined ? baseline : comparison.baseline}
+          onPin={comparison?.onPin ?? setBaseline}
+          onBookmark={onBookmark}
           {...(host === undefined ? {} : { host })}
-          decodingAvailable={connectionAvailable && !messagesStale}
+          decodingAvailable={connectionAvailable && (selectedRecordCurrent || !messagesStale)}
           message={selectedMessage}
           onClose={onClearSelection}
           transfer={transfer}
@@ -391,7 +405,7 @@ export function MessageWorkspace({
                     Read
                   </Typography>
                   <Select
-                    disabled={active || continuationBusy}
+                    disabled={active || continuationBusy || readBusy}
                     inputProps={{ "aria-label": "Read mode" }}
                     onChange={(event) => onFetchModeChange(event.target.value)}
                     sx={{ width: 112 }}
@@ -409,7 +423,7 @@ export function MessageWorkspace({
                     Limit
                   </Typography>
                   <Select
-                    disabled={active || continuationBusy}
+                    disabled={active || continuationBusy || readBusy}
                     inputProps={{ "aria-label": "Record limit" }}
                     onChange={(event) => onFetchMaximumChange(Number(event.target.value))}
                     sx={{ width: 92 }}
@@ -432,6 +446,7 @@ export function MessageWorkspace({
                   : !connectionAvailable ||
                     active ||
                     continuationBusy ||
+                    readBusy ||
                     (fetchMode === "time-window" && timeWindow?.error !== undefined)
               }
               onClick={operationBelongsToTopic ? onStop : onStart}
@@ -575,7 +590,10 @@ export function MessageWorkspace({
           />
         )}
         {selectedTopic !== null && fetchMode === "time-window" && timeWindow !== undefined ? (
-          <QueryTimeWindowControls {...timeWindow} disabled={active || continuationBusy} />
+          <QueryTimeWindowControls
+            {...timeWindow}
+            disabled={active || continuationBusy || readBusy}
+          />
         ) : null}
         {topicMatches && consumptionRequest?.mode !== "tail" ? (
           <QueryReadCoverage
@@ -583,7 +601,7 @@ export function MessageWorkspace({
             search={consumptionRequest?.search !== undefined}
             progress={searchProgress}
             continuationAvailable={continuationAvailable}
-            continuationBusy={continuationBusy}
+            continuationBusy={continuationBusy || readBusy}
             continuationNotice={continuationNotice}
             onContinue={onContinue}
           />
@@ -724,6 +742,7 @@ export function MessageWorkspace({
                     !connectionAvailable ||
                     active ||
                     continuationBusy ||
+                    readBusy ||
                     fetchMode === "tail" ||
                     filters.activeRuleMatchesOnly ||
                     !expressionValidation.valid ||
@@ -853,6 +872,7 @@ export function MessageWorkspace({
             </Alert>
           ) : null}
         </Stack>
+        {recordPositions}
         <Box
           sx={{
             bgcolor: "background.default",

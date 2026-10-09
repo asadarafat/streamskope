@@ -5,6 +5,12 @@ import {
   type KafkaInvestigationView,
 } from "./investigation-view";
 import { HostContractValidationError } from "./validation-error";
+import {
+  KAFKA_RECORD_LOCATOR_LIMITS,
+  createEmptyKafkaSavedRecordContext,
+  parseKafkaSavedRecordContext,
+  type KafkaSavedRecordContext,
+} from "./record-locator";
 import { declaredValue, exactKeys, record, text } from "./validation-primitives";
 
 export const KAFKA_QUERY_LIBRARY_LIMITS = {
@@ -20,6 +26,7 @@ export interface KafkaSavedView {
   /** A topic view requires its query; a standalone group has no fabricated topic. */
   readonly configuration: KafkaInvestigationQuery | null;
   readonly view: KafkaInvestigationView;
+  readonly records: KafkaSavedRecordContext;
 }
 /** The existing queries host routes and store now carry the canonical saved view. */
 export type KafkaSavedQuery = KafkaSavedView;
@@ -44,7 +51,7 @@ function parseIdentity(
 }
 export function parseKafkaSavedView(value: unknown, path = "savedView"): KafkaSavedView {
   const input = record(value, path);
-  exactKeys(input, ["id", "name", "profileId", "configuration", "view"], path);
+  exactKeys(input, ["id", "name", "profileId", "configuration", "view", "records"], path);
   const view = parseKafkaInvestigationView(input.view, `${path}.view`);
   const configuration =
     input.configuration === null ? null : parseKafkaInvestigationQuery(input.configuration);
@@ -53,7 +60,12 @@ export function parseKafkaSavedView(value: unknown, path = "savedView"): KafkaSa
       `${path}.configuration`,
       "a topic view requires query settings",
     );
-  return { ...parseIdentity(input, path), configuration, view };
+  return {
+    ...parseIdentity(input, path),
+    configuration,
+    view,
+    records: parseKafkaSavedRecordContext(input.records, `${path}.records`),
+  };
 }
 export const parseKafkaSavedQuery = parseKafkaSavedView;
 
@@ -64,15 +76,21 @@ function parseLegacySavedQuery(value: unknown, path: string): KafkaSavedView {
     ...parseIdentity(input, path),
     configuration: parseKafkaInvestigationQuery(input.configuration),
     view: createDefaultKafkaInvestigationView(),
+    records: createEmptyKafkaSavedRecordContext(),
   };
 }
 
-function parseStoredView(value: unknown, path: string): KafkaSavedView {
+function parseStoredView(value: unknown, path: string, version: 2 | 3): KafkaSavedView {
   const input = record(value, path);
+  if (version === 2) exactKeys(input, ["id", "name", "profileId", "configuration", "view"], path);
   // Only the disk representation omits an exact default descriptor. Wire entries
   // always carry the complete descriptor, and group-only entries need a destination.
   return parseKafkaSavedView(
-    input.view === undefined ? { ...input, view: createDefaultKafkaInvestigationView() } : input,
+    {
+      ...input,
+      view: input.view === undefined ? createDefaultKafkaInvestigationView() : input.view,
+      records: input.records === undefined ? createEmptyKafkaSavedRecordContext() : input.records,
+    },
     path,
   );
 }
@@ -91,18 +109,26 @@ function parseEntries(
     new Set(queries.map((query) => query.name.toLowerCase())).size !== queries.length
   )
     throw new HostContractValidationError("queryLibrary", "view IDs and names must be unique");
+  if (
+    queries.reduce((total, entry) => total + entry.records.bookmarks.length, 0) >
+    KAFKA_RECORD_LOCATOR_LIMITS.bookmarksPerLibrary
+  )
+    throw new HostContractValidationError(
+      "queryLibrary",
+      "at most 256 bookmarks fit in the library",
+    );
   return queries;
 }
 
 /** Pure inspection retains the actual disk format; it never grants old hosts new capabilities. */
 export function inspectKafkaQueryLibraryDocument(value: unknown): {
-  readonly schemaVersion: 1 | 2;
+  readonly schemaVersion: 1 | 2 | 3;
   readonly queries: readonly KafkaSavedView[];
 } {
   const input = record(value, "queryLibrary");
   exactKeys(input, ["schemaVersion", "queries"], "queryLibrary");
   if (
-    (input.schemaVersion !== 1 && input.schemaVersion !== 2) ||
+    (input.schemaVersion !== 1 && input.schemaVersion !== 2 && input.schemaVersion !== 3) ||
     !Array.isArray(input.queries) ||
     input.queries.length > KAFKA_QUERY_LIBRARY_LIMITS.queries
   )
@@ -110,9 +136,12 @@ export function inspectKafkaQueryLibraryDocument(value: unknown): {
       "queryLibrary",
       "unsupported or oversized investigation library",
     );
+  const version = input.schemaVersion;
   const queries = parseEntries(
     input.queries,
-    input.schemaVersion === 1 ? parseLegacySavedQuery : parseStoredView,
+    version === 1
+      ? parseLegacySavedQuery
+      : (entry, path): KafkaSavedView => parseStoredView(entry, path, version),
   );
   return { schemaVersion: input.schemaVersion, queries };
 }
@@ -120,19 +149,24 @@ export function inspectKafkaQueryLibraryDocument(value: unknown): {
 /** Compact defaults prevent migration from expanding an otherwise valid full library. */
 export function serializeKafkaQueryLibraryDocument(queries: readonly KafkaSavedView[]): string {
   const defaultView = JSON.stringify(createDefaultKafkaInvestigationView());
+  const emptyRecords = JSON.stringify(createEmptyKafkaSavedRecordContext());
   const entries = parseEntries(queries, parseKafkaSavedView).map((entry) => {
-    const { view, ...stored } = entry;
-    return JSON.stringify(view) === defaultView ? stored : entry;
+    const { view, records, ...stored } = entry;
+    return {
+      ...stored,
+      ...(JSON.stringify(view) === defaultView ? {} : { view }),
+      ...(JSON.stringify(records) === emptyRecords ? {} : { records }),
+    };
   });
-  return `${JSON.stringify({ schemaVersion: 2, queries: entries })}\n`;
+  return `${JSON.stringify({ schemaVersion: 3, queries: entries })}\n`;
 }
 
-/** Canonical in-memory form; only an explicit store mutation writes format 2. */
+/** Canonical in-memory form; only an explicit store mutation writes format 3. */
 export function parseKafkaQueryLibraryDocument(value: unknown): {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly queries: readonly KafkaSavedView[];
 } {
-  return { schemaVersion: 2, queries: inspectKafkaQueryLibraryDocument(value).queries };
+  return { schemaVersion: 3, queries: inspectKafkaQueryLibraryDocument(value).queries };
 }
 export function parseKafkaQueryLibrarySnapshot(value: unknown): KafkaQueryLibrarySnapshot {
   const input = record(value, "queryLibrary");

@@ -1,3 +1,4 @@
+import type { KafkaRecordLocator } from "../contracts/record-locator";
 import type {
   KafkaAclBinding,
   KafkaConfigurationEntry,
@@ -74,6 +75,7 @@ export interface RecordReadScope extends ReviewAuthority {
     request: KafkaFetchRequest,
     signal: AbortSignal,
     checkpoint?: KafkaReadCheckpoint,
+    expectedLocator?: KafkaRecordLocator,
   ): Promise<KafkaMessageStream>;
 }
 
@@ -111,11 +113,16 @@ export class KafkaConnectionScopes {
     return {
       connectionName: context.connectionName,
       isCurrent: (): boolean => this.current(context),
-      openMessageStream: async (request, signal, checkpoint): Promise<KafkaMessageStream> => {
+      openMessageStream: async (
+        request,
+        signal,
+        checkpoint,
+        expectedLocator,
+      ): Promise<KafkaMessageStream> => {
         signal.throwIfAborted();
         this.assertReviewedCurrent(context);
         // Do not reject a late-opened reader here: its owner must receive and close it.
-        return context.connection.openMessageStream(request, signal, checkpoint);
+        return context.connection.openMessageStream(request, signal, checkpoint, expectedLocator);
       },
     };
   }

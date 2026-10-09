@@ -13,7 +13,11 @@ import {
 } from "./browser-installer";
 import type { BrowserInstallerTarget } from "./browser-installer-evidence";
 import { run, replaceConstant } from "./browser-qualification-process";
-import { createBrowserVaultFixture, verifyBrowserNativeWorkers } from "./browser-vault-fixture";
+import {
+  createBrowserVaultFixture,
+  verifyBrowserNativeWorkers,
+  type BrowserVaultFixture,
+} from "./browser-vault-fixture";
 import {
   BROWSER_UPGRADE_CHECKS,
   browserUpgradePredecessor,
@@ -191,19 +195,49 @@ async function verifyNewBackup(
   return { inventorySha256: sha(bytes), dataSnapshotSha256: String(manifest.dataSnapshotSha256) };
 }
 
-/** Both public delivery and local rehearsal execute this same real transaction cycle. */
-export async function verifyBrowserUpgrade(options: {
+interface TransitionOptions {
   readonly target: BrowserInstallerTarget;
   readonly installerSource: string;
   readonly environment?: NodeJS.ProcessEnv;
-}): Promise<BrowserUpgradeEvidence> {
+}
+interface LocalPredecessorAssets {
+  readonly installerSource: string;
+  readonly topologySha256: string;
+  readonly manifestSha256: string;
+}
+interface TransitionFixture {
+  readonly predecessor: BrowserInstallerTarget;
+  readonly localAssets?: LocalPredecessorAssets;
+  readonly queryFormat: 1 | 2;
+}
+type TransitionEvidence = Omit<BrowserUpgradeEvidence, "checks"> & {
+  readonly checks: readonly string[];
+  readonly localBootstrap?: {
+    readonly predecessor: BrowserInstallerTarget;
+    readonly upgradeBackup: BrowserBackupEvidence;
+  };
+};
+const LOCAL_VIEW_PREDECESSOR: BrowserInstallerTarget = {
+  version: "0.10.4-qa.d9a7c7b365eb",
+  sourceRevision: "d9a7c7b365eb5bd78157de3ce2055001a53ba38f",
+  platform: "linux/arm64",
+  image: "streamskope:0.10.4-qa.d9a7c7b365eb",
+  imageId: "sha256:ac286c6049e3886ff2c025ab2be853cb8cc5ade189767b35cacc4baa07d79e0e",
+};
+
+/** Shared transaction mechanics; public predecessor authority stays in its closed caller. */
+async function verifyTransition(
+  options: TransitionOptions,
+  fixtureOptions: TransitionFixture,
+): Promise<TransitionEvidence> {
   assert.equal(process.platform, "linux");
   assert.equal(process.getuid?.(), 0);
   const uid = Number(process.env.SUDO_UID);
   const gid = Number(process.env.SUDO_GID);
   assert.ok(Number.isSafeInteger(uid) && uid > 0 && Number.isSafeInteger(gid) && gid >= 0);
   const { target } = options;
-  const predecessor = browserUpgradePredecessor(target.platform);
+  const { predecessor, localAssets, queryFormat } = fixtureOptions;
+  assert.equal(predecessor.platform, target.platform);
   assert.notEqual(target.imageId, predecessor.imageId);
   const temporary = await mkdtemp(join(tmpdir(), "streamskope-upgrade-qualification-"));
   await chmod(temporary, 0o700);
@@ -214,6 +248,8 @@ export async function verifyBrowserUpgrade(options: {
   const data = join(state, "streamskope-data");
   const installer = join(temporary, "target.sh");
   const baselineInstaller = join(temporary, "predecessor.sh");
+  const bootstrapInstaller =
+    localAssets === undefined ? baselineInstaller : join(temporary, "published-bootstrap.sh");
   const environment = {
     ...options.environment,
     ...process.env,
@@ -232,6 +268,7 @@ export async function verifyBrowserUpgrade(options: {
   let stage:
     | "target-identity"
     | "baseline-install"
+    | "baseline-upgrade"
     | "baseline-fixture"
     | "check"
     | "upgrade"
@@ -263,13 +300,19 @@ export async function verifyBrowserUpgrade(options: {
         "--max-filesize",
         "1048576",
         "--output",
-        baselineInstaller,
+        bootstrapInstaller,
         "https://github.com/asadarafat/streamskope/releases/download/v0.10.3/install-browser-workbench.sh",
       ],
       environment,
     );
-    const baselineSource = await readFile(baselineInstaller, "utf8");
-    assert.equal(sha(baselineSource), PREDECESSOR_ASSETS["install-browser-workbench.sh"]);
+    const publishedSource = await readFile(bootstrapInstaller, "utf8");
+    assert.equal(sha(publishedSource), PREDECESSOR_ASSETS["install-browser-workbench.sh"]);
+    await writeFile(
+      bootstrapInstaller,
+      scopedInstaller(publishedSource, state, lab, container, network),
+      { mode: 0o700 },
+    );
+    const baselineSource = localAssets?.installerSource ?? publishedSource;
     await writeFile(
       baselineInstaller,
       scopedInstaller(baselineSource, state, lab, container, network),
@@ -281,24 +324,66 @@ export async function verifyBrowserUpgrade(options: {
       { mode: 0o700 },
     );
     stage = "baseline-install";
-    const installed = await run("bash", [baselineInstaller], environment);
+    const installed = await run("bash", [bootstrapInstaller], environment);
     const setupCode = (await readFile(join(data, "setup-code"), "utf8")).trim();
     assert.ok(!installed.stdout.includes(setupCode) && !installed.stderr.includes(setupCode));
-    await run("docker", ["pull", predecessor.image], environment);
+    const publishedPredecessor = browserUpgradePredecessor(target.platform);
+    await run("docker", ["pull", publishedPredecessor.image], environment);
+    await verifyImage(publishedPredecessor, environment);
+    let localBootstrap: TransitionEvidence["localBootstrap"];
+    let bootstrapFixture: BrowserVaultFixture | undefined;
+    if (localAssets !== undefined) {
+      // Local delivery applies only to maintenance. Establish a real installation
+      // through the reviewed published installer, then upgrade the actual host.
+      // Maintenance also requires an initialized vault; retain its real session
+      // fixture so the intermediate upgrade must preserve its encrypted profile.
+      stage = "baseline-fixture";
+      const publishedInstallation = await json(join(state, "installation.json"));
+      bootstrapFixture = await createBrowserVaultFixture({
+        data,
+        port: Number(publishedInstallation.port),
+      });
+      stage = "baseline-upgrade";
+      const beforeBootstrap = await generations(state);
+      const upgraded = await run("bash", [baselineInstaller, "upgrade"], environment);
+      bootstrapFixture.assertNoSecrets(upgraded.stdout + upgraded.stderr);
+      assert.ok(!upgraded.stdout.includes(setupCode) && !upgraded.stderr.includes(setupCode));
+      const bootstrapped = await docker(["inspect", container], environment);
+      assert.equal(bootstrapped.Image, predecessor.imageId);
+      localBootstrap = {
+        predecessor: publishedPredecessor,
+        upgradeBackup: await verifyNewBackup(state, beforeBootstrap, publishedPredecessor, {
+          operation: "upgrade",
+          target: predecessor,
+          candidateId: String(bootstrapped.Id),
+        }),
+      };
+      await bootstrapFixture.unlockAfterReplacement();
+    }
     await verifyImage(predecessor, environment);
-    for (const name of [
-      "streamskope-0.10.3-container.json",
-      "streamskope-0.10.3.clab.yml",
-    ] as const)
-      assert.equal(sha(await readFile(join(state, name))), PREDECESSOR_ASSETS[name]);
+    for (const [name, digest] of localAssets === undefined
+      ? ([
+          [
+            "streamskope-0.10.3-container.json",
+            PREDECESSOR_ASSETS["streamskope-0.10.3-container.json"],
+          ],
+          ["streamskope-0.10.3.clab.yml", PREDECESSOR_ASSETS["streamskope-0.10.3.clab.yml"]],
+        ] as const)
+      : ([
+          [`streamskope-${predecessor.version}-container.json`, localAssets.manifestSha256],
+          [`streamskope-${predecessor.version}.clab.yml`, localAssets.topologySha256],
+        ] as const))
+      assert.equal(sha(await readFile(join(state, name))), digest);
     const original = await json(join(state, "installation.json"));
-    assert.equal(original.version, predecessor.version);
-    assert.equal(original.sourceRevision, predecessor.sourceRevision);
+    const originalRelease = localAssets === undefined ? original : object(original.current);
+    assert.equal(originalRelease.version, predecessor.version);
+    assert.equal(originalRelease.sourceRevision, predecessor.sourceRevision);
     assert.equal(original.uid, uid);
     assert.equal(original.gid, gid);
     stage = "baseline-fixture";
-    const fixture = await createBrowserVaultFixture({ data, port: Number(original.port) });
-    const legacyQuery = {
+    const fixture =
+      bootstrapFixture ?? (await createBrowserVaultFixture({ data, port: Number(original.port) }));
+    const baseQuery = {
       id: "native-view",
       name: "Native recovery view",
       configuration: {
@@ -306,11 +391,22 @@ export async function verifyBrowserUpgrade(options: {
         request: { topic: "recovery-orders", mode: "earliest", maxMessages: 10 },
       },
     };
+    const expectedView = {
+      schemaVersion: 1,
+      destination: { kind: "topic", workspace: "monitor" },
+      messages: {
+        visibleColumns: ["timestamp", "key", "preview"],
+        columnWidths: [{ column: "preview", pixels: 360 }],
+        inspectorWidth: 416,
+        filtersOpen: true,
+      },
+    };
+    const legacyQuery = queryFormat === 1 ? baseQuery : { ...baseQuery, view: expectedView };
     await fixture.kafkaCommand("queries.put", { query: legacyQuery });
     const queryPath = join(data, "queries", "kafka-queries.json");
     const legacyQueryBytes = await readFile(queryPath);
     assert.deepEqual(JSON.parse(legacyQueryBytes.toString("utf8")), {
-      schemaVersion: 1,
+      schemaVersion: queryFormat,
       queries: [legacyQuery],
     });
     const treeBefore = await inventory(data);
@@ -352,21 +448,33 @@ export async function verifyBrowserUpgrade(options: {
       legacyQueryBytes,
       "Pure candidate listing cannot migrate legacy storage.",
     );
-    const expectedView = {
+    // Strict locator metadata tests persistence only. Real broker tests establish
+    // provenance and protected reload; no record contents are synthesized here.
+    const locator = {
       schemaVersion: 1,
-      destination: { kind: "topic", workspace: "monitor" },
-      messages: {
-        visibleColumns: ["timestamp", "key", "preview"],
-        columnWidths: [{ column: "preview", pixels: 360 }],
-        inspectorWidth: 416,
-        filtersOpen: true,
+      clusterId: "native-recovery-cluster",
+      topicId: "27c1c482-b9e0-43f2-abd0-ae257fd6a6df",
+      topic: "recovery-orders",
+      partition: 0,
+      offset: "17",
+      leaderEpoch: 4,
+    };
+    const changedView = {
+      ...legacyQuery,
+      view: expectedView,
+      records: {
+        selected: locator,
+        comparison: { ...locator, offset: "18" },
+        bookmarks: [{ id: "native-position", name: "Native saved position", locator }],
       },
     };
-    const changedView = { ...legacyQuery, view: expectedView };
     await fixture.kafkaCommand("queries.put", { query: changedView });
-    assert.deepEqual(await readFile(`${queryPath}.pre-views-v1`), legacyQueryBytes);
+    assert.deepEqual(
+      await readFile(`${queryPath}.${queryFormat === 1 ? "pre-views-v1" : "pre-records-v2"}`),
+      legacyQueryBytes,
+    );
     assert.deepEqual(JSON.parse((await readFile(queryPath)).toString("utf8")), {
-      schemaVersion: 2,
+      schemaVersion: 3,
       queries: [changedView],
     });
     await fixture.lock();
@@ -454,7 +562,13 @@ export async function verifyBrowserUpgrade(options: {
     await fixture.lock();
     const pinnedRecord = await readFile(join(state, "installation.json"));
     stage = "pinned-resume";
-    const resumed = await run("bash", [installer], environment);
+    // An unpublished local manifest cannot satisfy public install/resume checks.
+    // Local qualification restarts the exact owner; release evidence still has
+    // to prove the real no-argument installer path against the published target.
+    const resumed =
+      localAssets === undefined
+        ? await run("bash", [installer], environment)
+        : await run("docker", ["restart", "--time", "120", String(restored.Id)], environment);
     fixture.assertNoSecrets(resumed.stdout + resumed.stderr);
     assert.deepEqual(await readFile(join(state, "installation.json")), pinnedRecord);
     assert.equal((await docker(["inspect", container], environment)).Image, predecessor.imageId);
@@ -494,17 +608,68 @@ export async function verifyBrowserUpgrade(options: {
       environment,
     );
     await run("docker", ["network", "rm", network], environment);
-    completed = true;
-    return validateBrowserUpgradeEvidence(
-      {
-        predecessor,
-        targetImageId: target.imageId,
-        upgradeBackup,
-        rollbackBackup,
-        checks: BROWSER_UPGRADE_CHECKS,
-      },
-      target,
+    const remaining = await run("docker", ["inspect", String(owner.Id)], environment, true);
+    if (remaining.code === 0) {
+      const residual = await docker(["inspect", String(owner.Id)], environment);
+      assert.equal(residual.Id, owner.Id);
+      assert.equal(residual.Image, predecessor.imageId);
+      assert.equal(object(object(residual.Config).Labels).containerlab, lab);
+      assert.equal(
+        object(object(residual.Config).Labels)["clab-topo-file"],
+        join(state, `streamskope-${predecessor.version}.clab.yml`),
+      );
+      assert.equal(object(residual.State).Running, false);
+      assert.equal(object(residual.State).OOMKilled, false);
+      assert.equal(object(residual.State).ExitCode, 0);
+      await run("docker", ["container", "rm", String(owner.Id)], environment);
+    } else assert.match(remaining.stderr, /No such object/u);
+    const removed = await run("docker", ["inspect", String(owner.Id)], environment, true);
+    assert.notEqual(removed.code, 0);
+    assert.match(removed.stderr, /No such object/u);
+    assert.equal(
+      (
+        await run(
+          "docker",
+          [
+            "container",
+            "ls",
+            "--all",
+            "--no-trunc",
+            "--filter",
+            `name=^/${container}$`,
+            "--format",
+            "{{.ID}}",
+          ],
+          environment,
+        )
+      ).stdout.trim(),
+      "",
     );
+    const removedNetwork = await run("docker", ["network", "inspect", network], environment, true);
+    assert.notEqual(removedNetwork.code, 0);
+    assert.match(removedNetwork.stderr, /No such network|not found/u);
+    completed = true;
+    return {
+      predecessor,
+      targetImageId: target.imageId,
+      upgradeBackup,
+      rollbackBackup,
+      ...(localBootstrap === undefined ? {} : { localBootstrap }),
+      checks:
+        localAssets === undefined
+          ? BROWSER_UPGRADE_CHECKS
+          : [
+              ...BROWSER_UPGRADE_CHECKS.map((check) =>
+                check === "exact published predecessor"
+                  ? "exact previously qualified local-staged version-2 predecessor"
+                  : check === "no-argument resume preserves rolled-back release"
+                    ? "exact local-staged rolled-back owner restarts with preserved installation"
+                    : check,
+              ),
+              "published installation upgraded to actual local version-2 predecessor with complete backup",
+              "locator metadata persistence only; real record reload qualified separately",
+            ],
+    };
   } catch {
     throw new Error(
       `Native browser transition qualification failed at ${stage}; owned evidence retained at ${temporary}.`,
@@ -516,6 +681,48 @@ export async function verifyBrowserUpgrade(options: {
       else process.env[key] = value;
     }
   }
+}
+
+/** Release acceptance always requires the immutable reviewed published predecessor. */
+export async function verifyBrowserUpgrade(
+  options: TransitionOptions,
+): Promise<BrowserUpgradeEvidence> {
+  return validateBrowserUpgradeEvidence(
+    await verifyTransition(options, {
+      predecessor: browserUpgradePredecessor(options.target.platform),
+      queryFormat: 1,
+    }),
+    options.target,
+  );
+}
+
+/** Additional local migration proof, deliberately incompatible with public release evidence. */
+export async function verifyLocalSavedRecordUpgrade(
+  options: TransitionOptions & { readonly predecessorAssets: LocalPredecessorAssets },
+): Promise<{
+  readonly schemaVersion: 1;
+  readonly deliveryScope: "local-staged";
+  readonly predecessorScope: "previously-qualified-local-v2";
+  readonly outcome: "passed";
+  readonly transition: TransitionEvidence;
+}> {
+  assert.equal(options.target.platform, "linux/arm64");
+  for (const digest of [
+    options.predecessorAssets.topologySha256,
+    options.predecessorAssets.manifestSha256,
+  ])
+    assert.match(digest, /^[a-f0-9]{64}$/u);
+  return {
+    schemaVersion: 1,
+    deliveryScope: "local-staged",
+    predecessorScope: "previously-qualified-local-v2",
+    outcome: "passed",
+    transition: await verifyTransition(options, {
+      predecessor: LOCAL_VIEW_PREDECESSOR,
+      localAssets: options.predecessorAssets,
+      queryFormat: 2,
+    }),
+  };
 }
 
 /** Closed maintainer entry: real local image, real public predecessor, never public evidence. */

@@ -147,7 +147,7 @@ describe("connection-scoped authorities", () => {
     const signal = new AbortController().signal;
     expect(Object.keys(scope).sort()).toEqual(["connectionName", "isCurrent", "openMessageStream"]);
     expect(await scope.openMessageStream(request, signal, checkpoint)).toBe(stream);
-    expect(open).toHaveBeenCalledWith(request, signal, checkpoint);
+    expect(open).toHaveBeenCalledWith(request, signal, checkpoint, undefined);
     f.reconnect();
     await expect(scope.openMessageStream(request, signal)).rejects.toThrow("connection changed");
     expect(open).toHaveBeenCalledOnce();
@@ -157,6 +157,31 @@ describe("connection-scoped authorities", () => {
     expect(open).toHaveBeenCalledOnce();
     f.disconnect();
     expect(f.scopes.recordRead()).toBeNull();
+  });
+
+  it("forwards the exact record locator only through its original connection scope", async () => {
+    const f = fixture();
+    const scope = f.scopes.recordRead()!;
+    const request = { topic: "scope.events", mode: "earliest", maxMessages: 1 } as const;
+    const stream = new ControlledMessageStream();
+    const open = vi.spyOn(f.connection, "openMessageStream").mockResolvedValue(stream);
+    const locator = {
+      schemaVersion: 1,
+      clusterId: "cluster-a",
+      topicId: "12345678-1234-1234-1234-123456789abc",
+      topic: request.topic,
+      partition: 0,
+      offset: "9007199254740993",
+      leaderEpoch: 3,
+    } as const;
+    const signal = new AbortController().signal;
+    expect(await scope.openMessageStream(request, signal, undefined, locator)).toBe(stream);
+    expect(open).toHaveBeenCalledWith(request, signal, undefined, locator);
+    f.replace();
+    await expect(scope.openMessageStream(request, signal, undefined, locator)).rejects.toThrow(
+      "connection changed",
+    );
+    expect(open).toHaveBeenCalledOnce();
   });
 
   it("returns a late-opened export reader to its original owner so revocation cannot leak it", async () => {

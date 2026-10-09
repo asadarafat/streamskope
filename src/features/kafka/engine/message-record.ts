@@ -93,6 +93,7 @@ export function translateKafkaRecord(raw: KafkaRawMessage, expectedTopic: string
       : (raw.key?.toString("utf8") ?? null);
   const value = contentOversized ? null : (raw.value?.toString("utf8") ?? null);
   const message: KafkaMessage = {
+    ...(raw.provenance === undefined ? {} : { provenance: { ...raw.provenance } }),
     headers: Object.fromEntries(headers),
     id: `${raw.topic}:${raw.partition}:${raw.offset.toString()}`,
     key,
