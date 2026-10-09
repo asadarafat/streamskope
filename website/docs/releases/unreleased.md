@@ -50,3 +50,13 @@ detection and manual overrides. The message export advances to schema version 3
 to include the captured structured projection. See
 [record interpretation](../guide/structured-events.md) and
 [export compatibility](../guide/data-handling.md#understand-an-export).
+
+Finite Kafka reads and broker searches can continue from confirmed partition
+positions after a result or scan limit, or after pausing. Each pass preserves the
+original captured end offsets and query, with cumulative scanned, matched and
+unavailable counts. Continuing replaces the displayed result page; export it first
+to keep its records. The temporary continuation expires after 30 minutes and is
+invalidated by a new read, reconnect, changed record settings or host restart.
+Retention gaps, topic replacement and partition changes require a new read instead
+of silently extending or skipping the original range. See
+[continuing a finite read](../guide/messages.md#continue-a-finite-read).

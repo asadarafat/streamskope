@@ -38,6 +38,7 @@ import {
   type ProfileSummary,
   type TopicListState,
 } from "../contracts";
+import type { KafkaSearchProgress } from "../contracts/query-search";
 
 import {
   initialKafkaRuleUiState,
@@ -63,6 +64,7 @@ export interface KafkaUiState {
   readonly consumerGroupDetail: KafkaConsumerGroupDetailSnapshot;
   readonly consumerGroupInventory: KafkaConsumerGroupInventorySnapshot;
   readonly readCoverage: KafkaReadCoverage | null;
+  readonly searchProgress: KafkaSearchProgress | null;
   readonly consumptionError: HostError | null;
   readonly consumptionRequest: KafkaFetchRequest | null;
   readonly consumptionState: ConsumptionState;
@@ -226,6 +228,7 @@ export const initialKafkaUiState: KafkaUiState = {
   consumerGroupDetail: unavailableConsumerGroupDetail,
   consumerGroupInventory: unavailableConsumerGroupInventory,
   readCoverage: null,
+  searchProgress: null,
   consumptionError: null,
   consumptionRequest: null,
   consumptionState: "unavailable",
@@ -384,6 +387,7 @@ export function reduceKafkaUiState(state: KafkaUiState, action: KafkaUiAction): 
         consumptionState: "stopped",
         consumptionError: null,
         readCoverage: null,
+        searchProgress: null,
         receivedMessages: 0,
         droppedMessages: 0,
         hostDroppedMessages: 0,
@@ -551,6 +555,7 @@ export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): Kaf
       return {
         ...sequencedState,
         backend: event.payload.state,
+        searchProgress: event.payload.state === "unavailable" ? null : state.searchProgress,
         messagesStale: event.payload.state === "unavailable" && state.messages.length > 0,
         streamMonitor:
           event.payload.state === "unavailable"
@@ -569,6 +574,7 @@ export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): Kaf
             consumerGroupDetail: unavailableConsumerGroupDetail,
             consumerGroupInventory: unavailableConsumerGroupInventory,
             consumptionError: null,
+            searchProgress: null,
             consumptionState: "unavailable",
             liveRuleCapability: initialKafkaUiState.liveRuleCapability,
             latency: unavailableLatency,
@@ -602,6 +608,7 @@ export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): Kaf
       return {
         ...sequencedState,
         readCoverage: event.payload.coverage ?? null,
+        searchProgress: event.payload.searchProgress ?? null,
         consumptionError: event.payload.error ?? null,
         consumptionRequest: event.payload.request,
         consumptionState: event.payload.state,
@@ -708,6 +715,7 @@ export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): Kaf
         ...(recordSettingsChanged
           ? {
               messages: [],
+              searchProgress: null,
               messagesStale: false,
               retainedMessageBytes: 0,
               transformLogs: { ...state.transformLogs, logs: [], state: "unavailable" as const },

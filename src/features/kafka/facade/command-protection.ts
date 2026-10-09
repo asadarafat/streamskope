@@ -97,6 +97,7 @@ export const KAFKA_COMMAND_ACCESS = {
   "queries.put": "local",
   "queries.delete": "local",
   "messages.start": "remote-read",
+  "messages.continue": "remote-read",
   "messages.stop": "local",
   "trustAcquisition.hostKey.discover": "remote-read",
   "trustAcquisition.capabilities": "local",

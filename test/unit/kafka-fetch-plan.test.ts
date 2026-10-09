@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { KafkaFetchRequest } from "../../src/features/kafka/contracts";
+import type { KafkaReadCheckpoint } from "../../src/features/kafka/application/read-checkpoint";
 import {
   KAFKA_EARLIEST_OFFSET_TIMESTAMP,
   KAFKA_LATEST_OFFSET_TIMESTAMP,
@@ -26,6 +27,111 @@ function entries(
 }
 
 describe("Kafka fetch offset planning", () => {
+  it("opens only the explicitly selected partition without requiring an exact offset", async () => {
+    const lookup = new RecordingOffsetLookup((timestamp) =>
+      timestamp === -2n ? [0n, 10n, 0n] : [100_000n, 14n, 100_000n],
+    );
+    const plan = await resolveKafkaFetchPlan(
+      lookup,
+      {
+        mode: "earliest",
+        topic: "orders",
+        maxMessages: 2,
+        search: { key: "", value: "needle", offset: "", timestamp: "", partition: 1 },
+      },
+      1000,
+    );
+    expect(entries(plan.startOffsets)).toEqual([[1, 10n]]);
+    expect(entries(plan.endOffsets)).toEqual([[1, 14n]]);
+  });
+  const checkpoint: KafkaReadCheckpoint = {
+    clusterId: "cluster",
+    topicId: "topic",
+    partitionCount: 2,
+    coverage: {
+      reason: "result-limit",
+      scannedRecords: 4,
+      scannedBytes: 12,
+      matchedRecords: 2,
+      unavailableRecords: 0,
+      partitions: [
+        { partition: 0, startOffset: "0", endOffset: "6", nextOffset: "2" },
+        { partition: 1, startOffset: "10", endOffset: "16", nextOffset: "12" },
+      ],
+    },
+  };
+
+  it("resumes each partition within its captured ends instead of extending to new traffic", async () => {
+    const lookup = new RecordingOffsetLookup((timestamp) =>
+      timestamp === -2n ? [1n, 11n] : [100n, 200n],
+    );
+    const plan = await resolveKafkaFetchPlan(
+      lookup,
+      {
+        mode: "time-window",
+        topic: "orders",
+        maxMessages: 2,
+        startTimeMs: 1,
+        endTimeMs: 200,
+      },
+      1000,
+      checkpoint,
+    );
+    expect(entries(plan.startOffsets)).toEqual([
+      [0, 2n],
+      [1, 12n],
+    ]);
+    expect(entries(plan.endOffsets)).toEqual([
+      [0, 6n],
+      [1, 16n],
+    ]);
+    expect(lookup.calls.map(({ timestamp }) => timestamp)).toEqual([-2n, -1n]);
+  });
+
+  it.each([
+    { low: [3n, 10n], high: [100n, 200n], reason: "retention-changed" },
+    { low: [0n, 10n], high: [5n, 200n], reason: "retention-changed" },
+    { low: [0n, 10n, 0n], high: [100n, 200n, 1n], reason: "partitions-changed" },
+  ])("rejects invalidated remaining ranges: $reason", async ({ low, high, reason }) => {
+    const lookup = new RecordingOffsetLookup((timestamp) => (timestamp === -2n ? low : high));
+    await expect(
+      resolveKafkaFetchPlan(
+        lookup,
+        { mode: "earliest", topic: "orders", maxMessages: 2 },
+        1000,
+        checkpoint,
+      ),
+    ).rejects.toMatchObject({ name: "KafkaReadCheckpointError", reason });
+  });
+
+  it("rejects continuation of tail reads or inconsistent checkpoint offsets", async () => {
+    const lookup = new RecordingOffsetLookup((timestamp) =>
+      timestamp === -2n ? [0n, 0n] : [100n, 200n],
+    );
+    await expect(
+      resolveKafkaFetchPlan(
+        lookup,
+        { mode: "tail", topic: "orders", maxMessages: 2 },
+        1000,
+        checkpoint,
+      ),
+    ).rejects.toMatchObject({ reason: "invalid" });
+    const invalid = {
+      ...checkpoint,
+      coverage: {
+        ...checkpoint.coverage,
+        partitions: [{ partition: 0, startOffset: "0", endOffset: "6", nextOffset: "7" }],
+      },
+    };
+    await expect(
+      resolveKafkaFetchPlan(
+        lookup,
+        { mode: "earliest", topic: "orders", maxMessages: 2 },
+        1000,
+        invalid,
+      ),
+    ).rejects.toMatchObject({ reason: "invalid" });
+  });
   it("bounds a First N plan from retained low offsets to the starting snapshot", async () => {
     const lookup = new RecordingOffsetLookup((timestamp) => {
       if (timestamp === KAFKA_EARLIEST_OFFSET_TIMESTAMP) {

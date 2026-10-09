@@ -3,11 +3,13 @@ import { performance } from "node:perf_hooks";
 import {
   Consumer,
   consumerFetchesChannel,
+  type ClusterMetadata,
   type Message,
   type MessagesStream,
 } from "@platformatic/kafka";
 
 import { KAFKA_MESSAGE_LIMITS, KAFKA_QUERY_LIMITS, type KafkaReadCoverage } from "../contracts";
+import { KafkaReadCheckpointError, type KafkaReadCheckpoint } from "../application/read-checkpoint";
 
 import { KafkaReadTracker } from "./read-coverage";
 import { normalizeKafkaError } from "./failure";
@@ -23,6 +25,27 @@ import type {
 const FINITE_MAX_FETCHES = 64;
 const FINITE_MAX_WAIT_TIME_MS = 100;
 const CONTINUOUS_MAX_WAIT_TIME_MS = 1_000;
+const COVERAGE_NOTIFICATION_INTERVAL_MS = 500;
+
+type ReadIdentity = Omit<KafkaReadCheckpoint, "coverage">;
+
+function readIdentity(metadata: ClusterMetadata, topic: string): ReadIdentity | undefined {
+  const selected = metadata.topics.get(topic);
+  const stable = (value: string | undefined): value is string =>
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.length <= 256 &&
+    !/^0+$/u.test(value.replaceAll("-", ""));
+  if (!stable(metadata.id) || !stable(selected?.id) || !selected?.partitionsCount) return undefined;
+  return { clusterId: metadata.id, topicId: selected.id, partitionCount: selected.partitionsCount };
+}
+
+function assertReadIdentity(actual: ReadIdentity | undefined, expected: ReadIdentity): void {
+  if (actual?.clusterId !== expected.clusterId || actual.topicId !== expected.topicId)
+    throw new KafkaReadCheckpointError("identity-changed");
+  if (actual.partitionCount !== expected.partitionCount)
+    throw new KafkaReadCheckpointError("partitions-changed");
+}
 
 function continuousMaxWaitTime(operationTimeoutMs: number): number {
   return Math.min(CONTINUOUS_MAX_WAIT_TIME_MS, Math.max(0, Math.floor(operationTimeoutMs / 2)));
@@ -100,6 +123,8 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   private readonly preparationController = new AbortController();
   private closePromise: Promise<void> | undefined;
   private readonly tracker: KafkaReadTracker | undefined;
+  private readonly coverageListeners = new Set<(coverage: KafkaReadCoverage) => void>();
+  private lastCoverageNotification: number | undefined;
 
   constructor(
     private readonly consumer: Consumer<Buffer, Buffer, Buffer, Buffer>,
@@ -107,6 +132,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
     private readonly plan: KafkaFetchPlan,
     private readonly cleanupDiagnostics: () => void,
     private readonly prepareRecord?: KafkaConsumerInput["prepareRecord"],
+    private readonly identity?: ReadIdentity,
   ) {
     this.tracker = plan.continuous ? undefined : new KafkaReadTracker(plan);
   }
@@ -115,7 +141,41 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
     return this.tracker?.snapshot();
   }
 
+  subscribeCoverage(listener: (coverage: KafkaReadCoverage) => void): () => void {
+    if (this.tracker !== undefined && !this.preparationController.signal.aborted)
+      this.coverageListeners.add(listener);
+    return (): void => {
+      this.coverageListeners.delete(listener);
+    };
+  }
+
+  private notifyCoverage(): void {
+    if (this.tracker === undefined || this.coverageListeners.size === 0) return;
+    const now = performance.now();
+    if (
+      this.lastCoverageNotification !== undefined &&
+      now - this.lastCoverageNotification < COVERAGE_NOTIFICATION_INTERVAL_MS
+    )
+      return;
+    const coverage = this.tracker.snapshot();
+    if (coverage.scannedRecords === 0) return;
+    this.lastCoverageNotification = now;
+    // Run inside the owned iteration so observer failure follows its cleanup path.
+    for (const listener of this.coverageListeners) listener(coverage);
+  }
+
+  acknowledge(message: KafkaRawMessage): void {
+    this.tracker?.acknowledge(message);
+  }
+
+  checkpoint(): KafkaReadCheckpoint | undefined {
+    return this.identity === undefined || this.tracker === undefined
+      ? undefined
+      : { ...this.identity, coverage: this.tracker.checkpoint() };
+  }
+
   close(): Promise<void> {
+    this.coverageListeners.clear();
     this.preparationController.abort();
     this.tracker?.finish("cancelled");
     this.closePromise ??= this.closeResources();
@@ -145,6 +205,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
                     ? await this.prepareRecord(raw, this.preparationController.signal)
                     : undefined,
                 );
+          this.notifyCoverage();
           if (accepted) yield raw;
           if (this.tracker?.finished) break;
         }
@@ -252,6 +313,17 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
     };
     input.signal?.addEventListener("abort", abort, { once: true });
     try {
+      const captureIdentity = async (): Promise<ReadIdentity | undefined> =>
+        readIdentity(
+          await consumer.metadata({
+            topics: [input.request.topic],
+            forceUpdate: true,
+            autocreateTopics: false,
+          }),
+          input.request.topic,
+        );
+      const identity = input.request.mode === "tail" ? undefined : await captureIdentity();
+      if (input.checkpoint !== undefined) assertReadIdentity(identity, input.checkpoint);
       const plan = await resolveKafkaFetchPlan(
         {
           listTopicOffsets: async (topic, timestamp) => {
@@ -263,12 +335,16 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
             if (topicOffsets === undefined) {
               throw new Error(`Kafka returned no offset metadata for topic ${topic}.`);
             }
+            if (identity !== undefined && topicOffsets.length !== identity.partitionCount)
+              throw new KafkaReadCheckpointError("partitions-changed");
             return topicOffsets;
           },
         },
         input.request,
         Date.now(),
+        input.checkpoint,
       );
+      if (identity !== undefined) assertReadIdentity(await captureIdentity(), identity);
       input.signal?.throwIfAborted();
       const offsets = [...plan.startOffsets].map(([partition, offset]) => ({
         offset,
@@ -287,6 +363,7 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
           plan,
           cleanupDiagnostics,
           input.prepareRecord,
+          identity,
         );
       }
       const stream = await consumer.consume({
@@ -314,6 +391,7 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
         plan,
         cleanupDiagnostics,
         input.prepareRecord,
+        identity,
       );
     } catch (error) {
       cleanupDiagnostics();

@@ -1,5 +1,6 @@
 import {
   type KafkaReadCoverage,
+  type KafkaSearchProgress,
   HOST_ERROR_CODES,
   HOST_ERROR_STAGES,
   HOST_PROTOCOL_VERSION,
@@ -58,6 +59,7 @@ export interface ActivityInput {
 
 export interface ActiveFacadeConsumption {
   coverage?: KafkaReadCoverage;
+  searchProgress?: KafkaSearchProgress;
   cancelScheduledFlush: (() => void) | undefined;
   readonly correlationId: string;
   readonly operationId: string;

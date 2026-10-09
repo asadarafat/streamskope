@@ -157,6 +157,10 @@ export function StreamSkopeWorkbench({
     timeWindow,
     messageRequestError,
     consumptionStopping,
+    continuationAvailable,
+    continuationBusy,
+    continuationNotice,
+    continueConsumption,
     selectedMessageId,
     selectedTopic,
     selectionNotice,
@@ -570,6 +574,11 @@ export function StreamSkopeWorkbench({
           host={host}
           unavailableFilterRecords={messageSelection.unavailable}
           readCoverage={state.readCoverage}
+          searchProgress={state.searchProgress}
+          continuationAvailable={continuationAvailable}
+          continuationBusy={continuationBusy}
+          continuationNotice={continuationNotice}
+          onContinue={() => void continueConsumption()}
           onSearch={(filter) => {
             if (selectedTopic !== null) void startConsumption(selectedTopic, filter);
           }}

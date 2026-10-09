@@ -30,6 +30,42 @@ function tracker(end = 3n): KafkaReadTracker {
 }
 
 describe("bounded broker search coverage", () => {
+  it("does not skip an unacknowledged match after already scanned nonmatching records", () => {
+    const read = tracker(4n);
+    read.accept(raw(0));
+    read.accept(raw(1));
+    const match = raw(2, "needle");
+    expect(read.accept(match)).toBe(true);
+    expect(read.checkpoint()).toMatchObject({
+      scannedRecords: 2,
+      matchedRecords: 0,
+      partitions: [{ nextOffset: "2" }],
+    });
+    read.acknowledge(match);
+    expect(read.checkpoint()).toMatchObject({
+      scannedRecords: 3,
+      matchedRecords: 1,
+      partitions: [{ nextOffset: "3" }],
+    });
+    read.finish("cancelled");
+    expect(read.checkpoint().reason).toBe("cancelled");
+  });
+
+  it("keeps the earliest unacknowledged checkpoint when a reader never acknowledges delivery", () => {
+    const read = tracker(4n);
+    const first = raw(0, "needle");
+    read.accept(first);
+    read.accept(raw(1));
+    read.accept(raw(2, "needle"));
+    expect(read.snapshot()).toMatchObject({ scannedRecords: 3, matchedRecords: 2 });
+    expect(read.checkpoint()).toMatchObject({
+      scannedRecords: 0,
+      matchedRecords: 0,
+      partitions: [{ nextOffset: "0" }],
+    });
+    read.acknowledge(first);
+    expect(read.checkpoint().partitions[0]?.nextOffset).toBe("0");
+  });
   it("evaluates the delivered protected projection instead of matching secret wire bytes", () => {
     const read = tracker(1n);
     const original = raw(0, '{"secret":"needle","public":"safe"}');

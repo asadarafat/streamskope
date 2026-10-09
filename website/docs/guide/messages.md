@@ -18,7 +18,7 @@ headers and offset. Start with a [connected profile](connections.md).
 
 ## Read and filter
 
-1. If a read is running, click **Stop tail** or **Cancel fetch** to enable its settings.
+1. If a read is running, click **Stop tail**, **Pause read** or **Pause search** to enable its settings.
 2. Use **Read** to choose **Tail** for ongoing traffic, or **Newest N**, **First N** or **Time window** for a bounded read. Set **Limit** to the number of records you need.
 3. Click **Start tail** or **Load messages**, depending on the chosen mode.
 4. Once the records you need are present, click **Stop tail** for a stable view
@@ -71,7 +71,7 @@ Suppose an error happened at 14:03 UTC on `orders.events`:
    to `1000`. Choose **Custom interval**, enter that date's start and end times
    around the incident with `Z` for UTC, and click **Load messages**.
 2. Note the UTC range shown by **Active fetch request** and wait for completion,
-   or use **Cancel fetch** to stop the read. History removed from Kafka cannot be recovered.
+   or use **Pause read** to stop the read. History removed from Kafka cannot be recovered.
 3. Open **Filters**, set **Key contains** to a known affected key, and inspect
    matching records' partition, offset and timestamp.
 4. Clear the filter if you need the rest of the loaded sample. Reaching the limit,
@@ -234,17 +234,47 @@ An empty filtered table does not establish that Kafka has no matches.
    stop a tail before starting it. Turn off **Rule matches only**, which depends
    on the local rule inventory.
 3. Select **Search broker**. The record limit caps returned matches, independently
-   of the scan budget: at most 10,000 records, 32 MiB of record content or 30 seconds.
-   The Kafka fetch budget can end a read earlier. **Cancel fetch** closes the consumer.
+   of the scan budget: each pass reads at most 10,000 records, 32 MiB of record content
+   or 30 seconds. The Kafka fetch budget can end a pass earlier. **Pause search**
+   closes the consumer and confirms a stopping point before offering continuation.
 4. Check **Read coverage** and expand **Partition coverage**. Requested offsets
    are half-open; reached offsets describe actual traversal. A result limit,
    scan/byte/time limit, exhausted fetch budget, failure or cancellation means a
    partial read. Large fields that could not be searched are counted separately.
+5. When available, choose **Continue search** to read the remaining captured ranges.
+   **Continue read** does the same for a finite read without broker filters.
+   Export any records you want to keep first: continuing replaces the displayed
+   result page. **Pass** and **Total** report cumulative progress across passes;
+   the coverage summary reports the current pass.
 
 Search uses the current filter values at the moment it starts. Subsequent edits
 only filter the loaded result sample; run the search again to change its broker
 criteria. Text matching is case-insensitive substring matching. Values omitted
 because they exceed the payload limit cannot establish a negative match.
+
+### Continue a finite read
+
+A continuation keeps the original partition ranges, query, encoding choices and
+masking policy. New records arriving after the first pass are outside those ranges.
+Partition coverage retains the original start and end offsets while the reached
+offset advances. Records that could not be evaluated remain in the cumulative
+unavailable count, even after all captured offsets have been reached.
+
+Only the latest continuation is available, and it can be used once within 30
+minutes of its creation. Starting another read, disconnecting, changing record
+settings or restarting the host invalidates it. Saved queries keep search settings;
+they do not save a continuation. To change criteria or include new arrivals, start
+a new search.
+
+**Pause search** or **Pause read** must finish closing the consumer before a
+continuation becomes available. A failed or zero-progress read, lost delivery or
+an unresolved stop does not establish a safe continuation. If retention has
+removed unread offsets, the topic has been replaced or its partition inventory
+has changed, continuation fails with instructions to start a new read. It does
+not silently skip the missing range. After 10,000 passes, start a new read.
+
+This is a temporary, host-owned checkpoint. It does not survive host restart,
+accumulate every result page in memory or provide a complete topic export.
 
 First N searches forward from retained low offsets. Newest N searches a bounded
 recent candidate range, up to 10,000 offsets per partition, with a topic-wide scan

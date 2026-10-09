@@ -21,7 +21,11 @@ import {
 } from "./reviewed-writes";
 import { parseRecordDecodeInput, parseRecordDecodeResult } from "./record-codec";
 import { parseKafkaSavedQuery, parseKafkaQueryLibrarySnapshot } from "./query-library";
-import { parseKafkaReadCoverage } from "./query-search";
+import {
+  parseKafkaReadCoverage,
+  parseKafkaSearchProgress,
+  parseKafkaContinuationInput,
+} from "./query-search";
 import { parseKafkaFetchRequest } from "./fetch-validation";
 export { parseKafkaFetchRequest } from "./fetch-validation";
 import { isHostAcknowledgementCommand } from "./host-command-results";
@@ -421,6 +425,13 @@ export function parseHostCommand(value: unknown): HostCommand {
         version,
       };
     }
+    case "messages.continue":
+      return {
+        command,
+        id,
+        payload: parseKafkaContinuationInput(envelope.payload, "command.payload"),
+        version,
+      };
     case "topicConfiguration.load":
     case "topicConfiguration.history":
       return {
@@ -725,6 +736,7 @@ export function parseHostEvent(value: unknown): HostEvent {
         payload,
         [
           "coverage",
+          "searchProgress",
           "droppedMessages",
           "error",
           "receivedMessages",
@@ -743,6 +755,14 @@ export function parseHostEvent(value: unknown): HostEvent {
           ...(payload.coverage === undefined
             ? {}
             : { coverage: parseKafkaReadCoverage(payload.coverage, "event.payload.coverage") }),
+          ...(payload.searchProgress === undefined
+            ? {}
+            : {
+                searchProgress: parseKafkaSearchProgress(
+                  payload.searchProgress,
+                  "event.payload.searchProgress",
+                ),
+              }),
           droppedMessages: nonNegativeInteger(
             payload.droppedMessages,
             "event.payload.droppedMessages",

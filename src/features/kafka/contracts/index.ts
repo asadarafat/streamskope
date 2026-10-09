@@ -527,7 +527,12 @@ export {
   parseKafkaSearchFilter,
   parseKafkaReadCoverage,
 } from "./query-search";
-export type { KafkaSearchFilter, KafkaReadCoverage, KafkaReadReason } from "./query-search";
+export type {
+  KafkaSearchFilter,
+  KafkaReadCoverage,
+  KafkaReadReason,
+  KafkaSearchProgress,
+} from "./query-search";
 
 export { compileKafkaRuleExpression, validateKafkaRuleExpression } from "./rule-expression-parser";
 export {

@@ -12,7 +12,7 @@ import { ACL_REVIEW_COMMANDS } from "./acl-review-commands";
 import type { HostError } from "./host-errors";
 import type { KafkaSavedQuery } from "./query-library";
 import type { KafkaOriginalRecord } from "./record-bytes";
-import type { KafkaReadCoverage, KafkaSearchFilter } from "./query-search";
+import type { KafkaReadCoverage, KafkaSearchFilter, KafkaSearchProgress } from "./query-search";
 import type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 import type {
   ProfileCreateInput,
@@ -88,7 +88,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 55 as const;
+export const HOST_PROTOCOL_VERSION = 56 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -179,6 +179,7 @@ export const HOST_COMMANDS = [
   "queries.put",
   "queries.delete",
   "messages.start",
+  "messages.continue",
   "messages.stop",
   "trustAcquisition.hostKey.discover",
   "trustAcquisition.capabilities",
@@ -710,6 +711,10 @@ type HostCommandDefinition =
       readonly payload: KafkaFetchRequest;
     })
   | (HostCommandBase & {
+      readonly command: "messages.continue";
+      readonly payload: { readonly continuationId: string };
+    })
+  | (HostCommandBase & {
       readonly command: "trustAcquisition.hostKey.discover";
       readonly payload: RemoteTrustHostKeyDiscoveryInput;
     })
@@ -930,6 +935,7 @@ export type HostEvent =
       readonly event: "consumption.state";
       readonly payload: {
         readonly coverage?: KafkaReadCoverage;
+        readonly searchProgress?: KafkaSearchProgress;
         readonly droppedMessages: number;
         readonly error?: HostError;
         readonly receivedMessages: number;

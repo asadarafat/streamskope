@@ -69,7 +69,7 @@ def inspect_message_limits(page=None):
         "require('./src/features/kafka/contracts/types.ts');"
         "const {KAFKA_MESSAGE_OPERATION_LIMITS:e}="
         "require('./src/features/kafka/ui/message-operations.ts');"
-        "const {KAFKA_QUERY_LIMITS:q}=require('./src/features/kafka/contracts/query-search.ts');"
+        "const {KAFKA_QUERY_LIMITS:q,KAFKA_CONTINUATION_LIMITS:c}=require('./src/features/kafka/contracts/query-search.ts');"
         "const {KAFKA_QUERY_LIBRARY_LIMITS:l}=require('./src/features/kafka/contracts/query-library.ts');"
         "const {KAFKA_QUERY_TRANSFER_LIMITS:t}=require('./src/features/kafka/contracts/query-transfer.ts');"
         "const {KAFKA_ORIGINAL_RECORD_LIMITS:o}=require('./src/features/kafka/contracts/record-bytes.ts');"
@@ -78,6 +78,7 @@ def inspect_message_limits(page=None):
         "preview:m.previewBytes,fetch:f.maxMessages,original:o.bytes,"
         "content:e.exportContentBytes,document:e.exportBytes,window:f.defaultTimeWindowMs,"
         "scan:q.scanRecords,scanBytes:q.scanBytes,scanMs:q.durationMs,"
+        "continuationMs:c.lifetimeMs,continuationPasses:c.passes,"
         "queries:l.queries,libraryBytes:l.fileBytes,queryBytes:t.documentBytes}));",
     ], cwd=ROOT, text=True))
     expected = {
@@ -90,7 +91,8 @@ def inspect_message_limits(page=None):
         "Serialized export record content": f"{limits['content'] / 1_048_576:g} MiB",
         "Complete JSON export document": f"{limits['document'] / 1_048_576:g} MiB",
         "Default recent time window": f"{limits['window'] / 60_000:g} minutes",
-        "Broker search scan": f"{limits['scan']:,} records / {limits['scanBytes'] / 1_048_576:g} MiB / {limits['scanMs'] / 1000:g} seconds",
+        "Broker search pass": f"{limits['scan']:,} records / {limits['scanBytes'] / 1_048_576:g} MiB / {limits['scanMs'] / 1000:g} seconds",
+        "Read continuation": f"Latest checkpoint / {limits['continuationMs'] / 60_000:g} minutes / {limits['continuationPasses']:,} passes",
         "Saved query library": f"{limits['queries']} queries / {limits['libraryBytes'] / 1_048_576:g} MiB",
         "Portable query document": f"{limits['queryBytes'] / 1024:g} KiB",
     }

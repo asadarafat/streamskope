@@ -102,20 +102,21 @@ installer-managed and manual procedures.
 These are workbench bounds, not Kafka retention settings
 or a throughput guarantee. Both the record-count and byte limits apply.
 
-| Boundary                         | Limit                                | What happens                                                                                                 |
-| -------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Retained message count           | 1,000                                | Older records leave the view as the window advances                                                          |
-| Retained message bytes           | 64 MiB                               | Retention can reach this limit before the record-count limit                                                 |
-| Full record content              | 1 MiB                                | Combined display text, headers, previews and original-byte envelope; over-limit display content is truncated |
-| Original record bytes            | 256 KiB                              | Key, value and ordered headers are retained as Base64 within this bound; otherwise explicitly unavailable    |
-| Value preview                    | 8 KiB                                | Shows a bounded prefix, with original-size/truncation information                                            |
-| Maximum bounded fetch count      | 1,000                                | A bounded read does not imply a complete topic export                                                        |
-| Serialized export record content | 8 MiB                                | An oversized export fails; narrow the filters and retry                                                      |
-| Complete JSON export document    | 16 MiB                               | Includes formatting and metadata; this is a separate final size check                                        |
-| Default recent time window       | 2 minutes                            | Resolved before Load messages; Custom interval accepts explicit start/end with a time zone                   |
-| Broker search scan               | 10,000 records / 32 MiB / 30 seconds | The first reached budget stops the scan with partial coverage; limits do not imply complete history          |
-| Saved query library              | 100 queries / 1 MiB                  | Unreadable or unsupported files are preserved for recovery                                                   |
-| Portable query document          | 32 KiB                               | Versioned settings only; import requires review and explicit opening                                         |
+| Boundary                         | Limit                                          | What happens                                                                                                   |
+| -------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Retained message count           | 1,000                                          | Older records leave the view as the window advances                                                            |
+| Retained message bytes           | 64 MiB                                         | Retention can reach this limit before the record-count limit                                                   |
+| Full record content              | 1 MiB                                          | Combined display text, headers, previews and original-byte envelope; over-limit display content is truncated   |
+| Original record bytes            | 256 KiB                                        | Key, value and ordered headers are retained as Base64 within this bound; otherwise explicitly unavailable      |
+| Value preview                    | 8 KiB                                          | Shows a bounded prefix, with original-size/truncation information                                              |
+| Maximum bounded fetch count      | 1,000                                          | A bounded read does not imply a complete topic export                                                          |
+| Serialized export record content | 8 MiB                                          | An oversized export fails; narrow the filters and retry                                                        |
+| Complete JSON export document    | 16 MiB                                         | Includes formatting and metadata; this is a separate final size check                                          |
+| Default recent time window       | 2 minutes                                      | Resolved before Load messages; Custom interval accepts explicit start/end with a time zone                     |
+| Broker search pass               | 10,000 records / 32 MiB / 30 seconds           | The first reached budget stops the pass with partial coverage; continuation keeps the original captured ranges |
+| Read continuation                | Latest checkpoint / 30 minutes / 10,000 passes | Single-use, host-memory checkpoint for the same connection and record settings; unavailable after restart      |
+| Saved query library              | 100 queries / 1 MiB                            | Unreadable or unsupported files are preserved for recovery                                                     |
+| Portable query document          | 32 KiB                                         | Versioned settings only; import requires review and explicit opening                                           |
 
 Check [Monitor](operations.md#stream-monitor) for historical display omissions and
 current pressure. Ordinary retention eviction as the selected window advances is
@@ -125,6 +126,14 @@ Filters operate on the records currently available to the workbench, including
 previews for truncated content. **Search broker** separately scans the selected
 finite range within its budgets and reports offset coverage. Neither mode proves
 complete historical coverage; see [message investigation](messages.md#search-beyond-the-loaded-sample).
+
+Continuing a finite read replaces its displayed result page. Cumulative progress
+counts all confirmed passes but does not retain those earlier records for export.
+Export a page before continuing if you need to keep it. A continuation retains
+offsets and read settings in host memory, not record bytes or credentials. It
+does not expand the original end offsets to include later arrivals. Reconnect,
+another read, changed record settings or host restart invalidates it; it is not
+a durable job or a saved query.
 
 ## Understand an export
 

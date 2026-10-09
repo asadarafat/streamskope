@@ -176,14 +176,14 @@ describe("operator Stream Monitor", () => {
   it("supports cancellation while loading and disables duplicate stops", () => {
     renderPanel({
       consumptionStopping: true,
-      stopActionLabel: "Cancel fetch",
+      stopActionLabel: "Pause read",
       snapshot: hostSnapshot({
         state: "loading",
         request: { topic: "orders", maxMessages: 50, mode: "newest" },
       }),
     });
-    expect(screen.getByRole("button", { name: "Cancel fetch orders" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancel fetch orders" })).toHaveTextContent(
+    expect(screen.getByRole("button", { name: "Pause read orders" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pause read orders" })).toHaveTextContent(
       "Stopping…",
     );
   });

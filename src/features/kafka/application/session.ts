@@ -35,6 +35,7 @@ import type {
 } from "./types";
 import { KafkaSessionRequests } from "./session-requests";
 import type { KafkaLatencyProbeMeasurement } from "./latency-types";
+import type { KafkaReadCheckpoint } from "./read-checkpoint";
 import {
   KafkaConnectionScopes,
   type AclReviewScope,
@@ -391,6 +392,7 @@ export class KafkaApplicationSession {
     request: KafkaFetchRequest,
     observer: KafkaConsumptionObserver,
     externalSignal?: AbortSignal,
+    checkpoint?: KafkaReadCheckpoint,
   ): Promise<void> {
     this.assertAvailable();
     externalSignal?.throwIfAborted();
@@ -418,6 +420,7 @@ export class KafkaApplicationSession {
       request,
       observer,
       externalSignal,
+      checkpoint,
     );
     pending.operation = operation;
     try {
@@ -435,6 +438,7 @@ export class KafkaApplicationSession {
     request: KafkaFetchRequest,
     observer: KafkaConsumptionObserver,
     externalSignal?: AbortSignal,
+    checkpoint?: KafkaReadCheckpoint,
   ): Promise<void> {
     const { controller, generation } = pending;
     const signal = abortSignals(controller.signal, externalSignal);
@@ -448,7 +452,7 @@ export class KafkaApplicationSession {
     let stream: KafkaMessageStream;
     try {
       pending.openingStarted = true;
-      stream = await connection.openMessageStream(request, signal);
+      stream = await connection.openMessageStream(request, signal, checkpoint);
     } catch (error) {
       if (!isCurrent()) throw new ConnectionAttemptSupersededError(ownedCleanupFailure(error));
       throw error;
@@ -603,6 +607,12 @@ export class KafkaApplicationSession {
     if (failures.length > 1) {
       throw new AggregateError(failures, "Kafka message streams did not close cleanly.");
     }
+    if (consumption !== undefined) this.reportConsumptionCheckpoint(consumption);
+  }
+
+  private reportConsumptionCheckpoint(consumption: ActiveConsumption): void {
+    const checkpoint = consumption.stream.checkpoint?.();
+    if (checkpoint !== undefined) consumption.observer.onCheckpoint?.(checkpoint);
   }
 
   private assertAvailable(): void {
@@ -828,15 +838,48 @@ export class KafkaApplicationSession {
       if (coverage !== undefined) consumption.observer.onCoverage?.(coverage);
     };
     let failure: unknown;
+    let cleanupFailure: unknown;
     let completed = false;
+    const observerFailed = (error: unknown): void => {
+      failure ??=
+        error instanceof Error
+          ? error
+          : new Error("Kafka consumption observer failed.", { cause: error });
+    };
+    let receivingCoverage = true;
+    let unsubscribeCoverage: (() => void) | undefined;
     try {
+      if (consumption.request.mode !== "tail") {
+        unsubscribeCoverage = consumption.stream.subscribeCoverage?.((coverage) => {
+          if (
+            !receivingCoverage ||
+            !this.isCurrentConsumption(consumption) ||
+            failure !== undefined
+          )
+            return;
+          try {
+            consumption.observer.onCoverage?.(coverage);
+          } catch (error) {
+            observerFailed(error);
+            receivingCoverage = false;
+            const cleanup = this.closeConsumptionStream(consumption);
+            // The pump awaits this same cleanup. Retain a rejection even if the
+            // iterator is still unwinding, so a later lifecycle action owns it.
+            void cleanup.catch(() => {
+              if (this.isCurrentConsumption(consumption))
+                this.trackConsumptionStop(cleanup, consumption.connection, true);
+            });
+          }
+        });
+      }
       for await (const message of consumption.stream) {
-        if (!this.isCurrentConsumption(consumption)) {
+        if (!this.isCurrentConsumption(consumption) || failure !== undefined) {
           break;
         }
         consumption.receivedMessage = true;
         this.clearEmptyTimer(consumption);
         consumption.observer.onMessage(message);
+        consumption.stream.acknowledge?.(message);
       }
       if (this.isCurrentConsumption(consumption) && !consumption.controller.signal.aborted) {
         if (consumption.request.mode === "tail") {
@@ -847,9 +890,15 @@ export class KafkaApplicationSession {
       }
     } catch (error) {
       if (this.isCurrentConsumption(consumption) && !consumption.controller.signal.aborted) {
-        failure = error;
+        failure ??= error;
       }
     } finally {
+      receivingCoverage = false;
+      try {
+        unsubscribeCoverage?.();
+      } catch (error) {
+        observerFailed(error);
+      }
       this.clearEmptyTimer(consumption);
       const cleanup = this.closeConsumptionStream(consumption);
       try {
@@ -857,17 +906,44 @@ export class KafkaApplicationSession {
       } catch (error) {
         if (this.isCurrentConsumption(consumption)) {
           // Automatic completion/failure owns the same cleanup obligation as explicit Stop.
+          cleanupFailure = error;
           this.trackConsumptionStop(cleanup, consumption.connection, true);
           if (failure === undefined) failure = error;
         }
       }
       if (this.isCurrentConsumption(consumption)) {
-        reportCoverage();
+        if (failure === undefined) {
+          try {
+            reportCoverage();
+            this.reportConsumptionCheckpoint(consumption);
+          } catch (error) {
+            observerFailed(error);
+          }
+        }
         this.activeConsumption = undefined;
+        if (failure === undefined && completed) {
+          try {
+            consumption.observer.onComplete();
+          } catch (error) {
+            observerFailed(error);
+          }
+        }
         if (failure !== undefined) {
-          consumption.observer.onFailure(failure);
-        } else if (completed) {
-          consumption.observer.onComplete();
+          try {
+            consumption.observer.onFailure(failure);
+          } catch (notificationError) {
+            const deliveryFailure = Promise.reject(
+              new AggregateError(
+                [
+                  failure,
+                  ...(cleanupFailure === undefined ? [] : [cleanupFailure]),
+                  notificationError,
+                ],
+                "Kafka consumption failed and its failure observer also failed.",
+              ),
+            );
+            this.trackConsumptionStop(deliveryFailure, consumption.connection, true);
+          }
         }
       }
     }
