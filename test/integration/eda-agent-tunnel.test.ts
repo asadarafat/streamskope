@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:net";
+import { promisify } from "node:util";
 
 import { expect, it, vi } from "vitest";
 
@@ -18,6 +20,22 @@ function closeServer(server: Server): Promise<void> {
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
 }
+
+it("survives local TCP resets, closes upstream peers and accepts a fresh connection", async () => {
+  // Isolate uncaught socket errors so the regression observes actual host-process survival.
+  const result = await promisify(execFile)(
+    process.execPath,
+    ["--import", "tsx", "test/support/eda-agent-tunnel-probe.ts"],
+    { timeout: 15_000, maxBuffer: 64 * 1024 },
+  );
+  expect(JSON.parse(result.stdout)).toEqual({
+    outcome: "passed",
+    resetConnections: 12,
+    closedUpstreamConnections: 13,
+    activeUpstreamConnections: 0,
+    roundTrip: "after-reset",
+  });
+}, 20_000);
 
 it("reports an occupied local capture port through the plugin response and can retry after it is freed", async () => {
   vi.spyOn(EdaApiClient.prototype, "clusterVersion").mockResolvedValue({
