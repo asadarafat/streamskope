@@ -33,16 +33,17 @@ const event = {
 };
 
 describe("generic plugin host protocol", () => {
-  it("pairs transition metadata with protocol 53 while accepting snapshots without it", () => {
+  it("pairs transition metadata with the current protocol while accepting snapshots without it", () => {
     const payload = {
       revision: 1,
       plugins: [{ id: "example.capture", pending: null, restartRequired: false }],
     };
     const changed = { ...event, event: "plugins.changed", payload };
-    expect(HOST_PROTOCOL_VERSION).toBe(53);
     expect(parseHostEvent(changed)).toEqual(changed);
-    expect(() => parseHostEvent({ ...changed, version: 52 })).toThrow(HostContractValidationError);
-    expect(() => parseHostCommand({ ...command, version: 52 })).toThrow(
+    expect(() => parseHostEvent({ ...changed, version: HOST_PROTOCOL_VERSION - 1 })).toThrow(
+      HostContractValidationError,
+    );
+    expect(() => parseHostCommand({ ...command, version: HOST_PROTOCOL_VERSION - 1 })).toThrow(
       HostContractValidationError,
     );
     const transition = {
@@ -70,9 +71,9 @@ describe("generic plugin host protocol", () => {
       result: { pluginSnapshot: snapshot, correlationId: "list" },
     };
     expect(parseHostCommandResponse(listed)).toEqual(listed);
-    expect(() => parseHostCommandResponse({ ...listed, version: 52 })).toThrow(
-      HostContractValidationError,
-    );
+    expect(() =>
+      parseHostCommandResponse({ ...listed, version: HOST_PROTOCOL_VERSION - 1 }),
+    ).toThrow(HostContractValidationError);
     for (const patch of [
       { operationId: "unbounded-or-arbitrary" },
       { activationId: "not-a-uuid" },
