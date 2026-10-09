@@ -436,6 +436,125 @@ class TransactionTest(unittest.TestCase):
             engine.release(selected)
         self.assertEqual(calls, [("image", "inspect", reference)] * 2)
 
+    def local_descriptor(self, value):
+        f = self.fixture
+        descriptor = {
+            "version": value["version"], "sourceRevision": value["sourceRevision"],
+            "platform": "linux/arm64", "imageId": value["imageId"],
+        }
+        topology = (Path(__file__).resolve().parents[2] / "streamskope.clab.yml").read_text()
+        topology = topology.replace("streamskope:0.0.0-dev", "streamskope:" + value["version"]).encode()
+        manifest = m.canonical({
+            "schemaVersion": 1, "deliveryScope": "local-staged", **descriptor,
+            "dataCompatibility": POLICY["dataCompatibility"],
+            "topology": {"file": value["topology"], "sha256": m.digest(topology)},
+        })
+        selected = f.pointer(value)
+        for kind, content in (("topology", topology), ("manifest", manifest)):
+            path = Path(f.config["stage"]) / (value["version"] + "-" + kind)
+            path.write_bytes(content)
+            path.chmod(0o600)
+            descriptor[kind] = {"path": str(path), "sha256": m.digest(content)}
+            selected[kind + "Sha256"] = m.digest(content)
+        return descriptor, selected
+
+    def test_two_local_images_resolve_exact_source_and_rollback_without_public_downloads(self):
+        f = self.fixture
+        old, old_pointer = self.local_descriptor(f.source)
+        new, new_pointer = self.local_descriptor(f.target)
+        engine = m.Maintenance(f.config, POLICY, {"schemaVersion": 1, "releases": [new, old]})
+        f.engine = engine
+        calls = []
+
+        def docker(*args, **_options):
+            calls.append(args)
+            descriptor = next(d for d in (old, new) if args == ("image", "inspect", "streamskope:" + d["version"]))
+            return 0, m.canonical([{
+                "Id": descriptor["imageId"], "Os": "linux", "Architecture": "arm64",
+                "Config": {"Labels": {
+                    "org.opencontainers.image.version": descriptor["version"],
+                    "org.opencontainers.image.revision": descriptor["sourceRevision"],
+                }},
+            }])
+
+        engine.docker = docker
+        engine.asset = lambda *_args: self.fail("A local image cannot acquire public delivery authority")
+        for descriptor, selected in ((new, new_pointer), (old, old_pointer), (new, new_pointer)):
+            resolved = engine.release(selected)
+            self.assertEqual(resolved["imageId"], descriptor["imageId"])
+            self.assertEqual(resolved["deliveryScope"], "local-staged")
+        self.assertEqual(len(calls), 3)
+        for selected in (
+            {**old_pointer, "sourceRevision": "f" * 40},
+            {**old_pointer, "manifestSha256": "f" * 64},
+            {**old_pointer, "version": "9.9.9"},
+        ):
+            with self.assertRaises(m.Refused):
+                engine.release(selected)
+        self.assertEqual(len(calls), 3)
+        path = Path(old["manifest"]["path"])
+        content = path.read_bytes()
+        path.write_bytes(content + b" ")
+        with self.assertRaises(m.Refused):
+            engine.release(old_pointer)
+        path.unlink()
+        path.symlink_to(new["manifest"]["path"])
+        with self.assertRaises((OSError, m.Refused)):
+            engine.release(old_pointer)
+        self.assertEqual(len(calls), 3)
+
+    def test_local_descriptor_set_refuses_ambiguous_unused_authority_and_missing_local_source(self):
+        f = self.fixture
+        old, old_pointer = self.local_descriptor(f.source)
+        new, new_pointer = self.local_descriptor(f.target)
+        invalid = [
+            {"schemaVersion": 1, "releases": []},
+            {"schemaVersion": 1, "releases": [new, old, new]},
+            {"schemaVersion": True, "releases": [new, old]},
+            {"schemaVersion": 1, "releases": [new, old], "extra": True},
+            {"schemaVersion": 1, "releases": [new, {**old, "version": new["version"]}]},
+            {"schemaVersion": 1, "releases": [new, {**old, "imageId": new["imageId"]}]},
+            {"schemaVersion": 1, "releases": [new, {**old, "platform": "linux/amd64"}]},
+            {"schemaVersion": 1, "releases": [new, {**old, "sourceRevision": "unsealed"}]},
+            {"schemaVersion": 1, "releases": [new, {**old, "version": "1.2.3-" + "x" * 129}]},
+            {"schemaVersion": 1, "releases": [new, {**old, "image": "unreviewed"}]},
+            {"schemaVersion": 1, "releases": [new, {**old, "manifest": {"path": "relative", "sha256": "a" * 64}}]},
+            {"schemaVersion": 1, "releases": [new, {**old, "topology": {**old["topology"], "extra": True}}]},
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                with self.assertRaises(m.Refused):
+                    m.local_delivery(value, new_pointer, "linux/arm64")
+        engine = m.Maintenance(f.config, POLICY, new)
+        f.engine = engine
+        engine.asset = lambda *_args: self.fail("Omitted local predecessor must not cause a public download")
+        with self.assertRaises(m.Refused):
+            engine.release(old_pointer)
+        # A public installer has no embedded local authority. Only the reviewed
+        # bootstrap may fall through from a local rehearsal to existing public checks.
+        self.assertIsNone(m.local_delivery(None, old_pointer, "linux/arm64"))
+        engine.policy = {**POLICY, "predecessors": [f.source]}
+        self.assertIsNone(engine.local_release(old_pointer))
+
+    def test_public_installer_refuses_sealed_local_cache_without_a_download(self):
+        f = self.fixture
+        local, selected = self.local_descriptor(f.source)
+        cached = f.root / ("streamskope-" + local["version"] + "-container.json")
+        cached.write_bytes(Path(local["manifest"]["path"]).read_bytes())
+        cached.chmod(0o600)
+        engine = m.Maintenance(f.config, POLICY)
+        f.engine = engine
+        engine.asset = lambda *_args: self.fail("Local cached delivery cannot trigger a public download")
+        with self.assertRaisesRegex(m.Refused, "unsupported-target"):
+            engine.release(selected)
+        engine.local, _ = self.local_descriptor(f.target)
+        engine.policy = {**POLICY, "predecessors": [f.source]}
+        with self.assertRaisesRegex(m.Refused, "unsupported-target"):
+            engine.release(selected)
+        cached.write_bytes(cached.read_bytes() + b" ")
+        with self.assertRaisesRegex(m.Refused, "unsupported-target"):
+            engine.release(selected)
+
     def test_commit_holds_real_original_inode_lease_through_ready_and_record_switch(self):
         f = self.fixture
         before = m.inventory(f.data, f.owner, f.gid)
