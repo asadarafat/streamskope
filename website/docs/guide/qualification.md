@@ -473,9 +473,13 @@ The manual Release workflow calls the same CI to qualify its selected source aga
 before assigning a version and packaging. The
 [CI workflow](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml)
 is a place to find results, not a substitute for linking the exact successful run.
-Local `npm run check` also runs the soak and configured live checks. An unconfigured
-live check is skipped, not passed. Signed EDA cluster-app publication is a separate
-operation from desktop release packaging.
+In current development source, local `npm run check` runs shared checks, the
+60-second soak and docs without vendor tests. `npm run check -- --full` also runs
+configured EDA/NSP checks; an unconfigured vendor is skipped, not passed.
+`npm run check -- --live eda` selects only EDA; use `--live nsp` or `--live all`
+for the other scopes. Explicit live selection requires configuration. Historical
+reports keep their original scope and outcomes. Signed EDA cluster-app publication
+is a separate operation from desktop release packaging.
 
 ## Qualification boundaries
 

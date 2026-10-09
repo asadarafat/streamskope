@@ -1,12 +1,17 @@
 # Qualification and release evidence
 
-Run `npm run check` before requesting a merge, except for Dependabot PRs accepted
-by the [routine tooling policy](dependencies.md#routine-tooling-acceptance), whose
-successful GitHub CI replaces duplicate local acceptance. The local command executes shared checks, the
-60-second application-pipeline soak, docs and configured live EDA/NSP checks. The
-command records a separate qualification bundle for each run under
-`.artifacts/qualification/` and prints its location. Keep the complete bundle when
-preparing a release; a console transcript alone does not establish acceptance.
+Run focused local checks for the behavior changed, then require all three GitHub
+lanes and the final **CI** gate on an up-to-date PR. A duplicate full local run is
+not mandatory for each PR. Additional real-provider, security, native and soak
+checks follow the [impact matrix](#choose-evidence-by-impact); the PR gate does
+not establish behavior outside its executed scope.
+
+`npm run check` runs core shared checks, the 60-second application-pipeline soak
+and docs. Vendor credentials do not implicitly select live tests. Use `--full`
+to include configured EDA/NSP checks or `--live eda|nsp|all` to require selected
+vendors. Each local run records a separate source-bound qualification bundle
+under `.artifacts/qualification/` and prints its location. Keep the complete
+bundle; a console transcript alone does not establish release acceptance.
 
 Use `npm run check -- --ci` with Docker and Chromium to reproduce the GitHub
 shared, docs and real-provider/browser lanes. GitHub runs those lanes in parallel
@@ -15,19 +20,21 @@ The existing five npm commands remain the entry points.
 
 ## Check matrix
 
-Choose evidence for the behavior changed, then run the maintained qualification.
+Choose the smallest maintained scope that verifies the behavior changed.
 Use the [development guide](development.md) for toolchain and fixture prerequisites
 and [documentation guide](documentation.md) for site-specific checks.
 
-| Run                                    | Included                                                                            | Important limits                                                                                    |
-| -------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Focused owner tests                    | The selected contract, service or UI behavior.                                      | Development feedback; not a substitute for the required PR gate.                                    |
-| `npm run check`                        | Shared checks, 60-second soak, docs, configured EDA, configured NSP, in that order. | Stops at the first failure; does not start the disposable runtime lane.                             |
-| `npm run check -- --ci`                | Shared, docs and runtime lanes sequentially.                                        | Does not include the local soak or live EDA/NSP harnesses.                                          |
-| `npm run check -- --ci --lane runtime` | One selected lane; `shared` and `docs` are also valid.                              | Qualifying one lane does not qualify the others.                                                    |
-| GitHub PR and reused release CI        | The three lanes in parallel, then the required **CI** evidence gate.                | All lanes must succeed with matching source evidence. Main pushes do not repeat CI.                 |
-| Accepted routine Dependabot tooling    | The same three GitHub lanes and protected merge; no duplicate local run.            | Only the explicit manifest/lockfile allowlist qualifies. No live, soak or native result is implied. |
-| Native recovery or packaging rehearsal | The explicitly selected installed app, OS/CPU or container image.                   | Scope is limited to the actual source, platform, target and scenario that ran.                      |
+| Run                                    | Included                                                                       | Important limits                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Focused owner tests                    | The selected contract, service or UI behavior.                                 | Development feedback; not a substitute for the required PR gate.                                             |
+| `npm run check`                        | Core: shared checks, 60-second soak and docs, in that order.                   | Stops at the first failure. No vendor live tests or disposable runtime lane.                                 |
+| `npm run check -- --full`              | Core, then configured EDA and NSP checks.                                      | Unconfigured vendors are skipped; does not include the disposable runtime lane.                              |
+| `npm run check -- --live eda`          | EDA only; use `--live nsp` for NSP or `--live all` for both.                   | Every selected vendor requires configuration. No core or runtime checks are implied.                         |
+| `npm run check -- --ci`                | Shared, docs and runtime lanes sequentially.                                   | Does not include the local soak or live EDA/NSP harnesses.                                                   |
+| `npm run check -- --ci --lane runtime` | One selected lane; `shared` and `docs` are also valid.                         | Qualifying one lane does not qualify the others.                                                             |
+| GitHub PR and reused release CI        | The three lanes in parallel, then the required **CI** evidence gate.           | All lanes must succeed with matching source evidence. Main pushes do not repeat CI.                          |
+| Accepted routine Dependabot tooling    | The same three GitHub lanes and protected merge, with automated policy review. | Only the explicit manifest/lockfile allowlist permits automation. No live, soak or native result is implied. |
+| Native recovery or packaging rehearsal | The explicitly selected installed app, OS/CPU or container image.              | Scope is limited to the actual source, platform, target and scenario that ran.                               |
 
 [tools/check.sh](../tools/check.sh) owns the maintained stages. Shared checks
 include workflows, formatting, lint, all four TypeScript projects, architecture,
@@ -65,8 +72,13 @@ maintained run is active.
 The receipt records the source revision and Git tree, whether the checkout was
 dirty, source agreement before and after execution, platform/architecture and
 Node version. Each stage has an explicit outcome and hashes of its copied
-evidence. A failed stage leaves later stages unexecuted. Unconfigured live systems
-are recorded as skipped, even when the overall command exits successfully.
+evidence. Schema-2 receipts declare the selected scope: unselected stages are
+`not-run` with reason `not-selected`, rather than successful or skipped checks.
+A failed stage leaves later selected stages unexecuted. `--full` records
+unconfigured live systems as `skipped` with reason `not-configured`; explicit
+`--live` selection fails without the required configuration. An overall pass
+qualifies only the selected, executed scope. Historical schema-1 receipts remain
+supported with their original five-stage scope and meaning.
 
 For release acceptance, run from a clean committed checkout and leave its source
 unchanged until qualification finishes. A dirty run is useful development
@@ -76,10 +88,35 @@ records failure and leaves later stages unexecuted; host loss or forced terminat
 can leave an incomplete bundle, which is rejected. Do not edit receipts, copy old
 results into a new run, or relabel the execution revision after a squash merge.
 
+If a scope fails, correct its environment or source and rerun that scope into a
+new bundle. On unchanged source, an NSP failure can be retried with
+`npm run check -- --live nsp` without repeating core checks. Keep the failed
+receipt and the retry; neither changes the other's outcome. A PR may report
+the actual checks across these receipts, with their source identities and limits.
+This does not synthesize a passing full receipt or authorize release attachment
+of a collection of partial bundles.
+
 Private connection settings stay outside the bundle. The collector retains safe
 target-version and certificate-verification facts, check outcomes and declared
 measurement limits. It excludes connection credentials, endpoint addresses,
 broker payloads and raw exception text from the shareable report.
+
+## Choose evidence by impact
+
+Select local checks from the affected production path, not merely the changed
+filename. Shared authentication or cleanup changes can affect both plugins even
+when no plugin-owned file changes. Missing required live access is an explicit
+qualification gap; unrelated changes do not need EDA/NSP access.
+
+| Change or claim                                                         | Additional evidence beyond the required PR gate                                                                                                                            |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Documentation or behavior-neutral tooling                               | Owning docs, configuration or tooling validator; no vendor live check or soak unless its behavior is affected.                                                             |
+| Core UI, contracts or application behavior                              | Focused owning regressions; a real-provider or browser scenario when mocks cannot establish the changed boundary.                                                          |
+| Record pipeline, buffering, scheduling or performance                   | Owning regressions and the unchanged 60-second soak; add real-provider/rendered endurance for those claims.                                                                |
+| Authentication, trust, protected storage or security boundaries         | Failure-path and secret-leak checks plus the real protocol/native rehearsal for the affected boundary; run EDA/NSP live checks if their path is affected.                  |
+| EDA/NSP plugin, generated profile, connection, lock or cleanup behavior | The affected vendor's configured live check, known record receipt and confirmed owned-resource cleanup; shared paths can require both.                                     |
+| Native packaging, browser storage or installed recovery                 | The affected OS/architecture's package or install/upgrade/rollback rehearsal, including existing storage and cleanup obligations.                                          |
+| Milestone or release integration claims                                 | Core acceptance and the claimed vendor/real-provider/native scenarios against the selected source and targets. Compatibility expansion needs evidence for each new target. |
 
 ## Review release acceptance
 
@@ -89,26 +126,27 @@ verifies source/run identity and evidence hashes, and records local checks as
 unrecorded until a compatible local bundle is supplied. Publication never turns
 an unexecuted check into a pass.
 
-| Change or claim                                        | Evidence required                                                                                                                                       |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any source change                                      | Successful required PR CI for the current base; local qualification and explicit skips in the PR, with only the documented routine Dependabot exception |
-| Desktop distribution                                   | Exact release source, three native package/launch jobs and the downloaded installer hashes                                                              |
-| Browser distribution                                   | Native AMD64/ARM64 archive and installer lifecycle jobs, image identity, read-only data inspection, encrypted persistence and graceful restart          |
-| Local pipeline performance                             | The unchanged 60-second pipeline soak; this does not measure broker throughput or rendered UI endurance                                                 |
-| EDA or NSP connection/lifecycle behavior               | Configured live checks for the affected target version, known record receipt and confirmed owned-resource cleanup                                       |
-| Native protected-storage or installed upgrade behavior | An explicit installed/native rehearsal; source-host live checks do not establish it                                                                     |
-| Long-running broker or UI behavior                     | A separate real-provider/rendered-product endurance run; a one-minute pipeline run does not establish it                                                |
+| Change or claim                                        | Evidence required                                                                                                                              |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any source change                                      | Successful required PR CI for the current base, focused local checks and applicable impact-based evidence; report unexecuted scope explicitly  |
+| Desktop distribution                                   | Exact release source, three native package/launch jobs and the downloaded installer hashes                                                     |
+| Browser distribution                                   | Native AMD64/ARM64 archive and installer lifecycle jobs, image identity, read-only data inspection, encrypted persistence and graceful restart |
+| Local pipeline performance                             | The unchanged 60-second pipeline soak; this does not measure broker throughput or rendered UI endurance                                        |
+| EDA or NSP connection/lifecycle behavior               | Configured live checks for the affected target version, known record receipt and confirmed owned-resource cleanup                              |
+| Native protected-storage or installed upgrade behavior | An explicit installed/native rehearsal; source-host live checks do not establish it                                                            |
+| Long-running broker or UI behavior                     | A separate real-provider/rendered-product endurance run; a one-minute pipeline run does not establish it                                       |
 
 The report separates these scopes. Review gaps against the changed behavior before
 publishing. A passing source gate alone is insufficient evidence for a native,
 live-system or recovery claim. Existing historical reports retain their original
 scope and identity.
 
-The routine dependency exception is a PR acceptance policy, not release evidence.
-Release qualification still uses the exact selected source and its own checks.
-Run the local soak and affected live/native checks when the changed behavior
-requires them; unexecuted checks stay unrecorded or explicitly skipped. Automatic
-dependency merging never creates a local qualification receipt.
+The [routine dependency policy](dependencies.md#routine-tooling-acceptance) governs
+automatic review/merge eligibility, not a different CI gate or release evidence.
+Release qualification uses the exact selected source and its own checks. Run the
+local soak and affected live/native checks when the change or claim requires them;
+unexecuted scope remains explicit. Automatic dependency merging never creates a
+local qualification receipt.
 
 ## Production connection profile matrix
 
@@ -189,11 +227,12 @@ verification stays enabled. Keep credentials out of tracked files and command
 arguments.
 
 ```sh
-node --import tsx tools/check/eda-live.ts
+npm run check -- --live eda
 ```
 
-No connection settings records a skip; partial, unreachable or invalid settings
-fail. Generate an event in the selected producer during the test if necessary.
+Explicit live selection requires configuration; missing, partial, unreachable or
+invalid settings fail. Only `--full` permits an unconfigured vendor skip.
+Generate an event in the selected producer during the test if necessary.
 Inspect `dist/ci/eda-live.json` for completed checks. A pass establishes this
 source-level capture path and cleanup on the tested target, not installed native
 storage, all plugin UI paths or every EDA version.
@@ -214,12 +253,13 @@ stay enabled; an explicit trusted-development-lab exception does not disable
 Kafka certificate verification.
 
 ```sh
-STREAMSKOPE_NSP_CONFIG=/absolute/path/private-nsp.json node --import tsx tools/check/nsp-live.ts
+STREAMSKOPE_NSP_CONFIG=/absolute/path/private-nsp.json npm run check -- --live nsp
 ```
 
-An unset path records a skip; invalid configuration or a failed configured check
-fails. The same harness runs at the end of local `npm run check`. GitHub `--ci`
-excludes both live-cluster harnesses.
+Explicit selection fails if the path is unset, configuration is invalid or a
+configured check fails. `--full` runs the same harness after core and EDA, with a
+skip permitted only when NSP is unconfigured. Default core and GitHub `--ci`
+exclude both live-cluster harnesses.
 
 The test uses the production package loader with an isolated catalog and
 in-memory profile store. It exercises profile test/create/update/connect, helper
@@ -333,7 +373,7 @@ profile and unlock result. Neither establishes remote plugin-resource cleanup.
 ## Attach local acceptance to a draft
 
 After Release CI creates the draft, use the existing package entry point with
-the full local bundle path:
+one passing local bundle path:
 
 ```sh
 npm run package -- qualification vVERSION --local .artifacts/qualification/RUN_ID
@@ -343,9 +383,14 @@ For a plugin, use its release tag, such as `plugins/eda/vVERSION`. The command
 requires a draft with matching source and verified payloads. A clean PR commit can
 qualify a squash-merged release only when Git independently verifies identical
 trees; the report retains both commit identities and the equivalence decision.
-Different trees require a new run. Attaching evidence to a plugin draft also
-requires that plugin’s live stage to have passed; a desktop report retains explicit
-live skips without converting them into passes.
+Different trees require a new run. The single bundle must contain passed shared,
+soak and docs stages. A passing core bundle is eligible for a desktop draft;
+attaching evidence to a plugin draft also requires that plugin's live stage to
+have passed in the same bundle, so use `--full` with that vendor configured.
+Standalone live receipts and multiple partial bundles cannot be merged by the
+attachment command. A desktop report retains live `not-run` or skipped outcomes
+without converting them into passes. Review those gaps against the release's
+actual integration claims.
 
 The command updates only the qualification report and its checksums. It refuses
 published/immutable releases and preserves the packaged payloads. If an upload is

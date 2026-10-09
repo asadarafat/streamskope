@@ -18,7 +18,10 @@ import {
   beginLocalStage,
   completeLocalStage,
   finishLocalQualification,
+  LOCAL_LIVE_CHECKS,
   LOCAL_STAGES,
+  type LocalQualificationScope,
+  type LocalStage,
 } from "../../tools/check/qualification";
 import { browserInstallerEvidence } from "../../tools/package/browser-installer-evidence";
 import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
@@ -230,9 +233,14 @@ async function report(
     browserManifest: join(root, "dist/browser.json"),
   });
 }
-async function local(root: string): Promise<string> {
-  const receipt = await beginLocalQualification(root);
-  for (const stage of LOCAL_STAGES) {
+async function local(
+  root: string,
+  scope: LocalQualificationScope = "full",
+  stages: readonly LocalStage[] = LOCAL_STAGES,
+  live = false,
+): Promise<string> {
+  const receipt = await beginLocalQualification(root, scope);
+  for (const stage of stages) {
     await beginLocalStage(root, receipt.execution.id, stage);
     const timestamp = new Date().toISOString();
     if (stage === "shared") await json(root, ".artifacts/ci/vitest.json", vitest());
@@ -263,12 +271,26 @@ async function local(root: string): Promise<string> {
         media: { outcome: "passed", fingerprint: "a".repeat(64) },
       });
     else
-      await json(root, `dist/ci/${stage}.json`, {
-        outcome: "skipped",
-        checkedAt: timestamp,
-        checks: [],
-        reasonCode: "not-configured",
-      });
+      await json(
+        root,
+        `dist/ci/${stage}.json`,
+        live
+          ? {
+              outcome: "passed",
+              checkedAt: timestamp,
+              checks: LOCAL_LIVE_CHECKS[stage],
+              targetVersion: "26.8.2",
+              target: { product: "26.4.0" },
+              apiCertificateVerification: true,
+              apiTrust: "system-trust",
+            }
+          : {
+              outcome: "skipped",
+              checkedAt: timestamp,
+              checks: [],
+              reasonCode: "not-configured",
+            },
+      );
     await completeLocalStage(root, receipt.execution.id, stage);
   }
   expect((await finishLocalQualification(root, receipt.execution.id, 0)).outcome).toBe("passed");
@@ -354,6 +376,47 @@ it("retains the executed commit when a clean merged commit has an identical Git 
   });
   expect(result.source.commit).not.toBe(executed);
   expect(result.acceptance.live).toEqual({ eda: "skipped", nsp: "skipped" });
+});
+
+it("accepts a core receipt without claiming either live system was checked", async () => {
+  const root = await fixture();
+  const bundle = await local(root, "core", ["shared", "soak", "docs"]);
+  const released = await report(root);
+  const result = await attachLocalQualification(root, released, bundle);
+  expect(result.local).toMatchObject({
+    outcome: "recorded",
+    receipt: { schemaVersion: 2, scope: "core" },
+  });
+  expect(result.acceptance).toMatchObject({
+    local: "passed",
+    live: { eda: "not-run", nsp: "not-run" },
+  });
+  await expect(
+    attachLocalQualification(root, { ...released, component: "eda" }, bundle),
+  ).rejects.toThrow(/requires passed live/u);
+});
+
+it("does not mistake passed standalone NSP qualification for core release acceptance", async () => {
+  const root = await fixture();
+  const bundle = await local(root, "nsp", ["nsp-live"], true);
+  const released = await report(root);
+  await expect(attachLocalQualification(root, released, bundle)).rejects.toThrow(
+    /Local source, documentation and soak acceptance must all pass/u,
+  );
+});
+
+it("keeps historical schema1 local receipts eligible for release attachment", async () => {
+  const root = await fixture();
+  const bundle = await local(root);
+  const receipt = JSON.parse(await readFile(join(bundle, "qualification.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
+  delete receipt.scope;
+  receipt.schemaVersion = 1;
+  await json(bundle, "qualification.json", receipt);
+  const result = await attachLocalQualification(root, await report(root), bundle);
+  expect(result.local).toMatchObject({ outcome: "recorded", receipt: { schemaVersion: 1 } });
 });
 
 it("refuses dirty or different executed trees and never treats skipped live checks as plugin acceptance", async () => {

@@ -16,7 +16,7 @@ There are five npm entry points:
 | ----------------------- | ---------------------------------------------------------------------- |
 | `npm run dev`           | Start the browser development host with owned Kafka and NATS fixtures. |
 | `npm run build`         | Check types and build the selected host.                               |
-| `npm run check`         | Run shared checks, the 60-second soak, docs and configured live tests. |
+| `npm run check`         | Run core shared checks, the 60-second soak and docs.                   |
 | `npm run package`       | Build the selected desktop, browser, plugin or EDA artifact.           |
 | `npm run docs -- serve` | Preview the documentation.                                             |
 
@@ -26,17 +26,24 @@ paths with different requirements.
 
 ## Choose the checks
 
-| Change or purpose             | Qualification                                                                                                               |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Focused implementation        | Run its owning tests first: `npx --no-install vitest run --config config/vitest.config.ts PATH`.                            |
-| Local PR acceptance           | Run `npm run check`; report each configured live result or explicit skip.                                                   |
-| Complete GitHub scope locally | Run `npm run check -- --ci` with Docker and Chromium available.                                                             |
-| Release acceptance            | Add the native, live and artifact evidence required by the changed capability; source checks alone do not qualify packages. |
+| Change or purpose              | Qualification                                                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Focused implementation         | Run its owning tests first: `npx --no-install vitest run --config config/vitest.config.ts PATH`.                             |
+| PR acceptance                  | Run focused local checks for the changed behavior and require all GitHub lanes; a duplicate full local run is not mandatory. |
+| Core local qualification       | Run `npm run check`; no external EDA or NSP access is needed.                                                                |
+| Affected vendor integration    | Run `npm run check -- --live eda`, `--live nsp` or `--live all`; every selected vendor requires configuration.               |
+| Integrated local qualification | Run `npm run check -- --full` for core plus configured EDA/NSP; unconfigured vendors are explicitly skipped.                 |
+| Complete GitHub scope locally  | Run `npm run check -- --ci` with Docker and Chromium available.                                                              |
+| Release acceptance             | Add the native, live and artifact evidence required by the changed capability; source checks alone do not qualify packages.  |
 
 GitHub runs shared, docs and runtime lanes in parallel. All three and the final
 **CI** gate must pass; the branch must be up to date before normal protected merge.
-Main pushes do not repeat that CI. Preserve the complete source-bound local
-qualification bundle. See [qualification and its limits](maintainers/qualification.md).
+Main pushes do not repeat that CI. Additional real-provider, security, native and
+soak checks depend on the [impact matrix](maintainers/qualification.md#choose-evidence-by-impact).
+Live EDA/NSP checks cover affected integration, authentication, trust,
+generated-profile and connection/lock/cleanup behavior, plus milestone or release
+integration claims. They are not required for unrelated work. Preserve complete
+source-bound receipts and report unexecuted scope without claiming a pass.
 
 ## Maintainer guides
 

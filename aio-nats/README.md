@@ -152,10 +152,11 @@ They independently verify token/TLS message fidelity, wrong credentials and
 CA rejection, IP/DNS certificate matching, permission denial and confirmed
 stream stop/reconnect. They preserve the persistent AIO lab and its credentials.
 
-`npm run check` adds the repository's 60-second mixed-message pipeline soak and
-configured live EDA/NSP checks. That pipeline soak is distinct from a real NATS
-server round trip; record the actual real-provider evidence separately when
-qualifying a release.
+`npm run check` runs shared checks, the repository's 60-second mixed-message
+pipeline soak and docs. Vendor live checks require `npm run check -- --full` or
+an explicit `--live eda|nsp|all` selection. The pipeline soak is distinct from a
+real NATS server round trip; record real-provider evidence separately when
+qualifying a release. See the [impact matrix](../maintainers/qualification.md#choose-evidence-by-impact).
 
 For an explicit real-server performance qualification, start this lab first and
 run:
