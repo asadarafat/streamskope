@@ -261,6 +261,41 @@ afterEach(async () => {
 });
 
 describe("finite streaming export ownership", () => {
+  it("delivers refreshed active counts with revisions newer than progress and older than completion", async () => {
+    const f = fixture({ total: 1 });
+    const paused = deferred<void>();
+    const reader = new Reader(0, 1, 1);
+    vi.spyOn(reader, Symbol.asyncIterator).mockImplementation(async function* () {
+      reader.next = 1;
+      reader.scanned = 1;
+      yield record(0);
+      await paused.promise;
+      reader.reason = "range-complete";
+    });
+    f.scope.openMessageStream.mockResolvedValueOnce(reader);
+    f.service.start(input());
+    try {
+      await vi.waitFor(() => expect(reader.acknowledge).toHaveBeenCalledOnce());
+      const event = f.snapshots.at(-1)!;
+      expect(event.operation?.state).toBe("reading");
+      const status = f.service.snapshot();
+      expect(status.revision).toBeGreaterThan(event.revision);
+      expect(status.operation).toMatchObject({
+        state: "reading",
+        counts: { writtenRecords: 1, scannedRecords: 1 },
+      });
+      expect(parseRecordExportSnapshot(status)).toEqual(status);
+      const repeated = f.service.snapshot();
+      expect(repeated.revision).toBeGreaterThan(status.revision);
+      paused.resolve();
+      await f.service.idle();
+      expect(f.snapshots.at(-1)!.revision).toBeGreaterThan(repeated.revision);
+      expect(f.snapshots.at(-1)!.operation?.state).toBe("completed");
+    } finally {
+      paused.resolve();
+    }
+  });
+
   it("preserves cleanup failure reported by an opening reader even though no handle was returned", async () => {
     const f = fixture();
     f.scope.openMessageStream.mockRejectedValue(
