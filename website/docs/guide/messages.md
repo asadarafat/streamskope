@@ -29,7 +29,10 @@ headers and offset. Start with a [connected profile](connections.md).
 
 **You should see:** only matching records in the current view. Filters work on
 records available to the workbench; they do not search the entire cluster.
-If nothing matches, clear the filter and check the topic and read mode.
+If nothing matches, clear the filter and check the topic and read mode. Filters
+use the shared record interpretation and masking policy. An unavailable decoded
+field is reported separately from a field that did not match; inspect **Decoded**
+and the [encoding preferences](structured-events.md) when records cannot be evaluated.
 
 ## Choose a read mode
 
@@ -79,17 +82,18 @@ Suppose an error happened at 14:03 UTC on `orders.events`:
 ## Inspect a record
 
 1. Select a row to open **Message details**.
-2. Choose **Value**. For JSON, compare **Formatted JSON** and **Raw**.
+2. Choose **Value** to inspect the interpreted value. For JSON, compare **Formatted JSON** and **Raw**; both use the same projection.
 3. Choose **Key** to inspect the record key.
 4. Choose **Metadata** to read its partition, offset, timestamp and headers.
 
 Choose **Original** for the retained key, value and ordered headers as Base64.
 **Copy original record** preserves binary bytes, repeated headers and the difference
 between null and empty values. The tab explains when originals are unavailable.
-The **Raw** value view is UTF-8 text; invalid byte sequences can be replaced during
-decoding. See [record limits and export format](data-handling.md#understand-an-export).
-Use **Copy** when you need the value elsewhere. Choose **Decoded** for explicit
-[JSON, Confluent Avro or Protobuf inspection](structured-events.md).
+The **Raw** value view shows the unformatted interpretation, not necessarily the
+wire bytes. **Decoded** identifies the encoding and writer schema or explains a
+decoding error. **Copy** uses the same protected value as the table and filters.
+See [saved encoding preferences and detection](structured-events.md) and
+[record limits and export format](data-handling.md#understand-an-export).
 
 **You should have:** the payload and the topic, partition and offset needed to
 find its position again. An offset belongs to one partition; it does not order

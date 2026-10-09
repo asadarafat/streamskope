@@ -181,6 +181,34 @@ function evidenceBytes(result: KafkaLiveRuleEvaluation): number {
 }
 
 describe("Kafka live rule runtime", () => {
+  it("does not reinterpret a manual UTF-8 projection as JSON for rules", async () => {
+    const { runtime } = fixture(
+      [rule("Would match", "match")],
+      new Map([["match", (): boolean => true]]),
+    );
+    await runtime.prepare("orders");
+    const record = message('{"priority":"high"}', {
+      structured: {
+        version: 1,
+        headersState: "complete",
+        protection: "none",
+        headers: [],
+        key: { state: "null", codec: "auto", writerSchema: null },
+        value: {
+          state: "decoded",
+          codec: "utf8",
+          text: '{"priority":"high"}',
+          json: null,
+          writerSchema: null,
+        },
+      },
+    });
+    expect(runtime.evaluate(record)).toMatchObject({
+      state: "unavailable",
+      reason: "payload-malformed",
+      activeMatchCount: 0,
+    });
+  });
   it("does not parse payloads when no enabled rule applies to the topic", async () => {
     const { runtime, evaluator } = fixture([
       rule("disabled", "true", { enabled: false }),

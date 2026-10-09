@@ -57,12 +57,15 @@ it("submits explicit protection settings and blocks invalid paths before sending
   const user = userEvent.setup();
   render(<RecordProtectionPanel host={host} snapshot={snapshot} disconnected />);
   await user.click(screen.getByRole("switch", { name: "Read-only mode" }));
-  await user.type(screen.getByRole("textbox", { name: "JSON value paths to mask" }), "$.secret");
+  await user.type(
+    screen.getByRole("textbox", { name: "Decoded JSON value paths to mask" }),
+    "$.secret",
+  );
   expect(screen.getByRole("button", { name: "Save protection" })).toBeDisabled();
   expect(host.commands).toHaveLength(0);
-  await user.clear(screen.getByRole("textbox", { name: "JSON value paths to mask" }));
+  await user.clear(screen.getByRole("textbox", { name: "Decoded JSON value paths to mask" }));
   await user.type(
-    screen.getByRole("textbox", { name: "JSON value paths to mask" }),
+    screen.getByRole("textbox", { name: "Decoded JSON value paths to mask" }),
     "/customer/email",
   );
   await user.click(screen.getByRole("button", { name: "Save protection" }));

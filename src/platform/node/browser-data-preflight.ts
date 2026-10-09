@@ -51,6 +51,8 @@ interface VerifiedDocument {
 }
 const BACKUP =
   /^kafka-profiles\.json\.(?:pre-upgrade\.bak|(?:pre-transport-v2|pre-security-v3)(?:\.[1-9]\d?)?)$/u;
+const PREFERENCE_BACKUP =
+  /^workbench\/kafka-operational-preferences\.json\.pre-codecs-v1(?:\.[1-9]\d?)?$/u;
 const RECOVERY = /^plugins\/\.recovery\/([a-z][a-z0-9]*(?:[.-][a-z0-9]+)*)\.json$/u;
 const DIRECTORIES = [
   "rules",
@@ -220,11 +222,21 @@ export async function inspectBrowserData(
         .length ?? 0,
     formats: [1],
   }));
-  await inspect("preferences", exists("workbench/kafka-operational-preferences.json"), async () => {
-    await new AtomicKafkaOperationalPreferenceFileStore(
-      join(root, "workbench/kafka-operational-preferences.json"),
-    ).load();
-    return { count: 1, formats: [1] };
+  const preferencePaths = [...files.keys()].filter(
+    (path) =>
+      path === "workbench/kafka-operational-preferences.json" || PREFERENCE_BACKUP.test(path),
+  );
+  for (const path of preferencePaths) allowed.set(path, "file");
+  await inspect("preferences", preferencePaths.length > 0, async () => {
+    const formats = new Set<number>();
+    for (const path of preferencePaths) {
+      await new AtomicKafkaOperationalPreferenceFileStore(join(root, path)).load();
+      const document = JSON.parse((await read(path, 32 * 1_024)).toString("utf8")) as {
+        version: number;
+      };
+      formats.add(document.version);
+    }
+    return { count: preferencePaths.length, formats: [...formats].sort() };
   });
   await inspect(
     "topic-history",

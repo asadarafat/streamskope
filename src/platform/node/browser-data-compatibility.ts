@@ -129,7 +129,12 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
         typeof format !== "number" ||
         !Number.isInteger(format) ||
         format < 1 ||
-        format > (kind === "kafka-profiles" || kind === "profile-backups" ? 4 : 1) ||
+        format >
+          (kind === "kafka-profiles" || kind === "profile-backups"
+            ? 4
+            : kind === "preferences"
+              ? 2
+              : 1) ||
         format <= previousFormat
       )
         return invalid();

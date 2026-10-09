@@ -173,7 +173,7 @@ leaving read-only mode; finish them before enabling it.
 
 This is an operator safeguard, not role-based authorization. A local user can
 change it, and trusted installed plugin code is not sandboxed. Broker and Registry
-permissions remain the final enforcement boundary. The [source CLI](read-only-cli.md) exposes only inspect/query/export. It uses explicit private connection and masking configuration, always enables read-only behavior, and rejects broker-side search while masking is active. It does not inherit desktop preferences or activate plugins. New host commands must use the same access policy.
+permissions remain the final enforcement boundary. The [source CLI](read-only-cli.md) exposes only inspect/query/export. It uses explicit private connection and masking configuration, always enables read-only behavior, and applies masking to the shared decoded projection before bounded search or output. It does not inherit desktop preferences or activate plugins. New host commands must use the same access policy.
 
 Workbench preference reset preserves protection settings. If preferences cannot
 be read, remote operations fail closed. Restore the file or explicitly reset while

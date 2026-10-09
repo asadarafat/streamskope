@@ -23,7 +23,7 @@ interface OperationalPreferenceFacadeDependencies {
   readonly recordActivity: (input: ActivityInput) => void;
 }
 
-const PREFERENCE_GROUPS = ["fetch", "latency", "rules", "stream", "protection"] as const;
+const PREFERENCE_GROUPS = ["fetch", "latency", "rules", "stream", "protection", "codecs"] as const;
 
 function operation(command: PreferenceHostCommand): string {
   switch (command.command) {

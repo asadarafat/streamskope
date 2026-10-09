@@ -83,6 +83,13 @@ describe("closed browser data evidence", () => {
     Object.assign(documents(report)[1]!, change);
     expect(() => parseBrowserDataInspection(report)).toThrow();
   });
+  it("recognizes codec preference format 2 without accepting future formats", () => {
+    const report = evidence();
+    Object.assign(documents(report)[5]!, { state: "verified", count: 2, formats: [1, 2] });
+    expect(parseBrowserDataInspection(report).outcome).toBe("eligible");
+    documents(report)[5]!.formats = [3];
+    expect(() => parseBrowserDataInspection(report)).toThrow();
+  });
   it("accepts current security envelopes but rejects later unknown formats", () => {
     const report = evidence();
     Object.assign(documents(report)[2]!, { state: "verified", count: 1, formats: [4] });

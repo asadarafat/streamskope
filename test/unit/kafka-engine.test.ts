@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type {
   KafkaFetchRequest,
+  KafkaMessage,
   KafkaConsumerGroupDetails,
   OAuthConnectionInput,
   SecureConnectionInput,
@@ -372,6 +373,7 @@ describe("StreamSkope Kafka engine connection test", () => {
         key: "order-1",
         offset: "42",
         originalByteSize: 25,
+        recordByteSize: 53,
         partition: 2,
         payload: '{"status":"ready"}',
         payloadTruncated: false,
@@ -401,6 +403,51 @@ describe("StreamSkope Kafka engine connection test", () => {
     await stream.close();
     await activeConnection.close();
     expect(rawStream.closeCalls).toBe(1);
+  });
+
+  it("revokes pending record preparation when its stream closes and cannot deliver a stale projection", async () => {
+    const rawStream = new RecordingRawMessageStream([
+      {
+        headers: new Map(),
+        offset: 0n,
+        partition: 0,
+        timestamp: 1n,
+        topic: "test",
+        value: Buffer.from("{}"),
+      },
+    ]);
+    let entered!: () => void;
+    const preparing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let revoked = false;
+    const engine = new StreamSkopeKafkaEngine({
+      adminFactory: new RecordingAdminFactory(new RecordingAdmin(["test"])),
+      consumerFactory: new RecordingConsumerFactory(rawStream),
+      requestOAuthToken: (): Promise<OAuthToken> => Promise.resolve({ value: "active-token" }),
+      prepareRecord: (record, _context, signal): Promise<KafkaMessage> =>
+        new Promise((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              revoked = true;
+              resolve(record);
+            },
+            { once: true },
+          );
+          entered();
+        }),
+    });
+    const active = await engine.openConnection(connection, new AbortController().signal);
+    const stream = await active.openMessageStream(tailRequest(), new AbortController().signal);
+    const pending = stream[Symbol.asyncIterator]().next();
+    const rejected = expect(pending).rejects.toBeInstanceOf(Error);
+    await preparing;
+    await stream.close();
+    await rejected;
+    expect(revoked).toBe(true);
+    expect(rawStream.closeCalls).toBe(1);
+    await active.close();
   });
 
   it("does not retain an oversized payload as if it were complete", async () => {

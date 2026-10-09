@@ -78,7 +78,7 @@ it("requires an explicit value, shows denied coverage for zero matches and clear
     payload: {
       topics: ["events"],
       value: "request-42",
-      selector: { source: "header", path: "correlation-id", format: "json" },
+      selector: { source: "header", path: "correlation-id", format: "auto" },
     },
   });
   await user.type(screen.getByLabelText("Exact correlation value"), "-different");

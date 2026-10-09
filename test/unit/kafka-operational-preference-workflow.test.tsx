@@ -64,6 +64,7 @@ const readyRuleCapability: KafkaLiveRuleCapability = {
 
 const confirmedPreferences: KafkaOperationalPreferenceSnapshot = {
   preferences: {
+    codecs: { key: "auto", value: "auto" },
     protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
     fetch: { maxMessages: 100, mode: "newest" },
     latency: {

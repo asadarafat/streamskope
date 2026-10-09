@@ -1,3 +1,4 @@
+import { RECORD_CODEC_DEFAULTS } from "../contracts/structured-record";
 import type {
   KafkaOperationalPreferences,
   KafkaOperationalPreferenceStoreCapability,
@@ -9,6 +10,7 @@ export function cloneKafkaOperationalPreferences(
   preferences: KafkaOperationalPreferences,
 ): KafkaOperationalPreferences {
   return {
+    codecs: { ...(preferences.codecs ?? RECORD_CODEC_DEFAULTS) },
     protection: {
       ...preferences.protection,
       maskHeaders: [...preferences.protection.maskHeaders],

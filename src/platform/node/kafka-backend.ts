@@ -24,9 +24,7 @@ import {
   type KafkaRuleStore,
   type KafkaTopicConfigurationHistoryStore,
 } from "../../features/kafka/application";
-import type { KafkaMessage } from "../../features/kafka/contracts";
 import type { ObservationStore } from "../../features/kafka/application/observation-store";
-import { protectKafkaRecord } from "../../features/kafka/application/record-protection";
 import { KafkaBackendFacade } from "../../features/kafka/facade";
 import {
   NodeBoundedJsonHttp,
@@ -40,6 +38,7 @@ import type { PluginRuntimePort } from "../../plugins/api";
 import { NodeHttpsTrustAcquisition } from "./https-trust-acquisition";
 import { createHostTrustMaterialDecoder } from "./trust-material-decoder";
 import { createHostRecordCodec } from "./record-codec";
+import { createHostRecordPipeline } from "./record-pipeline";
 import { Ssh2KafkaRemoteTrustAdapter } from "./ssh2-kafka-remote-trust-adapter";
 
 const browserProfileCapability = {
@@ -105,14 +104,21 @@ export function createKafkaBackend(options: KafkaBackendOptions = {}): KafkaBack
   const evaluator = new StreamSkopeKafkaRuleEvaluator();
   const rules = new KafkaRuleService(ruleStore, evaluator);
   const preferences = new KafkaOperationalPreferenceService(preferenceStore);
+  const serviceHttp = new NodeBoundedJsonHttp();
+  const schemaRegistry = new SchemaRegistryHttpAdapter(serviceHttp);
+  const structuredWorker = createHostRecordCodec();
   const session = new KafkaApplicationSession(
-    new StreamSkopeKafkaEngine({
-      protectRecord: (message): KafkaMessage => {
-        const snapshot = preferences.currentSnapshot();
-        if (snapshot.store.state !== "ready") throw new Error("Record protection is unavailable.");
-        return protectKafkaRecord(message, snapshot.preferences.protection);
-      },
-    }),
+    new StreamSkopeKafkaEngine(
+      createHostRecordPipeline(
+        () => {
+          const snapshot = preferences.currentSnapshot();
+          if (snapshot.store.state !== "ready")
+            throw new Error("Record preferences are unavailable.");
+          return snapshot.preferences;
+        },
+        { codec: structuredWorker, lookup: schemaRegistry },
+      ),
+    ),
   );
   const recipes = new KafkaTrustRecipeLibrary({ store: recipeStore }, legacySource);
   const trustDecoder = createHostTrustMaterialDecoder();
@@ -132,9 +138,6 @@ export function createKafkaBackend(options: KafkaBackendOptions = {}): KafkaBack
     trustAcquisitions,
     resolveRecipe: recipes.resolve.bind(recipes),
   });
-  const serviceHttp = new NodeBoundedJsonHttp();
-  const schemaRegistry = new SchemaRegistryHttpAdapter(serviceHttp);
-  const structuredWorker = createHostRecordCodec();
   return new KafkaBackendFacade(
     session,
     profiles,

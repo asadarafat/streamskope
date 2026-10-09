@@ -40,6 +40,24 @@ function ruleResultLabel(message: KafkaExploredMessage): string {
   return evaluation.state === "partial" ? "Partial" : "—";
 }
 
+function recordCell(message: KafkaExploredMessage, part: "key" | "value"): React.JSX.Element {
+  const field = message.structured?.[part];
+  const fallback = part === "key" ? message.key : message.preview;
+  const label =
+    field?.state === "error"
+      ? "Decoding unavailable"
+      : field?.state === "null"
+        ? part === "value"
+          ? "Kafka null (tombstone)"
+          : "Kafka null key"
+        : (fallback ?? "");
+  return (
+    <Typography noWrap variant="body2" title={field?.state === "error" ? field.detail : label}>
+      {label}
+    </Typography>
+  );
+}
+
 const columns: readonly GridColDef<KafkaExploredMessage>[] = [
   {
     field: "timestamp",
@@ -49,12 +67,14 @@ const columns: readonly GridColDef<KafkaExploredMessage>[] = [
   },
   {
     field: "key",
+    renderCell: ({ row }): React.JSX.Element => recordCell(row, "key"),
     flex: 0.8,
     headerName: "Key",
     minWidth: 92,
   },
   {
     field: "preview",
+    renderCell: ({ row }): React.JSX.Element => recordCell(row, "value"),
     flex: 1.2,
     headerName: "Value",
     minWidth: 130,

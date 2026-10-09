@@ -27,7 +27,7 @@ export interface CorrelationTraceInput {
   readonly selector: {
     readonly source: "header" | "key" | "payload";
     readonly path: string;
-    readonly format: "json" | "avro" | "protobuf";
+    readonly format: "auto" | "json" | "avro" | "protobuf";
   };
 }
 export interface CorrelationTraceMatch {
@@ -102,7 +102,7 @@ export function parseCorrelationTraceInput(value: unknown): CorrelationTraceInpu
       path,
       format: declaredValue(
         selector.format,
-        ["json", "avro", "protobuf"] as const,
+        ["auto", "json", "avro", "protobuf"] as const,
         "trace.selector.format",
       ),
     },

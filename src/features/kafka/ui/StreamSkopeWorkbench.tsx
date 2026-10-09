@@ -584,7 +584,7 @@ export function StreamSkopeWorkbench({
           fetchMode={fetchMode}
           timeWindow={timeWindow}
           filters={state.messageFilters}
-          key={`${state.connectionName ?? "disconnected"}:${state.connectionState}:${selectedTopic ?? "no-topic"}:${JSON.stringify(state.preferenceSnapshot?.preferences.protection)}`}
+          key={`${state.connectionName ?? "disconnected"}:${state.connectionState}:${selectedTopic ?? "no-topic"}:${JSON.stringify([state.preferenceSnapshot?.preferences.protection, state.preferenceSnapshot?.preferences.codecs])}`}
           liveRuleCapability={state.liveRuleCapability}
           messages={visibleMessages}
           messagesStale={state.messagesStale}

@@ -152,9 +152,12 @@ export class KafkaCommandProtection {
     dispatch: () => Promise<HostCommandResponse>,
   ): Promise<HostCommandResponse> {
     const access = KAFKA_COMMAND_ACCESS[command.command];
-    const change =
+    const changesProtection =
       command.command === "preferences.reset" ||
       (command.command === "preferences.update" && command.payload.patch.protection !== undefined);
+    const change =
+      changesProtection ||
+      (command.command === "preferences.update" && command.payload.patch.codecs !== undefined);
     if (access === "local" && !change) return dispatch();
     const reject = (summary: string, recovery: string): HostCommandResponse => {
       const error: HostError = {
@@ -172,20 +175,20 @@ export class KafkaCommandProtection {
     const snapshot = await this.bindings.preferences.get();
     if (this.changing)
       return reject(
-        "Record protection is being changed.",
+        "Record decoding or protection is being changed.",
         "Wait for the preference save to finish, then retry.",
       );
     if (change) {
       if (!this.bindings.disconnected() || this.remoteOperations > 0)
         return reject(
-          "Disconnect before changing record protection.",
-          "Finish or cancel active requests, disconnect Kafka, then save protection settings.",
+          "Disconnect before changing record decoding or protection.",
+          "Finish or cancel active requests, disconnect Kafka, then save decoding or protection settings.",
         );
       this.changing = true;
       try {
         let pending: boolean;
         try {
-          pending = (await this.bindings.pendingPluginWork?.()) ?? false;
+          pending = changesProtection && ((await this.bindings.pendingPluginWork?.()) ?? false);
         } catch {
           return reject(
             "Plugin work could not be verified.",
@@ -195,7 +198,7 @@ export class KafkaCommandProtection {
         if (pending)
           return reject(
             "Finish plugin work before changing protection.",
-            "Remove or finish active capture resources and pending plugin cleanup, then save protection settings.",
+            "Remove or finish active capture resources and pending plugin cleanup, then save decoding or protection settings.",
           );
         return await dispatch();
       } finally {
@@ -215,14 +218,12 @@ export class KafkaCommandProtection {
     if (
       (command.command === "records.replay.review" ||
         command.command === "consumerGroups.reset.review" ||
-        command.command === "records.trace" ||
-        command.command === "records.decode" ||
-        (command.command === "messages.start" && command.payload.search !== undefined)) &&
+        command.command === "records.decode") &&
       hasRecordMasking(snapshot.preferences.protection)
     )
       return reject(
-        "Broker-side search and original-byte decoding are unavailable while masking is active.",
-        "Read a bounded range and inspect the masked retained records locally. Original-byte decoding cannot bypass disclosure settings.",
+        "Original-byte decoding, replay and offset-reset examples are unavailable while masking is active.",
+        "Search, trace and compare the shared masked projection. Original-byte operations cannot bypass disclosure settings.",
       );
     this.remoteOperations += 1;
     try {

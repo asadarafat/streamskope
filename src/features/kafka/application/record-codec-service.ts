@@ -21,6 +21,35 @@ export class SchemaResolutionError extends Error {
 export class RecordCodecService {
   private readonly cache = new Map<string, { schema: RegisteredSchema; bytes: number }>();
   private cacheBytes = 0;
+  private readonly decoded = new Map<string, { result: RecordDecodeResult; bytes: number }>();
+  private decodedBytes = 0;
+  private readonly scopes = new WeakMap<KafkaClusterServiceContext, number>();
+  private nextScope = 0;
+  private scope(context: KafkaClusterServiceContext): string {
+    let scope = this.scopes.get(context);
+    if (scope === undefined) {
+      scope = ++this.nextScope;
+      this.scopes.set(context, scope);
+      const prefix = `${scope}:`;
+      context.signal?.addEventListener(
+        "abort",
+        () => {
+          for (const [key, entry] of this.cache)
+            if (key.startsWith(prefix)) {
+              this.cacheBytes -= entry.bytes;
+              this.cache.delete(key);
+            }
+          for (const [key, entry] of this.decoded)
+            if (key.startsWith(prefix)) {
+              this.decodedBytes -= entry.bytes;
+              this.decoded.delete(key);
+            }
+        },
+        { once: true },
+      );
+    }
+    return String(scope);
+  }
   constructor(
     private readonly lookup: SchemaLookupPort,
     private readonly codec: RecordCodecPort,
@@ -29,6 +58,8 @@ export class RecordCodecService {
   clear(): void {
     this.cache.clear();
     this.cacheBytes = 0;
+    this.decoded.clear();
+    this.decodedBytes = 0;
   }
 
   private async cached(
@@ -74,7 +105,13 @@ export class RecordCodecService {
     id: number,
     signal: AbortSignal,
   ): Promise<CodecSchemaBundle> {
-    const root = await this.cached(`id:${id}`, () => this.lookup.byId(context, id, signal), signal);
+    if (context.signal) signal = AbortSignal.any([signal, context.signal]);
+    signal.throwIfAborted();
+    const root = await this.cached(
+      `${this.scope(context)}:id:${id}`,
+      () => this.lookup.byId(context, id, signal),
+      signal,
+    );
     const dependencies: { name: string; schema: RegisteredSchema }[] = [];
     const visited = new Map<string, RegisteredSchema>();
     const names = new Map<string, number>();
@@ -94,7 +131,7 @@ export class RecordCodecService {
           if (visited.size >= RECORD_CODEC_LIMITS.schemaNodes - 1)
             throw new SchemaResolutionError("limit");
           child = await this.cached(
-            `version:${key}`,
+            `${this.scope(context)}:version:${key}`,
             () => this.lookup.byVersion(context, ref.subject, ref.version, signal),
             signal,
           );
@@ -126,8 +163,10 @@ export class RecordCodecService {
     version: number,
     signal: AbortSignal,
   ): Promise<CodecSchemaBundle> {
+    if (context.signal) signal = AbortSignal.any([signal, context.signal]);
+    signal.throwIfAborted();
     const schema = await this.cached(
-      `version:${JSON.stringify([subject, version])}`,
+      `${this.scope(context)}:version:${JSON.stringify([subject, version])}`,
       () => this.lookup.byVersion(context, subject, version, signal),
       signal,
     );
@@ -140,8 +179,16 @@ export class RecordCodecService {
     signal: AbortSignal,
   ): Promise<RecordDecodeResult> {
     try {
+      if (context?.signal) signal = AbortSignal.any([signal, context.signal]);
       signal.throwIfAborted();
       if (input.bytes === null) return { state: "null", format: input.format };
+      const cacheKey = `${context ? this.scope(context) : "none"}:${input.format}:${input.bytes}`;
+      const retained = this.decoded.get(cacheKey);
+      if (retained) {
+        this.decoded.delete(cacheKey);
+        this.decoded.set(cacheKey, retained);
+        return retained.result;
+      }
       let bundle: CodecSchemaBundle | null = null;
       if (input.format !== "json") {
         const bytes = Uint8Array.from(atob(input.bytes), (c) => c.charCodeAt(0));
@@ -168,6 +215,23 @@ export class RecordCodecService {
       }
       const result = await this.codec.decode(input, bundle, signal);
       signal.throwIfAborted();
+      if (result.state === "decoded") {
+        const bytes = cacheKey.length + new TextEncoder().encode(JSON.stringify(result)).length;
+        if (bytes <= RECORD_CODEC_LIMITS.cacheBytes) {
+          while (
+            this.decoded.size >= RECORD_CODEC_LIMITS.cacheEntries ||
+            this.decodedBytes + bytes > RECORD_CODEC_LIMITS.cacheBytes
+          ) {
+            const first = this.decoded.keys().next().value;
+            if (first === undefined) break;
+            this.decodedBytes -= this.decoded.get(first)!.bytes;
+            this.decoded.delete(first);
+          }
+          this.decodedBytes -= this.decoded.get(cacheKey)?.bytes ?? 0;
+          this.decoded.set(cacheKey, { result: Object.freeze({ ...result }), bytes });
+          this.decodedBytes += bytes;
+        }
+      }
       return result;
     } catch (error) {
       const code = signal.aborted

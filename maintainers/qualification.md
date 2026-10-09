@@ -134,6 +134,27 @@ Registry/Connect vendor deployments. The existing vendor fixtures qualify their
 own feature scope. Vault restart does not establish native OS keychain migration,
 installed-package upgrade or managed-service certification.
 
+## Structured record consistency
+
+The runtime lane includes `test/kafka/structured-records-real.test.ts` and retains
+`.artifacts/ci/structured-records-real.json`. It uses an isolated real Kafka broker,
+a controlled read-only Schema Registry protocol fixture, independently encoded
+JSON/Avro/Protobuf records and the actual codec worker. It checks mixed writer
+identities, host serialization, immutable original bytes, duplicate headers,
+malformed records, missing schemas, tombstones, empty values, bounded search,
+tracing, schema-3 export and selective masking before matching.
+
+That protocol fixture does not qualify a Registry vendor deployment. The separate
+`test/kafka/record-codec-real.test.ts` uses the owned AIO Kafka and real Registry,
+including referenced schemas. The required runtime browser structured-events suite
+covers saved codec selection, profile connection, record inspection, export,
+comparison and tracing and retains
+`test-results/web/structured-records/playwright-results.json`.
+A development-host restart only establishes its declared storage mode; durable
+codec migration and rollback need the actual native browser/desktop storage
+rehearsal for the affected platform. Keep those receipts separate from protocol
+fixture and source-level unit results.
+
 ## Live EDA
 
 Use a test cluster with the matching capture app already installed and a producer

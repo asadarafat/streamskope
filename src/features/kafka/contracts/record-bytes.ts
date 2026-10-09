@@ -114,5 +114,8 @@ export function parseKafkaOriginalRecord(value: unknown, path = "original"): Kaf
   if (kafkaOriginalRecordByteLength(parsed) > KAFKA_ORIGINAL_RECORD_LIMITS.bytes) {
     throw new HostContractValidationError(path, "exceeds the total original record byte limit");
   }
-  return parsed;
+  return Object.freeze({
+    ...parsed,
+    headers: Object.freeze(parsed.headers.map((header) => Object.freeze(header))),
+  });
 }

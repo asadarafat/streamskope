@@ -97,6 +97,7 @@ function fetchDiagnosticCleanup(
 }
 
 class PlatformaticMessageStream implements KafkaRawMessageStream {
+  private readonly preparationController = new AbortController();
   private closePromise: Promise<void> | undefined;
   private readonly tracker: KafkaReadTracker | undefined;
 
@@ -105,6 +106,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
     private readonly stream: MessagesStream<Buffer, Buffer, Buffer, Buffer> | null,
     private readonly plan: KafkaFetchPlan,
     private readonly cleanupDiagnostics: () => void,
+    private readonly prepareRecord?: KafkaConsumerInput["prepareRecord"],
   ) {
     this.tracker = plan.continuous ? undefined : new KafkaReadTracker(plan);
   }
@@ -114,6 +116,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   }
 
   close(): Promise<void> {
+    this.preparationController.abort();
     this.tracker?.finish("cancelled");
     this.closePromise ??= this.closeResources();
     return this.closePromise;
@@ -134,15 +137,24 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
         for await (const message of this.stream) {
           const raw = this.toRawMessage(message);
           const accepted =
-            this.tracker === undefined ? this.includes(raw) : this.tracker.accept(raw);
+            this.tracker === undefined
+              ? this.includes(raw)
+              : this.tracker.accept(
+                  raw,
+                  this.prepareRecord
+                    ? await this.prepareRecord(raw, this.preparationController.signal)
+                    : undefined,
+                );
           if (accepted) yield raw;
           if (this.tracker?.finished) break;
         }
       }
       this.tracker?.finish("fetch-limit");
     } catch (error) {
-      this.tracker?.finish("failed");
-      iterationFailure = normalizeKafkaError(error);
+      if (!this.preparationController.signal.aborted) {
+        this.tracker?.finish("failed");
+        iterationFailure = normalizeKafkaError(error);
+      }
     } finally {
       if (deadline !== undefined) clearTimeout(deadline);
       if (!this.plan.continuous) {
@@ -269,7 +281,13 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
           ([partition, start]) => (plan.endOffsets?.get(partition) ?? start) > start,
         );
       if (!hasFiniteRecords) {
-        return new PlatformaticMessageStream(consumer, null, plan, cleanupDiagnostics);
+        return new PlatformaticMessageStream(
+          consumer,
+          null,
+          plan,
+          cleanupDiagnostics,
+          input.prepareRecord,
+        );
       }
       const stream = await consumer.consume({
         autocommit: false,
@@ -290,7 +308,13 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
         topics: [input.request.topic],
       });
       input.signal?.throwIfAborted();
-      return new PlatformaticMessageStream(consumer, stream, plan, cleanupDiagnostics);
+      return new PlatformaticMessageStream(
+        consumer,
+        stream,
+        plan,
+        cleanupDiagnostics,
+        input.prepareRecord,
+      );
     } catch (error) {
       cleanupDiagnostics();
       try {

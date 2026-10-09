@@ -34,6 +34,7 @@ import { formatUtcTimestamp } from "./timestamp-presentation";
 import { OriginalRecordEvidence } from "./OriginalRecordEvidence";
 import { RecordDecodePanel } from "./RecordDecodePanel";
 import { RecordComparisonPanel } from "./RecordComparisonPanel";
+import { formatRecordJson, recordCodecLabels } from "./record-presentation";
 
 export interface MessageInspectorProperties {
   readonly baseline?: KafkaExploredMessage | null;
@@ -43,17 +44,6 @@ export interface MessageInspectorProperties {
   readonly message: KafkaExploredMessage;
   readonly onClose: () => void;
   readonly transfer?: TextDocumentTransferPort;
-}
-
-function formattedJson(payload: string | null): string | null {
-  if (payload === null) {
-    return null;
-  }
-  try {
-    return JSON.stringify(JSON.parse(payload) as unknown, null, 2);
-  } catch {
-    return null;
-  }
 }
 
 function TechnicalText({ children }: { readonly children: string }): React.JSX.Element {
@@ -204,16 +194,18 @@ function RuleMatchList({
 function MessageScratchEditor({
   content,
   incomplete,
+  json,
   onClose,
   open,
 }: {
   readonly content: string;
+  readonly json: boolean;
   readonly incomplete: boolean;
   readonly onClose: () => void;
   readonly open: boolean;
 }): React.JSX.Element {
   const title = incomplete ? "Message preview editor" : "Message value editor";
-  const contentType = formattedJson(content) === null ? "Plain text" : "JSON";
+  const contentType = json ? "JSON" : "Plain text";
   const titleId = "kafka-message-scratch-editor-title";
   return (
     <Dialog
@@ -272,7 +264,13 @@ export function MessageInspector({
   onClose,
   transfer = browserTextDocumentTransfer,
 }: MessageInspectorProperties): React.JSX.Element {
-  const formatted = useMemo(() => formattedJson(message.payload), [message.payload]);
+  const formatted = useMemo(() => {
+    if (message.structured !== undefined) {
+      const field = message.structured.value;
+      return field.state === "decoded" && field.json !== null ? formatRecordJson(field.json) : null;
+    }
+    return formatRecordJson(message.payload);
+  }, [message.payload, message.structured]);
   const payloadTruncated =
     message.payloadTruncated ??
     (message.truncated && message.originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes);
@@ -322,14 +320,22 @@ export function MessageInspector({
     }
   }
 
-  const headerEntries = Object.entries(message.headers);
+  const headerEntries =
+    message.structured?.headers ??
+    Object.entries(message.headers).map(([key, value]) => ({ key, value, error: null }));
   const valueKind = payloadTruncated
     ? "Retained preview"
-    : message.payload === null
-      ? "Kafka null"
-      : formatted === null
-        ? "Plain text"
-        : "JSON";
+    : message.structured?.value.state === "error"
+      ? "Decoding unavailable"
+      : message.structured?.value.state === "masked"
+        ? "Masked value"
+        : message.payload === null
+          ? "Kafka null"
+          : message.structured?.value.state === "decoded"
+            ? `${recordCodecLabels[message.structured.value.codec]} projection`
+            : formatted === null
+              ? "Plain text"
+              : "JSON";
 
   return (
     <Box
@@ -411,7 +417,9 @@ export function MessageInspector({
         <Tab label="Value" value="value" />
         <Tab label="Original" value="original" />
         {onPin ? <Tab label="Compare" value="compare" /> : null}
-        {host === undefined ? null : <Tab label="Decoded" value="decoded" />}
+        {host === undefined && message.structured === undefined ? null : (
+          <Tab label="Decoded" value="decoded" />
+        )}
         <Tab label="Rules" value="rules" />
       </Tabs>
       <Box
@@ -420,13 +428,8 @@ export function MessageInspector({
         sx={{ minHeight: 0, overflow: "auto" }}
         tabIndex={0}
       >
-        {section === "decoded" && host !== undefined ? (
-          <RecordDecodePanel
-            key={message.id}
-            original={message.original}
-            host={host}
-            enabled={decodingAvailable}
-          />
+        {section === "decoded" ? (
+          <RecordDecodePanel key={message.id} structured={message.structured} />
         ) : null}
         {section === "original" ? (
           <OriginalRecordEvidence
@@ -438,6 +441,11 @@ export function MessageInspector({
         {section === "metadata" ? (
           <Box aria-label="Metadata evidence" component="section">
             <ConnectDlqEvidence message={message} />
+            {message.structured?.value.state === "error" ? (
+              <Alert severity="warning" sx={{ m: studioSpace.space8 }}>
+                Value decoding unavailable: {message.structured.value.detail}
+              </Alert>
+            ) : null}
             <InspectorEvidenceSection title="Record">
               <Box component="dl" sx={{ m: 0 }}>
                 <StudioDetailRow
@@ -472,15 +480,22 @@ export function MessageInspector({
               ) : null}
               {headerEntries.length === 0 ? (
                 <Typography color="text.secondary" sx={{ p: studioSpace.space10 }} variant="body2">
-                  This record has no retained headers.
+                  {message.structured?.headersState === "unavailable"
+                    ? "Ordered header evidence is unavailable for this record. An empty inventory cannot establish that the record had no headers."
+                    : "This record has no retained headers."}
                 </Typography>
               ) : (
                 <Box aria-label="Message headers" component="dl" sx={{ m: 0 }}>
-                  {headerEntries.map(([name, value]) => (
+                  {headerEntries.map((header, index) => (
                     <StudioDetailRow
-                      key={name}
-                      label={name}
-                      value={<MessageEvidenceText>{value}</MessageEvidenceText>}
+                      key={`${String(index)}:${header.key}`}
+                      label={header.key}
+                      value={
+                        <MessageEvidenceText>
+                          {header.error ??
+                            (header.value === null ? "Kafka null header" : header.value)}
+                        </MessageEvidenceText>
+                      }
                     />
                   ))}
                 </Box>
@@ -495,7 +510,9 @@ export function MessageInspector({
               <Box sx={{ p: studioSpace.space8 }}>
                 {message.key === null ? (
                   <Typography color="text.secondary" variant="body2">
-                    Kafka supplied a null key.
+                    {message.structured?.key.state === "error"
+                      ? `Key decoding unavailable: ${message.structured.key.detail}`
+                      : "Kafka supplied a null key."}
                   </Typography>
                 ) : (
                   <TechnicalText>{message.key}</TechnicalText>
@@ -510,7 +527,6 @@ export function MessageInspector({
             current={message}
             baseline={baseline}
             onPin={onPin}
-            host={host}
             enabled={decodingAvailable}
           />
         ) : null}
@@ -536,6 +552,9 @@ export function MessageInspector({
                 </Typography>
                 <Typography color="text.secondary" component="p" variant="caption">
                   {valueKind} · {message.originalByteSize.toLocaleString()} bytes
+                  {message.structured?.value.writerSchema
+                    ? ` · Writer schema ID ${String(message.structured.value.writerSchema.id)}`
+                    : ""}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={studioSpace.space6}>
@@ -592,7 +611,9 @@ export function MessageInspector({
               </Stack>
             ) : message.payload === null ? (
               <Typography color="text.secondary" sx={{ p: studioSpace.space12 }} variant="body2">
-                Kafka supplied a null value.
+                {message.structured?.value.state === "error"
+                  ? `Value decoding unavailable: ${message.structured.value.detail}`
+                  : "Kafka supplied a null value."}
               </Typography>
             ) : (
               <Box>
@@ -606,7 +627,7 @@ export function MessageInspector({
                     variant="fullWidth"
                   >
                     <Tab label="Formatted JSON" value="formatted" />
-                    <Tab label="Raw" value="raw" />
+                    <Tab label="Projection text" value="raw" />
                   </Tabs>
                 )}
                 <Box
@@ -710,6 +731,7 @@ export function MessageInspector({
       {selectedContent === null ? null : (
         <MessageScratchEditor
           content={selectedContent}
+          json={formatted !== null}
           incomplete={payloadTruncated}
           onClose={() => {
             setEditorOpen(false);

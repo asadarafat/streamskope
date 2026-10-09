@@ -207,6 +207,13 @@ export class KafkaLiveRuleRuntime {
     if (this.preparedRules.length === 0) {
       return EMPTY_EVALUATION;
     }
+    if (
+      message.structured &&
+      message.structured.value.state !== "null" &&
+      (message.structured.value.state !== "decoded" || message.structured.value.json === null)
+    ) {
+      return unavailableEvaluation("payload-malformed");
+    }
     if (message.payload === null) {
       return unavailableEvaluation(
         (message.payloadTruncated ?? message.originalByteSize > KAFKA_MESSAGE_LIMITS.messageBytes)

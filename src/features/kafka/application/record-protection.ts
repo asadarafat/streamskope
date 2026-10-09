@@ -4,6 +4,9 @@ import {
   type KafkaMessage,
   type KafkaRecordProtection,
 } from "../contracts";
+import type { RecordField } from "../contracts/structured-record";
+
+import { projectStructuredRecord } from "./structured-record-service";
 
 export const MASKED_RECORD_TEXT = "[MASKED]";
 
@@ -25,6 +28,7 @@ function maskPointer(root: unknown, pointer: string): unknown {
       segment === undefined ||
       parent === null ||
       typeof parent !== "object" ||
+      (Array.isArray(parent) && !/^(?:0|[1-9]\d*)$/u.test(segment)) ||
       !Object.hasOwn(parent, segment)
     )
       return root;
@@ -47,6 +51,51 @@ export function protectKafkaRecord(
   policy: KafkaRecordProtection,
 ): KafkaMessage {
   if (!hasRecordMasking(policy)) return message;
+  if (message.structured) {
+    const structured = message.structured;
+    const masked = (field: RecordField): RecordField =>
+      field.state === "null"
+        ? field
+        : { state: "masked", codec: field.codec, writerSchema: field.writerSchema };
+    let value = structured.value;
+    if (policy.valuePaths.length && value.state !== "null") {
+      if (value.state === "decoded" && value.json !== null) {
+        try {
+          let json: unknown = JSON.parse(value.json);
+          for (const path of policy.valuePaths) json = maskPointer(json, path);
+          const projection = JSON.stringify(json);
+          value = { ...value, text: projection, json: projection };
+        } catch {
+          value = masked(value);
+        }
+      } else value = masked(value);
+    }
+    const protectedRecord = projectStructuredRecord(
+      { ...message, original: { state: "unavailable", reason: "masked" } },
+      {
+        ...structured,
+        key: policy.maskKey ? masked(structured.key) : structured.key,
+        value,
+        headers: structured.headers.map((header) =>
+          policy.maskHeaders.includes(header.key) ||
+          (policy.maskHeaders.length > 0 && header.error !== null)
+            ? {
+                ...header,
+                value: header.value === null && header.error === null ? null : MASKED_RECORD_TEXT,
+                error: header.error,
+              }
+            : header,
+        ),
+        protection: "masked",
+      },
+    );
+    if (kafkaRawMessageRetainedBytes(protectedRecord) <= KAFKA_MESSAGE_LIMITS.messageBytes)
+      return protectedRecord;
+    return projectStructuredRecord(
+      { ...protectedRecord, payloadTruncated: true, truncated: true },
+      { ...protectedRecord.structured!, value: masked(value) },
+    );
+  }
   const headers = Object.fromEntries(
     Object.entries(message.headers).map(([key, value]) => [
       key,

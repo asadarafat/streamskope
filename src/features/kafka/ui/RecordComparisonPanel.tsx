@@ -1,12 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Stack, Typography } from "@mui/material";
 
-import {
-  HOST_PROTOCOL_VERSION,
-  type KafkaExploredMessage,
-  type StreamSkopeHost,
-} from "../contracts";
-import type { RecordFormat } from "../contracts/record-codec";
+import { type KafkaExploredMessage } from "../contracts";
 import {
   StudioAlert as Alert,
   StudioButton as Button,
@@ -15,12 +10,12 @@ import {
 } from "../../../platform/ui/controls";
 
 import { DocumentDiff } from "./DocumentDiff";
+import { recordFieldComparison } from "./record-presentation";
 
 export interface RecordComparisonProperties {
   readonly current: KafkaExploredMessage;
   readonly baseline: KafkaExploredMessage | null;
   readonly onPin: (message: KafkaExploredMessage | null) => void;
-  readonly host?: StreamSkopeHost | undefined;
   readonly enabled: boolean;
 }
 const identity = (message: KafkaExploredMessage): string =>
@@ -29,74 +24,62 @@ export function RecordComparisonPanel({
   current,
   baseline,
   onPin,
-  host,
   enabled,
 }: RecordComparisonProperties): React.JSX.Element {
   const [part, setPart] = useState<"key" | "value" | "headers">("value");
-  const [format, setFormat] = useState<RecordFormat | "bytes">("bytes");
+  const [format, setFormat] = useState<"projection" | "bytes">("projection");
   const [result, setResult] = useState<{ before: string; after: string }>();
   const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const generation = useRef(0);
   useEffect(() => {
-    generation.current++;
     setResult(undefined);
     setError(undefined);
-    setBusy(false);
-    return (): void => {
-      generation.current++;
-    };
   }, [current, baseline, part, format, enabled]);
-  const available =
-    enabled && current.original?.state === "complete" && baseline?.original?.state === "complete";
-  const compare = async (): Promise<void> => {
+  const complete = (message: KafkaExploredMessage): boolean =>
+    format === "bytes"
+      ? message.original?.state === "complete"
+      : message.structured !== undefined &&
+        (part === "headers"
+          ? message.structured.headersState === "complete" &&
+            message.structured.headers.every((header) => header.error === null)
+          : message.structured[part].state !== "error");
+  const available = enabled && baseline !== null && complete(current) && complete(baseline);
+  const compare = (): void => {
     if (!available || !baseline) return;
-    const request = ++generation.current;
-    setBusy(true);
     setError(undefined);
     setResult(undefined);
     try {
-      const read = async (message: KafkaExploredMessage): Promise<string> => {
+      const read = (message: KafkaExploredMessage): string => {
+        if (format === "projection") {
+          if (!message.structured)
+            throw new Error("Read this record again for structured evidence.");
+          if (part === "headers") return JSON.stringify(message.structured.headers);
+          const value = recordFieldComparison(message.structured[part]);
+          if (value === null) throw new Error("Decoding failed for one of the compared fields.");
+          return value;
+        }
         if (message.original?.state !== "complete")
           throw new Error("Complete original bytes are unavailable.");
-        if (part === "headers") return JSON.stringify(message.original.headers);
-        const bytes = message.original[part];
-        if (format === "bytes") return JSON.stringify({ encoding: "base64", bytes });
-        if (!host) throw new Error("The application host is unavailable.");
-        const response = await host.execute({
-          command: "records.decode",
-          id: globalThis.crypto.randomUUID(),
-          version: HOST_PROTOCOL_VERSION,
-          payload: { format, bytes },
-        });
-        if (!response.ok) throw new Error(response.error.summary);
-        const decoded = response.result.decoded;
-        if (decoded.state === "error") throw new Error(decoded.detail);
-        // A Kafka tombstone must remain distinct from a JSON null value.
-        return decoded.state === "null"
-          ? JSON.stringify({ kind: "Kafka null" })
-          : `{"kind":"decoded","value":${decoded.json}}`;
+        return part === "headers"
+          ? JSON.stringify(message.original.headers)
+          : JSON.stringify({ encoding: "base64", bytes: message.original[part] });
       };
-      const [before, after] = await Promise.all([read(baseline), read(current)]);
-      if (generation.current === request) setResult({ before, after });
+      const [before, after] = [read(baseline), read(current)];
+      setResult({ before, after });
     } catch (error) {
-      if (generation.current === request)
-        setError(error instanceof Error ? error.message : "Comparison failed.");
-    } finally {
-      if (generation.current === request) setBusy(false);
+      setError(error instanceof Error ? error.message : "Comparison failed.");
     }
   };
   return (
     <Stack spacing={2} sx={{ p: 2 }}>
       <Typography variant="body2">
         Pin one record, select another, then compare. The pinned snapshot survives rolling-window
-        eviction; switching topics, connections or protection settings clears it.
+        eviction; switching topics, connections, encoding or protection settings clears it.
       </Typography>
       <Stack direction="row" spacing={1}>
-        <Button disabled={!enabled || busy} onClick={() => onPin(current)}>
+        <Button disabled={!enabled} onClick={() => onPin(current)}>
           Pin as baseline
         </Button>
-        <Button disabled={!baseline || busy} onClick={() => onPin(null)}>
+        <Button disabled={!baseline} onClick={() => onPin(null)}>
           Clear baseline
         </Button>
       </Stack>
@@ -106,8 +89,9 @@ export function RecordComparisonPanel({
       <Typography variant="body2">After: {identity(current)}</Typography>
       {!available && baseline ? (
         <Alert severity="warning">
-          Complete original bytes are required for both records. A truncated or masked preview
-          cannot establish equality.
+          {format === "bytes"
+            ? "Complete original bytes are required for both records. Masked or truncated originals cannot establish byte equality."
+            : "Both records need structured evidence without decoding errors. Read them again using the saved encoding settings."}
         </Alert>
       ) : null}
       <TextField
@@ -120,31 +104,28 @@ export function RecordComparisonPanel({
         <MenuItem value="key">Key</MenuItem>
         <MenuItem value="headers">Ordered headers</MenuItem>
       </TextField>
-      {part !== "headers" ? (
-        <TextField
-          select
-          label="Comparison encoding"
-          value={format}
-          onChange={(event) => setFormat(event.target.value as typeof format)}
-        >
-          <MenuItem value="bytes">Original bytes (Base64)</MenuItem>
-          <MenuItem value="json">JSON</MenuItem>
-          <MenuItem value="avro">Confluent Avro</MenuItem>
-          <MenuItem value="protobuf">Confluent Protobuf</MenuItem>
-        </TextField>
-      ) : (
-        <Typography variant="caption">
-          Header names and values use exact Base64 bytes; duplicate names and order are preserved.
-        </Typography>
-      )}
+      <TextField
+        select
+        label="Comparison representation"
+        value={format}
+        onChange={(event) => setFormat(event.target.value as typeof format)}
+      >
+        <MenuItem value="projection">Protected projection</MenuItem>
+        <MenuItem value="bytes">Original bytes (Base64)</MenuItem>
+      </TextField>
+      <Typography variant="caption">
+        {format === "projection"
+          ? "Compares the same protected fields shown in the inspector. Masked values remain masked; this does not establish equality of undisclosed bytes."
+          : "Compares exact Base64 bytes, including duplicate headers in their original order."}
+      </Typography>
       <Button
         variant="outlined"
-        disabled={!available || busy}
+        disabled={!available}
         onClick={() => {
-          void compare();
+          compare();
         }}
       >
-        {busy ? "Comparing…" : "Compare records"}
+        Compare records
       </Button>
       {error ? <Alert severity="error">{error}</Alert> : null}
       {result ? <DocumentDiff {...result} mode="json" /> : null}

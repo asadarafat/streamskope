@@ -1,102 +1,115 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 
-import type {
-  HostCommand,
-  HostCommandResponse,
-  StreamSkopeHost,
-} from "../../src/features/kafka/contracts";
+import type { StructuredRecord } from "../../src/features/kafka/contracts/structured-record";
 import { RecordDecodePanel } from "../../src/features/kafka/ui/RecordDecodePanel";
+import { formatRecordJson } from "../../src/features/kafka/ui/record-presentation";
 
 afterEach(cleanup);
-class Host implements StreamSkopeHost {
-  commands: HostCommand[] = [];
-  pending: ((response: HostCommandResponse<"records.decode">) => void) | undefined;
-  execute<C extends HostCommand>(command: C): Promise<HostCommandResponse<C["command"]>>;
-  execute(command: HostCommand): Promise<HostCommandResponse> {
-    this.commands.push(command);
-    return new Promise<HostCommandResponse<"records.decode">>((resolve) => {
-      this.pending = resolve;
-    });
-  }
-  subscribe(): () => void {
-    return () => undefined;
-  }
-  openExternalUrl(): Promise<never> {
-    return Promise.reject(new Error("Unused"));
-  }
-  complete(): void {
-    const command = this.commands.at(-1)!;
-    this.pending?.({
-      command: "records.decode",
-      id: command.id,
-      version: command.version,
-      ok: true,
-      result: {
-        correlationId: "c",
-        decoded: {
-          state: "decoded",
-          format: "json",
-          json: '{"decoded":"first-record"}',
-          schemaId: null,
-          messageType: null,
-          notes: "JSON projection",
-        },
-      },
-    });
-  }
-}
-const original = {
-  state: "complete" as const,
-  encoding: "base64" as const,
-  key: null,
-  value: "e30=",
+const record: StructuredRecord = {
+  version: 1,
+  headersState: "complete",
+  protection: "none",
   headers: [],
+  key: { state: "null", codec: "auto", writerSchema: null },
+  value: {
+    state: "decoded",
+    codec: "avro",
+    text: '{"id":9007199254740993,"secret":"[MASKED]"}',
+    json: '{"id":9007199254740993,"secret":"[MASKED]"}',
+    writerSchema: { id: 9, format: "avro", messageType: null, registry: "https://registry.test/" },
+  },
 };
 
-it("requires explicit decoding and shows a projection without changing bytes", async () => {
-  const host = new Host();
-  const user = userEvent.setup();
-  render(<RecordDecodePanel original={original} host={host} enabled />);
-  expect(host.commands).toHaveLength(0);
-  await user.click(screen.getByRole("button", { name: "Decode record" }));
-  expect(host.commands.at(-1)).toMatchObject({
-    command: "records.decode",
-    payload: { format: "json", bytes: "e30=" },
-  });
-  await act(async () => {
-    host.complete();
-    await Promise.resolve();
-  });
-  expect(screen.getByLabelText("Decoded JSON")).toHaveTextContent("first-record");
-  expect(original.value).toBe("e30=");
+it("shows the captured protected projection and exact writer identity without an independent decoder", () => {
+  render(<RecordDecodePanel structured={record} />);
+  expect(screen.getByLabelText("Decoded JSON")).toHaveTextContent("9007199254740993");
+  expect(screen.getByLabelText("Decoded JSON")).toHaveTextContent("[MASKED]");
+  expect(screen.getByText("Writer schema ID 9 · avro")).toBeVisible();
+  expect(screen.getByText("Registry: https://registry.test/")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Decode record" })).not.toBeInTheDocument();
 });
 
-it("does not disclose stale results after the record or connection changes", async () => {
-  const host = new Host();
+it("distinguishes tombstones, masked fields, and malformed records with a known writer", async () => {
   const user = userEvent.setup();
-  const view = render(<RecordDecodePanel original={original} host={host} enabled />);
-  await user.click(screen.getByRole("button", { name: "Decode record" }));
+  const view = render(
+    <RecordDecodePanel
+      structured={{ ...record, value: { state: "null", codec: "auto", writerSchema: null } }}
+    />,
+  );
+  expect(screen.getByText(/Kafka null value \(tombstone\)/u)).toBeVisible();
   view.rerender(
-    <RecordDecodePanel original={{ ...original, value: "bnVsbA==" }} host={host} enabled={false} />,
+    <RecordDecodePanel
+      structured={{
+        ...record,
+        value: { state: "masked", codec: "avro", writerSchema: record.value.writerSchema },
+      }}
+    />,
   );
-  await act(async () => {
-    host.complete();
-    await Promise.resolve();
-  });
+  expect(screen.getByText(/withheld by the record protection policy/u)).toBeVisible();
   expect(screen.queryByLabelText("Decoded JSON")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Decode record" })).toBeDisabled();
+  view.rerender(
+    <RecordDecodePanel
+      structured={{
+        ...record,
+        value: {
+          state: "error",
+          codec: "avro",
+          writerSchema: record.value.writerSchema,
+          code: "malformed",
+          detail: "Invalid writer payload.",
+        },
+      }}
+    />,
+  );
+  expect(
+    screen.getByText(/Decoding unavailable \(malformed\): Invalid writer payload/u),
+  ).toBeVisible();
+  expect(screen.getByText("Writer schema ID 9 · avro")).toBeVisible();
+  await user.click(screen.getByRole("combobox", { name: "Record part" }));
+  await user.click(screen.getByRole("option", { name: /^Key$/u }));
+  expect(screen.getByText(/Kafka null key/u)).toBeVisible();
 });
 
-it("cannot submit an unavailable or masked original", () => {
-  const host = new Host();
+it("labels missing legacy evidence instead of interpreting a preview", () => {
+  render(<RecordDecodePanel structured={undefined} />);
+  expect(screen.getByText(/Structured evidence was not captured/u)).toBeVisible();
+});
+
+it("formats without changing large numbers, exponents, whitespace or escaped string data", () => {
+  const value =
+    '{"integer":9007199254740993,"exponent":1e999,"string":" a  \\" ","array":[{},[],null]}';
+  const formatted = formatRecordJson(value)!;
+  expect(formatted).toContain("9007199254740993");
+  expect(formatted).toContain("1e999");
+  expect(formatted).toContain('" a  \\" "');
+  expect(JSON.parse(formatted)).toEqual(JSON.parse(value));
+  expect(formatRecordJson("{malformed")).toBeNull();
+});
+
+it("shows the selected Protobuf message type within its writer schema", () => {
   render(
-    <RecordDecodePanel original={{ state: "unavailable", reason: "masked" }} host={host} enabled />,
+    <RecordDecodePanel
+      structured={{
+        ...record,
+        value: {
+          state: "decoded",
+          codec: "protobuf",
+          text: '{"id":"event-1"}',
+          json: '{"id":"event-1"}',
+          writerSchema: {
+            id: 10,
+            format: "protobuf",
+            registry: "https://registry.test/",
+            messageType: ".fixture.Event",
+          },
+        },
+      }}
+    />,
   );
-  expect(screen.getByRole("button", { name: "Decode record" })).toBeDisabled();
-  expect(screen.getByText(/cannot use a truncated preview or bypass masking/u)).toBeVisible();
-  expect(host.commands).toHaveLength(0);
+  expect(screen.getByText("Writer schema ID 10 · protobuf")).toBeVisible();
+  expect(screen.getByText("Message type: .fixture.Event")).toBeVisible();
 });

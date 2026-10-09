@@ -1,3 +1,4 @@
+import type { StructuredRecord, RecordField } from "./structured-record";
 import type { KafkaLiveRuleEvaluation } from "./live-rule-types";
 import type { KafkaOriginalRecord } from "./record-bytes";
 import type { KafkaExploredMessage, KafkaMessage } from "./types";
@@ -49,6 +50,29 @@ function originalRetainedBytes(original: KafkaOriginalRecord | undefined): numbe
   );
 }
 
+function structuredRetainedBytes(value: StructuredRecord | undefined): number {
+  if (!value) return 0;
+  const field = (f: RecordField): number =>
+    160 +
+    (f.writerSchema
+      ? 64 + utf8ByteLength(f.writerSchema.registry) + utf8ByteLength(f.writerSchema.messageType)
+      : 0) +
+    (f.state === "decoded"
+      ? utf8ByteLength(f.text) + utf8ByteLength(f.json)
+      : f.state === "error"
+        ? utf8ByteLength(f.detail)
+        : 0);
+  return (
+    96 +
+    field(value.key) +
+    field(value.value) +
+    value.headers.reduce(
+      (n, h) => n + 48 + utf8ByteLength(h.key) + utf8ByteLength(h.value) + utf8ByteLength(h.error),
+      0,
+    )
+  );
+}
+
 export function kafkaRawMessageRetainedBytes(message: KafkaMessage): number {
   return (
     utf8ByteLength(message.key) +
@@ -58,6 +82,7 @@ export function kafkaRawMessageRetainedBytes(message: KafkaMessage): number {
       (total, [key, value]) => total + utf8ByteLength(key) + utf8ByteLength(value),
       0,
     ) +
+    structuredRetainedBytes(message.structured) +
     originalRetainedBytes(message.original)
   );
 }

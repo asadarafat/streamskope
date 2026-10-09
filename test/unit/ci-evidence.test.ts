@@ -142,6 +142,7 @@ it("assembles independently hashed suite evidence bound to the exact clean sourc
     "test-results/web/production-startup/playwright-results.json",
     "test-results/web/workbench/playwright-results.json",
     "test-results/web/nats-workspace/playwright-results.json",
+    "test-results/web/structured-records/playwright-results.json",
     "test-results/web/plugin-lifecycle/playwright-results.json",
   ]);
   for (const report of index.lanes.flatMap((lane) => lane.reports)) {

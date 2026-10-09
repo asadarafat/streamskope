@@ -92,6 +92,7 @@ const history: KafkaLatencyHistorySnapshot = {
 
 const preferences: KafkaOperationalPreferenceSnapshot = {
   preferences: {
+    codecs: { key: "auto", value: "auto" },
     protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
     fetch: { maxMessages: 100, mode: "newest" },
     latency: {

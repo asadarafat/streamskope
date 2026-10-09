@@ -7,6 +7,8 @@ import {
 } from "../../src/features/kafka/contracts";
 import { KafkaReadTracker } from "../../src/features/kafka/engine/read-coverage";
 import type { KafkaRawMessage } from "../../src/features/kafka/engine/types";
+import { translateKafkaRecord } from "../../src/features/kafka/engine/message-record";
+import { protectKafkaRecord } from "../../src/features/kafka/application/record-protection";
 
 const search = { key: "", value: "needle", timestamp: "", offset: "", partition: null };
 const raw = (offset: number, value: string | Buffer = "hay", partition = 0): KafkaRawMessage => ({
@@ -28,6 +30,29 @@ function tracker(end = 3n): KafkaReadTracker {
 }
 
 describe("bounded broker search coverage", () => {
+  it("evaluates the delivered protected projection instead of matching secret wire bytes", () => {
+    const read = tracker(1n);
+    const original = raw(0, '{"secret":"needle","public":"safe"}');
+    const prepared = protectKafkaRecord(translateKafkaRecord(original, "orders"), {
+      readOnly: false,
+      maskKey: false,
+      maskHeaders: [],
+      valuePaths: ["/secret"],
+    });
+    expect(read.accept(original, prepared)).toBe(false);
+    expect(read.snapshot()).toMatchObject({
+      reason: "range-complete",
+      scannedRecords: 1,
+      matchedRecords: 0,
+    });
+  });
+  it("uses decoded fields rather than the wire frame when a structured projection is available", () => {
+    const read = tracker(1n);
+    const original = raw(0, Buffer.from([0, 0, 0, 0, 7, 1]));
+    const prepared = { ...translateKafkaRecord(original, "orders"), payload: '{"name":"needle"}' };
+    expect(read.accept(original, prepared)).toBe(true);
+    expect(read.snapshot()).toMatchObject({ matchedRecords: 1, unavailableRecords: 0 });
+  });
   it("searches beyond the result limit and proves the selected offset range separately", () => {
     const read = tracker();
     expect([raw(0), raw(1), raw(2, "Needle")].map((record) => read.accept(record))).toEqual([

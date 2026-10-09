@@ -54,6 +54,7 @@ import type {
   KafkaEngineConnection,
   KafkaConnectionTestResult,
   KafkaRawMessageStream,
+  KafkaRawMessage,
   OAuthToken,
   OAuthTokenProvider,
   StreamSkopeKafkaEngineOptions,
@@ -165,13 +166,14 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
 
   constructor(
     private readonly rawStream: KafkaRawMessageStream,
-    private readonly expectedTopic: string,
     private readonly target: string,
     private readonly onClose: () => void,
-    private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
+    private readonly prepareRecord: (message: KafkaRawMessage) => Promise<KafkaMessage>,
+    private readonly preparationController: AbortController,
   ) {}
 
   close(): Promise<void> {
+    this.preparationController.abort();
     this.closePromise ??= this.rawStream.close().then(this.onClose);
     return this.closePromise;
   }
@@ -179,7 +181,7 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
   async *[Symbol.asyncIterator](): AsyncIterator<KafkaMessage> {
     try {
       for await (const raw of this.rawStream) {
-        yield this.protectRecord(translateKafkaRecord(raw, this.expectedTopic));
+        yield await this.prepareRecord(raw);
       }
     } catch (error) {
       throw mapKafkaAdminFailure(error, this.target);
@@ -255,6 +257,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     >,
     private readonly target: string,
     private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
+    private readonly prepareRecord: StreamSkopeKafkaEngineOptions["prepareRecord"],
   ) {}
 
   alterTopicConfiguration(
@@ -454,7 +457,37 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       timeoutController.signal,
     ]);
     const target = `${this.target} / ${parsedRequest.topic}`;
+    const prepared = new WeakMap<KafkaRawMessage, Promise<KafkaMessage>>();
+    const preparationController = new AbortController();
+    const recordSignal = AbortSignal.any([
+      this.lifecycleController.signal,
+      cancellationSignal,
+      preparationController.signal,
+    ]);
+    const prepare = (raw: KafkaRawMessage, consumerSignal?: AbortSignal): Promise<KafkaMessage> => {
+      const previous = prepared.get(raw);
+      if (previous) return previous;
+      const workSignal = consumerSignal
+        ? AbortSignal.any([recordSignal, consumerSignal])
+        : recordSignal;
+      const operation = (async (): Promise<KafkaMessage> => {
+        workSignal.throwIfAborted();
+        const translated = translateKafkaRecord(raw, parsedRequest.topic);
+        const projected = this.prepareRecord
+          ? await this.prepareRecord(
+              translated,
+              this.clusterServiceContext("schemaRegistry"),
+              workSignal,
+            )
+          : translated;
+        workSignal.throwIfAborted();
+        return this.protectRecord(projected);
+      })();
+      prepared.set(raw, operation);
+      return operation;
+    };
     const operation = this.consumerFactory.open({
+      prepareRecord: prepare,
       ...this.clientInput,
       groupId: `streamskope-${randomUUID()}`,
       request: parsedRequest,
@@ -464,16 +497,17 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       const rawStream = await abortableOperation(operation, signal, () => new OperationAborted());
       const translated = new TranslatedKafkaMessageStream(
         rawStream,
-        parsedRequest.topic,
         target,
         () => {
           this.streams.delete(translated);
         },
-        this.protectRecord,
+        prepare,
+        preparationController,
       );
       this.streams.add(translated);
       return translated;
     } catch (error) {
+      preparationController.abort();
       if (error instanceof OperationAborted) {
         let cleanupFailure: unknown;
         let lateStream: KafkaRawMessageStream | undefined;
@@ -620,9 +654,11 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
   private readonly latencyProbe;
   private readonly tokenRequester;
   private readonly protectRecord;
+  private readonly prepareRecord;
   private readonly serviceHttp;
 
   constructor(options: StreamSkopeKafkaEngineOptions = {}) {
+    this.prepareRecord = options.prepareRecord;
     this.protectRecord =
       options.protectRecord ?? ((message: KafkaMessage): KafkaMessage => message);
     this.adminFactory = options.adminFactory ?? new PlatformaticAdminFactory();
@@ -833,6 +869,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
         this.tokenRequester,
         target,
         this.protectRecord,
+        this.prepareRecord,
       );
       const topics = await activeConnection.listTopics(cancellationSignal);
       const checks: ConnectionCheck[] = [

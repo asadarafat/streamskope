@@ -3,28 +3,8 @@ import protobuf from "protobufjs";
 
 import { RECORD_CODEC_LIMITS, type RecordDecodeResult } from "../contracts/record-codec";
 import type { CodecSchemaBundle, RecordCodecWorkerInput } from "../application/record-codec-types";
-
-export function boundedJson(value: unknown): string {
-  const pending: { value: unknown; depth: number }[] = [{ value, depth: 0 }];
-  let nodes = 0;
-  while (pending.length > 0) {
-    const entry = pending.pop()!;
-    if (++nodes > RECORD_CODEC_LIMITS.jsonNodes || entry.depth > RECORD_CODEC_LIMITS.jsonDepth)
-      throw new RangeError("Decoded structure limit");
-    if (entry.value !== null && typeof entry.value === "object") {
-      const children = Object.values(entry.value);
-      if (children.length + pending.length > RECORD_CODEC_LIMITS.jsonNodes)
-        throw new RangeError("Decoded structure limit");
-      for (const child of children) pending.push({ value: child, depth: entry.depth + 1 });
-    }
-    if (typeof entry.value === "number" && !Number.isFinite(entry.value))
-      throw new Error("Non-finite value is not JSON");
-  }
-  const json = JSON.stringify(value);
-  if (json.length > RECORD_CODEC_LIMITS.outputCharacters)
-    throw new RangeError("Decoded output limit");
-  return json;
-}
+import { boundedRecordJson as boundedJson, normalizeRecordJson } from "../application/record-json";
+export { boundedJson };
 
 // avsc's default long maps to JS numbers. Preserve all signed 64-bit values instead.
 const decimalLong = avro.types.LongType.__with({
@@ -149,19 +129,7 @@ export function parseStructuredRecord({
     let notes: string;
     if (format === "json") {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      value = JSON.parse(
-        text,
-        (_key: string, item: unknown, context?: { source: string }): unknown => {
-          if (
-            typeof item === "number" &&
-            (!Number.isFinite(item) || (Number.isInteger(item) && !Number.isSafeInteger(item)))
-          ) {
-            if (!context) throw new Error("Unsafe JSON number");
-            return context.source;
-          }
-          return item;
-        },
-      ) as unknown;
+      value = JSON.parse(normalizeRecordJson(text)) as unknown;
       notes =
         "UTF-8 JSON. Integers outside JavaScript's safe range and non-finite numeric literals are displayed as their exact decimal text.";
     } else {

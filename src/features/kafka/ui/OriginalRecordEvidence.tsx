@@ -46,7 +46,8 @@ export function OriginalRecordEvidence({
     <Stack spacing={1} sx={{ p: 1.5, minWidth: 0 }}>
       <Typography variant="body2">
         Base64 preserves the exact key, value and ordered headers. Null and empty bytes are
-        distinct. Text views decode these bytes as UTF-8.
+        distinct. Protected views apply the saved encodings separately; they never rewrite these
+        bytes.
       </Typography>
       <StudioButton
         disabled={copying}
