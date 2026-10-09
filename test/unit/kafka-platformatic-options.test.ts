@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { platformaticClientOptions } from "../../src/features/kafka/engine/platformatic-options";
+import { encryptedClientKey } from "../support/tls-client-identity-fixture";
+
+const privateKeyPem = encryptedClientKey("key-password");
 
 describe("Platformatic Kafka client options", () => {
   it.each(["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"] as const)(
@@ -14,7 +17,7 @@ describe("Platformatic Kafka client options", () => {
           sasl: { mechanism, username: "fixture-user", password: "fixture-password" },
           clientIdentity: {
             certificatePem: "client-cert",
-            privateKeyPem: "client-key",
+            privateKeyPem,
             passphrase: "key-password",
           },
         },
@@ -28,7 +31,7 @@ describe("Platformatic Kafka client options", () => {
       expect(result.tls).toEqual({
         ca: ["broker-ca"],
         cert: "client-cert",
-        key: "client-key",
+        key: privateKeyPem,
         passphrase: "key-password",
         rejectUnauthorized: true,
       });
