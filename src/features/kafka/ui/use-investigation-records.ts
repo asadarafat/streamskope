@@ -38,6 +38,7 @@ type Attempt = {
   readonly locator: KafkaRecordLocator;
   readonly slot: SavedRecordSlot;
   cancelling: boolean;
+  stopping: Promise<void> | null;
 };
 export interface InvestigationRecordsController {
   readonly references: KafkaSavedRecordContext;
@@ -145,7 +146,6 @@ export function useInvestigationRecords({
   const [phase, setPhase] = useState<"idle" | "loading" | "stopping" | "cleanup">("idle");
   const [error, setError] = useState<string>();
   const pending = useRef<Attempt | null>(null);
-  const stopping = useRef<Promise<void> | null>(null);
   const mounted = useRef(true);
   const currentReferences = useRef(references);
   const currentSettings = useRef(settingsKey);
@@ -153,9 +153,9 @@ export function useInvestigationRecords({
   currentReferences.current = references;
 
   const cancel = useCallback(async (): Promise<void> => {
-    if (stopping.current !== null) return stopping.current;
     const attempt = pending.current;
     if (attempt === null) return;
+    if (attempt.stopping !== null) return attempt.stopping;
     attempt.cancelling = true;
     if (mounted.current) {
       setPhase("stopping");
@@ -194,11 +194,11 @@ export function useInvestigationRecords({
         }
       }
     })();
-    stopping.current = operation;
+    attempt.stopping = operation;
     try {
       await operation;
     } finally {
-      if (stopping.current === operation) stopping.current = null;
+      if (attempt.stopping === operation) attempt.stopping = null;
     }
   }, []);
 
@@ -302,6 +302,7 @@ export function useInvestigationRecords({
         locator,
         slot,
         cancelling: false,
+        stopping: null,
       };
       pending.current = attempt;
       setPhase("loading");

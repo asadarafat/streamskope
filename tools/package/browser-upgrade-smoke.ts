@@ -13,7 +13,11 @@ import {
 } from "./browser-installer";
 import type { BrowserInstallerTarget } from "./browser-installer-evidence";
 import { run, replaceConstant } from "./browser-qualification-process";
-import { createBrowserVaultFixture, verifyBrowserNativeWorkers } from "./browser-vault-fixture";
+import {
+  createBrowserVaultFixture,
+  verifyBrowserNativeWorkers,
+  type BrowserVaultFixture,
+} from "./browser-vault-fixture";
 import {
   BROWSER_UPGRADE_CHECKS,
   browserUpgradePredecessor,
@@ -208,6 +212,10 @@ interface TransitionFixture {
 }
 type TransitionEvidence = Omit<BrowserUpgradeEvidence, "checks"> & {
   readonly checks: readonly string[];
+  readonly localBootstrap?: {
+    readonly predecessor: BrowserInstallerTarget;
+    readonly upgradeBackup: BrowserBackupEvidence;
+  };
 };
 const LOCAL_VIEW_PREDECESSOR: BrowserInstallerTarget = {
   version: "0.10.4-qa.d9a7c7b365eb",
@@ -240,6 +248,8 @@ async function verifyTransition(
   const data = join(state, "streamskope-data");
   const installer = join(temporary, "target.sh");
   const baselineInstaller = join(temporary, "predecessor.sh");
+  const bootstrapInstaller =
+    localAssets === undefined ? baselineInstaller : join(temporary, "published-bootstrap.sh");
   const environment = {
     ...options.environment,
     ...process.env,
@@ -258,6 +268,7 @@ async function verifyTransition(
   let stage:
     | "target-identity"
     | "baseline-install"
+    | "baseline-upgrade"
     | "baseline-fixture"
     | "check"
     | "upgrade"
@@ -277,28 +288,31 @@ async function verifyTransition(
     assert.ok(absent.code !== 0 && /No such object/u.test(absent.stderr));
     const absentNetwork = await run("docker", ["network", "inspect", network], environment, true);
     assert.ok(absentNetwork.code !== 0 && /No such network|not found/u.test(absentNetwork.stderr));
-    if (localAssets === undefined)
-      await run(
-        "curl",
-        [
-          "--fail",
-          "--silent",
-          "--show-error",
-          "--location",
-          "--max-time",
-          "60",
-          "--max-filesize",
-          "1048576",
-          "--output",
-          baselineInstaller,
-          "https://github.com/asadarafat/streamskope/releases/download/v0.10.3/install-browser-workbench.sh",
-        ],
-        environment,
-      );
-    const baselineSource =
-      localAssets?.installerSource ?? (await readFile(baselineInstaller, "utf8"));
-    if (localAssets === undefined)
-      assert.equal(sha(baselineSource), PREDECESSOR_ASSETS["install-browser-workbench.sh"]);
+    await run(
+      "curl",
+      [
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--max-time",
+        "60",
+        "--max-filesize",
+        "1048576",
+        "--output",
+        bootstrapInstaller,
+        "https://github.com/asadarafat/streamskope/releases/download/v0.10.3/install-browser-workbench.sh",
+      ],
+      environment,
+    );
+    const publishedSource = await readFile(bootstrapInstaller, "utf8");
+    assert.equal(sha(publishedSource), PREDECESSOR_ASSETS["install-browser-workbench.sh"]);
+    await writeFile(
+      bootstrapInstaller,
+      scopedInstaller(publishedSource, state, lab, container, network),
+      { mode: 0o700 },
+    );
+    const baselineSource = localAssets?.installerSource ?? publishedSource;
     await writeFile(
       baselineInstaller,
       scopedInstaller(baselineSource, state, lab, container, network),
@@ -310,10 +324,42 @@ async function verifyTransition(
       { mode: 0o700 },
     );
     stage = "baseline-install";
-    const installed = await run("bash", [baselineInstaller], environment);
+    const installed = await run("bash", [bootstrapInstaller], environment);
     const setupCode = (await readFile(join(data, "setup-code"), "utf8")).trim();
     assert.ok(!installed.stdout.includes(setupCode) && !installed.stderr.includes(setupCode));
-    if (localAssets === undefined) await run("docker", ["pull", predecessor.image], environment);
+    const publishedPredecessor = browserUpgradePredecessor(target.platform);
+    await run("docker", ["pull", publishedPredecessor.image], environment);
+    await verifyImage(publishedPredecessor, environment);
+    let localBootstrap: TransitionEvidence["localBootstrap"];
+    let bootstrapFixture: BrowserVaultFixture | undefined;
+    if (localAssets !== undefined) {
+      // Local delivery applies only to maintenance. Establish a real installation
+      // through the reviewed published installer, then upgrade the actual host.
+      // Maintenance also requires an initialized vault; retain its real session
+      // fixture so the intermediate upgrade must preserve its encrypted profile.
+      stage = "baseline-fixture";
+      const publishedInstallation = await json(join(state, "installation.json"));
+      bootstrapFixture = await createBrowserVaultFixture({
+        data,
+        port: Number(publishedInstallation.port),
+      });
+      stage = "baseline-upgrade";
+      const beforeBootstrap = await generations(state);
+      const upgraded = await run("bash", [baselineInstaller, "upgrade"], environment);
+      bootstrapFixture.assertNoSecrets(upgraded.stdout + upgraded.stderr);
+      assert.ok(!upgraded.stdout.includes(setupCode) && !upgraded.stderr.includes(setupCode));
+      const bootstrapped = await docker(["inspect", container], environment);
+      assert.equal(bootstrapped.Image, predecessor.imageId);
+      localBootstrap = {
+        predecessor: publishedPredecessor,
+        upgradeBackup: await verifyNewBackup(state, beforeBootstrap, publishedPredecessor, {
+          operation: "upgrade",
+          target: predecessor,
+          candidateId: String(bootstrapped.Id),
+        }),
+      };
+      await bootstrapFixture.unlockAfterReplacement();
+    }
     await verifyImage(predecessor, environment);
     for (const [name, digest] of localAssets === undefined
       ? ([
@@ -329,12 +375,14 @@ async function verifyTransition(
         ] as const))
       assert.equal(sha(await readFile(join(state, name))), digest);
     const original = await json(join(state, "installation.json"));
-    assert.equal(original.version, predecessor.version);
-    assert.equal(original.sourceRevision, predecessor.sourceRevision);
+    const originalRelease = localAssets === undefined ? original : object(original.current);
+    assert.equal(originalRelease.version, predecessor.version);
+    assert.equal(originalRelease.sourceRevision, predecessor.sourceRevision);
     assert.equal(original.uid, uid);
     assert.equal(original.gid, gid);
     stage = "baseline-fixture";
-    const fixture = await createBrowserVaultFixture({ data, port: Number(original.port) });
+    const fixture =
+      bootstrapFixture ?? (await createBrowserVaultFixture({ data, port: Number(original.port) }));
     const baseQuery = {
       id: "native-view",
       name: "Native recovery view",
@@ -514,7 +562,13 @@ async function verifyTransition(
     await fixture.lock();
     const pinnedRecord = await readFile(join(state, "installation.json"));
     stage = "pinned-resume";
-    const resumed = await run("bash", [installer], environment);
+    // An unpublished local manifest cannot satisfy public install/resume checks.
+    // Local qualification restarts the exact owner; release evidence still has
+    // to prove the real no-argument installer path against the published target.
+    const resumed =
+      localAssets === undefined
+        ? await run("bash", [installer], environment)
+        : await run("docker", ["restart", "--time", "120", String(restored.Id)], environment);
     fixture.assertNoSecrets(resumed.stdout + resumed.stderr);
     assert.deepEqual(await readFile(join(state, "installation.json")), pinnedRecord);
     assert.equal((await docker(["inspect", container], environment)).Image, predecessor.imageId);
@@ -600,6 +654,7 @@ async function verifyTransition(
       targetImageId: target.imageId,
       upgradeBackup,
       rollbackBackup,
+      ...(localBootstrap === undefined ? {} : { localBootstrap }),
       checks:
         localAssets === undefined
           ? BROWSER_UPGRADE_CHECKS
@@ -607,8 +662,11 @@ async function verifyTransition(
               ...BROWSER_UPGRADE_CHECKS.map((check) =>
                 check === "exact published predecessor"
                   ? "exact previously qualified local-staged version-2 predecessor"
-                  : check,
+                  : check === "no-argument resume preserves rolled-back release"
+                    ? "exact local-staged rolled-back owner restarts with preserved installation"
+                    : check,
               ),
+              "published installation upgraded to actual local version-2 predecessor with complete backup",
               "locator metadata persistence only; real record reload qualified separately",
             ],
     };

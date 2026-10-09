@@ -2,6 +2,7 @@ import { createServer, type Socket } from "node:net";
 import { inspect } from "node:util";
 
 import {
+  Consumer,
   createRecordsBatch,
   consumerConsumesChannel,
   instancesChannel,
@@ -14,6 +15,7 @@ import { afterEach, expect, it } from "vitest";
 
 import { RecordProvenanceConsumer } from "../../src/features/kafka/engine/record-provenance-consumer";
 import { PlatformaticConsumerFactory } from "../../src/features/kafka/engine/platformatic-consumer";
+import { waitForKafkaTopicOffsets } from "../support/kafka-topic-readiness";
 
 const TOPIC_ID = "12345678-1234-1234-1234-123456789abc";
 const REPLACEMENT_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
@@ -30,7 +32,7 @@ interface BrokerFixture {
   readonly replaceResponse: () => void;
   readonly replaceMetadata: () => void;
   readonly replaceEpoch: () => void;
-  readonly metadataError: (code: number) => void;
+  readonly metadataError: (code: number, once?: boolean) => void;
 }
 async function broker(fetchVersion: 12 | 13): Promise<BrokerFixture> {
   let port = 0;
@@ -38,6 +40,7 @@ async function broker(fetchVersion: 12 | 13): Promise<BrokerFixture> {
   let responseId = TOPIC_ID;
   let epoch = 3;
   let metadataError = 0;
+  let metadataErrorOnce = false;
   const requests: Array<{ key: number; version: number }> = [];
   const sockets = new Set<Socket>();
   const errors: Error[] = [];
@@ -113,6 +116,10 @@ async function broker(fetchVersion: 12 | 13): Promise<BrokerFixture> {
                   .appendInt32(0);
               })
               .appendTaggedFields();
+            if (metadataErrorOnce) {
+              metadataError = 0;
+              metadataErrorOnce = false;
+            }
           } else if (key === 11) {
             response
               .appendInt32(0)
@@ -245,11 +252,30 @@ async function broker(fetchVersion: 12 | 13): Promise<BrokerFixture> {
     replaceEpoch: (): void => {
       epoch = 4;
     },
-    metadataError: (code: number): void => {
+    metadataError: (code: number, once = false): void => {
       metadataError = code;
+      metadataErrorOnce = once;
     },
   };
 }
+
+it("waits for a newly created topic after a real SDK unknown-topic metadata response", async () => {
+  const fixture = await broker(13);
+  fixture.metadataError(3, true);
+  const consumer = new Consumer({
+    clientId: "topic-readiness-test",
+    groupId: "topic-readiness-test",
+    bootstrapBrokers: [`127.0.0.1:${String(fixture.port)}`],
+    retries: 0,
+    connectTimeout: 1_000,
+    requestTimeout: 1_000,
+    autocreateTopics: false,
+  });
+  owned.push(() => consumer.close(true));
+  await expect(waitForKafkaTopicOffsets(consumer, "events", TOPIC_ID, 1)).resolves.toEqual([1n]);
+  expect(fixture.requests.filter(({ key }) => key === 3)).toHaveLength(2);
+  expect(fixture.requests.filter(({ key }) => key === 2)).toHaveLength(1);
+});
 
 it("maps a real metadata UNKNOWN_TOPIC error after the SDK removes its typed cause", async () => {
   const fixture = await broker(13);

@@ -54,6 +54,30 @@ it("never accepts an actual locally qualified v2 predecessor as published-releas
     "exact predecessor and target",
   );
 });
+it.each(["local-bootstrap", "local-restart"])(
+  "never substitutes %s qualification for the published installer transition",
+  (scope) => {
+    const receipt = structuredClone(fixture());
+    if (scope === "local-bootstrap")
+      Object.assign(receipt.transition, {
+        localBootstrap: {
+          predecessor: receipt.transition.predecessor,
+          upgradeBackup: receipt.transition.upgradeBackup,
+        },
+      });
+    else
+      Object.assign(receipt.transition, {
+        checks: receipt.transition.checks.map((check) =>
+          check === "no-argument resume preserves rolled-back release"
+            ? "exact local-staged rolled-back owner restarts with preserved installation"
+            : check,
+        ),
+      });
+    expect(() => validateBrowserInstallerEvidence(receipt, expected)).toThrow(
+      "exact predecessor and target",
+    );
+  },
+);
 it.each([
   { schemaVersion: 1 },
   { schemaVersion: 2 },

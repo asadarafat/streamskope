@@ -68,7 +68,18 @@ export async function waitForKafkaTopicOffsets(
       }
     } catch (error) {
       const codes = protocolCodes(error);
-      if (codes.length === 0 || !codes.every((code) => pendingMetadata.includes(code)))
+      // The SDK converts Metadata UNKNOWN_TOPIC into this exact user error and drops
+      // its protocol cause. Only the newly created, owned topic may be pending here.
+      const unknownOwnedTopic =
+        codes.length === 0 &&
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "PLT_KFK_USER" &&
+        error.message === `Unknown topic ${topic}.`;
+      if (
+        !unknownOwnedTopic &&
+        (codes.length === 0 || !codes.every((code) => pendingMetadata.includes(code)))
+      )
         throw kafkaFixtureFailure("Fixture topic readiness failed", error);
     }
     if (Date.now() >= readyBy)

@@ -63,6 +63,7 @@ function message(position = locator): KafkaMessage {
   };
 }
 type LoadCommand = Extract<HostCommand, { command: "records.locator.load" }>;
+type CancelCommand = Extract<HostCommand, { command: "records.locator.cancel" }>;
 class Host implements StreamSkopeHost {
   readonly commands: HostCommand[] = [];
   readonly listeners = new Set<HostEventListener>();
@@ -73,13 +74,17 @@ class Host implements StreamSkopeHost {
       message: message(command.payload.locator),
     });
   stopFails = false;
+  stop: (command: CancelCommand) => Promise<void> = () => Promise.resolve();
   readonly execute = testHostExecute(async (command) => {
     this.commands.push(command);
     const result =
       command.command === "records.locator.load"
         ? { outcome: await this.load(command) }
         : command.command === "records.locator.cancel" && !this.stopFails
-          ? { requestId: command.payload.requestId, stopped: true }
+          ? await this.stop(command).then(() => ({
+              requestId: command.payload.requestId,
+              stopped: true,
+            }))
           : ((): never => {
               throw new Error("private transport error must not appear");
             })();
@@ -297,6 +302,89 @@ it.each(["loaded", "unavailable"] as const)(
     expect(result.current.references.selected).toEqual(locator);
   },
 );
+
+it("stops a new reload through its own request while the previous Stop reply is delayed", async () => {
+  const { result, host } = setup();
+  const loads = new Map<
+    string,
+    { command: LoadCommand; resolve: (outcome: KafkaRecordLocatorOutcome) => void }
+  >();
+  const stops = new Map<string, () => void>();
+  host.load = (command): Promise<KafkaRecordLocatorOutcome> =>
+    new Promise((resolve) => {
+      loads.set(command.payload.requestId, { command, resolve });
+    });
+  host.stop = (command): Promise<void> =>
+    new Promise((resolve) => {
+      stops.set(command.payload.requestId, resolve);
+    });
+  const operations: Promise<void>[] = [];
+  const start = (operation: () => Promise<void>): Promise<void> => {
+    let promise!: Promise<void>;
+    act(() => {
+      promise = operation();
+      operations.push(promise);
+    });
+    return promise;
+  };
+  const finishLoad = (requestId: string): void => {
+    const pending = loads.get(requestId)!;
+    pending.resolve({
+      ...pending.command.payload,
+      state: "loaded",
+      message: message(pending.command.payload.locator),
+    });
+  };
+  act(() => result.current.restore({ ...createEmptyKafkaSavedRecordContext(), selected: locator }));
+  try {
+    const firstLoad = start(() => result.current.reload("selected"));
+    const firstId = (host.commands[0] as LoadCommand).payload.requestId;
+    const firstStop = start(() => result.current.cancel());
+    await act(async () => {
+      finishLoad(firstId);
+      await firstLoad;
+    });
+    expect(result.current.busy).toBe(false);
+    expect(result.current.selected).toBeNull();
+
+    act(() => result.current.choose({ ...locator, offset: "19" }, "selected"));
+    const secondLoad = start(() => result.current.reload("selected"));
+    const secondId = (host.commands[2] as LoadCommand).payload.requestId;
+    const secondStop = start(() => result.current.cancel());
+    expect(
+      host.commands
+        .filter((command) => command.command === "records.locator.cancel")
+        .map((command) => command.payload.requestId),
+    ).toEqual([firstId, secondId]);
+
+    await act(async () => {
+      stops.get(firstId)!();
+      await firstStop;
+    });
+    expect(result.current.busy).toBe(true);
+    const repeatedStop = start(() => result.current.cancel());
+    expect(
+      host.commands.filter((command) => command.command === "records.locator.cancel"),
+    ).toHaveLength(2);
+    await act(async () => {
+      finishLoad(secondId);
+      await secondLoad;
+    });
+    expect(result.current.busy).toBe(false);
+    expect(result.current.selected).toBeNull();
+    expect(result.current.outcomes.selected?.state).toBe("cancelled");
+    await act(async () => {
+      stops.get(secondId)!();
+      await Promise.all([secondStop, repeatedStop]);
+    });
+  } finally {
+    await act(async () => {
+      for (const resolve of stops.values()) resolve();
+      for (const requestId of loads.keys()) finishLoad(requestId);
+      await Promise.all(operations);
+    });
+  }
+});
 
 it.each(["failed", "mismatched"] as const)(
   "retains cleanup after a %s late load reply when Stop is unconfirmed",
