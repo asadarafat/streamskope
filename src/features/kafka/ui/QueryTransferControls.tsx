@@ -22,13 +22,15 @@ import type { TextDocumentTransferPort } from "./text-document-transfer";
 export function QueryTransferControls({
   transfer,
   captureExport,
+  exportAvailable = true,
   profiles,
   readActive,
   onRestore,
   initialImport,
 }: {
   readonly transfer: TextDocumentTransferPort;
-  readonly captureExport: () => KafkaInvestigationQuery;
+  readonly captureExport: () => KafkaInvestigationQuery | null;
+  readonly exportAvailable?: boolean;
   readonly profiles: readonly ProfileSummary[];
   readonly readActive: boolean;
   readonly onRestore: (query: KafkaInvestigationQuery, profileId: string | undefined) => void;
@@ -78,6 +80,10 @@ export function QueryTransferControls({
     setNotice("");
     try {
       const query = captureExport();
+      if (query === null) {
+        setError("This group-only view has no query settings to export.");
+        return;
+      }
       if (link) {
         const location = globalThis.location;
         const base =
@@ -118,23 +124,28 @@ export function QueryTransferControls({
 
   return (
     <Stack spacing={1.5} component="section" aria-label="Portable query">
-      <Typography variant="subtitle1">Import and share</Typography>
+      <Typography variant="subtitle1">Query settings only</Typography>
       <Typography variant="body2">
-        Export the selected saved query, or the current settings if none is selected. Review filter
-        text before sharing: it can contain sensitive values. Files and links omit local profiles,
-        credentials and message records.
+        Export the selected view's query, or the current query if none is selected. Layout and
+        resource selections are not included. Review filter text before sharing: it can contain
+        sensitive values. Files and links omit local profiles, credentials and message records.
       </Typography>
       <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
-        <Button disabled={busy} onClick={() => void exportQuery(false)}>
+        <Button disabled={busy || !exportAvailable} onClick={() => void exportQuery(false)}>
           Export query JSON
         </Button>
-        <Button disabled={busy} onClick={() => void exportQuery(true)}>
+        <Button disabled={busy || !exportAvailable} onClick={() => void exportQuery(true)}>
           Copy query link
         </Button>
         <Button disabled={busy} onClick={() => fileInput.current?.click()}>
           Import query file
         </Button>
       </Stack>
+      {!exportAvailable && (
+        <Typography variant="caption">
+          This view has no query settings to export. Query files can still be imported below.
+        </Typography>
+      )}
       <input
         ref={fileInput}
         type="file"

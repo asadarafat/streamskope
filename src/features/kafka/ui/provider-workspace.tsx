@@ -12,12 +12,12 @@ import {
   type HostCommand,
   type HostCommandResponse,
   type StreamSkopeHost,
-  type KafkaInvestigationQuery,
 } from "../contracts";
 
+import type { KafkaViewSettings } from "./investigation-view-settings";
 import { KafkaWorkspace, type StreamSkopeAppProperties } from "./StreamSkopeApp";
 import { KafkaProfileCatalog } from "./profile-catalog";
-import { createKafkaQueryConnectionHandoff } from "./query-connection-handoff";
+import { createKafkaViewConnectionHandoff } from "./query-connection-handoff";
 
 /** New requests require this activation's authority; already admitted results remain unchanged. */
 export function createInteractiveKafkaHost(
@@ -54,7 +54,7 @@ export function createKafkaWorkspaceRegistration(
 ): ProviderWorkspaceRegistration {
   let initialQueryImportConsumed = false;
   const catalog = new KafkaProfileCatalog(properties);
-  const queryHandoff = createKafkaQueryConnectionHandoff();
+  const queryHandoff = createKafkaViewConnectionHandoff();
   function RegisteredKafkaWorkspace({
     controls,
   }: {
@@ -64,9 +64,9 @@ export function createKafkaWorkspaceRegistration(
       initialQueryImportConsumed ? undefined : properties.initialQueryImport,
     );
     const [initialConnectionEvent] = useState(catalog.initialConnectionEvent);
-    const [initialRestoredQuery] = useState(queryHandoff.restored);
-    const onPendingQueryConnection = useCallback(
-      (query: KafkaInvestigationQuery, profileId: string | undefined): void => {
+    const [initialRestoredView] = useState(queryHandoff.restored);
+    const onPendingViewConnection = useCallback(
+      (query: KafkaViewSettings, profileId: string | undefined): void => {
         if (controls.isInteractive()) queryHandoff.prepare(query, profileId);
       },
       [controls.isInteractive],
@@ -83,8 +83,8 @@ export function createKafkaWorkspaceRegistration(
         providerControl={undefined}
         profilesPage={controls.profilesPage}
         initialConnectionEvent={initialConnectionEvent}
-        initialRestoredQuery={initialRestoredQuery}
-        onPendingQueryConnection={onPendingQueryConnection}
+        initialRestoredView={initialRestoredView}
+        onPendingViewConnection={onPendingViewConnection}
         isInteractive={controls.isInteractive}
       />
     );

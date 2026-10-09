@@ -8,7 +8,7 @@ import {
   HOST_PROTOCOL_VERSION,
   parseHostCommand,
   parseHostCommandResponse,
-  type KafkaSavedQuery,
+  type KafkaSavedView,
 } from "../../src/features/kafka/contracts";
 import { KafkaQueryLibrary } from "../../src/features/kafka/application";
 import { AtomicKafkaQueryFileStore } from "../../src/platform/node/kafka-query-file-store";
@@ -26,10 +26,20 @@ afterEach(async () => {
   );
 });
 
-const saved: KafkaSavedQuery = {
+const saved: KafkaSavedView = {
   id: "query-1",
   name: "Historical failures",
   profileId: "local-profile",
+  view: {
+    schemaVersion: 1,
+    destination: { kind: "topic", workspace: "messages" },
+    messages: {
+      visibleColumns: ["timestamp", "key", "preview", "partition", "offset", "rules"],
+      columnWidths: [],
+      inspectorWidth: 320,
+      filtersOpen: false,
+    },
+  },
   configuration: {
     schemaVersion: 1,
     request: {
@@ -80,10 +90,14 @@ describe("saved investigation persistence", () => {
     const library = new KafkaQueryLibrary(store);
     await library.put(saved);
     const before = await readFile(file, "utf8");
-    await expect(library.put({ ...saved, id: "duplicate" })).rejects.toThrow("preserved");
+    await expect(library.put({ ...saved, id: "duplicate" })).rejects.toThrow(
+      "inspect current state",
+    );
     expect(await readFile(file, "utf8")).toBe(before);
     vi.spyOn(store, "commit").mockRejectedValueOnce(new Error("failed write"));
-    await expect(library.put({ ...saved, name: "Changed" })).rejects.toThrow("preserved");
+    await expect(library.put({ ...saved, name: "Changed" })).rejects.toThrow(
+      "inspect current state",
+    );
     expect((await library.list()).queries).toEqual([saved]);
     await library.put({ ...saved, name: "Changed" });
     expect((await library.list()).queries[0]?.name).toBe("Changed");

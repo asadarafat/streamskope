@@ -45,6 +45,7 @@ type TopicWorkbenchState = Pick<
 interface WorkbenchTopicController {
   readonly captureQuery: () => KafkaInvestigationQuery;
   readonly restoreQuery: (query: KafkaInvestigationQuery, awaitConnection: boolean) => void;
+  readonly clearQuery: () => void;
   readonly fetchMaximum: number;
   readonly fetchMode: KafkaFetchMode;
   readonly timeWindow: QueryTimeWindowControlsProps;
@@ -85,6 +86,7 @@ export function useWorkbenchTopics(
   state: TopicWorkbenchState,
 ): WorkbenchTopicController {
   const pendingQuery = useRef<KafkaInvestigationQuery | null>(null);
+  const restoredTopic = useRef<string | null>(null);
   const appliedConnection = useRef<{
     readonly host: StreamSkopeHost;
     readonly name: string | null;
@@ -204,6 +206,7 @@ export function useWorkbenchTopics(
       connected &&
       state.topicListState === "ready" &&
       selectedTopic !== null &&
+      restoredTopic.current !== selectedTopic &&
       !state.topics.includes(selectedTopic)
     ) {
       setSelectedTopic(null);
@@ -299,6 +302,8 @@ export function useWorkbenchTopics(
   const restoreQuery = useCallback(
     (query: KafkaInvestigationQuery, awaitConnection: boolean): void => {
       const validated = parseKafkaInvestigationQuery(query);
+      restoredTopic.current = validated.request.topic;
+      bindContinuation(null);
       preserveQueryDuringPreferenceHydration.current = state.preferenceSnapshot === null;
       pendingQuery.current = awaitConnection ? validated : null;
       setFetchMode(validated.request.mode);
@@ -314,8 +319,17 @@ export function useWorkbenchTopics(
       setSelectedMessageId(null);
       setMessageRequestError(undefined);
     },
-    [state.preferenceSnapshot],
+    [state.preferenceSnapshot, bindContinuation],
   );
+  const clearQuery = useCallback((): void => {
+    pendingQuery.current = null;
+    restoredTopic.current = null;
+    bindContinuation(null);
+    setSelectedTopic(null);
+    setSelectedMessageId(null);
+    setSelectionNotice(undefined);
+    setTopicWorkspace("messages");
+  }, [bindContinuation]);
 
   const startConsumption = useCallback(
     async (topic: string, search?: KafkaSearchFilter): Promise<void> => {
@@ -355,6 +369,7 @@ export function useWorkbenchTopics(
     (topic: string): void => {
       if (!connected) return;
       pendingQuery.current = null;
+      restoredTopic.current = null;
       setNavigation("topics");
       setSelectedTopic(topic);
       setTopicWorkspace("messages");
@@ -443,6 +458,7 @@ export function useWorkbenchTopics(
   return {
     captureQuery,
     restoreQuery,
+    clearQuery,
     fetchMaximum,
     fetchMode,
     timeWindow: {

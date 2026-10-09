@@ -352,12 +352,33 @@ the backup and prepare a separately reviewed migration instead of editing the
 metadata to bypass validation.
 
 The vault encrypts credentials and protected trust material, **not the entire
-data directory**. Endpoint names, preferences, queries, observations, installed
+data directory**. Endpoint names, preferences, saved views, observations, installed
 plugin metadata and recovery identifiers remain sensitive filesystem data.
 Protect all backups. Desktop profile files do not carry their OS encryption keys
 into this host; automatic desktop-to-browser credential migration is not
 implemented. Exports and target-side messages remain separate from the backup.
 Never attach the data directory or its backup to a public issue.
+
+### Recover data before an incompatible downgrade
+
+Normal **rollback** switches to the recorded older image only if the current
+complete data is compatible. It does not restore a historical backup. Newer
+saved-view libraries or profile formats can therefore correctly block rollback.
+Use a reviewed manual recovery with the host stopped if you need to restore older
+data; there is no installer command that performs this restoration for you.
+
+For an in-place downgrade, retain the current deployment records and installation
+identity for the normal rollback transaction. Preserve a separate complete copy
+of the changed data. Verify the chosen pre-upgrade backup's complete inventory,
+hashes, permissions and numeric ownership before restoring it. Keep the existing
+`streamskope-data` directory and its original `vault.lock` inode, holding that
+file's exclusive advisory lock and the existing `installer.lock` throughout the
+recovery. Do not unlink those lock files or replace them with backup copies.
+Restore all other data entries from the complete verified backup, then use normal
+rollback once compatibility checks pass. This controlled data restoration differs
+from the full deployment disaster recovery above. Keep the current host if you
+cannot establish backup integrity and exclusive ownership; do not erase recovery
+files to bypass a refusal.
 
 ## Troubleshooting
 

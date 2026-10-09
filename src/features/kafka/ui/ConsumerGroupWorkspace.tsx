@@ -167,10 +167,12 @@ export function ConsumerGroupWorkspace({
   component = "main",
   selectedGroupId,
   snapshot,
+  detailRequested = true,
 }: {
   readonly component?: "main" | "section";
   readonly selectedGroupId: string | null;
   readonly snapshot: KafkaConsumerGroupDetailSnapshot;
+  readonly detailRequested?: boolean;
 }): React.JSX.Element {
   const memberRows = useMemo(
     () => snapshot.group?.members.map(memberRow) ?? [],
@@ -181,7 +183,7 @@ export function ConsumerGroupWorkspace({
     [snapshot.group?.offsets],
   );
 
-  if (selectedGroupId === null || snapshot.state === "unavailable") {
+  if (selectedGroupId === null) {
     return (
       <Box
         aria-label="Consumer group workspace"
@@ -198,6 +200,32 @@ export function ConsumerGroupWorkspace({
           detail="Choose a group from Resources to inspect members, assignments, offsets, and lag."
           label="Consumer group workspace state"
           title="Choose a consumer group"
+        />
+      </Box>
+    );
+  }
+
+  if (
+    !detailRequested ||
+    snapshot.groupId !== selectedGroupId ||
+    snapshot.state === "unavailable"
+  ) {
+    return (
+      <Box
+        aria-label="Consumer group workspace"
+        component={component}
+        sx={{
+          bgcolor: "background.paper",
+          display: "grid",
+          minHeight: 0,
+          p: 2,
+          placeItems: "center",
+        }}
+      >
+        <WorkspaceState
+          title="Consumer group not loaded"
+          label="Consumer group detail status"
+          detail={`Refresh to inspect ${selectedGroupId}. A saved selection does not establish that this group is currently available.`}
         />
       </Box>
     );

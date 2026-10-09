@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { openPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
 import { AtomicKafkaProfileFileStore } from "../../src/platform/node/kafka-profile-file-store";
+import { AtomicKafkaQueryFileStore } from "../../src/platform/node/kafka-query-file-store";
 import { browserInstallerFixture } from "../support/browser-installer-fixture";
 
 type Fixture = Awaited<ReturnType<typeof browserInstallerFixture>>;
@@ -381,6 +382,70 @@ describe.skipIf(process.platform !== "linux")(
       expect(`${resumed.stdout}${resumed.stderr}`).toContain("0.10.1");
       assertPrivate(result);
       assertPrivate(rolledBack);
+    }, 30_000);
+
+    it("retains both view generations and protected siblings in the complete ownership-held backup", async () => {
+      const { host, next } = await initialized();
+      const queries = join(host.data, "queries");
+      await mkdir(queries, { mode: 0o700 });
+      const source = `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          queries: [
+            {
+              id: "incident",
+              name: "Old investigation",
+              configuration: {
+                schemaVersion: 1,
+                request: { topic: "orders", mode: "earliest", maxMessages: 10 },
+              },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`;
+      const path = join(queries, "kafka-queries.json");
+      await writeFile(path, source, { mode: 0o600 });
+      const store = new AtomicKafkaQueryFileStore(path);
+      const [legacy] = await store.load();
+      expect(legacy).toBeDefined();
+      await store.commit([
+        {
+          ...legacy!,
+          name: "Updated investigation",
+          view: {
+            schemaVersion: 1,
+            destination: { kind: "topic", workspace: "monitor" },
+            messages: {
+              visibleColumns: ["key", "preview"],
+              columnWidths: [],
+              inspectorWidth: 400,
+              filtersOpen: true,
+            },
+          },
+        },
+      ]);
+      const lease = await stat(join(host.data, "vault.lock"));
+      const expected = await dataBytes(host);
+      for (const file of ["queries/kafka-queries.json", "queries/kafka-queries.json.pre-views-v1"])
+        (expected as Map<string, Buffer>).set(file, await readFile(join(host.data, file)));
+      expect(expected.get("queries/kafka-queries.json.pre-views-v1")?.toString()).toBe(source);
+      await host.control({ verifyLeaseDuringDeploy: true });
+      const result = await host.run(next.file, ["upgrade"]);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect((await control(host)).leaseContenderBlocked).toBe(true);
+      expect((await stat(join(host.data, "vault.lock"))).ino).toBe(lease.ino);
+      const [generation] = await generations(host);
+      const backup = join(host.state, "backups", generation ?? "", "attempt-1", "data");
+      for (const [file, content] of expected) {
+        expect(await readFile(join(backup, file))).toEqual(content);
+        expect(await readFile(join(host.data, file))).toEqual(content);
+        expect((await stat(join(backup, file))).mode & 0o777).toBe(
+          (await stat(join(host.data, file))).mode & 0o777,
+        );
+      }
+      assertPrivate(result);
     }, 30_000);
 
     it("refuses a lease file without an initialized vault before any downtime", async () => {

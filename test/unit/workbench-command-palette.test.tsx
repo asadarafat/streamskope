@@ -26,14 +26,14 @@ it("navigates enabled results with arrows and Enter, and leaves disabled command
       onSelectProfile={vi.fn()}
       actions={[
         { id: "read", label: "Read unavailable", disabled: true, run: unavailable },
-        { id: "queries", label: "Saved queries", disabled: false, run: queries },
+        { id: "queries", label: "Saved views", disabled: false, run: queries },
       ]}
     />,
   );
   const search = screen.getByRole("searchbox");
   await waitFor(() => expect(search).toHaveFocus());
   await user.keyboard("{ArrowDown}");
-  expect(screen.getByRole("button", { name: "Saved queries" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Saved views" })).toHaveFocus();
   await user.keyboard("{Enter}");
   expect(queries).toHaveBeenCalledTimes(1);
   await user.click(search);

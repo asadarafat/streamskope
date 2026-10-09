@@ -38,6 +38,7 @@ interface ConsumerGroupsPageProperties {
   readonly onSelect: (groupId: string) => void;
   readonly requestError?: string;
   readonly selectedGroupId: string | null;
+  readonly detailRequested?: boolean;
 }
 
 export function ConsumerGroupsPage({
@@ -52,6 +53,7 @@ export function ConsumerGroupsPage({
   onSelect,
   requestError,
   selectedGroupId,
+  detailRequested = true,
 }: ConsumerGroupsPageProperties): React.JSX.Element {
   const normalizedFilter = filter.trim().toLocaleLowerCase("en-US");
   const groups = useMemo(
@@ -119,11 +121,16 @@ export function ConsumerGroupsPage({
               : "Not loaded";
 
   if (selectedGroupId !== null) {
+    const currentDetail = detailRequested && detail.groupId === selectedGroupId;
     return (
       <Box
         aria-label="Consumer group detail page"
         component="main"
-        sx={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minHeight: 0 }}
+        sx={{
+          display: "grid",
+          gridTemplateRows: requestError ? "auto auto minmax(0, 1fr)" : "auto minmax(0, 1fr)",
+          minHeight: 0,
+        }}
       >
         <ResourcePageHeader
           action={
@@ -131,14 +138,16 @@ export function ConsumerGroupsPage({
               {host && (
                 <ResetOffsetsAction
                   host={host}
-                  group={detail.group}
-                  enabled={connected}
+                  group={
+                    currentDetail && detail.group?.id === selectedGroupId ? detail.group : null
+                  }
+                  enabled={connected && currentDetail && detail.state === "ready"}
                   canWrite={canWrite}
                 />
               )}
               <Button
                 aria-label={`Refresh consumer group ${selectedGroupId}`}
-                disabled={!connected || detail.state === "loading"}
+                disabled={!connected || (currentDetail && detail.state === "loading")}
                 onClick={() => onSelect(selectedGroupId)}
                 startIcon={<WorkbenchIcon name="refresh" />}
                 variant="outlined"
@@ -150,10 +159,12 @@ export function ConsumerGroupsPage({
           description="Members, assignments, committed offsets, and confirmed lag."
           title={selectedGroupId}
         />
+        {requestError && <Alert severity="error">{requestError}</Alert>}
         <ConsumerGroupWorkspace
           component="section"
           selectedGroupId={selectedGroupId}
           snapshot={detail}
+          detailRequested={detailRequested}
         />
       </Box>
     );

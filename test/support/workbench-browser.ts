@@ -57,14 +57,25 @@ export async function openWorkbenchResource(
 
 export async function openTopicDetail(page: Page, topic: string): Promise<void> {
   const detail = page.getByRole("main", { name: "Topic detail page" });
-  if (!(await detail.isVisible())) {
-    const inventory = page.getByRole("main", { name: "Topics page" });
-    if (!(await inventory.isVisible())) {
-      await openWorkbenchResource(page, "Topics");
-    }
-    await page.getByRole("button", { exact: true, name: topic }).click();
+  const inventory = page.getByRole("main", { name: "Topics page" });
+  const heading = detail.getByRole("heading", { exact: true, name: topic });
+  if (!(await detail.isVisible()) && !(await inventory.isVisible())) {
+    await openWorkbenchResource(page, "Topics");
   }
-  await expect(detail.getByRole("heading", { exact: true, name: topic })).toBeVisible();
+  await expect(detail.or(inventory)).toBeVisible();
+  if (!(await heading.isVisible())) {
+    // Sidebar navigation restores the current investigation. Use its explicit
+    // inventory breadcrumb when the requested topic is different.
+    if (await detail.isVisible()) {
+      await page
+        .getByRole("navigation", { name: "Breadcrumb", exact: true })
+        .getByRole("button", { name: "Topics", exact: true })
+        .click();
+    }
+    await expect(inventory).toBeVisible();
+    await inventory.getByRole("button", { exact: true, name: topic }).click();
+  }
+  await expect(heading).toBeVisible();
 }
 
 export async function fetchTopicMessages(page: Page, topic: string): Promise<void> {

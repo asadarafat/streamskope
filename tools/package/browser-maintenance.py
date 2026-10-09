@@ -332,6 +332,7 @@ def inspection(value, policy, version, target=None):
     legacy_target = target is not None and not target["inspector"]
     kafka_maximum = 3 if legacy_target else 4
     preference_maximum = 1 if legacy_target else 2
+    query_maximum = 1 if legacy_target else 2
     exact(
         value,
         {"schemaVersion", "dataContract", "hostRelease", "outcome", "documents", "unverified"},
@@ -362,7 +363,7 @@ def inspection(value, policy, version, target=None):
         require(
             isinstance(formats, list)
             and all(
-                integer(number, 1, kafka_maximum if kind in ("kafka-profiles", "profile-backups") else preference_maximum if kind == "preferences" else 1)
+                integer(number, 1, kafka_maximum if kind in ("kafka-profiles", "profile-backups") else preference_maximum if kind == "preferences" else query_maximum if kind == "queries" else 1)
                 for number in formats
             )
             and formats == sorted(set(formats)),
@@ -977,6 +978,16 @@ class Maintenance:
     def preflight(self, inspector, data=None, *, target=None):
         require(inspector["inspector"], "unsupported-target")
         path = self.data if data is None else Path(data)
+        if target is not None and not target["inspector"]:
+            # A failed first mutation may leave v1 plus a new predecessor sidecar.
+            # Its actual format remains v1, but an old image never qualified this layout.
+            require(
+                not any(
+                    os.path.lexists(path / "queries" / ("kafka-queries.json.pre-views-v1" + suffix))
+                    for suffix in [""] + ["." + str(number) for number in range(1, 100)]
+                ),
+                "preflight-blocked",
+            )
         nonce = str(uuid.uuid4())
         name = "streamskope-preflight-" + nonce
         try:

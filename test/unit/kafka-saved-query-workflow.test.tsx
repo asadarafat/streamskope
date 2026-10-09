@@ -8,13 +8,15 @@ import { afterEach, expect, it, vi } from "vitest";
 import { KafkaQueryLibrary } from "../../src/features/kafka/application";
 import {
   HOST_PROTOCOL_VERSION,
+  createDefaultKafkaInvestigationView,
   createKafkaQueryLink,
   type HostCommand,
   type HostEvent,
   type HostEventListener,
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
-import { SavedQueriesDialog } from "../../src/features/kafka/ui/SavedQueriesDialog";
+import { SavedViewsDialog } from "../../src/features/kafka/ui/SavedViewsDialog";
+import type { KafkaViewSettings } from "../../src/features/kafka/ui/investigation-view-settings";
 import { StreamSkopeApp } from "../../src/features/kafka/ui/StreamSkopeApp";
 import { testHostAccepted, testHostExecute } from "../support/host-response";
 import { pasteText } from "../support/paste-text";
@@ -72,7 +74,7 @@ it("opens an incoming link for explicit review without connecting, reading or sa
   render(
     <StreamSkopeApp host={host} initialQueryImport={new URL(createKafkaQueryLink(query)).hash} />,
   );
-  expect(await screen.findByRole("dialog", { name: "Saved queries" })).toBeVisible();
+  expect(await screen.findByRole("dialog", { name: "Saved views" })).toBeVisible();
   await user.keyboard("{Control>}k{/Control}");
   expect(screen.queryByRole("dialog", { name: "Search and commands" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Open imported query" })).not.toBeInTheDocument();
@@ -86,7 +88,7 @@ it("opens an incoming link for explicit review without connecting, reading or sa
     ),
   ).toBe(false);
   expect((await host.library.list()).queries).toEqual([]);
-  expect(screen.queryByRole("dialog", { name: "Saved queries" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Saved views" })).not.toBeInTheDocument();
 });
 
 it("saves, reopens and deletes query settings without starting a read or keeping old coverage", async () => {
@@ -116,10 +118,10 @@ it("saves, reopens and deletes query settings without starting a read or keeping
     screen.getByRole("textbox", { name: "JSON expression" }),
     '$.status == "failed"',
   );
-  await user.click(screen.getByRole("button", { name: "Saved queries" }));
-  await pasteText(user, screen.getByRole("textbox", { name: "Query name" }), "Failed orders");
-  await user.click(screen.getByRole("button", { name: "Save current as new" }));
-  expect(await screen.findByText("Query saved.")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Saved views" }));
+  await pasteText(user, screen.getByRole("textbox", { name: "View name" }), "Failed orders");
+  await user.click(screen.getByRole("button", { name: "Save current view" }));
+  expect(await screen.findByText("View saved.")).toBeVisible();
   expect((await host.library.list()).queries[0]).toMatchObject({
     name: "Failed orders",
     configuration: {
@@ -155,11 +157,11 @@ it("saves, reopens and deletes query settings without starting a read or keeping
     }),
   );
   expect(screen.getByRole("region", { name: "Read coverage" })).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Saved queries" }));
-  await user.click(screen.getByRole("combobox", { name: "Saved query" }));
+  await user.click(screen.getByRole("button", { name: "Saved views" }));
+  await user.click(screen.getByRole("combobox", { name: "Saved view" }));
   await user.click(await screen.findByRole("option", { name: "Failed orders" }));
   const beforeOpen = host.commands.length;
-  await user.click(screen.getByRole("button", { name: "Open query" }));
+  await user.click(screen.getByRole("button", { name: "Open view" }));
   expect(screen.getByRole("combobox", { name: "Read mode" })).toHaveTextContent("First N");
   expect(screen.getByRole("textbox", { name: "JSON expression" })).toHaveValue(
     '$.status == "failed"',
@@ -168,13 +170,13 @@ it("saves, reopens and deletes query settings without starting a read or keeping
   expect(host.commands.slice(beforeOpen)).toEqual([]);
   expect(screen.getByRole("button", { name: "Load messages orders" })).toBeEnabled();
 
-  await user.click(screen.getByRole("button", { name: "Saved queries" }));
-  await user.click(screen.getByRole("combobox", { name: "Saved query" }));
+  await user.click(screen.getByRole("button", { name: "Saved views" }));
+  await user.click(screen.getByRole("combobox", { name: "Saved view" }));
   await user.click(await screen.findByRole("option", { name: "Failed orders" }));
   await user.click(screen.getByRole("button", { name: "Delete selected" }));
   expect((await host.library.list()).queries).toHaveLength(1);
-  await user.click(screen.getByRole("button", { name: "Delete query" }));
-  expect(await screen.findByText("Query deleted.")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Delete view" }));
+  expect(await screen.findByText("View deleted.")).toBeVisible();
   expect((await host.library.list()).queries).toEqual([]);
 }, 15_000);
 
@@ -188,6 +190,7 @@ it("requires a missing profile reference to be resolved and blocks opening durin
     id: "incident",
     name: "Incident",
     profileId: "deleted-profile",
+    view: createDefaultKafkaInvestigationView(),
     configuration,
   });
   const user = userEvent.setup();
@@ -195,23 +198,62 @@ it("requires a missing profile reference to be resolved and blocks opening durin
   const props = {
     host,
     profiles: [],
-    currentTopic: null,
-    captureCurrent: (): typeof configuration => configuration,
+    currentResource: null,
+    currentQueryAvailable: false,
+    captureCurrent: (): KafkaViewSettings => ({
+      configuration,
+      view: createDefaultKafkaInvestigationView(),
+    }),
     onRestore,
     onClose: vi.fn(),
   };
-  const { rerender } = render(<SavedQueriesDialog {...props} readActive={false} />);
-  await user.click(await screen.findByRole("combobox", { name: "Saved query" }));
+  const { rerender } = render(<SavedViewsDialog {...props} readActive={false} />);
+  await user.click(await screen.findByRole("combobox", { name: "Saved view" }));
   await user.click(await screen.findByRole("option", { name: "Incident" }));
   expect(screen.getByText(/The saved profile is unavailable/)).toBeVisible();
-  const open = screen.getByRole("button", { name: "Open query" });
+  const open = screen.getByRole("button", { name: "Open view" });
   expect(open).toBeDisabled();
   await user.click(screen.getByRole("combobox", { name: "Local connection profile" }));
   await user.click(screen.getByRole("option", { name: "Choose a connection when opening" }));
-  rerender(<SavedQueriesDialog {...props} readActive />);
+  rerender(<SavedViewsDialog {...props} readActive />);
   expect(open).toBeDisabled();
-  rerender(<SavedQueriesDialog {...props} readActive={false} />);
+  rerender(<SavedViewsDialog {...props} readActive={false} />);
   await user.click(open);
-  expect(onRestore).toHaveBeenCalledExactlyOnceWith(configuration, undefined);
+  expect(onRestore).toHaveBeenCalledExactlyOnceWith(
+    { configuration, view: createDefaultKafkaInvestigationView() },
+    undefined,
+  );
+  expect(host.commands.map((command) => command.command)).toEqual(["queries.list"]);
+});
+
+it("opens a group-only saved view and clearly disables query-only export", async () => {
+  const host = new LibraryHost();
+  const settings = {
+    configuration: null,
+    view: createDefaultKafkaInvestigationView({ kind: "consumer-group", groupId: "payments" }),
+  };
+  await host.library.put({ id: "payments", name: "Payments group", ...settings });
+  const user = userEvent.setup();
+  const onRestore = vi.fn();
+  render(
+    <SavedViewsDialog
+      host={host}
+      profiles={[]}
+      currentResource={null}
+      currentQueryAvailable={false}
+      captureCurrent={() => settings}
+      readActive={false}
+      onRestore={onRestore}
+      onClose={vi.fn()}
+    />,
+  );
+  await user.click(await screen.findByRole("combobox", { name: "Saved view" }));
+  await user.click(await screen.findByRole("option", { name: "Payments group" }));
+  await user.click(screen.getByText("Import/share query settings"));
+  expect(screen.getByRole("button", { name: "Export query JSON" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Copy query link" })).toBeDisabled();
+  expect(screen.getByText(/This view has no query settings to export/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Open view" }));
+  expect(onRestore).toHaveBeenCalledExactlyOnceWith(settings, undefined);
   expect(host.commands.map((command) => command.command)).toEqual(["queries.list"]);
 });

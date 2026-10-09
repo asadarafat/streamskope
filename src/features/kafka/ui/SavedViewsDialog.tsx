@@ -4,10 +4,7 @@ import { Stack, Typography } from "@mui/material";
 import {
   HOST_PROTOCOL_VERSION,
   HostContractValidationError,
-  type HostCommand,
-  type KafkaInvestigationQuery,
-  type KafkaQueryLibrarySnapshot,
-  type KafkaSavedQuery,
+  type KafkaSavedView,
   type ProfileSummary,
   type StreamSkopeHost,
 } from "../contracts";
@@ -22,23 +19,22 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
-type QueryCommand = Extract<
-  HostCommand,
-  { readonly command: "queries.list" | "queries.put" | "queries.delete" }
->;
-
+import { useInvestigationLibrary } from "./use-investigation-library";
+import { queryViewSettings, type KafkaViewSettings } from "./investigation-view-settings";
 import { QueryTransferControls } from "./QueryTransferControls";
 import {
   browserTextDocumentTransfer,
   type TextDocumentTransferPort,
 } from "./text-document-transfer";
 
-export function SavedQueriesDialog({
+export function SavedViewsDialog({
   host,
   profiles,
-  currentTopic,
+  currentResource,
+  currentQueryAvailable,
   readActive,
   captureCurrent,
+  restoreError,
   onRestore,
   onClose,
   transfer = browserTextDocumentTransfer,
@@ -46,23 +42,23 @@ export function SavedQueriesDialog({
 }: {
   readonly host: StreamSkopeHost;
   readonly profiles: readonly ProfileSummary[];
-  readonly currentTopic: string | null;
+  readonly currentResource: string | null;
+  readonly currentQueryAvailable: boolean;
   readonly readActive: boolean;
-  readonly captureCurrent: () => KafkaInvestigationQuery;
-  readonly onRestore: (query: KafkaInvestigationQuery, profileId: string | undefined) => void;
+  readonly captureCurrent: () => KafkaViewSettings;
+  readonly onRestore: (settings: KafkaViewSettings, profileId: string | undefined) => void;
+  readonly restoreError?: string | undefined;
   readonly onClose: () => void;
   readonly transfer?: TextDocumentTransferPort | undefined;
   readonly initialImport?: string | undefined;
 }): React.JSX.Element {
-  const [snapshot, setSnapshot] = useState<KafkaQueryLibrarySnapshot>();
+  const { snapshot, busy, error: hostError, execute, refresh } = useInvestigationLibrary(host);
   const [selectedId, setSelectedId] = useState("");
   const [name, setName] = useState("");
   const [profileId, setProfileId] = useState("");
   const [error, setError] = useState<string>();
   const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const alive = useRef(true);
   const nameInput = useRef<HTMLInputElement>(null);
   const focusAfterWrite = useRef(false);
   const selected = snapshot?.queries.find((query) => query.id === selectedId);
@@ -79,64 +75,16 @@ export function SavedQueriesDialog({
     }
   }, [busy, status]);
 
-  useEffect(() => {
-    let current = true;
-    alive.current = true;
-    setBusy(true);
-    void host
-      .execute({
-        command: "queries.list",
-        id: globalThis.crypto.randomUUID(),
-        payload: {},
-        version: HOST_PROTOCOL_VERSION,
-      })
-      .then((response) => {
-        if (!current) return;
-        if (response.ok) setSnapshot(response.result.snapshot);
-        else setError(response.error.summary);
-      })
-      .catch(() => {
-        if (current) setError("Saved queries could not be loaded. Reopen this dialog to retry.");
-      })
-      .finally(() => {
-        if (current) setBusy(false);
-      });
-    return (): void => {
-      current = false;
-      alive.current = false;
-    };
-  }, [host]);
-
-  async function execute(command: QueryCommand): Promise<boolean> {
-    focusAfterWrite.current = command.command !== "queries.list";
-    setBusy(true);
-    setError(undefined);
-    setStatus("");
-    try {
-      const response = await host.execute(command);
-      if (!alive.current) return false;
-      if (!response.ok) {
-        setError(`${response.error.summary} ${response.error.recovery}`);
-        return false;
-      }
-      setSnapshot(response.result.snapshot);
-      return true;
-    } catch {
-      if (alive.current)
-        setError("The host did not confirm the saved-query operation. Refresh before retrying.");
-      return false;
-    } finally {
-      if (alive.current) setBusy(false);
-    }
-  }
-
   async function save(replace: boolean): Promise<void> {
     try {
-      const query: KafkaSavedQuery = {
+      focusAfterWrite.current = true;
+      setError(undefined);
+      setStatus("");
+      const query: KafkaSavedView = {
         id: replace && selected !== undefined ? selected.id : globalThis.crypto.randomUUID(),
         name,
         ...(profileId.length === 0 ? {} : { profileId }),
-        configuration: captureCurrent(),
+        ...captureCurrent(),
       };
       if (
         await execute({
@@ -147,37 +95,39 @@ export function SavedQueriesDialog({
         })
       ) {
         setSelectedId(query.id);
-        setStatus("Query saved.");
+        setStatus("View saved.");
       }
     } catch (failure) {
       setError(
         failure instanceof HostContractValidationError
           ? failure.message
-          : "Choose a topic and valid query settings before saving.",
+          : "Choose a topic or consumer group and valid view settings before saving.",
       );
     }
   }
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="saved-query-title">
-      <DialogTitle id="saved-query-title">Saved queries</DialogTitle>
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="saved-view-title">
+      <DialogTitle id="saved-view-title">Saved views</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Typography variant="body2">
-            Save topic, read bounds, filters and limits. Opening restores the controls; choose a
-            connection and run the read explicitly.
+            Save a topic task or consumer group with its query settings, columns and layout. Opening
+            restores the controls; connection and reads remain explicit actions.
           </Typography>
           {snapshot?.durability === "session" ? (
             <Alert severity="info">
-              Browser development keeps queries until the host restarts. The desktop app saves them
-              across restarts.
+              This host keeps views only until it restarts. Durable desktop and browser hosts save
+              views across restarts.
             </Alert>
           ) : null}
-          {error === undefined ? null : <Alert severity="error">{error}</Alert>}
+          {error || hostError || restoreError ? (
+            <Alert severity="error">{error ?? hostError ?? restoreError}</Alert>
+          ) : null}
           {status.length === 0 ? null : <Typography role="status">{status}</Typography>}
           <TextField
             select
-            label="Saved query"
+            label="Saved view"
             value={selected?.id ?? ""}
             disabled={busy}
             onChange={(event) => {
@@ -192,7 +142,7 @@ export function SavedQueriesDialog({
               setStatus("");
             }}
           >
-            <MenuItem value="">Choose a saved query</MenuItem>
+            <MenuItem value="">Choose a saved view</MenuItem>
             {snapshot?.queries.map((query) => (
               <MenuItem key={query.id} value={query.id}>
                 {query.name}
@@ -200,7 +150,7 @@ export function SavedQueriesDialog({
             ))}
           </TextField>
           <TextField
-            label="Query name"
+            label="View name"
             inputRef={nameInput}
             value={name}
             disabled={busy}
@@ -208,7 +158,7 @@ export function SavedQueriesDialog({
             slotProps={{ htmlInput: { maxLength: 128 } }}
             helperText={
               nameUsed
-                ? "This name is already saved. Replace the selected query or choose a new name."
+                ? "This name is already saved. Replace the selected view or choose a new name."
                 : "Use a name that describes the investigation."
             }
           />
@@ -233,17 +183,30 @@ export function SavedQueriesDialog({
               before opening.
             </Alert>
           ) : null}
+          {selected && (
+            <Typography component="section" aria-label="Selected view settings" variant="body2">
+              {selected.view.destination.kind === "topic"
+                ? `${selected.configuration!.request.topic} · ${selected.view.destination.workspace}`
+                : `Consumer group ${selected.view.destination.groupId}`}
+              {` · ${selected.view.messages.visibleColumns.length} visible columns · inspector ${selected.view.messages.inspectorWidth}px`}
+            </Typography>
+          )}
           <Typography variant="caption">
-            {currentTopic === null
-              ? "Choose a topic to save a new query."
-              : `Current topic: ${currentTopic}`}
+            Views save settings only. Records, bookmarks, probe/configuration drafts, encodings,
+            protection policy and active jobs are not restored. Current host protection still
+            applies.
+          </Typography>
+          <Typography variant="caption">
+            {currentResource === null
+              ? "Choose a topic task or consumer group to save a view."
+              : `Current resource: ${currentResource}`}
           </Typography>
           <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
             <Button
               disabled={
                 busy ||
                 snapshot === undefined ||
-                currentTopic === null ||
+                currentResource === null ||
                 name.trim().length === 0 ||
                 nameUsed ||
                 profileMissing ||
@@ -251,13 +214,13 @@ export function SavedQueriesDialog({
               }
               onClick={() => void save(false)}
             >
-              Save current as new
+              Save current view
             </Button>
             <Button
               disabled={
                 busy ||
                 selected === undefined ||
-                currentTopic === null ||
+                currentResource === null ||
                 name.trim().length === 0 ||
                 profileMissing
               }
@@ -274,14 +237,15 @@ export function SavedQueriesDialog({
           </Stack>
           {confirmDelete && selected !== undefined ? (
             <Alert severity="warning">
-              Delete saved query “{selected.name}”? This removes only its saved settings.
+              Delete saved view “{selected.name}”? This removes only its saved settings.
               <Stack direction="row" spacing={1}>
                 <Button disabled={busy} onClick={() => setConfirmDelete(false)}>
-                  Keep query
+                  Keep view
                 </Button>
                 <Button
                   disabled={busy}
                   onClick={() => {
+                    focusAfterWrite.current = true;
                     void execute({
                       command: "queries.delete",
                       id: globalThis.crypto.randomUUID(),
@@ -291,44 +255,42 @@ export function SavedQueriesDialog({
                       if (done) {
                         setSelectedId("");
                         setConfirmDelete(false);
-                        setStatus("Query deleted.");
+                        setStatus("View deleted.");
                       }
                     });
                   }}
                 >
-                  Delete query
+                  Delete view
                 </Button>
               </Stack>
             </Alert>
           ) : null}
           {readActive ? (
             <Typography variant="caption">
-              Stop the current read before opening another query.
+              Stop the current read or latency probe before opening another view.
             </Typography>
           ) : null}
-          <QueryTransferControls
-            transfer={transfer}
-            captureExport={() => selected?.configuration ?? captureCurrent()}
-            profiles={profiles}
-            readActive={readActive}
-            onRestore={onRestore}
-            initialImport={initialImport}
-          />
+          <details open={initialImport !== undefined}>
+            <Typography component="summary" variant="body2">
+              Import/share query settings
+            </Typography>
+            <QueryTransferControls
+              transfer={transfer}
+              captureExport={() =>
+                selected ? selected.configuration : captureCurrent().configuration
+              }
+              exportAvailable={selected ? selected.configuration !== null : currentQueryAvailable}
+              profiles={profiles}
+              readActive={readActive}
+              onRestore={(query, id) => onRestore(queryViewSettings(query), id)}
+              initialImport={initialImport}
+            />
+          </details>
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button
-          disabled={busy}
-          onClick={() =>
-            void execute({
-              command: "queries.list",
-              id: globalThis.crypto.randomUUID(),
-              payload: {},
-              version: HOST_PROTOCOL_VERSION,
-            })
-          }
-        >
-          Refresh queries
+        <Button disabled={busy} onClick={() => void refresh()}>
+          Refresh views
         </Button>
         <Button onClick={onClose}>Close</Button>
         <Button
@@ -336,10 +298,13 @@ export function SavedQueriesDialog({
           disabled={busy || selected === undefined || profileMissing || readActive}
           onClick={() => {
             if (selected !== undefined)
-              onRestore(selected.configuration, profileId.length === 0 ? undefined : profileId);
+              onRestore(
+                { configuration: selected.configuration, view: selected.view },
+                profileId.length === 0 ? undefined : profileId,
+              );
           }}
         >
-          Open query
+          Open view
         </Button>
       </DialogActions>
     </Dialog>

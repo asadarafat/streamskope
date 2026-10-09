@@ -116,53 +116,72 @@ has focus; **Escape** closes the palette and returns focus to its opener.
 Selecting a profile does not connect. Run **Connect profile …** separately.
 Topic results are labelled **Open and read topic …** and start the current read
 mode. The palette also offers **Load messages …** or **Start tail …**,
-**Search broker …**, **Stop current read**, and **Saved queries**. Unavailable
+**Search broker …**, **Stop current read**, and **Saved views**. Unavailable
 actions remain disabled until their connection, topic, filter or read prerequisites
-are satisfied. The shortcut leaves an already-open editor or query dialog in charge
+are satisfied. The shortcut leaves an already-open editor or saved-view dialog in charge
 of keyboard focus.
 
 Use **Tab/Shift+Tab** to reach read controls and filters. In the message grid,
 arrow keys move through cells and **Shift+Space** selects the row for inspection.
-Tab to **Close inspector** and press **Enter** to return to the messages. Query
-save/delete operations return focus to **Query name**, so the dialog remains
+Tab to **Close inspector** and press **Enter** to return to the messages. View
+save/delete operations return focus to **View name**, so the dialog remains
 usable when the action that initiated the write becomes disabled.
 
-### Keep query settings
+### Keep investigation views
 
-1. Choose a topic, read mode, limit and filters. Use a custom time interval for
-   a repeatable incident window. Saving **Last 2 minutes** captures absolute times
+1. Choose a topic and its **Messages**, **Monitor**, **Latency**, **Rules** or
+   **Configuration** task, or select a **Consumer group**. For a topic, choose the
+   read mode, limit and filters. Saving **Last 2 minutes** captures absolute times
    at the moment you save; reopening does not move that interval forward.
-2. Open **Queries** in the header, enter **Query name**, optionally choose a
-   **Local connection profile**, and click **Save current as new**.
-3. Later, choose the entry in **Saved query** and click **Open query**. Opening
-   restores the controls and clears previous results. It never connects or reads
-   automatically. Stop a running read before opening another query.
-4. Connect the chosen profile if needed, check the topic and interval, and click
-   **Load messages**, **Start tail** or **Search broker** explicitly.
-5. To change an entry, open it, adjust the controls, return to **Queries**, select
-   it and use **Replace selected**. **Delete selected** asks for confirmation and
-   removes only the saved configuration.
+2. On Messages, use the grid column menu to choose visible columns and drag a
+   column edge to resize it. Open or close **Filters** and resize the inspector
+   with its separator. A compact screen may temporarily hide columns; it does not
+   change your saved choices.
+3. Open **Views** in the header, enter **View name**, optionally choose a
+   **Local connection profile**, and click **Save current view**.
+4. Later, choose the entry in **Saved view** and click **Open view**. Opening
+   restores the destination and controls and clears old records, comparison and
+   read coverage. It never connects, reads records, refreshes group detail or
+   starts a latency probe. Stop an active read/probe and wait for confirmation
+   before opening another view.
+5. Connect the chosen profile if needed, review the destination and settings,
+   then explicitly read messages, start a probe or refresh the consumer group.
+   A group selection starts as **Consumer group not loaded**; absence from the
+   bounded inventory does not prove the group was deleted. Topic Configuration
+   can load its existing read-only metadata when opened.
+6. To change an entry, adjust the controls, return to **Views**, select it and use
+   **Replace selected**. **Delete selected** asks for confirmation and removes only
+   the saved settings. Sidebar navigation preserves the current resource;
+   breadcrumbs return to the topic or group inventory.
 
-Queries retain topic, bounds, filters and limits, plus an optional local profile
-reference. They contain no broker credentials or message records. Filters can
-still contain sensitive text you enter; treat saved query files accordingly.
+Views retain a topic task or group identity, optional background topic query,
+column visibility and widths, inspector width and filter-panel state, plus an
+optional local profile ID. A group-only view needs no topic. A deleted profile
+must be replaced or its reference cleared; a different profile with the same name
+is not substituted. Missing topics remain selected for review before a read.
+
+Views contain no credentials, records, bookmarks, comparison baselines,
+continuation tokens, running jobs, latency results or configuration drafts. They
+do not replace current encoding or protection preferences. Filters and resource
+names can still contain sensitive text; protect saved-view files accordingly.
 The dynamic **Rule matches only** switch cannot be saved; use a JSON expression
-for a repeatable independent filter. A deleted profile must be replaced or its
-reference cleared before opening. Missing topics still require operator review.
+for a repeatable independent filter.
 
-The desktop stores up to 100 queries in its application data at
-`queries/kafka-queries.json`, using atomic private writes. Back up this file with
-the [application data](recovery.md). Browser development keeps its query library
-only until the development host restarts. An unreadable, oversized or unsupported
-library is preserved and reported as unavailable; restore a valid backup before
-retrying. StreamSkope does not silently replace that file with an empty library.
+Desktop and the installed browser host store up to 100 views in
+`queries/kafka-queries.json`. Browser development keeps its library only until
+that development host restarts. Existing query entries open with default layout;
+the first save/delete that changes the library writes version 2 and preserves the exact legacy
+file as a private `.pre-views-v1` predecessor. An unreadable, oversized or
+unsupported library is preserved and reported as unavailable. Restore a valid
+backup before retrying. Back up the entire [application data](recovery.md),
+including predecessor files; older hosts cannot read version 2.
 
 ### Share query settings
 
-1. Open **Queries** and select a saved query, or leave the selection empty to use
+1. Open **Views → Import/share query settings** and select a saved view, or leave the selection empty to use
    the current topic settings. Review your filter text before sharing it.
 2. Choose **Export query JSON** for a configuration file, or **Copy query link**.
-3. The recipient opens **Queries → Import and share**, chooses **Import query file**,
+3. The recipient opens **Views → Import/share query settings**, chooses **Import query file**,
    or pastes the link into **Query JSON or link** and clicks **Review import**.
 4. Review the displayed topic, absolute time bounds, filters and limits. Choose a
    local connection if appropriate, then **Open imported query**. Connect and run
@@ -174,7 +193,9 @@ from the visible address when loaded. Desktop links use `streamskope://app/#quer
 as a portable string to paste into the dialog; this version does not register an
 operating-system link handler to launch the app. JSON files work in either host.
 
-The format is a version 1 query document, limited to 32 KiB. Imports reject
+This remains a version 1 query document, limited to 32 KiB. It shares query settings
+only, not the saved destination, columns, layout or local profile. Group-only views
+without a background topic query cannot export query settings. Imports reject
 unknown fields, future schema versions, credentials, local profile identifiers,
 message records and unsupported expressions. Invalid imports leave the current
 investigation unchanged. Opening a valid import restores controls without
@@ -343,7 +364,7 @@ unavailable count, even after all captured offsets have been reached.
 
 Only the latest continuation is available, and it can be used once within 30
 minutes of its creation. Starting another read, disconnecting, changing record
-settings or restarting the host invalidates it. Saved queries keep search settings;
+settings or restarting the host invalidates it. Saved views keep search settings;
 they do not save a continuation. To change criteria or include new arrivals, start
 a new search.
 

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,11 @@ spec = importlib.util.spec_from_file_location(
 )
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+rehearsal_spec = importlib.util.spec_from_file_location(
+    "backup_rehearsal", Path(__file__).resolve().parents[2] / "tools/package/browser-backup-rehearsal.py"
+)
+rehearsal = importlib.util.module_from_spec(rehearsal_spec)
+rehearsal_spec.loader.exec_module(rehearsal)
 
 POLICY = {
     "dataCompatibility": {
@@ -212,6 +218,79 @@ class TransactionTest(unittest.TestCase):
     def tearDown(self):
         self.fixture.close()
 
+    def recovery_fixture(self):
+        f = self.fixture
+        (f.root / "installer.lock").write_bytes(b"")
+        os.chmod(f.root / "installer.lock", 0o600)
+        queries = f.data / "queries"
+        queries.mkdir(mode=0o700)
+        os.chown(queries, f.owner, f.gid)
+        f.write("queries/kafka-queries.json", b'{"schemaVersion":1,"queries":[]}\n')
+        backup = f.root / "full-backup"
+        backup.mkdir(mode=0o700)
+        shutil.copytree(f.data, backup / "data")
+        for path in [backup / "data", *(backup / "data").rglob("*")]:
+            os.chown(path, f.owner, f.gid)
+        entries = m.inventory(backup / "data", f.owner, f.gid)
+        manifest = m.canonical({"entries": entries, "dataSnapshotSha256": m.digest(m.canonical(entries))})
+        (backup / "inventory.json").write_bytes(manifest)
+        os.chmod(backup / "inventory.json", 0o600)
+        f.write("queries/kafka-queries.json", b'{"schemaVersion":2,"queries":[]}\n')
+        f.write("queries/kafka-queries.json.pre-views-v1", b'{"schemaVersion":1,"queries":[]}\n')
+        f.write("nats-profiles.json", b"newer protected profiles")
+        return backup, m.digest(manifest), entries
+
+    def test_explicit_operator_restore_preserves_changed_full_tree_and_original_lease_inode(self):
+        f = self.fixture
+        backup, digest, expected = self.recovery_fixture()
+        before = m.inventory(f.data, f.owner, f.gid)
+        inode = (f.data / "vault.lock").stat().st_ino
+        preserved = f.root / "changed-data"
+        result = rehearsal.restore(f.data, backup, preserved, f.owner, f.gid, digest)
+        self.assertEqual(m.inventory(f.data, f.owner, f.gid), expected)
+        self.assertEqual(m.inventory(preserved, f.owner, f.gid), before)
+        self.assertEqual((f.data / "vault.lock").stat().st_ino, inode)
+        self.assertTrue(result["originalLeaseInodePreserved"])
+        self.assertTrue(result["originalInstallerLockInodePreserved"])
+        self.assertEqual((f.data / "nats-profiles.json").read_bytes(), b"protected profiles")
+        self.assertEqual((preserved / "nats-profiles.json").read_bytes(), b"newer protected profiles")
+        self.assertEqual(result["backupInventorySha256"], digest)
+
+    def test_operator_restore_refuses_changed_backup_before_preserving_or_mutating_live_tree(self):
+        f = self.fixture
+        backup, digest, _ = self.recovery_fixture()
+        (backup / "data/nats-profiles.json").write_bytes(b"changed after backup qualification")
+        before = m.inventory(f.data, f.owner, f.gid)
+        preserved = f.root / "changed-data"
+        with self.assertRaises(rehearsal.m.Refused):
+            rehearsal.restore(f.data, backup, preserved, f.owner, f.gid, digest)
+        self.assertFalse(preserved.exists())
+        self.assertEqual(m.inventory(f.data, f.owner, f.gid), before)
+
+    def test_operator_restore_cannot_replace_data_while_original_lease_is_held(self):
+        f = self.fixture
+        backup, digest, _ = self.recovery_fixture()
+        before = m.inventory(f.data, f.owner, f.gid)
+        preserved = f.root / "changed-data"
+        with (f.data / "vault.lock").open("rb") as lease:
+            m.fcntl.flock(lease, m.fcntl.LOCK_EX | m.fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                rehearsal.restore(f.data, backup, preserved, f.owner, f.gid, digest)
+        self.assertFalse(preserved.exists())
+        self.assertEqual(m.inventory(f.data, f.owner, f.gid), before)
+
+    def test_operator_restore_refuses_an_active_installer_without_changing_data(self):
+        f = self.fixture
+        backup, digest, _ = self.recovery_fixture()
+        before = m.inventory(f.data, f.owner, f.gid)
+        preserved = f.root / "changed-data"
+        with (f.root / "installer.lock").open("rb") as owner:
+            m.fcntl.flock(owner, m.fcntl.LOCK_EX | m.fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                rehearsal.restore(f.data, backup, preserved, f.owner, f.gid, digest)
+        self.assertFalse(preserved.exists())
+        self.assertEqual(m.inventory(f.data, f.owner, f.gid), before)
+
     def test_current_codec_preferences_do_not_authorize_legacy_rollback(self):
         value = report("0.11.0")
         row = next(row for row in value["documents"] if row["kind"] == "preferences")
@@ -224,6 +303,41 @@ class TransactionTest(unittest.TestCase):
         self.assertEqual(rejected.exception.reason, "preflight-blocked")
         row["formats"] = [1]
         self.assertEqual(m.inspection(value, POLICY, "0.11.0", legacy), value)
+
+    def test_current_views_do_not_authorize_legacy_rollback(self):
+        value = report("0.11.0")
+        row = next(row for row in value["documents"] if row["kind"] == "queries")
+        row.update(state="verified", count=1, formats=[1, 2])
+        current = release("0.11.0", "b")
+        legacy = {**release("0.10.3", "a"), "inspector": False}
+        self.assertEqual(m.inspection(value, POLICY, "0.11.0", current), value)
+        with self.assertRaises(m.Refused) as rejected:
+            m.inspection(value, POLICY, "0.11.0", legacy)
+        self.assertEqual(rejected.exception.reason, "preflight-blocked")
+        row["formats"] = [1]
+        self.assertEqual(m.inspection(value, POLICY, "0.11.0", legacy), value)
+        row["formats"] = [3]
+        with self.assertRaises(m.Refused):
+            m.inspection(value, POLICY, "0.11.0", current)
+
+    def test_legacy_query_sidecars_refuse_fallback_before_docker_or_data_mutation(self):
+        f = self.fixture
+        (f.data / "queries").mkdir(mode=0o700)
+        baseline = b'{"schemaVersion":1,"queries":[]}\n'
+        (f.data / "queries/kafka-queries.json").write_bytes(baseline)
+        legacy = {**f.source, "inspector": False}
+        engine = f.open()
+        calls = list(f.calls)
+        for suffix in ("", ".1", ".99"):
+            path = f.data / ("queries/kafka-queries.json.pre-views-v1" + suffix)
+            path.write_bytes(baseline)
+            with self.assertRaises(m.Refused) as rejected:
+                m.Maintenance.preflight(engine, f.target, target=legacy)
+            self.assertEqual(rejected.exception.reason, "preflight-blocked")
+            self.assertEqual(f.calls, calls)
+            self.assertEqual(path.read_bytes(), baseline)
+            self.assertEqual((f.data / "queries/kafka-queries.json").read_bytes(), baseline)
+            path.unlink()
 
     def test_current_inspection_does_not_authorize_security_profiles_for_legacy_target(self):
         for kind in ("kafka-profiles", "profile-backups"):

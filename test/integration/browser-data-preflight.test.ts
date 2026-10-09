@@ -19,7 +19,10 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS } from "../../src/features/kafka/contracts";
+import {
+  KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+  parseKafkaQueryLibraryDocument,
+} from "../../src/features/kafka/contracts";
 import type { PluginManifest, PluginProfileSource } from "../../src/plugins/contracts";
 import { inspectBrowserData } from "../../src/platform/node/browser-data-preflight";
 import {
@@ -43,6 +46,28 @@ const execute = promisify(execFile);
 const roots: string[] = [];
 const secret = "private-preflight-sentinel";
 const timestamp = "2026-10-08T12:00:00.000Z";
+const legacyQuery = {
+  id: "private-view",
+  name: "Private investigation",
+  configuration: {
+    schemaVersion: 1,
+    request: { topic: "private-topic", mode: "earliest", maxMessages: 10 },
+  },
+};
+const currentView = {
+  ...legacyQuery,
+  configuration: null,
+  view: {
+    schemaVersion: 1,
+    destination: { kind: "consumer-group", groupId: "private-group" },
+    messages: {
+      visibleColumns: ["timestamp", "preview"],
+      columnWidths: [{ column: "preview", pixels: 250 }],
+      inspectorWidth: 400,
+      filtersOpen: true,
+    },
+  },
+};
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -310,11 +335,148 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
       count: 1,
       formats: [1],
     });
-    for (const kind of ["rules", "topic-history", "queries", "trust-recipes", "observations"])
+    for (const kind of ["rules", "topic-history", "trust-recipes", "observations"])
       expect(row(report, kind)).toMatchObject({ state: "verified", formats: [1] });
+    expect(row(report, "queries")).toMatchObject({ state: "verified", formats: [2] });
     expect(row(report, "preferences")).toMatchObject({ state: "verified", formats: [2] });
     for (const method of [kafkaLoad, natsLoad, network, fetch])
       expect(method).not.toHaveBeenCalled();
+  });
+
+  it("inspects actual v1 and v2 libraries and every bounded predecessor generation without migration", async () => {
+    const root = await seed();
+    const legacy = `${JSON.stringify({ schemaVersion: 1, queries: [legacyQuery] }, null, 2)}\n`;
+    await write(root, "queries/kafka-queries.json", legacy);
+    const load = vi.spyOn(AtomicKafkaQueryFileStore.prototype, "load");
+    const commit = vi.spyOn(AtomicKafkaQueryFileStore.prototype, "commit");
+    expect(row(await check(root), "queries")).toEqual({
+      kind: "queries",
+      state: "verified",
+      count: 1,
+      formats: [1],
+      reason: null,
+    });
+    for (const suffix of ["", ".1", ".99"])
+      await write(root, `queries/kafka-queries.json.pre-views-v1${suffix}`, legacy);
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({ schemaVersion: 2, queries: [currentView] }),
+    );
+    const report = await check(root);
+    expect(report.outcome).toBe("eligible");
+    expect(row(report, "queries")).toEqual({
+      kind: "queries",
+      state: "verified",
+      count: 1,
+      formats: [1, 2],
+      reason: null,
+    });
+    expect(load).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("inspects a near-capacity legacy library even when canonical defaults expand beyond the write cap", async () => {
+    const root = await seed();
+    const document = (length: number): unknown => ({
+      schemaVersion: 1,
+      queries: Array.from({ length: 100 }, (_, index) => ({
+        ...legacyQuery,
+        id: `query-${String(index)}`,
+        name: `Query ${String(index)}`,
+        configuration: {
+          ...legacyQuery.configuration,
+          filters: {
+            key: "",
+            value: "",
+            offset: "",
+            timestamp: "",
+            partition: null,
+            expression: `$.label == "${"界".repeat(length)}"`,
+          },
+        },
+      })),
+    });
+    let low = 0;
+    let high = 4_000;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (Buffer.byteLength(JSON.stringify(document(middle))) <= 1_048_576) low = middle;
+      else high = middle - 1;
+    }
+    const value = document(low);
+    const bytes = JSON.stringify(value);
+    expect(Buffer.byteLength(bytes)).toBeGreaterThan(1_048_276);
+    expect(
+      Buffer.byteLength(JSON.stringify(parseKafkaQueryLibraryDocument(value))),
+    ).toBeGreaterThan(1_048_576);
+    await write(root, "queries/kafka-queries.json", bytes);
+    expect(row(await check(root), "queries")).toEqual({
+      kind: "queries",
+      state: "verified",
+      count: 100,
+      formats: [1],
+      reason: null,
+    });
+    expect(await readdir(join(root, "queries"))).toEqual(["kafka-queries.json"]);
+  });
+
+  it("accepts the compact v2 default topic view but never invents a topic for a null configuration", async () => {
+    const root = await seed();
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({ schemaVersion: 2, queries: [legacyQuery] }),
+    );
+    expect(row(await check(root), "queries")).toMatchObject({
+      state: "verified",
+      count: 1,
+      formats: [2],
+    });
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({ schemaVersion: 2, queries: [{ ...legacyQuery, configuration: null }] }),
+    );
+    expect(row(await check(root), "queries")).toMatchObject({
+      state: "blocked",
+      reason: "unsupported-format",
+    });
+  });
+
+  it.each([".0", ".01", ".100", ".tmp"])(
+    "refuses unrecognized query backup suffix %s",
+    async (suffix) => {
+      const root = await seed();
+      await write(
+        root,
+        `queries/kafka-queries.json.pre-views-v1${suffix}`,
+        JSON.stringify({ schemaVersion: 1, queries: [legacyQuery] }),
+      );
+      expect(row(await check(root), "filesystem")).toMatchObject({
+        state: "blocked",
+        reason: "unrecognized-path",
+      });
+    },
+  );
+
+  it.each([
+    JSON.stringify({ schemaVersion: 2, queries: [currentView] }),
+    JSON.stringify({ schemaVersion: 1, queries: [{ ...legacyQuery, password: secret }] }),
+    JSON.stringify({ schemaVersion: 999, queries: [] }),
+    `{${secret}`,
+  ])("refuses invalid predecessor bytes without changing any sibling data", async (contents) => {
+    const root = await seed();
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({ schemaVersion: 2, queries: [currentView] }),
+    );
+    await write(root, "queries/kafka-queries.json.pre-views-v1", contents);
+    expect(row(await check(root), "queries")).toMatchObject({
+      state: "blocked",
+      reason: "unsupported-format",
+    });
   });
 
   it.each(["kafka-profiles.json", "nats-profiles.json", "vault.json"])(

@@ -113,7 +113,7 @@ def inspect_message_limits(page=None):
         "Analysis result": f"{limits['analysisResult'] / 1024:g} KiB",
         "Analysis evaluation work": f"{limits['analysisWork']:,} units",
         "Analysis work per record": f"{limits['analysisRecordWork']:,} units",
-        "Saved query library": f"{limits['queries']} queries / {limits['libraryBytes'] / 1_048_576:g} MiB",
+        "Saved view library": f"{limits['queries']} views / {limits['libraryBytes'] / 1_048_576:g} MiB",
         "Portable query document": f"{limits['queryBytes'] / 1024:g} KiB",
     }
     rows = {}

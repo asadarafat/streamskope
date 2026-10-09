@@ -2,16 +2,28 @@ import { useMemo } from "react";
 import { Typography } from "@mui/material";
 import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
 
-import type { KafkaExploredMessage, KafkaRuleSeverity } from "../contracts";
+import {
+  KAFKA_MESSAGE_COLUMN_MIN_WIDTHS,
+  KAFKA_INVESTIGATION_VIEW_LIMITS,
+  type KafkaMessageViewColumn,
+  type KafkaExploredMessage,
+  type KafkaRuleSeverity,
+} from "../contracts";
 import {
   streamSkopeLayout,
   streamSkopeMuiMonospaceTypography,
 } from "../../../platform/ui/createStreamSkopeTheme";
 
+import {
+  useMessageViewPresentation,
+  type MessageViewPresentationController,
+} from "./use-message-view-presentation";
+import { messageGridVisibility, changedMessageGridColumns } from "./message-grid-presentation";
 import { highestKafkaRuleSeverity } from "./state";
 
 export interface MessageDataGridProperties {
   readonly compactInspectorColumns?: boolean;
+  readonly presentation?: MessageViewPresentationController;
   readonly messages: readonly KafkaExploredMessage[];
   readonly onSelectMessage: (id: string | null) => void;
   readonly selectedMessageId: string | null;
@@ -126,10 +138,28 @@ const compactColumns: readonly GridColDef<KafkaExploredMessage>[] = columns.map(
 
 export function MessageDataGrid({
   compactInspectorColumns = false,
+  presentation,
   messages,
   onSelectMessage,
   selectedMessageId,
 }: MessageDataGridProperties): React.JSX.Element {
+  const localPresentation = useMessageViewPresentation();
+  const settings = presentation ?? localPresentation;
+  const visibleColumns = messageGridVisibility(settings.value, compactInspectorColumns);
+  const configuredColumns = useMemo(
+    () =>
+      (compactInspectorColumns ? compactColumns : columns).map((column) => {
+        const width = settings.value.columnWidths.find(
+          (entry) => entry.column === column.field,
+        )?.pixels;
+        return {
+          ...column,
+          maxWidth: KAFKA_INVESTIGATION_VIEW_LIMITS.columnWidthMaximum,
+          ...(width === undefined ? {} : { width, flex: 0 }),
+        };
+      }),
+    [compactInspectorColumns, settings.value.columnWidths],
+  );
   const rowSelectionModel = useMemo<GridRowSelectionModel>(
     () => ({
       ids: new Set(selectedMessageId === null ? [] : [selectedMessageId]),
@@ -142,10 +172,27 @@ export function MessageDataGrid({
     <DataGrid
       aria-label="Kafka messages"
       columnHeaderHeight={streamSkopeLayout.tableHeaderHeight}
-      columnVisibilityModel={
-        compactInspectorColumns ? { offset: false, partition: false, preview: false } : {}
+      columnVisibilityModel={visibleColumns}
+      onColumnVisibilityModelChange={(model) =>
+        settings.change({
+          visibleColumns: changedMessageGridColumns(settings.value, compactInspectorColumns, model),
+        })
       }
-      columns={compactInspectorColumns ? compactColumns : columns}
+      onColumnWidthChange={({ colDef, width }) => {
+        const column = colDef.field as KafkaMessageViewColumn;
+        if (!(column in KAFKA_MESSAGE_COLUMN_MIN_WIDTHS)) return;
+        const pixels = Math.max(
+          KAFKA_MESSAGE_COLUMN_MIN_WIDTHS[column],
+          Math.min(KAFKA_INVESTIGATION_VIEW_LIMITS.columnWidthMaximum, Math.round(width)),
+        );
+        settings.change({
+          columnWidths: [
+            ...settings.value.columnWidths.filter((entry) => entry.column !== column),
+            { column, pixels },
+          ],
+        });
+      }}
+      columns={configuredColumns}
       density="compact"
       disableColumnMenu={false}
       disableMultipleRowSelection

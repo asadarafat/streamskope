@@ -88,7 +88,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 58 as const;
+export const HOST_PROTOCOL_VERSION = 59 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",

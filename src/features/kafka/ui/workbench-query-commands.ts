@@ -59,7 +59,7 @@ export function investigationCommands({
     ...(expression.length === 0 ? {} : { expression }),
   };
   return [
-    { id: "queries", label: "Saved queries", disabled: false, run: openQueries },
+    { id: "queries", label: "Saved views", disabled: false, run: openQueries },
     {
       id: "profile",
       label: `${connected && selectedProfile?.active ? "Disconnect" : "Connect"} profile ${selectedProfile?.name ?? "(select a profile)"}`,

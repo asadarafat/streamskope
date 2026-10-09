@@ -237,6 +237,9 @@ export async function verifyBrowserUpgrade(options: {
     | "upgrade"
     | "upgrade-backup"
     | "target-unlock"
+    | "view-migration"
+    | "incompatible-rollback"
+    | "operator-full-restore"
     | "rollback"
     | "rollback-backup"
     | "predecessor-unlock"
@@ -295,6 +298,21 @@ export async function verifyBrowserUpgrade(options: {
     assert.equal(original.gid, gid);
     stage = "baseline-fixture";
     const fixture = await createBrowserVaultFixture({ data, port: Number(original.port) });
+    const legacyQuery = {
+      id: "native-view",
+      name: "Native recovery view",
+      configuration: {
+        schemaVersion: 1,
+        request: { topic: "recovery-orders", mode: "earliest", maxMessages: 10 },
+      },
+    };
+    await fixture.kafkaCommand("queries.put", { query: legacyQuery });
+    const queryPath = join(data, "queries", "kafka-queries.json");
+    const legacyQueryBytes = await readFile(queryPath);
+    assert.deepEqual(JSON.parse(legacyQueryBytes.toString("utf8")), {
+      schemaVersion: 1,
+      queries: [legacyQuery],
+    });
     const treeBefore = await inventory(data);
     const recordBefore = await readFile(join(state, "installation.json"));
     const runningBefore = await docker(["inspect", container], environment);
@@ -326,6 +344,85 @@ export async function verifyBrowserUpgrade(options: {
     stage = "target-unlock";
     await fixture.unlockAfterReplacement();
     verifyBrowserNativeWorkers(String(targetContainer.Id));
+    stage = "view-migration";
+    const listed = object((await fixture.kafkaCommand("queries.list", {})).snapshot).queries;
+    assert.ok(Array.isArray(listed) && listed.length === 1);
+    assert.deepEqual(
+      await readFile(queryPath),
+      legacyQueryBytes,
+      "Pure candidate listing cannot migrate legacy storage.",
+    );
+    const expectedView = {
+      schemaVersion: 1,
+      destination: { kind: "topic", workspace: "monitor" },
+      messages: {
+        visibleColumns: ["timestamp", "key", "preview"],
+        columnWidths: [{ column: "preview", pixels: 360 }],
+        inspectorWidth: 416,
+        filtersOpen: true,
+      },
+    };
+    const changedView = { ...legacyQuery, view: expectedView };
+    await fixture.kafkaCommand("queries.put", { query: changedView });
+    assert.deepEqual(await readFile(`${queryPath}.pre-views-v1`), legacyQueryBytes);
+    assert.deepEqual(JSON.parse((await readFile(queryPath)).toString("utf8")), {
+      schemaVersion: 2,
+      queries: [changedView],
+    });
+    await fixture.lock();
+    await fixture.unlockAfterReplacement();
+    assert.deepEqual(object((await fixture.kafkaCommand("queries.list", {})).snapshot).queries, [
+      changedView,
+    ]);
+    stage = "incompatible-rollback";
+    const changedTree = await inventory(data);
+    const incompatible = await run("bash", [installer, "rollback"], environment, true);
+    fixture.assertNoSecrets(incompatible.stdout + incompatible.stderr);
+    assert.notEqual(
+      incompatible.code,
+      0,
+      "An old target must not accept the migrated view library.",
+    );
+    assert.ok((incompatible.stdout + incompatible.stderr).includes("compatibility inspection"));
+    assert.deepEqual(await inventory(data), changedTree);
+    assert.deepEqual(await json(join(state, "installation.json")), current);
+    assert.equal((await docker(["inspect", container], environment)).Id, targetContainer.Id);
+    await fixture.verifyUnlocked();
+    stage = "operator-full-restore";
+    await run("docker", ["stop", "--time", "120", String(targetContainer.Id)], environment);
+    const stoppedTarget = await docker(["inspect", String(targetContainer.Id)], environment);
+    assert.equal(object(stoppedTarget.State).Running, false);
+    assert.equal(object(stoppedTarget.State).OOMKilled, false);
+    assert.equal(object(stoppedTarget.State).ExitCode, 0);
+    const [upgradeGeneration] = (await generations(state)).filter(
+      (entry) => !beforeUpgrade.includes(entry),
+    );
+    assert.ok(upgradeGeneration !== undefined);
+    const restoredBackup = object(
+      JSON.parse(
+        (
+          await run(
+            "python3",
+            [
+              resolve("tools/package/browser-backup-rehearsal.py"),
+              data,
+              join(state, "backups", upgradeGeneration, "attempt-1"),
+              join(state, "preserved-after-view-migration"),
+              String(uid),
+              String(gid),
+              upgradeBackup.inventorySha256,
+            ],
+            environment,
+          )
+        ).stdout,
+      ),
+    );
+    assert.equal(restoredBackup.originalLeaseInodePreserved, true);
+    assert.equal(restoredBackup.originalInstallerLockInodePreserved, true);
+    assert.equal(restoredBackup.restoredDataSnapshotSha256, upgradeBackup.dataSnapshotSha256);
+    assert.deepEqual(await readFile(queryPath), legacyQueryBytes);
+    await run("docker", ["start", String(targetContainer.Id)], environment);
+    await fixture.unlockAfterReplacement();
     const beforeRollback = await generations(state);
     stage = "rollback";
     const rolledBack = await run("bash", [installer, "rollback"], environment);
@@ -349,6 +446,10 @@ export async function verifyBrowserUpgrade(options: {
     });
     stage = "predecessor-unlock";
     await fixture.unlockAfterReplacement();
+    assert.deepEqual(object((await fixture.kafkaCommand("queries.list", {})).snapshot).queries, [
+      legacyQuery,
+    ]);
+    assert.deepEqual(await readFile(queryPath), legacyQueryBytes);
     verifyBrowserNativeWorkers(String(restored.Id));
     await fixture.lock();
     const pinnedRecord = await readFile(join(state, "installation.json"));

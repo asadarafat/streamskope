@@ -25,8 +25,10 @@ export function TopicDetailPage({
       sx={{
         bgcolor: "background.default",
         display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr)",
         gridTemplateRows: "auto auto minmax(0, 1fr)",
         minHeight: 0,
+        minWidth: 0,
         overflow: "hidden",
       }}
     >
@@ -34,7 +36,14 @@ export function TopicDetailPage({
       <TopicSectionTabs onChange={onWorkspaceChange} value={workspace} />
       <Box
         id="streamskope-task-workspace"
-        sx={{ display: "grid", height: "100%", minHeight: 0, overflow: "hidden" }}
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr)",
+          height: "100%",
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "hidden",
+        }}
       >
         {children}
       </Box>
