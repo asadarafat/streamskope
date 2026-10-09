@@ -164,6 +164,7 @@ it("the three fixed lanes execute exactly the complete CI command sequence", asy
     "production-startup",
     "workbench",
     "nats-workspace",
+    "structured-records",
     "plugin-lifecycle",
   ]);
   expect(browser.flatMap(({ args }) => args)).toEqual(
@@ -173,6 +174,7 @@ it("the three fixed lanes execute exactly the complete CI command sequence", asy
       "test/e2e/web-observations-recovery.spec.ts",
       "test/e2e/web-responsive-workbench.spec.ts",
       "test/e2e/web-nats-workspace.spec.ts",
+      "test/e2e/web-structured-events.spec.ts",
       "test/e2e/web-plugin-installation.spec.ts",
     ]),
   );

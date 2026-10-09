@@ -118,7 +118,7 @@ describe("Electron operational-preference backend composition", () => {
       },
     });
     expect(JSON.parse(await readFile(preferencePath(userDataPath), "utf8"))).toMatchObject({
-      version: 1,
+      version: 2,
     });
     await second.shutdown();
   });
@@ -185,7 +185,7 @@ describe("Electron operational-preference backend composition", () => {
         ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
         protection: { readOnly: true, maskKey: true, maskHeaders: [], valuePaths: [""] },
       },
-      version: 1,
+      version: 2,
     });
     await backend.shutdown();
   });

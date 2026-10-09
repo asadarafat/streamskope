@@ -466,7 +466,7 @@ describe("StreamSkope workbench shell", () => {
     await user.keyboard("{ArrowLeft}");
     expect(separator).toHaveAttribute("aria-valuenow", "336");
     expect(localStorage.getItem("streamskope-inspector-pane-width")).toBe("336");
-    await user.click(within(inspector).getByRole("tab", { name: "Raw" }));
+    await user.click(within(inspector).getByRole("tab", { name: "Projection text" }));
     expect(inspector).toHaveTextContent('{"status":"ready"}');
 
     const streamAction = screen.getByRole("button", { name: "Stop tail test" });
@@ -542,7 +542,9 @@ describe("StreamSkope workbench shell", () => {
     await user.click(within(inspector).getByRole("tab", { name: "Value" }));
     expect(inspector).toHaveTextContent("Payload truncated");
     expect(inspector).toHaveTextContent("1,048,577 bytes");
-    expect(within(inspector).queryByRole("tab", { name: "Raw" })).not.toBeInTheDocument();
+    expect(
+      within(inspector).queryByRole("tab", { name: "Projection text" }),
+    ).not.toBeInTheDocument();
   });
 
   it("clears an inspector selection when its row leaves the bounded result", async () => {
