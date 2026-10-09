@@ -7,7 +7,8 @@ import { expect, test } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
-import { provisionSeededFixtureTopic } from "../support/kafka-fixture";
+import { startStructuredBrowserFixture } from "../support/structured-browser-fixture";
+import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
 import { connectLocalProfile } from "../support/web-profile-workflow";
 import { fetchTopicMessages, observeBrowserDiagnostics } from "../support/workbench-browser";
 
@@ -28,19 +29,20 @@ test.use({ trace: "off", viewport: { width: 1440, height: 1000 } });
 test("decodes, compares, traces and previews a schema sample in the real browser host", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   page.setDefaultTimeout(30_000);
   page.setDefaultNavigationTimeout(60_000);
-  const fixture = await provisionSeededFixtureTopic();
+  const fixture = await startStructuredBrowserFixture();
   const backend = createKafkaBackend();
-  const launch = await launchProductWebFixture({
-    backend,
-    hostPort: await port(),
-    rendererPort: await port(),
-    rendererRoot: resolve(process.cwd()),
-  });
+  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   const diagnostics = observeBrowserDiagnostics(page);
   try {
+    launch = await launchProductWebFixture({
+      backend,
+      hostPort: await port(),
+      rendererPort: await port(),
+      rendererRoot: resolve(process.cwd()),
+    });
     await page.goto(launch.browserUrl);
     await page.getByRole("button", { name: "Preferences", exact: true }).click();
     let preferences = page.getByRole("dialog", { name: "Workbench Preferences" });
@@ -59,7 +61,7 @@ test("decodes, compares, traces and previews a schema sample in the real browser
     );
     await preferences.getByRole("button", { name: "Close", exact: true }).click();
     try {
-      await connectLocalProfile(page);
+      await connectLocalProfile(page, fixture.connection);
     } catch (cause) {
       if (diagnostics.problems.length > 0) {
         throw new Error(`Browser connection workflow failed: ${diagnostics.problems.join("\n")}`, {
@@ -159,7 +161,9 @@ test("decodes, compares, traces and previews a schema sample in the real browser
         body: JSON.stringify(diagnostics.problems),
         contentType: "application/json",
       });
-    await launch.close();
-    await fixture.dispose();
+    await disposeNativeFixtureResources([
+      (): Promise<void> => launch?.close() ?? backend.shutdown(),
+      (): Promise<void> => fixture.dispose(),
+    ]);
   }
 });

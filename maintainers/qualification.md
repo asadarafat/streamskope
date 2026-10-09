@@ -147,8 +147,10 @@ tracing, schema-3 export and selective masking before matching.
 That protocol fixture does not qualify a Registry vendor deployment. The separate
 `test/kafka/record-codec-real.test.ts` uses the owned AIO Kafka and real Registry,
 including referenced schemas. The required runtime browser structured-events suite
-covers saved codec selection, profile connection, record inspection, export,
-comparison and tracing and retains
+owns a separate native Kafka broker and controlled Registry protocol endpoint; it
+does not require a pre-existing AIO deployment. It covers saved codec selection,
+profile connection, record inspection, export, comparison, tracing and schema sample
+generation and retains
 `test-results/web/structured-records/playwright-results.json`.
 A development-host restart only establishes its declared storage mode; durable
 codec migration and rollback need the actual native browser/desktop storage

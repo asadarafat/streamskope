@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
 
 import { Admin, Producer } from "@platformatic/kafka";
 import { expect, it, vi } from "vitest";
@@ -21,6 +20,7 @@ import {
 } from "../../src/features/kafka/ui/message-operations";
 import { startNativeKafkaFixture } from "../support/native-kafka-fixture";
 import { fetchFixtureToken, loadFixtureConfig } from "../support/kafka-fixture";
+import { createSchemaRegistryProtocolFixture } from "../support/schema-registry-protocol-fixture";
 
 it("prepares mixed real Kafka records once for protected search, trace and export using their own writer IDs", async () => {
   const fixture = await startNativeKafkaFixture();
@@ -60,32 +60,25 @@ async function qualifyRecords(
     const event = parseHostEvent(JSON.parse(JSON.stringify(wire)));
     if (event.event === "messages.batch") messages.push(...event.payload.messages);
   });
-  const registered: Readonly<
-    Record<number, { schemaType: string; schema: string; references: readonly unknown[] }>
-  > = {
-    7: {
+  const registry = createSchemaRegistryProtocolFixture([
+    {
+      id: 7,
+      subject: "event-avro",
+      version: 1,
       schemaType: "AVRO",
       references: [],
       schema:
         '{"type":"record","name":"Event","fields":[{"name":"id","type":"long"},{"name":"name","type":"string"}]}',
     },
-    8: {
+    {
+      id: 8,
+      subject: "event-protobuf",
+      version: 1,
       schemaType: "PROTOBUF",
       references: [],
       schema: 'syntax="proto3"; message Event { int64 id=1; string name=2; }',
     },
-  };
-  const lookups: number[] = [];
-  // Controlled Registry protocol endpoint: full vendor Registry behavior is separately qualified.
-  const registry = createServer((request, response) => {
-    const id = Number(/^\/schemas\/ids\/(\d+)$/u.exec(request.url ?? "")?.[1]);
-    const schema = registered[id];
-    lookups.push(id);
-    response.writeHead(schema ? 200 : 404, { "content-type": "application/json" });
-    response.end(
-      JSON.stringify(schema ?? { error_code: 40403, message: "Fixture schema unavailable" }),
-    );
-  });
+  ]);
   const topic = `structured-${randomUUID()}`;
   const integer = "9223372036854775807";
   const values = [
@@ -110,14 +103,7 @@ async function qualifyRecords(
   let topicCreated = false;
   const failures: unknown[] = [];
   try {
-    await new Promise<void>((resolve, reject) => {
-      registry.once("error", reject);
-      registry.listen(0, "127.0.0.1", resolve);
-    });
-    const address = registry.address();
-    if (address === null || typeof address === "string")
-      throw new Error("Registry fixture not listening");
-    const registryUrl = `http://127.0.0.1:${address.port}`;
+    const registryUrl = await registry.listen();
     const input: SecureConnectionInput = {
       name: "Structured real fixture",
       brokers: [connection.kafkaEndpoint],
@@ -190,7 +176,7 @@ async function qualifyRecords(
       messageType: ".Event",
       registry: new URL(registryUrl).toString(),
     });
-    expect(new Set(lookups)).toEqual(new Set([7, 8, 99]));
+    expect(new Set(registry.lookups)).toEqual(new Set([7, 8, 99]));
     const cliOutput: unknown[] = [];
     await runReadOnlyCli(
       "query",
@@ -365,10 +351,7 @@ async function qualifyRecords(
         if (topicCreated) await admin.deleteTopics({ topics: [topic] });
       },
       (): Promise<void> => admin.close(),
-      (): Promise<void> =>
-        new Promise<void>((resolve, reject) =>
-          registry.close((error) => (error ? reject(error) : resolve())),
-        ),
+      (): Promise<void> => registry.close(),
     ];
     for (const action of cleanup) {
       try {
