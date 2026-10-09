@@ -101,6 +101,8 @@ jobs:
         with:
           node-version: 24.21.0
           cache: npm
+      - name: Prepare pinned public NATS image
+        run: node tools/check/prepare-nats-image.ts
       - run: npm ci --no-audit --no-fund
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run check -- --ci --lane runtime
