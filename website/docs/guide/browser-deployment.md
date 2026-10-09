@@ -352,7 +352,7 @@ the backup and prepare a separately reviewed migration instead of editing the
 metadata to bypass validation.
 
 The vault encrypts credentials and protected trust material, **not the entire
-data directory**. Endpoint names, preferences, saved views, observations, installed
+data directory**. Endpoint names, preferences, saved views, local topic notes, observations, installed
 plugin metadata and recovery identifiers remain sensitive filesystem data.
 Protect all backups. Desktop profile files do not carry their OS encryption keys
 into this host; automatic desktop-to-browser credential migration is not
@@ -364,9 +364,10 @@ Never attach the data directory or its backup to a public issue.
 Normal **rollback** switches to the recorded older image only if the current
 complete data is compatible. It does not restore a historical backup. Newer
 saved-view libraries or profile formats can therefore correctly block rollback.
-In particular, saving record positions adopts library format 3; its version-2
-predecessor is retained as `queries/kafka-queries.json.pre-records-v2` (or a numbered
-generation). A host supporting only version 2 cannot read the migrated library.
+In particular, the first saved-view or local-notes change adopts library format 4.
+The exact original library is retained under its predecessor family: `.pre-views-v1`,
+`.pre-records-v2` or `.pre-catalog-v3` (with a numbered generation when needed).
+A host supporting only versions 1–3 cannot read the migrated library.
 Use a reviewed manual recovery with the host stopped if you need to restore older
 data; there is no installer command that performs this restoration for you.
 

@@ -307,7 +307,7 @@ class TransactionTest(unittest.TestCase):
     def test_current_views_do_not_authorize_legacy_rollback(self):
         value = report("0.11.0")
         row = next(row for row in value["documents"] if row["kind"] == "queries")
-        row.update(state="verified", count=1, formats=[1, 2, 3])
+        row.update(state="verified", count=1, formats=[1, 2, 3, 4])
         current = release("0.11.0", "b")
         legacy = {**release("0.10.3", "a"), "inspector": False}
         self.assertEqual(m.inspection(value, POLICY, "0.11.0", current), value)
@@ -316,7 +316,7 @@ class TransactionTest(unittest.TestCase):
         self.assertEqual(rejected.exception.reason, "preflight-blocked")
         row["formats"] = [1]
         self.assertEqual(m.inspection(value, POLICY, "0.11.0", legacy), value)
-        row["formats"] = [4]
+        row["formats"] = [5]
         with self.assertRaises(m.Refused):
             m.inspection(value, POLICY, "0.11.0", current)
 
@@ -328,7 +328,7 @@ class TransactionTest(unittest.TestCase):
         legacy = {**f.source, "inspector": False}
         engine = f.open()
         calls = list(f.calls)
-        for family, suffix in ((family, suffix) for family in ("pre-views-v1", "pre-records-v2") for suffix in ("", ".1", ".99")):
+        for family, suffix in ((family, suffix) for family in ("pre-views-v1", "pre-records-v2", "pre-catalog-v3") for suffix in ("", ".1", ".99")):
             path = f.data / ("queries/kafka-queries.json." + family + suffix)
             path.write_bytes(baseline)
             with self.assertRaises(m.Refused) as rejected:

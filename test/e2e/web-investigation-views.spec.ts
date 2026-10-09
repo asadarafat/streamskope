@@ -176,7 +176,7 @@ test("restores durable topic and group views after a production vault host resta
     const file = join(dataRoot, "queries", "kafka-queries.json");
     const beforeRestart = await readFile(file, "utf8");
     const stored = inspectKafkaQueryLibraryDocument(JSON.parse(beforeRestart));
-    expect(stored.schemaVersion).toBe(3);
+    expect(stored.schemaVersion).toBe(4);
     expect(stored.queries).toHaveLength(3);
     expect(
       stored.queries.find((view) => view.name === "Order investigation")?.view.messages,
@@ -270,7 +270,7 @@ test("restores durable topic and group views after a production vault host resta
       body: Buffer.from(
         JSON.stringify({
           savedViews: 3,
-          schemaVersion: 3,
+          schemaVersion: 4,
           restart: true,
           explicitReads: commands.filter((name) => name === "messages.start").length,
           inspectorWidth,

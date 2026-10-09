@@ -439,3 +439,62 @@ it("fences an active tail from lending the original identity to a recreated topi
     },
   );
 }, 90_000);
+
+it("keeps local notes with the original topic UUID across recreation and permits orphan cleanup", async () => {
+  await withTopic(
+    async ({ topic, topicId, clusterId, execute, connect, recreate, messages, states }) => {
+      await connect();
+      const identity = { clusterId, topicId, topic };
+      const annotation = {
+        identity,
+        description: "Owned fixture notes",
+        owner: "QA",
+        labels: ["fixture"],
+        links: [],
+      };
+      expect(await execute("catalog.load", { topic })).toMatchObject({
+        ok: true,
+        result: { snapshot: { identity, annotation: null } },
+      });
+      expect(await execute("catalog.put", { annotation, expected: null })).toMatchObject({
+        ok: true,
+        result: { snapshot: { annotation } },
+      });
+      // An otherwise valid resource description from another cluster must never be associated by name.
+      expect(
+        await execute("catalog.put", {
+          annotation: { ...annotation, identity: { ...identity, clusterId: "other-cluster" } },
+          expected: null,
+        }),
+      ).toMatchObject({ ok: false, error: { code: "QUERY_UNAVAILABLE" } });
+      const replacementId = await recreate();
+      expect(await execute("catalog.load", { topic })).toMatchObject({
+        ok: true,
+        result: {
+          snapshot: { identity: { ...identity, topicId: replacementId }, annotation: null },
+        },
+      });
+      expect(
+        await execute("catalog.put", {
+          annotation: { ...annotation, description: "stale" },
+          expected: annotation,
+        }),
+      ).toMatchObject({ ok: false, error: { code: "QUERY_UNAVAILABLE" } });
+      expect(await execute("catalog.list", {})).toMatchObject({
+        ok: true,
+        result: { snapshot: { topics: [annotation] } },
+      });
+      expect(await execute("connection.disconnect", {})).toMatchObject({ ok: true });
+      expect(await execute("catalog.delete", { identity, expected: annotation })).toMatchObject({
+        ok: true,
+        result: { snapshot: { annotation: null } },
+      });
+      expect(await execute("catalog.list", {})).toMatchObject({
+        ok: true,
+        result: { snapshot: { topics: [] } },
+      });
+      expect(messages).toEqual([]);
+      expect(states.some((state) => state.state === "streaming")).toBe(false);
+    },
+  );
+}, 90_000);

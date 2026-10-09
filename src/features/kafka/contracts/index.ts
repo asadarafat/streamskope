@@ -624,3 +624,29 @@ export {
 } from "./record-analysis-validation";
 
 export * from "./investigation-view";
+
+export { parseKafkaTopicIdentity, sameKafkaTopicIdentity } from "./topic-identity";
+export type { KafkaTopicIdentity } from "./topic-identity";
+export {
+  KAFKA_TOPIC_CATALOG_LIMITS,
+  parseKafkaTopicAnnotation,
+  parseKafkaTopicAnnotationSnapshot,
+  parseKafkaTopicCatalogSnapshot,
+} from "./topic-catalog";
+export type {
+  KafkaTopicAnnotation,
+  KafkaTopicCatalogLink,
+  KafkaTopicAnnotationSnapshot,
+  KafkaTopicCatalogSnapshot,
+} from "./topic-catalog";
+export type { KafkaInvestigationLibraryState } from "./query-library";
+export {
+  KAFKA_VIEW_TRANSFER_LIMITS,
+  parseKafkaPortableView,
+  serializeKafkaPortableView,
+  createKafkaPortableView,
+  parseKafkaInvestigationTransfer,
+} from "./view-transfer";
+export type { KafkaPortableView, KafkaInvestigationTransfer } from "./view-transfer";
+
+export { isTopicCatalogCommand } from "./topic-catalog-protocol";

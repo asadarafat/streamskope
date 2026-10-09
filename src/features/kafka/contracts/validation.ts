@@ -4,6 +4,11 @@ import {
 } from "./record-analysis-protocol";
 import { parseRecordAnalysisSnapshot } from "./record-analysis-validation";
 import { parseRecordLocatorCommand, parseRecordLocatorResponse } from "./record-locator-protocol";
+import {
+  assertTopicCatalogResponse,
+  parseTopicCatalogCommand,
+  parseTopicCatalogResponse,
+} from "./topic-catalog-protocol";
 import { sameKafkaRecordLocator } from "./record-locator";
 import { parseRecordExportCommand, parseRecordExportResponse } from "./record-export-protocol";
 import { parseRecordExportSnapshot } from "./record-export-validation";
@@ -233,6 +238,7 @@ export function parseHostCommand(value: unknown): HostCommand {
     parseEnvironmentCommand(command, id, envelope.payload, version) ??
     parseRecoveryCommand(command, id, envelope.payload, version) ??
     parseCorrelationCommand(command, id, envelope.payload, version) ??
+    parseTopicCatalogCommand(command, id, envelope.payload, version) ??
     parseRecordLocatorCommand(command, id, envelope.payload, version) ??
     parseRecordAnalysisCommand(command, id, envelope.payload, version) ??
     parseRecordExportCommand(command, id, envelope.payload, version) ??
@@ -509,6 +515,7 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
     parseEnvironmentResponse(command, id, result, version) ??
     parseRecoveryResponse(command, id, result, version) ??
     parseCorrelationResponse(command, id, result, version) ??
+    parseTopicCatalogResponse(command, id, result, version) ??
     parseRecordLocatorResponse(command, id, result, version) ??
     parseRecordAnalysisResponse(command, id, result, version) ??
     parseRecordExportResponse(command, id, result, version) ??
@@ -698,6 +705,7 @@ export function parseCorrelatedHostResponse<Command extends HostCommand>(
       "response.result.requestId",
       "must match the submitted record cancellation",
     );
+  assertTopicCatalogResponse(response, command);
   // The parser validated the result shape, and the checks above established its discriminant.
   return response as HostCommandResponse<Command["command"]>;
 }

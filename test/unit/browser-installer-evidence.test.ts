@@ -54,6 +54,21 @@ it("never accepts an actual locally qualified v2 predecessor as published-releas
     "exact predecessor and target",
   );
 });
+it("never accepts the actual retained v3 predecessor as public transition authority", () => {
+  const receipt = structuredClone(fixture());
+  Object.assign(receipt.transition, {
+    predecessor: {
+      version: "0.10.5-qa.9ea327168426",
+      sourceRevision: "9ea327168426188d6df7103f3e42528ca6896e73",
+      platform: "linux/arm64",
+      image: "streamskope:0.10.5-qa.9ea327168426",
+      imageId: "sha256:fe6b85aaa7ed9dc7ebdd702405368b1e3eb3f41f9253b792b368f05406457284",
+    },
+  });
+  expect(() => validateBrowserInstallerEvidence(receipt, expected)).toThrow(
+    "exact predecessor and target",
+  );
+});
 it.each(["local-bootstrap", "local-restart"])(
   "never substitutes %s qualification for the published installer transition",
   (scope) => {

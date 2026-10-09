@@ -1,3 +1,4 @@
+import { parseKafkaClusterId, parseKafkaTopicId, parseKafkaTopicName } from "./topic-identity";
 import { parseRecordReadId } from "./finite-record-validation";
 import type { KafkaMessage } from "./types";
 import { HostContractValidationError } from "./validation-error";
@@ -62,15 +63,8 @@ function boundedInt32(value: unknown, path: string): number {
   return result;
 }
 function provenanceFields(input: Record<string, unknown>, path: string): KafkaRecordProvenance {
-  const clusterId = text(input.clusterId, `${path}.clusterId`, 256);
-  const topicId = text(input.topicId, `${path}.topicId`, 36);
-  if (!/^[A-Za-z0-9_.-]+$/u.test(clusterId) || /^0+$/u.test(clusterId.replaceAll("-", "")))
-    throw new HostContractValidationError(`${path}.clusterId`, "requires a stable cluster ID");
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(topicId) ||
-    /^0+$/u.test(topicId.replaceAll("-", ""))
-  )
-    throw new HostContractValidationError(`${path}.topicId`, "requires a nonzero Kafka topic UUID");
+  const clusterId = parseKafkaClusterId(input.clusterId, `${path}.clusterId`);
+  const topicId = parseKafkaTopicId(input.topicId, `${path}.topicId`);
   return {
     clusterId,
     topicId,
@@ -97,9 +91,7 @@ export function parseKafkaRecordLocator(value: unknown, path = "locator"): Kafka
       `${path}.schemaVersion`,
       "unsupported record locator version",
     );
-  const topic = text(input.topic, `${path}.topic`, 249);
-  if (!/^[A-Za-z0-9._-]+$/u.test(topic) || topic === "." || topic === "..")
-    throw new HostContractValidationError(`${path}.topic`, "requires a valid Kafka topic name");
+  const topic = parseKafkaTopicName(input.topic, `${path}.topic`);
   const offset = text(input.offset, `${path}.offset`, 19);
   if (!/^(0|[1-9][0-9]*)$/u.test(offset) || BigInt(offset) > 9_223_372_036_854_775_807n)
     throw new HostContractValidationError(

@@ -15,7 +15,7 @@ Desktop paths below are relative to the [application-data directory](recovery.md
 | Migration snapshots                    | `profiles/kafka-profiles.json.pre-*`             | Retain the original profile document and its protection. Persist until deliberately archived or removed                                                                                                                                                                    |
 | Retrieval recipes and legacy templates | `templates/`                                     | Ordinary JSON containing endpoints, commands, parameter definitions and bindings; do not put secrets in recipe defaults                                                                                                                                                    |
 | Rules                                  | `rules/kafka-rules.json`                         | Ordinary JSON; persists across restarts                                                                                                                                                                                                                                    |
-| Saved investigation views              | `queries/kafka-queries.json`                     | Ordinary JSON with selected topic task/group, query settings, layout, optional local profile IDs and selected/comparison/bookmark locators. No record bodies, original bytes or headers; filter literals and resource positions can be sensitive. Persists across restarts |
+| Saved investigation views and local topic notes | `queries/kafka-queries.json`                     | Ordinary JSON with selected topic task/group, query settings, layout, optional local profile IDs and selected/comparison/bookmark locators, plus topic descriptions, owners, labels and HTTPS links keyed by cluster ID/topic UUID. No record bodies, original bytes or headers; filter literals and resource positions can be sensitive. Persists across restarts |
 | Topic configuration history            | `history/kafka-topic-configuration-history.json` | Ordinary JSON with recorded configuration-change evidence; not a broker audit log                                                                                                                                                                                          |
 | Kafka observations                     | `history/kafka-observations.json`                | Unencrypted JSON with cluster/topic/group identities, offset and health samples, optional record-size/key-frequency aggregates and example partition/offset locators; no raw keys, headers or payloads. Private file permissions on POSIX                                  |
 | Relationship graphs                    | Workbench page memory                            | Bounded identities and timestamped evidence; no saved graph, raw records, schema definitions or connector credentials                                                                                                                                                      |
@@ -53,7 +53,7 @@ current broker through the host's current encoding and protection settings.
 Retention, compaction, topic replacement or access changes can make a position
 unavailable. Masking does not erase existing filter literals or locator metadata
 from saved views and backups. Query-only share/import documents exclude these positions.
-See [saved-view recovery](recovery.md#saved-view-library-recovery) for version-3
+See [saved-view recovery](recovery.md#saved-view-library-recovery) for version-4
 storage and exact predecessor backups.
 
 Browser development profiles are session-only. Its installed plugins live in
@@ -125,8 +125,10 @@ or a throughput guarantee. Both the record-count and byte limits apply.
 | Default recent time window       | 2 minutes                                      | Resolved before Load messages; Custom interval accepts explicit start/end with a time zone                     |
 | Broker search pass               | 10,000 records / 32 MiB / 30 seconds           | The first reached budget stops the pass with partial coverage; continuation keeps the original captured ranges |
 | Read continuation                | Latest checkpoint / 30 minutes / 10,000 passes | Single-use, host-memory checkpoint for the same connection and record settings; unavailable after restart      |
-| Saved view library               | 100 views / 1 MiB                              | Unreadable or unsupported files are preserved for recovery                                                     |
+| Saved view and topic-note library | 100 views / 256 annotated topics / 1 MiB                              | Unreadable or unsupported files are preserved for recovery                                                     |
 | Saved bookmarks                  | 32 per view / 256 per library                  | Settings and locator metadata only; the shared library byte limit still applies                                |
+| Portable view document | 128 KiB | Reviewed settings and record positions only; no local IDs, topic notes or payloads |
+| Local topic notes | 4,096 UTF-8 description bytes / 128 owner characters / 16 labels / 8 links | The shared 1 MiB library limit still applies; no automatic pruning |
 | Portable query document          | 32 KiB                                         | Versioned settings only; import requires review and explicit opening                                           |
 
 Range exports use independent host bounds:

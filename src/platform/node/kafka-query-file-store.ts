@@ -6,7 +6,7 @@ import {
   KAFKA_QUERY_LIBRARY_LIMITS,
   inspectKafkaQueryLibraryDocument,
   serializeKafkaQueryLibraryDocument,
-  type KafkaSavedView,
+  type KafkaInvestigationLibraryState,
 } from "../../features/kafka/contracts";
 import { KafkaQueryLibraryError, type KafkaQueryStore } from "../../features/kafka/application";
 
@@ -66,23 +66,23 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
     this.syncDirectory = options.syncDirectory ?? syncDirectory;
   }
 
-  async load(): Promise<readonly KafkaSavedView[]> {
+  async load(): Promise<KafkaInvestigationLibraryState> {
     try {
       const source = await this.readSource(this.path);
       this.loaded = source;
-      return source?.document.queries ?? [];
+      return { queries: source?.document.queries ?? [], topics: source?.document.topics ?? [] };
     } catch {
       throw new KafkaQueryLibraryError(
-        "Saved-view storage is unreadable or uses an unsupported schema. The file was not replaced.",
+        "Investigation-library storage is unreadable or uses an unsupported schema. The file was not replaced.",
       );
     }
   }
 
-  async commit(queries: readonly KafkaSavedView[]): Promise<void> {
-    const contents = serializeKafkaQueryLibraryDocument(queries);
+  async commit(state: KafkaInvestigationLibraryState): Promise<void> {
+    const contents = serializeKafkaQueryLibraryDocument(state);
     if (Buffer.byteLength(contents, "utf8") > KAFKA_QUERY_LIBRARY_LIMITS.fileBytes)
       throw new KafkaQueryLibraryError(
-        "The saved-view library exceeds its 1 MiB storage limit. Remove some views before retrying.",
+        "The investigation library exceeds its shared 1 MiB storage limit. Remove some views or notes before retrying.",
       );
     let replaced = false;
     try {
@@ -93,7 +93,7 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
       if (!(await lstat(directory)).isDirectory()) throw new Error("Unsafe library directory.");
       await chmod(directory, 0o700);
       const backup =
-        original !== null && original.document.schemaVersion < 3
+        original !== null && original.document.schemaVersion < 4
           ? await this.preservePredecessor(original)
           : undefined;
       await writeAtomicPrivateTextFile({
@@ -117,8 +117,8 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
       this.loaded = undefined;
       throw new KafkaQueryLibraryError(
         replaced
-          ? "The saved-view replacement occurred, but durable completion could not be confirmed. Reopen Saved views to inspect the current library before retrying. Any existing predecessor backup was retained."
-          : "Saved-view storage could not commit the change. The current file was not replaced. Check permissions and preserved backups, then reopen Saved views before retrying.",
+          ? "The investigation-library replacement occurred, but durable completion could not be confirmed. Reopen Saved views or Local notes to inspect current state before retrying. Any existing predecessor backup was retained."
+          : "Investigation-library storage could not commit the change. The current file was not replaced. Check permissions and preserved backups, then reopen Saved views or Local notes before retrying.",
       );
     }
   }
@@ -174,7 +174,9 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
         ? ".pre-views-v1"
         : original.document.schemaVersion === 2
           ? ".pre-records-v2"
-          : undefined;
+          : original.document.schemaVersion === 3
+            ? ".pre-catalog-v3"
+            : undefined;
     if (suffix === undefined) throw new Error("No predecessor migration was selected.");
     for (let generation = 0; generation < 100; generation += 1) {
       const path = `${this.path}${suffix}${generation === 0 ? "" : `.${generation}`}`;

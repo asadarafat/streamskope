@@ -171,11 +171,12 @@ for a repeatable independent filter.
 Desktop and the installed browser host store up to 100 views in
 `queries/kafka-queries.json`. Browser development keeps its library only until
 that development host restarts. Existing query entries open with default layout;
-the first save/delete that changes the library writes version 3 and preserves the exact legacy
-file as a private `.pre-views-v1` (version 1) or `.pre-records-v2` (version 2) predecessor. An unreadable, oversized or
+the first saved-view or local-notes change writes version 4 and preserves the exact legacy
+file as a private `.pre-views-v1` (version 1), `.pre-records-v2` (version 2) or
+`.pre-catalog-v3` (version 3) predecessor. An unreadable, oversized or
 unsupported library is preserved and reported as unavailable. Restore a valid
 backup before retrying. Back up the entire [application data](recovery.md),
-including predecessor files; hosts supporting only versions 1 or 2 cannot read version 3.
+including predecessor files; hosts supporting only versions 1–3 cannot read version 4.
 
 ### Bookmark and reload a record
 
@@ -222,35 +223,67 @@ against administrative restores that clone resource identities and log metadata.
 If cleanup is unconfirmed, **Retry stop** remains available and new reloads stay
 blocked until the original reader confirms its stop.
 
-### Share query settings
+### Share an investigation
 
-1. Open **Views → Import/share query settings** and select a saved view, or leave the selection empty to use
-   the current topic settings. Review your filter text before sharing it.
-2. Choose **Export query JSON** for a configuration file, or **Copy query link**.
-3. The recipient opens **Views → Import/share query settings**, chooses **Import query file**,
-   or pastes the link into **Query JSON or link** and clicks **Review import**.
-4. Review the displayed topic, absolute time bounds, filters and limits. Choose a
-   local connection if appropriate, then **Open imported query**. Connect and run
-   separately. Save the restored settings in the library to keep them.
+1. Open **Views → Import/share investigations** and select a saved view, or leave
+   the selection empty to use the current workspace. Review filter text and
+   resource positions before sharing.
+2. Choose **Export view JSON**. This includes the topic task or consumer group,
+   query settings, layout, selected/comparison positions and named bookmarks.
+3. The recipient chooses **Import file**, or pastes JSON into **View or query
+   JSON/link**, then selects **Review import**. Review the destination and settings
+   and optionally choose a local connection profile.
+4. Choose **Open imported view**. An active read must stop through its original
+   host first. Opening restores controls and unloaded positions; it does not
+   connect, read records, follow links or save the view. Connect and reload
+   deliberately, then **Save current view** if it should survive restart.
 
-Browser links open the development application at its original address and show
-the review dialog; that development host must be reachable. The fragment is removed
-from the visible address when loaded. Desktop links use `streamskope://app/#query=…`
-as a portable string to paste into the dialog; this version does not register an
-operating-system link handler to launch the app. JSON files work in either host.
+Portable views are version-1 `streamskope.kafka-view` JSON documents, limited to
+128 KiB. They exclude local view, bookmark and profile IDs, credentials, broker
+endpoints, record contents, running jobs, global preferences and local topic notes.
+Import review is passive. Opening assigns fresh local bookmark IDs; source cluster
+and topic identities remain unchanged, so a record reload cannot silently use a
+different cluster. Current decoding and protection still apply.
 
-This remains a version 1 query document, limited to 32 KiB. It shares query settings
-only, not the saved destination, columns, layout or local profile. Group-only views
-without a background topic query cannot export query settings. Imports reject
-unknown fields, future schema versions, credentials, local profile identifiers,
-message records and unsupported expressions. Invalid imports leave the current
-investigation unchanged. Opening a valid import restores controls without
-connecting, consuming, saving it to the library or changing Kafka resources.
+For a smaller share, expand **Query settings only** and use **Export query JSON**
+or **Copy query link**. Query documents retain their version-1 format and 32 KiB
+limit. They exclude layout, group destination and record positions; a group view
+without a background topic query cannot export query settings. The same import
+control reviews them before **Open imported query**.
 
-Query links encode the document in their fragment; encoding is **not encryption**.
-Topic names and filter text can disclose incident details or sensitive literals
-you entered. Share them only with intended recipients. Importing a pasted URL
-decodes its fragment locally and does not visit that URL.
+Browser query links open the application at its original address, which must be
+reachable, and show the review dialog. The fragment is removed from the visible
+address when loaded. Desktop links use `streamskope://app/#query=…` as a portable
+string to paste into the dialog; this version does not register an operating-system
+link handler. Full views use JSON files, not URL fragments.
+
+Both formats reject unknown fields, unsupported versions, credentials and record
+bodies. Invalid imports leave the current investigation unchanged. Filter literals,
+names and positions can still be sensitive: review the file before sharing it.
+
+### Keep local topic notes
+
+Open a topic and choose **Local topic notes** to record its description, owner,
+labels and named HTTPS links. These are your local annotations, separate from
+broker-discovered facts. Saving verifies the current cluster ID and topic UUID;
+notes never transfer to a different cluster or a recreated topic with the same name.
+
+Choose **Verify current topic** before editing stored notes. If another operation
+changes them, a stale save is
+rejected and your draft remains available for review. A connection change also
+requires fresh verification before a new save. A disk write already admitted for
+the original resource retains its outcome.
+
+Use **Views → Local topic notes** to inspect all stored notes even while
+disconnected. Old or inaccessible resources can be removed locally without
+modifying Kafka. Opening the dialog never reads record bodies. Links open only
+after an explicit click through the application's protected external opener.
+
+Notes share the saved-view library's 1 MiB limit, with at most 256 annotated topics.
+Each entry allows a 4,096-byte UTF-8 description, 128-character owner, 16 unique
+labels of 64 characters and eight named HTTPS links. No entries are pruned to make
+space. Notes are ordinary local settings, not encrypted secrets or shared team
+metadata; protect them and their [complete backups](recovery.md#saved-view-library-recovery).
 
 ## Export the records you need
 

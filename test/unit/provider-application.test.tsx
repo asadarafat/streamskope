@@ -648,7 +648,7 @@ describe("provider activation ownership", () => {
     await waitFor(() =>
       expect(fixture.commands.some((submitted) => submitted.command === "plugins.list")).toBe(true),
     );
-    expect(await screen.findByRole("textbox", { name: "Query JSON or link" })).toHaveValue(
+    expect(await screen.findByRole("textbox", { name: "View or query JSON/link" })).toHaveValue(
       initialQueryImport,
     );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -674,7 +674,9 @@ describe("provider activation ownership", () => {
       returnControl.props.onConnect(catalogRow("kafka"));
       await Promise.resolve();
     });
-    expect(screen.queryByRole("textbox", { name: "Query JSON or link" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "View or query JSON/link" }),
+    ).not.toBeInTheDocument();
     expect(firstAuthority.isInteractive()).toBe(false);
     const current = authorities.at(-1);
     if (current === undefined) throw new Error("Expected current Kafka workspace authority.");

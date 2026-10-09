@@ -3,6 +3,7 @@ import { SavedReplayDestinations } from "../application/replay-destination";
 import { KafkaReviewedWriteService } from "../application/reviewed-write-service";
 import {
   HOST_PROTOCOL_VERSION,
+  isTopicCatalogCommand,
   type HostCommand,
   type HostCommandResponse,
   type HostError,
@@ -44,6 +45,7 @@ import { executeWriteCommand } from "./write-facade";
 import { RecordCodecFacade } from "./record-codec-facade";
 import { KafkaCommandProtection } from "./command-protection";
 import { KafkaCommandAdmission } from "./command-admission";
+import { executeTopicCatalogCommand } from "./topic-catalog-facade";
 import { executeQueryCommand } from "./query-facade";
 import { ConsumptionFacadeController } from "./consumption-facade";
 import type { KafkaBackendFacadeOptions } from "./types";
@@ -412,6 +414,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         recordActivity: this.recordActivity.bind(this),
       });
     }
+    if (isTopicCatalogCommand(command))
+      return executeTopicCatalogCommand(command, correlationId, this.queries, this.session);
     switch (command.command) {
       case "relationships.capture":
       case "relationships.cancel":
@@ -940,8 +944,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   }
 
   private nextSequence(): number {
-    this.sequence += 1;
-    return this.sequence;
+    return ++this.sequence;
   }
 
   private invalidateLatency(): void {
