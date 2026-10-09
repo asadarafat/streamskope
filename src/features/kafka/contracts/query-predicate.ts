@@ -1,3 +1,4 @@
+import type { StructuredRecord } from "./structured-record";
 import { matchesKafkaSearchFilter, type KafkaSearchFilter } from "./query-search";
 import { KAFKA_LIVE_RULE_LIMITS } from "./live-rule-types";
 import { KAFKA_RULE_LIMITS } from "./rule-types";
@@ -9,6 +10,7 @@ import {
 import { parseKafkaRuleSample } from "./rule-sample";
 
 export interface KafkaSearchMessage {
+  readonly structured?: StructuredRecord;
   readonly key: string | null;
   readonly payload: string | null;
   readonly offset: string;
@@ -29,6 +31,22 @@ export function compileKafkaSearchFilter(
       ? undefined
       : compileKafkaRuleExpression(expression);
   return (message) => {
+    // Do not infer a negative match from a field that could not be decoded.
+    const structured = message.structured;
+    if (
+      structured &&
+      ((filter.key.trim().length > 0 &&
+        (structured.key.state === "error" || structured.key.state === "masked")) ||
+        ((filter.value.trim().length > 0 || compiled !== undefined) &&
+          (structured.value.state === "error" || structured.value.state === "masked")))
+    )
+      return "unavailable";
+    if (
+      structured &&
+      compiled !== undefined &&
+      (structured.value.state !== "decoded" || structured.value.json === null)
+    )
+      return "unavailable";
     if (!matchesKafkaSearchFilter(message, filter)) return "not-matched";
     if (compiled === undefined) return "matched";
     if (budget?.exhausted === true || message.payload === null || message.truncated === true)

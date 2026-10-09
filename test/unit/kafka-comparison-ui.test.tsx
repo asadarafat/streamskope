@@ -123,6 +123,8 @@ it("pins a stable snapshot and compares a different offset without confusing nul
   view.rerender(<Harness current={record("11", "")} />);
   expect(screen.getByText(/Before: t \/ partition 0 \/ offset 10/u)).toBeVisible();
   expect(screen.getByText(/After: t \/ partition 0 \/ offset 11/u)).toBeVisible();
+  await user.click(screen.getByRole("combobox", { name: "Comparison representation" }));
+  await user.click(screen.getByRole("option", { name: "Original bytes (Base64)" }));
   await user.click(screen.getByRole("button", { name: "Compare records" }));
   expect(await screen.findByRole("table", { name: "Differences" })).toHaveTextContent("/bytes");
   expect(screen.getByRole("table")).toHaveTextContent("null");
@@ -135,7 +137,7 @@ it("pins a stable snapshot and compares a different offset without confusing nul
     />,
   );
   expect(screen.getByRole("button", { name: "Compare records" })).toBeDisabled();
-  expect(screen.getByText(/cannot establish equality/u)).toBeVisible();
+  expect(screen.getByText(/cannot establish byte equality/u)).toBeVisible();
   expect(screen.queryByRole("table")).not.toBeInTheDocument();
 });
 it("requests exact versions for comparison and labels missing reference evidence without claiming data lineage", async () => {

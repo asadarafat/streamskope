@@ -155,7 +155,7 @@ export function RecordProtectionPanel({
         label="Mask entire record values"
       />
       <TextField
-        label="JSON value paths to mask"
+        label="Decoded JSON value paths to mask"
         multiline
         minRows={3}
         value={valuePaths}
@@ -165,9 +165,10 @@ export function RecordProtectionPanel({
       />
       <Typography variant="body2" color="text.secondary">
         Masking replaces selected fields with [MASKED] before inspection, copy, export and rule
-        evaluation. Non-JSON or incomplete values are fully masked when value paths are configured.
-        Original bytes are unavailable while masking is active. Broker-side search is disabled;
-        local filters operate on the masked records.
+        evaluation. Paths apply to the decoded JSON projection, including Avro and Protobuf.
+        Undecodable or incomplete values are fully masked when value paths are configured. Original
+        bytes are unavailable while masking is active. Filters and tracing use only the protected
+        projection.
       </Typography>
       <Typography variant="body2" color="text.secondary">
         Previously copied or exported data cannot be recalled. Installed plugins are trusted code;

@@ -98,6 +98,13 @@ export function translateKafkaRecord(raw: KafkaRawMessage, expectedTopic: string
     key,
     offset: raw.offset.toString(),
     originalByteSize: (raw.key?.byteLength ?? 0) + (raw.value?.byteLength ?? 0),
+    recordByteSize:
+      (raw.key?.byteLength ?? 0) +
+      (raw.value?.byteLength ?? 0) +
+      sourceHeaders.reduce(
+        (total, [key, value]) => total + key.byteLength + (value?.byteLength ?? 0),
+        0,
+      ),
     original: originalRecord(raw),
     partition: raw.partition,
     payload: value,

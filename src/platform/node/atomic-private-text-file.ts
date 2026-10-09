@@ -6,6 +6,7 @@ export function createAtomicPrivateFileTempId(): string {
 }
 
 export interface AtomicPrivateTextFileInput {
+  readonly beforeCommit?: () => Promise<void>;
   readonly contents: string;
   readonly createTempId: () => string;
   readonly path: string;
@@ -26,6 +27,7 @@ export async function writeAtomicPrivateTextFile(input: AtomicPrivateTextFileInp
     await handle.sync();
     await handle.close();
     handle = undefined;
+    await input.beforeCommit?.();
     input.signal?.throwIfAborted();
     await rename(temporaryPath, input.path);
     createdTemporary = false;

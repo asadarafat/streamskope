@@ -56,6 +56,7 @@ export function classifyConnectionFailure(error: unknown): ConnectionFailureKind
     return "cancelled";
   if (
     has(
+      "TLS_CLIENT_IDENTITY_INVALID",
       "ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED",
       "ERR_SSL_SSLV3_ALERT_BAD_CERTIFICATE",
       "ERR_SSL_TLSV1_ALERT_UNKNOWN_CA",

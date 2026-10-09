@@ -32,6 +32,17 @@ function hostMutations(calls: Awaited<ReturnType<Fixture["calls"]>>): unknown[] 
 }
 
 describe.skipIf(process.platform !== "linux")("browser maintenance installer admission", () => {
+  it("reports its own fixture watchdog instead of presenting a timeout as an installer refusal", async () => {
+    const host = await fixture();
+    const script = join(host.root, "wait-for-watchdog.sh");
+    await writeFile(script, "exec sleep 30\n");
+    const result = host.run(script, [], { timeoutMs: 100 });
+    await expect(result).rejects.toThrow("Installer fixture watchdog terminated");
+    await expect(result).rejects.toMatchObject({
+      cause: { code: null, killed: true, signal: "SIGTERM" },
+    });
+  });
+
   it.each(["check", "upgrade", "rollback", "recover"])(
     "refuses %s without an existing installation and does not bootstrap or create data",
     async (operation) => {
@@ -203,12 +214,12 @@ describe.skipIf(process.platform !== "linux")("browser maintenance installer adm
     const { host, next } = await initialized();
     const record = await readFile(join(host.state, "installation.json"));
     await host.control({ crashAfter: "deploy" });
-    const interrupted = await host.run(next.file, ["upgrade"]);
-    expect(interrupted.exitCode).not.toBe(0);
-    expect(JSON.parse(await readFile(join(host.state, "maintenance.json"), "utf8"))).toMatchObject({
-      phase: "retired",
-      candidateId: null,
-    });
+    const interrupted = await host.run(next.file, ["upgrade"], { timeoutMs: 30_000 });
+    expect(interrupted.exitCode, interrupted.stderr).toBe(137);
+    expect(
+      JSON.parse(await readFile(join(host.state, "maintenance.json"), "utf8")),
+      JSON.stringify(interrupted),
+    ).toMatchObject({ phase: "retired", candidateId: null });
     const owner = (await control(host)).container;
     const calls = (await host.calls()).length;
     const recovered = await host.run(next.file, ["recover"]);
@@ -218,7 +229,7 @@ describe.skipIf(process.platform !== "linux")("browser maintenance installer adm
     expect(await readFile(join(host.state, "installation.json"))).toEqual(record);
     await expect(access(join(host.state, "maintenance.json"))).resolves.toBeUndefined();
     expect(await generations(host)).toHaveLength(1);
-  }, 20_000);
+  }, 45_000);
 });
 
 const secret = "private-maintenance-passphrase";

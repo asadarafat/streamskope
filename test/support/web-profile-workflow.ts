@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { loadFixtureConfig, loadFixtureConnection } from "./kafka-fixture";
+import { loadFixtureConfig, loadFixtureConnection, type FixtureConnection } from "./kafka-fixture";
 
 export async function openRetrievalLibrary(editor: Locator): Promise<void> {
   await editor
@@ -9,9 +9,13 @@ export async function openRetrievalLibrary(editor: Locator): Promise<void> {
   await editor.getByRole("button", { name: "Manage retrieval presets", exact: true }).click();
 }
 
-export async function configureLocalConnection(page: Page, clientSecret?: string): Promise<void> {
+export async function configureLocalConnection(
+  page: Page,
+  clientSecret?: string,
+  explicitConnection?: FixtureConnection,
+): Promise<void> {
   const config = await loadFixtureConfig();
-  const fixture = await loadFixtureConnection();
+  const fixture = explicitConnection ?? (await loadFixtureConnection());
   await page.getByRole("button", { name: "Add connection" }).click();
   await page.getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u }).click();
   const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
@@ -37,8 +41,11 @@ export async function configureLocalConnection(page: Page, clientSecret?: string
   }
 }
 
-export async function connectLocalProfile(page: Page): Promise<void> {
-  await configureLocalConnection(page);
+export async function connectLocalProfile(
+  page: Page,
+  connection?: FixtureConnection,
+): Promise<void> {
+  await configureLocalConnection(page, undefined, connection);
   const editor = page.getByRole("dialog", { name: "Add Kafka profile" });
   await editor.getByRole("button", { name: "Save profile" }).click();
   await page.getByRole("button", { name: "Connect profile Local aio" }).click();

@@ -223,6 +223,60 @@ it("closes a pending stream on cancellation and accounts for topics never starte
   ]);
   expect(stopped).toBe(true);
 });
+it("bounds aggregate trace work including duplicate header bytes across topics", async () => {
+  const header = btoa("x".repeat(8_192));
+  const heavy = (topic: string, index: number): KafkaMessage => ({
+    ...message(topic, String(index), "other"),
+    originalByteSize: 0,
+    original: {
+      state: "complete",
+      encoding: "base64",
+      key: null,
+      value: null,
+      headers: Array.from({ length: 24 }, () => ({ key: btoa("repeated"), value: header })),
+    },
+  });
+  const opened: string[] = [];
+  const connection = Object.assign(new RecordingActiveConnection(), {
+    openMessageStream: ({ topic }: { topic: string }): Promise<KafkaMessageStream> => {
+      opened.push(topic);
+      return Promise.resolve(stream(Array.from({ length: 100 }, (_, i) => heavy(topic, i))));
+    },
+  });
+  const result = await traceCorrelation(
+    connection,
+    "Fixture",
+    { ...request, topics: ["a", "b", "c"] },
+    new AbortController().signal,
+  );
+  expect(opened).toEqual(["a", "b"]);
+  expect(result.topics).toMatchObject([
+    { state: "searched", evaluated: 100 },
+    { state: "partial", reason: "evaluation-byte-limit" },
+    { state: "not-searched", reason: "evaluation-byte-limit" },
+  ]);
+});
+it("keeps omitted oversized headers in the trace byte budget", async () => {
+  const entries = Array.from({ length: 100 }, (_, index): KafkaMessage => ({
+    ...message("a", String(index)),
+    originalByteSize: 0,
+    recordByteSize: 524_288,
+    original: { state: "unavailable", reason: "size-limit" },
+  }));
+  const connection = Object.assign(new RecordingActiveConnection(), {
+    openMessageStream: (): Promise<KafkaMessageStream> => Promise.resolve(stream(entries)),
+  });
+  const result = await traceCorrelation(
+    connection,
+    "Fixture",
+    request,
+    new AbortController().signal,
+  );
+  expect(result.topics).toMatchObject([
+    { state: "partial", reason: "evaluation-byte-limit", unavailable: 64 },
+    { state: "not-searched", reason: "evaluation-byte-limit" },
+  ]);
+});
 it("rejects unbounded or ambiguous requests and fabricated complete coverage", () => {
   expect(() => parseCorrelationTraceInput({ ...request, topics: Array(9).fill("a") })).toThrow();
   expect(() => parseCorrelationTraceInput({ ...request, topics: ["a", "a"] })).toThrow();

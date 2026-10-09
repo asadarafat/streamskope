@@ -167,9 +167,11 @@ export async function fixtureClientOptions(
   };
 }
 
-export async function provisionSeededFixtureTopic(): Promise<SeededFixtureTopic> {
+export async function provisionSeededFixtureTopic(
+  explicitConnection?: FixtureConnection,
+): Promise<SeededFixtureTopic> {
   const config = await loadFixtureConfig();
-  const connection = await loadFixtureConnection();
+  const connection = explicitConnection ?? (await loadFixtureConnection());
   const topic = `streamskope-e2e-${randomUUID()}`;
   const options = await fixtureClientOptions(
     connection,

@@ -212,6 +212,19 @@ class TransactionTest(unittest.TestCase):
     def tearDown(self):
         self.fixture.close()
 
+    def test_current_codec_preferences_do_not_authorize_legacy_rollback(self):
+        value = report("0.11.0")
+        row = next(row for row in value["documents"] if row["kind"] == "preferences")
+        row.update(state="verified", count=2, formats=[1, 2])
+        current = release("0.11.0", "b")
+        legacy = {**release("0.10.3", "a"), "inspector": False}
+        self.assertEqual(m.inspection(value, POLICY, "0.11.0", current), value)
+        with self.assertRaises(m.Refused) as rejected:
+            m.inspection(value, POLICY, "0.11.0", legacy)
+        self.assertEqual(rejected.exception.reason, "preflight-blocked")
+        row["formats"] = [1]
+        self.assertEqual(m.inspection(value, POLICY, "0.11.0", legacy), value)
+
     def test_current_inspection_does_not_authorize_security_profiles_for_legacy_target(self):
         for kind in ("kafka-profiles", "profile-backups"):
             with self.subTest(kind=kind):

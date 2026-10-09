@@ -47,6 +47,9 @@ interface InstallerResult {
   stderr: string;
   exitCode: number;
 }
+interface InstallerRunOptions {
+  timeoutMs?: number;
+}
 interface Command {
   command: string;
   args: string[];
@@ -60,7 +63,7 @@ export interface BrowserInstallerFixture {
     version?: string,
     metadata?: (value: Record<string, unknown>) => void,
   ): Promise<InstallerArtifact>;
-  run(file: string, args?: string[]): Promise<InstallerResult>;
+  run(file: string, args?: string[], options?: InstallerRunOptions): Promise<InstallerResult>;
   calls(): Promise<Command[]>;
   control(changes: InstallerControl): Promise<void>;
   cleanup(): Promise<void>;
@@ -417,7 +420,12 @@ export async function browserInstallerFixture(
     await writeFile(file, source);
     return { file, version, sourceRevision, image: registry.reference, topology, manifest };
   }
-  async function run(file: string, args: string[] = []): Promise<InstallerResult> {
+  async function run(
+    file: string,
+    args: string[] = [],
+    options: InstallerRunOptions = {},
+  ): Promise<InstallerResult> {
+    const timeoutMs = options.timeoutMs ?? 15_000;
     try {
       const result = await execute("bash", [file, ...args], {
         cwd: root,
@@ -431,12 +439,23 @@ export async function browserInstallerFixture(
           SUDO_GID: String(owner.gid),
           SUDO_USER: "operator",
         },
-        timeout: 15_000,
+        timeout: timeoutMs,
         maxBuffer: 1024 * 1024,
       });
       return { ...result, exitCode: 0 };
     } catch (error) {
-      const result = error as { stdout?: string; stderr?: string; code?: number | string };
+      const result = error as {
+        stdout?: string;
+        stderr?: string;
+        code?: number | string;
+        killed?: boolean;
+        signal?: string;
+      };
+      if (result.killed)
+        throw new Error(
+          `Installer fixture watchdog terminated the command (budget ${String(timeoutMs)}ms, signal ${result.signal ?? "unknown"}); this is not an installer refusal.`,
+          { cause: error },
+        );
       return {
         stdout: result.stdout ?? "",
         stderr: result.stderr ?? "",

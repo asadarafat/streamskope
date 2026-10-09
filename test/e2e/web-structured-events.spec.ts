@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 
@@ -6,7 +7,8 @@ import { expect, test } from "@playwright/test";
 
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
-import { provisionSeededFixtureTopic } from "../support/kafka-fixture";
+import { startStructuredBrowserFixture } from "../support/structured-browser-fixture";
+import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
 import { connectLocalProfile } from "../support/web-profile-workflow";
 import { fetchTopicMessages, observeBrowserDiagnostics } from "../support/workbench-browser";
 
@@ -27,26 +29,70 @@ test.use({ trace: "off", viewport: { width: 1440, height: 1000 } });
 test("decodes, compares, traces and previews a schema sample in the real browser host", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(120_000);
-  const fixture = await provisionSeededFixtureTopic();
+  test.setTimeout(240_000);
+  page.setDefaultTimeout(30_000);
+  page.setDefaultNavigationTimeout(60_000);
+  const fixture = await startStructuredBrowserFixture();
   const backend = createKafkaBackend();
-  const launch = await launchProductWebFixture({
-    backend,
-    hostPort: await port(),
-    rendererPort: await port(),
-    rendererRoot: resolve(process.cwd()),
-  });
+  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
+  const diagnostics = observeBrowserDiagnostics(page);
   try {
-    const diagnostics = observeBrowserDiagnostics(page);
+    launch = await launchProductWebFixture({
+      backend,
+      hostPort: await port(),
+      rendererPort: await port(),
+      rendererRoot: resolve(process.cwd()),
+    });
     await page.goto(launch.browserUrl);
-    await connectLocalProfile(page);
+    await page.getByRole("button", { name: "Preferences", exact: true }).click();
+    let preferences = page.getByRole("dialog", { name: "Workbench Preferences" });
+    await preferences.getByRole("tab", { name: "Records", exact: true }).click();
+    await preferences.getByRole("combobox", { name: "Default key encoding" }).click();
+    await page.getByRole("option", { name: "UTF-8 text", exact: true }).click();
+    await preferences.getByRole("button", { name: "Save record encodings" }).click();
+    await expect(preferences.getByRole("status")).toBeVisible();
+    await preferences.getByRole("button", { name: "Close", exact: true }).click();
+    await page.reload();
+    await page.getByRole("button", { name: "Preferences", exact: true }).click();
+    preferences = page.getByRole("dialog", { name: "Workbench Preferences" });
+    await preferences.getByRole("tab", { name: "Records", exact: true }).click();
+    await expect(preferences.getByRole("combobox", { name: "Default key encoding" })).toHaveText(
+      "UTF-8 text",
+    );
+    await preferences.getByRole("button", { name: "Close", exact: true }).click();
+    try {
+      await connectLocalProfile(page, fixture.connection);
+    } catch (cause) {
+      if (diagnostics.problems.length > 0) {
+        throw new Error(`Browser connection workflow failed: ${diagnostics.problems.join("\n")}`, {
+          cause,
+        });
+      }
+      throw cause;
+    }
     await fetchTopicMessages(page, fixture.config.topic);
     const grid = page.getByRole("grid", { name: "Kafka messages" });
     await grid.getByText(fixture.config.seedPayload, { exact: true }).first().click();
     const inspector = page.getByRole("complementary", { name: "Message inspector" });
     await inspector.getByRole("tab", { name: "Decoded", exact: true }).click();
-    await inspector.getByRole("button", { name: "Decode record" }).click();
     await expect(inspector.getByLabel("Decoded JSON")).toBeVisible();
+    await expect(inspector.getByText("Encoding: UTF-8 JSON", { exact: true })).toBeVisible();
+    const downloadStarted = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    const downloadPath = await (await downloadStarted).path();
+    if (downloadPath === null) throw new Error("Structured export was not retained.");
+    expect(JSON.parse(await readFile(downloadPath, "utf8"))).toMatchObject({
+      schemaVersion: 3,
+      messages: [
+        {
+          payload: fixture.config.seedPayload,
+          structured: {
+            key: { state: "decoded", codec: "utf8", text: "streamskope-seed" },
+            value: { state: "decoded", codec: "json", json: fixture.config.seedPayload },
+          },
+        },
+      ],
+    });
     const tabs = inspector.getByRole("tablist", { name: "Message evidence" });
     const rectangles = await tabs.getByRole("tab").evaluateAll((nodes) =>
       nodes.map((node) => {
@@ -70,7 +116,7 @@ test("decodes, compares, traces and previews a schema sample in the real browser
     await page.getByRole("button", { name: "Trace correlation" }).click();
     const trace = page.getByRole("dialog", { name: "Trace a correlation ID" });
     await trace.getByRole("combobox", { name: "Correlation source" }).click();
-    await page.getByRole("option", { name: "Key (UTF-8)" }).click();
+    await page.getByRole("option", { name: "Key (saved encoding)" }).click();
     await trace.getByRole("textbox", { name: "Exact correlation value" }).fill("streamskope-seed");
     await trace.getByRole("button", { name: "Start trace" }).click();
     await expect(trace.getByText(/1 matching record/u)).toBeVisible();
@@ -110,7 +156,14 @@ test("decodes, compares, traces and previews a schema sample in the real browser
     await sample.getByRole("button", { name: "Close", exact: true }).click();
     expect(diagnostics.problems).toEqual([]);
   } finally {
-    await launch.close();
-    await fixture.dispose();
+    if (diagnostics.problems.length > 0)
+      await testInfo.attach("browser-diagnostics", {
+        body: JSON.stringify(diagnostics.problems),
+        contentType: "application/json",
+      });
+    await disposeNativeFixtureResources([
+      (): Promise<void> => launch?.close() ?? backend.shutdown(),
+      (): Promise<void> => fixture.dispose(),
+    ]);
   }
 });

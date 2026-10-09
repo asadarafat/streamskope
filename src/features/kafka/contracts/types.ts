@@ -88,7 +88,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 54 as const;
+export const HOST_PROTOCOL_VERSION = 55 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -815,12 +815,15 @@ export type ActivitySeverity = "info" | "warning" | "error";
 export type ActivityOutcome = "started" | "succeeded" | "cancelled" | "failed";
 
 export interface KafkaMessage {
+  readonly structured?: import("./structured-record").StructuredRecord;
   readonly original?: KafkaOriginalRecord;
   readonly headers: Readonly<Record<string, string>>;
   readonly id: string;
   readonly key: string | null;
   readonly offset: string;
   readonly originalByteSize: number;
+  /** Full broker record bytes including every ordered header. */
+  readonly recordByteSize?: number;
   readonly partition: number;
   readonly payload: string | null;
   readonly payloadTruncated?: boolean;

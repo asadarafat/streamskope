@@ -1,3 +1,4 @@
+import { RECORD_CODEC_DEFAULTS, parseRecordCodecPreferences } from "./structured-record";
 import { KAFKA_LATENCY_ACKNOWLEDGEMENTS } from "./latency-types";
 import {
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
@@ -192,8 +193,12 @@ export function parseKafkaOperationalPreferences(
   path = "preferences",
 ): KafkaOperationalPreferences {
   const preferences = record(value, path);
-  exactKeys(preferences, ["fetch", "latency", "rules", "stream", "protection"], path);
+  exactKeys(preferences, ["fetch", "latency", "rules", "stream", "protection", "codecs"], path);
   return {
+    codecs:
+      preferences.codecs === undefined
+        ? { ...RECORD_CODEC_DEFAULTS }
+        : parseRecordCodecPreferences(preferences.codecs, `${path}.codecs`),
     protection:
       preferences.protection === undefined
         ? { ...KAFKA_RECORD_PROTECTION_DEFAULTS, maskHeaders: [], valuePaths: [] }
@@ -358,11 +363,14 @@ export function parseKafkaOperationalPreferencePatch(
   path = "preferences.patch",
 ): KafkaOperationalPreferencePatch {
   const patch = record(value, path);
-  exactKeys(patch, ["fetch", "latency", "rules", "stream", "protection"], path);
+  exactKeys(patch, ["fetch", "latency", "rules", "stream", "protection", "codecs"], path);
   if (Object.keys(patch).length === 0) {
     throw new HostContractValidationError(path, "must change at least one preference group");
   }
   return {
+    ...(Object.hasOwn(patch, "codecs")
+      ? { codecs: parseRecordCodecPreferences(patch.codecs, `${path}.codecs`) }
+      : {}),
     ...(Object.hasOwn(patch, "protection")
       ? { protection: parseKafkaRecordProtection(patch.protection, `${path}.protection`) }
       : {}),
@@ -423,6 +431,8 @@ function parseStoreCapability(
 
 function factoryPreferences(preferences: KafkaOperationalPreferences): boolean {
   return (
+    preferences.codecs.key === RECORD_CODEC_DEFAULTS.key &&
+    preferences.codecs.value === RECORD_CODEC_DEFAULTS.value &&
     preferences.fetch.maxMessages === KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.fetch.maxMessages &&
     preferences.fetch.mode === KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.fetch.mode &&
     preferences.latency.acknowledgements ===

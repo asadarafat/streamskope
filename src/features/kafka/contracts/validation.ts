@@ -1,3 +1,4 @@
+import { parseKafkaExploredMessage } from "./message-validation";
 import {
   parseConnectionIdentity,
   parseProfileSasl,
@@ -18,7 +19,6 @@ import {
   parseKafkaWriteReview,
   parseKafkaWriteOutcome,
 } from "./reviewed-writes";
-import { parseKafkaOriginalRecord } from "./record-bytes";
 import { parseRecordDecodeInput, parseRecordDecodeResult } from "./record-codec";
 import { parseKafkaSavedQuery, parseKafkaQueryLibrarySnapshot } from "./query-library";
 import { parseKafkaReadCoverage } from "./query-search";
@@ -79,13 +79,9 @@ import {
   parseClusterServiceHostCommand,
   parseClusterServiceHostEvent,
 } from "./cluster-service-validation";
-import {
-  parseKafkaLiveRuleCapability,
-  parseKafkaLiveRuleEvaluation,
-  parseKafkaRuleNotification,
-} from "./live-rule-validation";
+import { parseKafkaLiveRuleCapability, parseKafkaRuleNotification } from "./live-rule-validation";
 import { parseProtocolVersion, parseBackendAvailability } from "./protocol-validation";
-import { kafkaMessageRetainedBytes, kafkaRawMessageRetainedBytes } from "./message-limits";
+import { kafkaMessageRetainedBytes } from "./message-limits";
 import {
   HOST_COMMANDS,
   HOST_EVENTS,
@@ -96,7 +92,6 @@ import {
   type HostError,
   type HostSecureConnectionInput,
   type HostEvent,
-  type KafkaExploredMessage,
   type OAuthConnectionInput,
   type TlsConnectionInput,
 } from "./types";
@@ -119,12 +114,10 @@ import {
 } from "./topic-configuration-validation";
 import {
   boundedText,
-  boundedUtf8Text,
   declaredValue,
   emptyRecord,
   exactKeys,
   nonNegativeInteger,
-  nullableBoundedUtf8Text,
   nullableText,
   parseBoundedBrokers as parseBrokers,
   record,
@@ -654,77 +647,6 @@ function parseStringArray(value: unknown, path: string, maximumItems: number): r
   return value.map((item, index) => text(item, `${path}[${index}]`, 512));
 }
 
-function parseHeaders(value: unknown, path: string): Readonly<Record<string, string>> {
-  const headers = record(value, path);
-  if (Object.keys(headers).length > KAFKA_MESSAGE_LIMITS.headerCount) {
-    throw new HostContractValidationError(
-      path,
-      `must contain at most ${KAFKA_MESSAGE_LIMITS.headerCount} headers`,
-    );
-  }
-  return Object.fromEntries(
-    Object.entries(headers).map(([key, headerValue]) => [
-      boundedUtf8Text(key, `${path}.key`, KAFKA_MESSAGE_LIMITS.headerKeyBytes),
-      boundedUtf8Text(headerValue, `${path}.${key}`, KAFKA_MESSAGE_LIMITS.headerValueBytes),
-    ]),
-  );
-}
-
-function parseMessage(value: unknown, path: string): KafkaExploredMessage {
-  const message = record(value, path);
-  exactKeys(
-    message,
-    [
-      "headers",
-      "id",
-      "key",
-      "offset",
-      "originalByteSize",
-      "original",
-      "partition",
-      "payload",
-      "payloadTruncated",
-      "preview",
-      "ruleEvaluation",
-      "timestamp",
-      "topic",
-      "truncated",
-    ],
-    path,
-  );
-  const parsed: KafkaExploredMessage = {
-    ...(message.original === undefined
-      ? {}
-      : { original: parseKafkaOriginalRecord(message.original, `${path}.original`) }),
-    headers: parseHeaders(message.headers, `${path}.headers`),
-    id: text(message.id, `${path}.id`, 256),
-    key: nullableBoundedUtf8Text(message.key, `${path}.key`, KAFKA_MESSAGE_LIMITS.messageBytes),
-    offset: text(message.offset, `${path}.offset`, 128),
-    originalByteSize: nonNegativeInteger(message.originalByteSize, `${path}.originalByteSize`),
-    partition: nonNegativeInteger(message.partition, `${path}.partition`),
-    payload: nullableBoundedUtf8Text(
-      message.payload,
-      `${path}.payload`,
-      KAFKA_MESSAGE_LIMITS.messageBytes,
-    ),
-    ...(message.payloadTruncated === undefined
-      ? {}
-      : { payloadTruncated: truth(message.payloadTruncated, `${path}.payloadTruncated`) }),
-    preview: boundedUtf8Text(message.preview, `${path}.preview`, KAFKA_MESSAGE_LIMITS.previewBytes),
-    ruleEvaluation: parseKafkaLiveRuleEvaluation(message.ruleEvaluation, `${path}.ruleEvaluation`),
-    timestamp: text(message.timestamp, `${path}.timestamp`, 128),
-    topic: text(message.topic, `${path}.topic`, 512),
-    truncated: truth(message.truncated, `${path}.truncated`),
-  };
-  if (kafkaRawMessageRetainedBytes(parsed) > KAFKA_MESSAGE_LIMITS.messageBytes) {
-    throw new HostContractValidationError(
-      path,
-      `retained record data must total at most ${KAFKA_MESSAGE_LIMITS.messageBytes} UTF-8 bytes`,
-    );
-  }
-  return parsed;
-}
-
 function parseOptionalError(value: UnknownRecord, path: string): HostError | undefined {
   return Object.hasOwn(value, "error") ? parseHostError(value.error, `${path}.error`) : undefined;
 }
@@ -865,7 +787,7 @@ export function parseHostEvent(value: unknown): HostEvent {
         );
       }
       const messages = payload.messages.map((message, index) =>
-        parseMessage(message, `event.payload.messages[${index}]`),
+        parseKafkaExploredMessage(message, `event.payload.messages[${index}]`),
       );
       const batchBytes = messages.reduce(
         (bytes, message) => bytes + kafkaMessageRetainedBytes(message),

@@ -1,3 +1,6 @@
+import { chmod, lstat, open, unlink } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import {
   parseKafkaOperationalPreferences,
   type HostErrorCode,
@@ -12,12 +15,13 @@ import {
 } from "../../features/kafka/application";
 
 import { readOptionalBoundedJsonFile } from "./bounded-json-file";
+import { readBoundedFile } from "./bounded-file";
 import {
   createAtomicPrivateFileTempId,
   writeAtomicPrivateTextFile,
 } from "./atomic-private-text-file";
 
-const PREFERENCE_FILE_VERSION = 1 as const;
+const PREFERENCE_FILE_VERSION = 2 as const;
 const DEFAULT_MAXIMUM_FILE_BYTES = 32 * 1_024;
 const CORRUPT_PREFERENCE_FILE_RECOVERY =
   "Reset operational preferences to replace the unreadable file.";
@@ -84,10 +88,18 @@ function exactKeys(value: UnknownRecord, allowed: readonly string[]): void {
 function parseDocument(value: unknown): KafkaOperationalPreferences {
   const document = valueRecord(value);
   exactKeys(document, ["preferences", "version"]);
-  if (document.version !== PREFERENCE_FILE_VERSION) {
+  if (document.version !== 1 && document.version !== PREFERENCE_FILE_VERSION) {
     throw new KafkaOperationalPreferenceFileCorruptError();
   }
   try {
+    if (
+      document.version === PREFERENCE_FILE_VERSION &&
+      (!Object.hasOwn(valueRecord(document.preferences), "codecs") ||
+        !Object.hasOwn(valueRecord(document.preferences), "protection"))
+    )
+      throw new KafkaOperationalPreferenceFileCorruptError();
+    if (document.version === 1 && Object.hasOwn(valueRecord(document.preferences), "codecs"))
+      throw new KafkaOperationalPreferenceFileCorruptError();
     return cloneKafkaOperationalPreferences(
       parseKafkaOperationalPreferences(document.preferences, "storedPreferences"),
     );
@@ -136,7 +148,9 @@ export class AtomicKafkaOperationalPreferenceFileStore implements KafkaOperation
       if (Buffer.byteLength(serialized, "utf8") > this.maximumFileBytes) {
         throw new KafkaOperationalPreferenceFileWriteError();
       }
+      const beforeCommit = await this.preservePredecessor(signal);
       await writeAtomicPrivateTextFile({
+        ...(beforeCommit === undefined ? {} : { beforeCommit }),
         contents: serialized,
         createTempId: this.createTempId,
         path: this.path,
@@ -181,5 +195,93 @@ export class AtomicKafkaOperationalPreferenceFileStore implements KafkaOperation
       recovery: CORRUPT_PREFERENCE_FILE_RECOVERY,
       state: "unavailable",
     };
+  }
+
+  /** Keep exact legacy settings before introducing codecs that older hosts cannot read. */
+  private async preservePredecessor(
+    signal?: AbortSignal,
+  ): Promise<(() => Promise<void>) | undefined> {
+    let original: Buffer;
+    try {
+      const predecessor = await lstat(this.path);
+      if (!predecessor.isFile()) throw new KafkaOperationalPreferenceFileWriteError();
+      if (predecessor.size > this.maximumFileBytes) {
+        // An unreadable oversized regular file can be reset without allocating its bytes.
+        // Recheck identity after preparing the replacement so a changed file is never reset.
+        return async () => {
+          signal?.throwIfAborted();
+          const current = await lstat(this.path);
+          if (
+            !current.isFile() ||
+            current.dev !== predecessor.dev ||
+            current.ino !== predecessor.ino ||
+            current.size !== predecessor.size ||
+            current.mtimeMs !== predecessor.mtimeMs ||
+            current.ctimeMs !== predecessor.ctimeMs ||
+            current.nlink !== predecessor.nlink
+          )
+            throw new KafkaOperationalPreferenceFileWriteError();
+        };
+      }
+      original = await readBoundedFile(this.path, this.maximumFileBytes, {
+        signal,
+        rejectSymlinks: true,
+      });
+    } catch (error) {
+      if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT")
+        return;
+      // Explicit preference reset also repairs corrupt files; do not overwrite a readable legacy document without a backup.
+      throw error;
+    }
+    let document: UnknownRecord;
+    try {
+      document = valueRecord(JSON.parse(original.toString("utf8")) as unknown);
+      parseDocument(document);
+    } catch {
+      return;
+    }
+    if (document.version !== 1) return;
+    await chmod(dirname(this.path), 0o700);
+    for (let generation = 0; generation < 100; generation += 1) {
+      const path = `${this.path}.pre-codecs-v1${generation === 0 ? "" : `.${generation}`}`;
+      let handle: Awaited<ReturnType<typeof open>>;
+      try {
+        handle = await open(path, "wx", 0o600);
+      } catch (error) {
+        if (
+          error !== null &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "EEXIST"
+        )
+          continue;
+        throw error;
+      }
+      try {
+        signal?.throwIfAborted();
+        await handle.writeFile(original);
+        await handle.sync();
+        await handle.close();
+        const checked = await readBoundedFile(path, this.maximumFileBytes, {
+          signal,
+          rejectSymlinks: true,
+        });
+        if (!checked.equals(original)) throw new KafkaOperationalPreferenceFileWriteError();
+        if (process.platform !== "win32") {
+          const directory = await open(dirname(path), "r");
+          try {
+            await directory.sync();
+          } finally {
+            await directory.close();
+          }
+        }
+        return;
+      } catch (error) {
+        await handle.close().catch(() => undefined);
+        await unlink(path).catch(() => undefined);
+        throw error;
+      }
+    }
+    throw new KafkaOperationalPreferenceFileWriteError();
   }
 }

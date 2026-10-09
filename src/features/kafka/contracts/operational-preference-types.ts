@@ -1,3 +1,4 @@
+import { RECORD_CODEC_DEFAULTS, type RecordCodecPreferences } from "./structured-record";
 import type { KafkaFetchMode } from "./types";
 import type { KafkaLatencyAcknowledgements } from "./latency-types";
 
@@ -63,6 +64,7 @@ export const KAFKA_RECORD_PROTECTION_DEFAULTS: KafkaRecordProtection = Object.fr
 });
 
 export interface KafkaOperationalPreferences {
+  readonly codecs: RecordCodecPreferences;
   readonly protection: KafkaRecordProtection;
   readonly fetch: KafkaFetchPreferences;
   readonly latency: KafkaLatencyPreferences;
@@ -71,6 +73,7 @@ export interface KafkaOperationalPreferences {
 }
 
 export const KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS: KafkaOperationalPreferences = Object.freeze({
+  codecs: RECORD_CODEC_DEFAULTS,
   protection: KAFKA_RECORD_PROTECTION_DEFAULTS,
   fetch: Object.freeze({
     maxMessages: 1_000,
@@ -107,6 +110,7 @@ export interface KafkaOperationalPreferenceSnapshot {
 }
 
 export interface KafkaOperationalPreferencePatch {
+  readonly codecs?: RecordCodecPreferences;
   readonly protection?: KafkaRecordProtection;
   readonly fetch?: Partial<KafkaFetchPreferences>;
   readonly latency?: Partial<KafkaLatencyPreferences>;

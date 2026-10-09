@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { KafkaFetchRequest } from "../../src/features/kafka/contracts";
+import {
+  KAFKA_QUERY_LIMITS,
+  type KafkaFetchRequest,
+  type KafkaMessage,
+} from "../../src/features/kafka/contracts";
 import { PlatformaticConsumerFactory } from "../../src/features/kafka/engine/platformatic-consumer";
 import type { KafkaConsumerInput, KafkaRawMessage } from "../../src/features/kafka/engine/types";
+import { translateKafkaRecord } from "../../src/features/kafka/engine/message-record";
 
 interface FetchDiagnosticSubscriber {
   asyncEnd(context: unknown): void;
@@ -157,6 +162,84 @@ it("retains the client's ordered header entries including duplicate names and nu
 });
 
 describe("Platformatic Kafka fetch adapter", () => {
+  it.each([false, true])(
+    "cancels projection at the finite deadline (search=%s) without inventing failed coverage",
+    async (search) => {
+      vi.useFakeTimers();
+      try {
+        kafkaState.offsets.set("-2", [0n]);
+        kafkaState.offsets.set("-1", [2n]);
+        kafkaState.messages.push(rawMessage(0n));
+        let entered!: () => void;
+        const preparing = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        let revoked = false;
+        const stream = await new PlatformaticConsumerFactory().open({
+          ...input({
+            mode: "earliest",
+            topic: "orders",
+            maxMessages: 10,
+            ...(search
+              ? { search: { key: "", value: "secret", offset: "", timestamp: "", partition: null } }
+              : {}),
+          }),
+          prepareRecord: (_raw, signal): Promise<KafkaMessage> =>
+            new Promise((_resolve, reject) => {
+              if (!signal) throw new Error("Projection cancellation signal missing");
+              signal.addEventListener(
+                "abort",
+                () => {
+                  revoked = true;
+                  reject(new Error("Projection cancelled"));
+                },
+                { once: true },
+              );
+              entered();
+            }),
+        });
+        const pending = collect(stream);
+        await preparing;
+        await vi.advanceTimersByTimeAsync(KAFKA_QUERY_LIMITS.durationMs);
+        expect(await pending).toEqual([]);
+        expect(revoked).toBe(true);
+        expect(stream.coverage?.()).toMatchObject({ reason: "deadline", scannedRecords: 0 });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it("awaits protected decoding before selecting bounded search matches", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [2n]);
+    kafkaState.messages.push(
+      { ...rawMessage(0n), value: Buffer.from("secret") },
+      { ...rawMessage(1n), value: Buffer.from([0, 0, 0, 0, 7, 1]) },
+    );
+    const prepareRecord = vi.fn(async (raw: KafkaRawMessage) => {
+      await Promise.resolve();
+      return {
+        ...translateKafkaRecord(raw, "orders"),
+        payload: raw.offset === 0n ? "[MASKED]" : "secret",
+      };
+    });
+    const stream = await new PlatformaticConsumerFactory().open({
+      ...input({
+        mode: "earliest",
+        topic: "orders",
+        maxMessages: 10,
+        search: { key: "", value: "secret", offset: "", timestamp: "", partition: null },
+      }),
+      prepareRecord,
+    });
+    expect(await collect(stream)).toEqual([1n]);
+    expect(prepareRecord).toHaveBeenCalledTimes(2);
+    expect(stream.coverage?.()).toMatchObject({
+      reason: "range-complete",
+      scannedRecords: 2,
+      matchedRecords: 1,
+    });
+  });
   it("closes a pending consumer immediately on cancellation and never starts a later fetch", async () => {
     let finish!: (offsets: ReadonlyMap<string, readonly bigint[]>) => void;
     kafkaState.pendingOffsets = new Promise((resolve) => {

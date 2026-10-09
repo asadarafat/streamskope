@@ -19,7 +19,7 @@ Desktop paths below are relative to the [application-data directory](recovery.md
 | Topic configuration history            | `history/kafka-topic-configuration-history.json` | Ordinary JSON with recorded configuration-change evidence; not a broker audit log                                                                                                                                                         |
 | Kafka observations                     | `history/kafka-observations.json`                | Unencrypted JSON with cluster/topic/group identities, offset and health samples, optional record-size/key-frequency aggregates and example partition/offset locators; no raw keys, headers or payloads. Private file permissions on POSIX |
 | Relationship graphs                    | Workbench page memory                            | Bounded identities and timestamped evidence; no saved graph, raw records, schema definitions or connector credentials                                                                                                                     |
-| Operational preferences                | `workbench/kafka-operational-preferences.json`   | Ordinary JSON; persists across restarts                                                                                                                                                                                                   |
+| Operational preferences                | `workbench/kafka-operational-preferences.json`   | Ordinary JSON, including host-wide key/value encoding choices; persists across restarts                                                                                                                                                   |
 | Installed plugins                      | `plugins/`                                       | Verified code, manifests and selection state; removed through Preferences → Plugins                                                                                                                                                       |
 | Cached plugin packages                 | `plugins/.packages/`                             | Verified original archives and provenance; private file permissions on POSIX, not encrypted. Up to four archives of 48 MiB each; unused copies may be evicted. Removing a plugin retains cached delivery bytes for offline reinstallation |
 | Plugin download settings               | `plugins/network.json`                           | Proxy endpoint, mode and offline preference are readable JSON. Proxy credentials use OS-backed encryption when available; otherwise credentials are session-only and omitted from disk. Independent of provider connection settings.      |
@@ -37,6 +37,14 @@ replace. Corrupt workbench preferences block connection until restored or delibe
 [reset while disconnected](recovery.md#operational-preference-recovery);
 the browser file is never treated as workbench configuration. Operational
 preferences remain ordinary JSON, separate from OS-backed credential encryption.
+
+Saving record encoding preferences adopts workbench preference format 2. Before
+migrating format 1, the host keeps an exact
+`kafka-operational-preferences.json.pre-codecs-v1` backup; existing backups are not
+overwritten. Keep it with the full application-data backup. Earlier hosts cannot
+read format 2, and browser maintenance preflight rejects an incompatible rollback
+before changing the running host or data. Restore the matching complete backup
+when returning to an older host; do not edit preference format numbers manually.
 
 Browser development profiles are session-only. Its installed plugins live in
 `.cache/development-plugins`; a development checkout is not a desktop backup.
@@ -120,35 +128,44 @@ complete historical coverage; see [message investigation](messages.md#search-bey
 
 ## Understand an export
 
-The message export uses **schema version 2**: UTF-8 JSON containing the filtered records from one topic.
-It includes keys, headers, payloads/previews, partitions, offsets and timestamps;
-it is not automatically redacted or encrypted. Review the destination and contents
+The message export uses **schema version 3**: UTF-8 JSON containing the filtered records from one topic.
+It includes the structured key/value projection, writer-schema identity, decoding
+errors, ordered header previews, original-byte availability, partitions, offsets
+and timestamps;
+the active masking policy applies before export, but the file is not encrypted. Review the destination and contents
 before sharing it. Stopping a tail gives a stable view but does not recover evicted
 records or dropped delivery.
 
 Inspect these fields before using an export as evidence:
 
-| Field                                          | Meaning                                                                                                         |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `topic`, `filters`                             | Topic and filters applied to the exported view                                                                  |
-| `retainedMessageCount`, `exportedMessageCount` | Retained and exported counts; neither is the broker's total record count                                        |
-| `stale`                                        | Whether the snapshot was marked stale when exported                                                             |
-| `partition`, `offset`                          | The broker position of each exported record                                                                     |
-| `truncated`, `originalByteSize`                | Whether the representation is incomplete and the original content size                                          |
-| `payload`, `preview`                           | Available complete value or bounded preview; a null payload with truncation is not a recovered full record      |
-| `payloadTruncated`                             | Distinguishes a withheld display value from a Kafka tombstone, including invalid UTF-8 that expands on decoding |
-| `original.state`                               | `complete` means the bounded original bytes are present; `unavailable` carries a reason                         |
-| `original.key`, `original.value`               | Canonical Base64 bytes; JSON `null` means Kafka null, while an empty string means zero bytes                    |
-| `original.headers`                             | Ordered Base64 key/value entries preserving repeated names and null header values                               |
+| Field                                          | Meaning                                                                                                                                |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `topic`, `filters`                             | Topic and filters applied to the exported view                                                                                         |
+| `retainedMessageCount`, `exportedMessageCount` | Retained and exported counts; neither is the broker's total record count                                                               |
+| `stale`                                        | Whether the snapshot was marked stale when exported                                                                                    |
+| `partition`, `offset`                          | The broker position of each exported record                                                                                            |
+| `truncated`, `originalByteSize`                | Whether the representation is incomplete and the original content size                                                                 |
+| `payload`, `preview`                           | Aliases of the interpreted value or its bounded preview; use the structured state to distinguish a tombstone from unavailable decoding |
+| `structured.key`, `structured.value`           | Captured encoding, decoded text/JSON, per-record writer schema or explicit error/null/masked state                                     |
+| `structured.headers`                           | Ordered text header entries; preserves duplicate names, nulls, empty values and decoding errors                                        |
+| `structured.headersState`                      | Distinguishes captured ordered headers from unavailable header evidence; an empty list alone is not proof that no headers existed      |
+| `structured.protection`                        | Whether host masking has been applied                                                                                                  |
+| `payloadTruncated`                             | Marks a value withheld by retention limits; `structured.value.state` separately identifies decoding errors and tombstones              |
+| `original.state`                               | `complete` means the bounded original bytes are present; `unavailable` carries a reason                                                |
+| `original.key`, `original.value`               | Canonical Base64 bytes; JSON `null` means Kafka null, while an empty string means zero bytes                                           |
+| `original.headers`                             | Ordered Base64 key/value entries preserving repeated names and null header values                                                      |
 
 The **Original** inspector tab can copy one complete original as Base64 JSON.
-Its ordered headers are authoritative; the Metadata header dictionary is a text preview.
+Its ordered byte headers are authoritative for exact bytes; `structured.headers`
+provides an ordered text projection without collapsing duplicate names.
 Originals retain at most 128 headers, with 512 bytes per header name and 8 KiB per
 header value, within the combined 256 KiB limit. Base64 is encoding, not encryption.
-Display text decodes UTF-8 and can replace invalid sequences; use the complete
-original envelope when byte fidelity matters. Incomplete, unavailable or masked
+Interpretation follows the saved encoding preferences. Invalid text and decoding
+failures are explicit; use the complete original envelope when byte fidelity matters. Incomplete, unavailable or masked
 originals must not be reconstructed from previews. Version 1 exports did not retain
-original bytes; consumers of the export format must recognize version 2 explicitly.
+original bytes; version 2 retained originals but did not include the shared structured
+projection. Consumers must recognize version 3 explicitly rather than treating its
+interpreted payload as the original UTF-8 wire value.
 
 Exports still describe only the retained records, not a complete broker backup.
 If you need a complete archive, use an
@@ -195,15 +212,16 @@ connection on this host and use the same storage as workbench preferences.
 
 There can be at most 32 header names and 32 value paths, each at most 512
 characters, with at most 16 path segments. Invalid or duplicate rules are rejected.
-When JSON paths are configured, non-JSON and incomplete values are fully masked;
-they never fall back to a raw preview. A path that is absent from valid JSON does
-not change that document.
+JSON paths apply to the shared decoded JSON projection, including supported Avro
+and Protobuf records. Non-JSON, malformed and incomplete values are fully masked
+when selective safety cannot be established; they never fall back to a raw
+preview. A path absent from valid decoded JSON does not change that document.
 
 Masking runs in the application host before records reach the table, inspector,
-local filters, live rules, copy or export. This includes reads through connections
+local filters, live rules, comparison, tracing, copy or export. This includes reads through connections
 created by EDA and NSP plugins. All original-byte envelopes are withheld while any
-masking is active. Broker-side search is unavailable with masking; use bounded
-reads and local filters instead. Topic names, offsets, timestamps and record sizes
+masking is active. Structured projections and ordered headers contain only the
+protected values. Broker search and tracing evaluate that same protected view. Topic names, offsets, timestamps and record sizes
 remain visible. The status bar shows **Masking active**.
 
 Saving protection clears retained records and transform logs. It cannot recall

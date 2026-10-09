@@ -43,6 +43,60 @@ const policy = {
 };
 
 describe("Kafka record disclosure", () => {
+  it.each(["[1,2]", '{"items":[1,2]}'])(
+    "treats array length as metadata, not a JSON field: %s",
+    (json) => {
+      const source = record(Buffer.from(json));
+      const structured = {
+        ...source,
+        structured: {
+          version: 1 as const,
+          protection: "none" as const,
+          headers: [],
+          headersState: "complete" as const,
+          key: { state: "null" as const, codec: "auto" as const, writerSchema: null },
+          value: {
+            state: "decoded" as const,
+            codec: "json" as const,
+            text: json,
+            json,
+            writerSchema: null,
+          },
+        },
+      };
+      const masked = protectKafkaRecord(structured, {
+        ...KAFKA_RECORD_PROTECTION_DEFAULTS,
+        valuePaths: ["/length", "/items/length"],
+      });
+      expect(masked.payload).toBe(json);
+      expect(masked.original).toEqual({ state: "unavailable", reason: "masked" });
+    },
+  );
+  it("fails closed if an invalid canonical JSON projection reaches protection", () => {
+    const source = record();
+    const masked = protectKafkaRecord(
+      {
+        ...source,
+        structured: {
+          version: 1,
+          protection: "none",
+          headersState: "complete",
+          headers: [],
+          key: { state: "null", codec: "auto", writerSchema: null },
+          value: {
+            state: "decoded",
+            codec: "json",
+            text: "{secret",
+            json: "{secret",
+            writerSchema: null,
+          },
+        },
+      },
+      policy,
+    );
+    expect(masked.payload).toBe("[MASKED]");
+    expect(JSON.stringify(masked)).not.toContain("secret");
+  });
   it("removes selected content from every retained representation and the export document", () => {
     const original = record();
     const masked = protectKafkaRecord(original, policy);

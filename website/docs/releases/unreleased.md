@@ -38,3 +38,15 @@ file for recovery. Older hosts cannot read that format; review the
 The runtime qualification matrix covers an isolated Kafka broker and controlled
 HTTPS endpoints; this does not claim qualification of managed services or native
 OS credential migration.
+
+Kafka records now share one interpretation across the message grid, filters, live
+rules, comparison, tracing, masking and export. Each record retains its writer
+schema identity and an explicit decoding outcome; original bytes remain unchanged
+and are withheld from disclosed records whenever masking is active. Mixed schemas,
+tombstones and ordered duplicate headers retain their meaning across workflows.
+
+**Preferences → Records** saves host-wide key/value encoding choices with controlled
+detection and manual overrides. The message export advances to schema version 3
+to include the captured structured projection. See
+[record interpretation](../guide/structured-events.md) and
+[export compatibility](../guide/data-handling.md#understand-an-export).

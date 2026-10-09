@@ -25,7 +25,7 @@ function usageError(): number {
 export async function cliMain(args: readonly string[]): Promise<number> {
   if (args.length === 0 || args[0] === "--help") {
     process.stdout.write(
-      "StreamSkope read-only CLI (Node 24)\ninspect --config PRIVATE.json\nquery --config PRIVATE.json --query QUERY.json\nexport --config PRIVATE.json --query QUERY.json --output NEW.ndjson\nConfiguration: {connection: <desktop connection input>, protection: {readOnly:true,maskKey:false,maskHeaders:[],valuePaths:[]}}\nExit: 0 success, 1 operation failed, 2 usage/config, 130 cancelled. No mutation commands.\n",
+      'StreamSkope read-only CLI (Node 24)\ninspect --config PRIVATE.json\nquery --config PRIVATE.json --query QUERY.json\nexport --config PRIVATE.json --query QUERY.json --output NEW.ndjson\nConfiguration: {connection: <desktop connection input>, protection: {readOnly:true,maskKey:false,maskHeaders:[],valuePaths:[]}, codecs: {key:"auto",value:"auto"}} (codecs optional)\nExit: 0 success, 1 operation failed, 2 usage/config, 130 cancelled. No mutation commands.\n',
     );
     return 0;
   }
@@ -57,8 +57,8 @@ export async function cliMain(args: readonly string[]): Promise<number> {
   try {
     const config = await readCliJson(options.get("--config")!, true);
     const query = options.has("--query") ? await readCliJson(options.get("--query")!) : undefined;
-    const { protection } = parseCliConfiguration(config);
-    parseCliQuery(operation as "inspect" | "query" | "export", query, protection);
+    parseCliConfiguration(config);
+    parseCliQuery(operation as "inspect" | "query" | "export", query);
     if (operation === "export") {
       path = options.get("--output")!;
       output = await open(path, "wx", 0o600);

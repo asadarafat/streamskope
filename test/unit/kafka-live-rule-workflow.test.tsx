@@ -285,7 +285,7 @@ describe("Kafka live rule Material UI workflow", () => {
     expect(inspector).toHaveTextContent("The complete payload remains available");
   });
 
-  it("filters, selects, inspects raw data, and clears the filter with the keyboard", async () => {
+  it("filters, selects, inspects projection text, and clears the filter with the keyboard", async () => {
     const { grid, user } = await renderMessages({
       applicableRules: 4,
       omittedRules: 0,
@@ -318,8 +318,8 @@ describe("Kafka live rule Material UI workflow", () => {
     const valueTab = within(inspector).getByRole("tab", { name: "Value" });
     valueTab.focus();
     await user.keyboard("{Enter}");
-    const rawTab = within(inspector).getByRole("tab", { name: "Raw" });
-    rawTab.focus();
+    const projectionTab = within(inspector).getByRole("tab", { name: "Projection text" });
+    projectionTab.focus();
     await user.keyboard("{Enter}");
     expect(inspector).toHaveTextContent('{"record":"active-key"}');
 

@@ -44,6 +44,7 @@ function immutablePreferences(
   Object.freeze(clone.protection.maskHeaders);
   Object.freeze(clone.protection.valuePaths);
   Object.freeze(clone.protection);
+  Object.freeze(clone.codecs);
   Object.freeze(clone.fetch);
   Object.freeze(clone.latency);
   Object.freeze(clone.rules);
@@ -66,6 +67,7 @@ function mergePreferences(
   patch: KafkaOperationalPreferencePatch,
 ): KafkaOperationalPreferences {
   return {
+    codecs: { ...(patch.codecs ?? current.codecs) },
     protection: patch.protection ?? current.protection,
     fetch: { ...current.fetch, ...patch.fetch },
     latency: { ...current.latency, ...patch.latency },

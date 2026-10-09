@@ -698,15 +698,18 @@ export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): Kaf
         profileStore: event.payload.store,
       };
     case "preferences.changed": {
-      const protectionChanged =
+      const recordSettingsChanged =
         JSON.stringify(state.preferenceSnapshot?.preferences.protection) !==
-        JSON.stringify(event.payload.preferences.protection);
+          JSON.stringify(event.payload.preferences.protection) ||
+        JSON.stringify(state.preferenceSnapshot?.preferences.codecs) !==
+          JSON.stringify(event.payload.preferences.codecs);
       return {
         ...sequencedState,
-        ...(protectionChanged
+        ...(recordSettingsChanged
           ? {
               messages: [],
               messagesStale: false,
+              retainedMessageBytes: 0,
               transformLogs: { ...state.transformLogs, logs: [], state: "unavailable" as const },
             }
           : {}),

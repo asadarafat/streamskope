@@ -36,6 +36,7 @@ import {
   type KafkaOperationalPreferenceDraft,
   type KafkaOperationalPreferenceDraftField,
 } from "./operational-preference-draft";
+import { RecordCodecPreferencesPanel } from "./RecordCodecPreferencesPanel";
 import { RecordProtectionPanel } from "./RecordProtectionPanel";
 import { PluginsPanel } from "./PluginsPanel";
 
@@ -165,7 +166,9 @@ export function OperationalPreferencesDialog({
   open,
   snapshot,
 }: OperationalPreferencesDialogProperties): React.JSX.Element {
-  const [section, setSection] = useState<"workbench" | "plugins" | "protection">(initialSection);
+  const [section, setSection] = useState<"workbench" | "plugins" | "protection" | "records">(
+    initialSection,
+  );
   useEffect(() => {
     if (open) setSection(initialSection);
   }, [initialSection, open]);
@@ -323,13 +326,21 @@ export function OperationalPreferencesDialog({
         <Tabs
           aria-label="Preferences sections"
           value={section}
-          onChange={(_event, value: "workbench" | "plugins" | "protection") => setSection(value)}
+          onChange={(_event, value: "workbench" | "plugins" | "protection" | "records") =>
+            setSection(value)
+          }
         >
           <Tab
             id="preferences-workbench-tab"
             aria-controls="preferences-workbench-panel"
             label="Workbench"
             value="workbench"
+          />
+          <Tab
+            id="preferences-records-tab"
+            aria-controls="preferences-records-panel"
+            label="Records"
+            value="records"
           />
           <Tab
             id="preferences-protection-tab"
@@ -345,6 +356,19 @@ export function OperationalPreferencesDialog({
           />
         </Tabs>
         <DialogContent dividers>
+          {section === "records" && open ? (
+            <Box
+              role="tabpanel"
+              id="preferences-records-panel"
+              aria-labelledby="preferences-records-tab"
+            >
+              <RecordCodecPreferencesPanel
+                host={host}
+                snapshot={snapshot}
+                disconnected={disconnected}
+              />
+            </Box>
+          ) : null}
           {section === "protection" && open ? (
             <Box
               role="tabpanel"

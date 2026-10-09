@@ -36,6 +36,37 @@ export async function matchCorrelation(
   context: KafkaClusterServiceContext | null,
   signal: AbortSignal,
 ): Promise<"matched" | "different" | "unavailable"> {
+  const structured = message.structured;
+  if (structured) {
+    signal.throwIfAborted();
+    if (input.selector.source === "header") {
+      if (structured.headersState === "unavailable") return "unavailable";
+      let unavailable = false;
+      for (const header of structured.headers) {
+        if (header.error) {
+          unavailable = true;
+          continue;
+        }
+        if (header.key === input.selector.path && header.value === input.value) return "matched";
+      }
+      return unavailable ? "unavailable" : "different";
+    }
+    const field = input.selector.source === "key" ? structured.key : structured.value;
+    if (field.state === "null") return "different";
+    if (field.state === "error" || field.state === "masked") return "unavailable";
+    if (input.selector.source === "key")
+      return field.text === input.value ? "matched" : "different";
+    if (field.json === null) return "unavailable";
+    try {
+      const value = jsonPointer(field.json, input.selector.path);
+      return (typeof value === "string" || typeof value === "boolean") &&
+        String(value) === input.value
+        ? "matched"
+        : "different";
+    } catch {
+      return "unavailable";
+    }
+  }
   const original = message.original;
   if (original?.state !== "complete") return "unavailable";
   try {
@@ -59,7 +90,8 @@ export async function matchCorrelation(
     }
     if (original.value === null) return "different";
     let json: string;
-    if (input.selector.format === "json") json = utf8(original.value);
+    if (input.selector.format === "json" || input.selector.format === "auto")
+      json = utf8(original.value);
     else {
       if (!codec) return "unavailable";
       const decoded = await codec.decode(

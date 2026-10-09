@@ -6,6 +6,7 @@ import {
   type CorrelationTopicEvidence,
   type CorrelationTraceMatch,
 } from "../contracts/correlation-trace";
+import { kafkaRawMessageRetainedBytes } from "../contracts/message-limits";
 
 import type { KafkaActiveConnection, KafkaMessageStream } from "./types";
 import type { RecordCodecService } from "./record-codec-service";
@@ -75,11 +76,15 @@ export async function traceCorrelation(
           reason = "record-limit";
           break;
         }
-        if (bytes + message.originalByteSize > limits.bytes) {
+        const evaluatedBytes = Math.max(
+          message.recordByteSize ?? message.originalByteSize,
+          kafkaRawMessageRetainedBytes(message),
+        );
+        if (bytes + evaluatedBytes > limits.bytes) {
           stopReason = "evaluation-byte-limit";
           break;
         }
-        bytes += message.originalByteSize;
+        bytes += evaluatedBytes;
         const timestamp = Date.parse(message.timestamp);
         if (message.topic !== topic || !Number.isFinite(timestamp)) {
           unavailable++;

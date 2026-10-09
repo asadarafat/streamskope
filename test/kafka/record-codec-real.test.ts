@@ -141,6 +141,38 @@ it("decodes real Kafka original bytes using authenticated Registry IDs and Proto
       }),
     ).toMatchObject({ ok: true });
     await vi.waitFor(() => expect(messages).toHaveLength(values.length), { timeout: 10_000 });
+    // Production reads prepare each record before emitting it, using the record's
+    // writer ID rather than a topic-wide encoding or a separate inspector decode.
+    expect(messages[0]?.structured?.value).toMatchObject({
+      state: "decoded",
+      codec: "avro",
+      writerSchema: {
+        id: avroId,
+        format: "avro",
+        messageType: null,
+        registry: new URL(fixture.schemaRegistryEndpoint).toString(),
+      },
+    });
+    expect(messages[1]?.structured?.value).toMatchObject({
+      state: "decoded",
+      codec: "protobuf",
+      writerSchema: {
+        id: protoId,
+        format: "protobuf",
+        messageType: ".fixture.Event",
+        registry: new URL(fixture.schemaRegistryEndpoint).toString(),
+      },
+    });
+    expect(JSON.parse(messages[0]!.payload!)).toEqual({ id: "9223372036854775807", name: "ok" });
+    expect(JSON.parse(messages[1]!.payload!)).toEqual({
+      id: "9223372036854775807",
+      detail: { name: "ok" },
+    });
+    expect(messages[2]?.structured?.value).toMatchObject({
+      state: "error",
+      code: "schema-unavailable",
+    });
+    expect(messages[3]?.structured?.value).toMatchObject({ state: "null" });
     const decoded = [];
     for (const [index, message] of messages.entries()) {
       expect(message.original?.state).toBe("complete");
@@ -383,6 +415,25 @@ it("decodes real Kafka original bytes using authenticated Registry IDs and Proto
         trace: { matches: [{ topic, offset: "1" }], topics: [{ state: "partial", matches: 1 }] },
       },
     });
+    const mixedTrace = await backend.execute({
+      command: "records.trace",
+      id: "mixed-schema-trace",
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        ...traceInput,
+        traceId: "mixed-schema-trace",
+        topics: [topic],
+        value: "9223372036854775807",
+        selector: { source: "payload", path: "/id", format: "auto" },
+      },
+    });
+    expect(mixedTrace).toMatchObject({
+      ok: true,
+      result: { trace: { topics: [{ state: "partial" }] } },
+    });
+    if (!mixedTrace.ok || mixedTrace.command !== "records.trace")
+      throw new Error("Mixed trace failed");
+    expect(mixedTrace.result.trace.matches.map((match) => match.offset)).toEqual(["0", "1"]);
     expect(await endOffset()).toBe(before! + 4n); // Trace never writes or changes the earlier sample count.
   } finally {
     await backend.shutdown();

@@ -50,15 +50,18 @@ afterEach(() => {
 });
 
 describe("message presentation", () => {
-  it("preserves Value and Raw when selecting another record", async () => {
+  it("preserves Value and projection text when selecting another record", async () => {
     const user = userEvent.setup();
     const view = render(<MessageInspector message={message("1")} onClose={() => undefined} />);
     await user.click(screen.getByRole("tab", { name: "Value" }));
-    await user.click(screen.getByRole("tab", { name: "Raw" }));
+    await user.click(screen.getByRole("tab", { name: "Projection text" }));
     for (const id of ["2", "3", "4"]) {
       view.rerender(<MessageInspector message={message(id)} onClose={() => undefined} />);
       expect(screen.getByRole("tab", { name: "Value" })).toHaveAttribute("aria-selected", "true");
-      expect(screen.getByRole("tab", { name: "Raw" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "Projection text" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       expect(screen.getByRole("region", { name: "Value evidence" })).toHaveTextContent(
         `{"sequence":${id}}`,
       );
@@ -70,9 +73,12 @@ describe("message presentation", () => {
       />,
     );
     expect(screen.getByRole("tab", { name: "Value" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("tab", { name: "Raw" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Projection text" })).not.toBeInTheDocument();
     view.rerender(<MessageInspector message={message("6")} onClose={() => undefined} />);
-    expect(screen.getByRole("tab", { name: "Raw" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Projection text" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
   it("virtualizes 10,000 deterministic rows and keeps keyboard selection operable", async () => {
     const messages = Array.from({ length: 10_000 }, (_value, index) => message(String(index)));

@@ -329,7 +329,9 @@ def inventory(root, uid, gid):
 def inspection(value, policy, version, target=None):
     # Legacy targets have no inspector. A current inspector accepting format 4
     # cannot establish that those older binaries can read the expanded credentials.
-    kafka_maximum = 3 if target is not None and not target["inspector"] else 4
+    legacy_target = target is not None and not target["inspector"]
+    kafka_maximum = 3 if legacy_target else 4
+    preference_maximum = 1 if legacy_target else 2
     exact(
         value,
         {"schemaVersion", "dataContract", "hostRelease", "outcome", "documents", "unverified"},
@@ -360,7 +362,7 @@ def inspection(value, policy, version, target=None):
         require(
             isinstance(formats, list)
             and all(
-                integer(number, 1, kafka_maximum if kind in ("kafka-profiles", "profile-backups") else 1)
+                integer(number, 1, kafka_maximum if kind in ("kafka-profiles", "profile-backups") else preference_maximum if kind == "preferences" else 1)
                 for number in formats
             )
             and formats == sorted(set(formats)),

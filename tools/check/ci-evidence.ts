@@ -24,10 +24,17 @@ export const CI_REPORTS: Record<CiLane, readonly ReportDefinition[]> = {
   ],
   runtime: [
     { path: ".artifacts/ci/connection-profiles-real.json", kind: "vitest" },
+    { path: ".artifacts/ci/structured-records-real.json", kind: "vitest" },
     { path: ".artifacts/ci/observations-real.json", kind: "vitest" },
     { path: ".artifacts/ci/nats-real.json", kind: "vitest" },
     { path: ".artifacts/ci/production-startup.json", kind: "playwright" },
-    ...["production-startup", "workbench", "nats-workspace", "plugin-lifecycle"].map(browserReport),
+    ...[
+      "production-startup",
+      "workbench",
+      "nats-workspace",
+      "structured-records",
+      "plugin-lifecycle",
+    ].map(browserReport),
   ],
 };
 

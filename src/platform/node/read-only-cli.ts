@@ -11,10 +11,13 @@ import {
 import { parseKafkaRecordProtection } from "../../features/kafka/contracts/operational-preference-validation";
 import { record, exactKeys } from "../../features/kafka/contracts/validation-primitives";
 import {
-  protectKafkaRecord,
-  hasRecordMasking,
-} from "../../features/kafka/application/record-protection";
+  RECORD_CODEC_DEFAULTS,
+  parseRecordCodecPreferences,
+  type RecordCodecPreferences,
+} from "../../features/kafka/contracts/structured-record";
 import { StreamSkopeKafkaEngine } from "../../features/kafka/engine";
+
+import { createHostRecordPipeline } from "./record-pipeline";
 
 export interface CliIo {
   write(value: unknown): Promise<void>;
@@ -48,9 +51,10 @@ export async function readCliJson(path: string, secret = false): Promise<unknown
 export function parseCliConfiguration(value: unknown): {
   connection: SecureConnectionInput;
   protection: KafkaRecordProtection;
+  codecs: RecordCodecPreferences;
 } {
   const p = record(value, "CLI config");
-  exactKeys(p, ["connection", "protection"], "CLI config");
+  exactKeys(p, ["connection", "protection", "codecs"], "CLI config");
   const command = parseHostCommand({
     command: "connection.connect",
     id: "cli",
@@ -63,6 +67,8 @@ export function parseCliConfiguration(value: unknown): {
     );
   return {
     connection: command.payload as SecureConnectionInput,
+    codecs:
+      p.codecs === undefined ? { ...RECORD_CODEC_DEFAULTS } : parseRecordCodecPreferences(p.codecs),
     protection: { ...parseKafkaRecordProtection(p.protection), readOnly: true },
   };
 }
@@ -73,12 +79,11 @@ export async function runReadOnlyCli(
   io: CliIo,
   signal: AbortSignal,
 ): Promise<void> {
-  const { connection, protection } = parseCliConfiguration(configuration);
-  const request = parseCliQuery(operation, query, protection);
-  const engine = new StreamSkopeKafkaEngine({
-    protectRecord: (message): import("../../features/kafka/contracts").KafkaMessage =>
-      protectKafkaRecord(message, protection),
-  });
+  const { connection, protection, codecs } = parseCliConfiguration(configuration);
+  const request = parseCliQuery(operation, query);
+  const engine = new StreamSkopeKafkaEngine(
+    createHostRecordPipeline(() => ({ codecs, protection })),
+  );
   const active = await engine.openConnection(connection, signal);
   try {
     if (!request) {
@@ -131,14 +136,9 @@ export async function runReadOnlyCli(
 export function parseCliQuery(
   operation: "inspect" | "query" | "export",
   query: unknown,
-  protection: KafkaRecordProtection,
 ): ReturnType<typeof parseKafkaFetchRequest> | null {
   const request = operation === "inspect" ? null : parseKafkaFetchRequest(query);
   if (request && (request.mode === "tail" || request.maxMessages > 1000))
     throw new CliInputError("CLI queries require a finite read of at most 1,000 records.");
-  if (request?.search !== undefined && hasRecordMasking(protection))
-    throw new CliInputError(
-      "Broker-side search is unavailable while record masking is active. Read a bounded range and inspect its protected output.",
-    );
   return request;
 }

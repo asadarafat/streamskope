@@ -3,6 +3,7 @@ import {
   KAFKA_QUERY_LIMITS,
   compileKafkaSearchFilter,
   type KafkaReadCoverage,
+  type KafkaMessage,
   type KafkaReadReason,
 } from "../contracts";
 
@@ -50,7 +51,7 @@ export class KafkaReadTracker {
     };
   }
 
-  accept(message: KafkaRawMessage): boolean {
+  accept(message: KafkaRawMessage, prepared?: KafkaMessage): boolean {
     if (this.finished || message.topic !== this.plan.request.topic) return false;
     const next = this.next.get(message.partition);
     const end = this.plan.endOffsets?.get(message.partition);
@@ -92,16 +93,18 @@ export class KafkaReadTracker {
         this.unavailableRecords += 1;
         match = false;
       } else {
-        const result = this.predicate?.({
-          key: filter.key.trim().length === 0 ? null : (message.key?.toString("utf8") ?? null),
-          payload:
-            filter.value.trim().length === 0 && (filter.expression?.trim().length ?? 0) === 0
-              ? null
-              : (message.value?.toString("utf8") ?? null),
-          offset: String(message.offset),
-          partition: message.partition,
-          timestamp: new Date(Number(message.timestamp)).toISOString(),
-        });
+        const result = this.predicate?.(
+          prepared ?? {
+            key: filter.key.trim().length === 0 ? null : (message.key?.toString("utf8") ?? null),
+            payload:
+              filter.value.trim().length === 0 && (filter.expression?.trim().length ?? 0) === 0
+                ? null
+                : (message.value?.toString("utf8") ?? null),
+            offset: String(message.offset),
+            partition: message.partition,
+            timestamp: new Date(Number(message.timestamp)).toISOString(),
+          },
+        );
         match = result === "matched";
         if (result === "unavailable") this.unavailableRecords += 1;
       }

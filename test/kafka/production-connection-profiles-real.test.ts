@@ -24,6 +24,7 @@ import {
 import { loadFixtureConfig } from "../support/kafka-fixture";
 import { startNativeKafkaFixture } from "../support/native-kafka-fixture";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
+import { undecodableClientKey } from "../support/tls-client-identity-fixture";
 
 const mechanisms = ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"] as const;
 let fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>>;
@@ -309,11 +310,12 @@ describe("real production profile authentication and encrypted restart", () => {
       await reconnect(host.current(), id);
     });
   });
-  it.each(["wrong passphrase", "mismatched certificate"])(
+  it.each(["wrong passphrase", "mismatched certificate", "undecodable decrypted key"])(
     "rejects %s without disclosing client key material",
     async (scenario) => {
       await ownedHost(async (host) => {
         const wrong = `invalid-${randomBytes(16).toString("hex")}`;
+        const undecodableKey = undecodableClientKey(wrong);
         const result = await execute(host.current(), "profiles.test", {
           mode: "create",
           profile: {
@@ -323,13 +325,19 @@ describe("real production profile authentication and encrypted restart", () => {
               ...identity(),
               ...(scenario === "wrong passphrase"
                 ? { passphrase: material(wrong) }
-                : { certificatePem: material(authentication().caPem) }),
+                : scenario === "mismatched certificate"
+                  ? { certificatePem: material(authentication().caPem) }
+                  : {
+                      privateKeyPem: material(undecodableKey),
+                      passphrase: material(wrong),
+                    }),
             },
           },
         });
-        expect(result).toMatchObject({ ok: false });
+        expect(result).toMatchObject({ ok: false, error: { code: "TLS_TRUST", stage: "tls" } });
         const output = JSON.stringify([result, host.events]);
         expect(output.includes(wrong)).toBe(false);
+        expect(output.includes(JSON.stringify(undecodableKey).slice(1, -1))).toBe(false);
         expect(output).toMatch(/key|passphrase|identity/iu);
       });
     },

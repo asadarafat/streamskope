@@ -193,6 +193,14 @@ it("generates a real Registry client, round-trips Kafka bytes and exports protec
         headers: { secret: "[MASKED]" },
         original: { state: "unavailable", reason: "masked" },
         payload: '{"id":1,"label":"visible","private":"[MASKED]"}',
+        structured: {
+          protection: "masked",
+          value: {
+            state: "decoded",
+            codec: "json",
+            json: '{"id":1,"label":"visible","private":"[MASKED]"}',
+          },
+        },
       },
     });
     expect(results[3]).toMatchObject({
@@ -202,10 +210,16 @@ it("generates a real Registry client, round-trips Kafka bytes and exports protec
       coverage: { scannedRecords: 3, matchedRecords: 3, reason: "range-complete" },
     });
     const search = { key: "", value: "secret-value", offset: "", timestamp: "", partition: null };
-    await expect(
-      runReadOnlyCli("query", cliConfig, { ...query, search }, collect, signal),
-    ).rejects.toThrow("masking");
-    expect(results).toHaveLength(4); // No output or matching side channel from the rejected search.
+    const protectedRecords = [...results];
+    results.length = 0;
+    await runReadOnlyCli("query", cliConfig, { ...query, search }, collect, signal);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      kind: "summary",
+      count: 0,
+      coverage: { scannedRecords: 3, matchedRecords: 0 },
+    });
+    expect(JSON.stringify(results)).not.toContain("secret-value");
     const unmasked: unknown[] = [];
     await runReadOnlyCli(
       "query",
@@ -261,7 +275,7 @@ it("generates a real Registry client, round-trips Kafka bytes and exports protec
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as unknown);
-    expect(lines.slice(0, 3)).toEqual(results.slice(0, 3));
+    expect(lines.slice(0, 3)).toEqual(protectedRecords.slice(0, 3));
     expect(lines[3]).toMatchObject({
       kind: "summary",
       operation: "export",

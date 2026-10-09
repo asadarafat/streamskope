@@ -303,6 +303,26 @@ describe("bounded writer schema resolution", () => {
     );
     expect(await oversized.decode(input, context, signal())).toMatchObject({ code: "limit" });
   });
+  it("does not reuse schema IDs across Registry or connection authorities", async () => {
+    const byId = vi.fn((authority: typeof context) =>
+      Promise.resolve({
+        ...avroSchema,
+        schema:
+          authority === context
+            ? avroSchema.schema
+            : avroSchema.schema.replace('"name":"name"', '"name":"label"'),
+      }),
+    );
+    const service = new RecordCodecService({ byId, byVersion: vi.fn() }, codec);
+    const other = { ...context, baseUrl: "https://other-registry.test" };
+    expect(json(await service.decode(input, context, signal()))).toEqual({ id: "1", name: "ok" });
+    expect(json(await service.decode(input, other, signal()))).toEqual({ id: "1", label: "ok" });
+    expect(json(await service.decode(input, { ...other }, signal()))).toEqual({
+      id: "1",
+      label: "ok",
+    });
+    expect(byId).toHaveBeenCalledTimes(3);
+  });
   it("does not cache a schema fetched after cancellation", async () => {
     const controller = new AbortController();
     let complete!: (value: RegisteredSchema) => void;
@@ -321,5 +341,29 @@ describe("bounded writer schema resolution", () => {
     byId.mockResolvedValue(avroSchema);
     await service.decode(input, context, signal());
     expect(byId).toHaveBeenCalledTimes(2);
+  });
+  it("reuses bounded successful projections only within a live connection authority", async () => {
+    const controller = new AbortController();
+    const authority = { ...context, signal: controller.signal };
+    const decode = vi.fn(codec.decode.bind(codec));
+    const service = new RecordCodecService(
+      { byId: (): Promise<RegisteredSchema> => Promise.resolve(avroSchema), byVersion: vi.fn() },
+      { decode },
+    );
+    const first = await service.decode(input, authority, signal());
+    const second = await service.decode(input, authority, signal());
+    expect(second).toEqual(first);
+    expect(Object.isFrozen(second)).toBe(true);
+    expect(decode).toHaveBeenCalledTimes(1);
+    controller.abort();
+    expect(await service.decode(input, authority, signal())).toMatchObject({
+      state: "error",
+      code: "cancelled",
+    });
+    await service.decode(input, { ...context }, signal());
+    expect(decode).toHaveBeenCalledTimes(2);
+    service.clear();
+    await service.decode(input, context, signal());
+    expect(decode).toHaveBeenCalledTimes(3);
   });
 });

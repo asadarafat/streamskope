@@ -1,4 +1,15 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { renameSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -28,6 +39,7 @@ function preferencePath(userData: string): string {
 
 function changedPreferences(): KafkaOperationalPreferences {
   return {
+    codecs: { key: "auto", value: "auto" },
     protection: { readOnly: false, maskKey: false, maskHeaders: [], valuePaths: [] },
     fetch: { maxMessages: 100, mode: "newest" },
     latency: {
@@ -59,6 +71,149 @@ afterEach(async () => {
 });
 
 describe("Kafka operational-preference file store", () => {
+  it("migrates legacy codec defaults, preserves exact predecessor bytes and restores overrides after restart", async () => {
+    const path = preferencePath(await temporaryUserData());
+    await mkdir(dirname(path), { recursive: true });
+    const { codecs, ...legacy } = changedPreferences();
+    expect(codecs).toEqual({ key: "auto", value: "auto" });
+    const predecessor = Buffer.from(
+      `${JSON.stringify({ version: 1, preferences: legacy }, null, 2)}\n`,
+    );
+    await writeFile(path, predecessor, { mode: 0o600 });
+    const store = new AtomicKafkaOperationalPreferenceFileStore(path);
+    expect((await store.load())?.codecs).toEqual({ key: "auto", value: "auto" });
+    const preferences = {
+      ...changedPreferences(),
+      codecs: { key: "utf8", value: "protobuf" },
+    } as const;
+    await store.commit(preferences);
+    expect(await readFile(`${path}.pre-codecs-v1`)).toEqual(predecessor);
+    expect((await stat(`${path}.pre-codecs-v1`)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ version: 2, preferences });
+    expect(await new AtomicKafkaOperationalPreferenceFileStore(path).load()).toEqual(preferences);
+    await store.commit({ ...preferences, codecs: { key: "bytes", value: "json" } });
+    expect(await readFile(`${path}.pre-codecs-v1`)).toEqual(predecessor);
+    expect(await readdir(dirname(path))).toEqual([
+      "kafka-operational-preferences.json",
+      "kafka-operational-preferences.json.pre-codecs-v1",
+    ]);
+  });
+
+  it("refuses unknown codec settings and incomplete format 2 documents without altering stored bytes", async () => {
+    const path = preferencePath(await temporaryUserData());
+    await mkdir(dirname(path), { recursive: true });
+    for (const codecs of [{ key: "auto", value: "guess" }, { key: "json" }, undefined]) {
+      const { codecs: omittedCodecs, ...rest } = changedPreferences();
+      expect(omittedCodecs).toEqual({ key: "auto", value: "auto" });
+      const bytes = Buffer.from(
+        JSON.stringify({ version: 2, preferences: { ...rest, ...(codecs ? { codecs } : {}) } }),
+      );
+      await writeFile(path, bytes);
+      await expect(
+        new AtomicKafkaOperationalPreferenceFileStore(path).load(),
+      ).rejects.toBeInstanceOf(KafkaOperationalPreferenceFileCorruptError);
+      expect(await readFile(path)).toEqual(bytes);
+    }
+  });
+
+  it("requires explicit format 2 protection settings while preserving the legacy default", async () => {
+    const path = preferencePath(await temporaryUserData());
+    await mkdir(dirname(path), { recursive: true });
+    const { protection, ...withoutProtection } = changedPreferences();
+    expect(protection).toEqual(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.protection);
+    const bytes = JSON.stringify({ version: 2, preferences: withoutProtection });
+    await writeFile(path, bytes);
+    await expect(new AtomicKafkaOperationalPreferenceFileStore(path).load()).rejects.toBeInstanceOf(
+      KafkaOperationalPreferenceFileCorruptError,
+    );
+    expect(await readFile(path, "utf8")).toBe(bytes);
+
+    const { codecs, ...legacy } = withoutProtection;
+    expect(codecs).toEqual({ key: "auto", value: "auto" });
+    await writeFile(path, JSON.stringify({ version: 1, preferences: legacy }));
+    expect(await new AtomicKafkaOperationalPreferenceFileStore(path).load()).toEqual(
+      changedPreferences(),
+    );
+  });
+
+  it("resets an oversized corrupt regular file and restores durable preferences after restart", async () => {
+    const path = preferencePath(await temporaryUserData());
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, Buffer.alloc(33 * 1_024, 0x78));
+    const store = new AtomicKafkaOperationalPreferenceFileStore(path);
+    await expect(store.load()).rejects.toBeInstanceOf(KafkaOperationalPreferenceFileCorruptError);
+    await store.commit(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS);
+    expect(await new AtomicKafkaOperationalPreferenceFileStore(path).load()).toEqual(
+      KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+    );
+    expect(store.capability()).toEqual({ durability: "durable", state: "ready" });
+    expect(await readdir(dirname(path))).toEqual([basename(path)]);
+  });
+
+  it("refuses to reset an oversized file through a symlink", async () => {
+    const path = preferencePath(await temporaryUserData());
+    await mkdir(dirname(path), { recursive: true });
+    const target = `${path}.outside`;
+    const bytes = Buffer.alloc(33 * 1_024, 0x78);
+    await writeFile(target, bytes);
+    await symlink(target, path);
+    await expect(
+      new AtomicKafkaOperationalPreferenceFileStore(path).commit(changedPreferences()),
+    ).rejects.toBeInstanceOf(KafkaOperationalPreferenceFileWriteError);
+    expect((await lstat(path)).isSymbolicLink()).toBe(true);
+    expect(await readFile(target)).toEqual(bytes);
+  });
+
+  it.each(["regular", "symlink"])(
+    "does not reset a %s replacement raced into an oversized reset",
+    async (replacement) => {
+      const path = preferencePath(await temporaryUserData());
+      await mkdir(dirname(path), { recursive: true });
+      const oversized = Buffer.alloc(33 * 1_024, 0x78);
+      await writeFile(path, oversized);
+      const { codecs, ...legacy } = changedPreferences();
+      expect(codecs).toEqual({ key: "auto", value: "auto" });
+      const replacementBytes = JSON.stringify({ version: 1, preferences: legacy });
+      const target = `${path}.outside`;
+      await writeFile(target, replacementBytes);
+      const store = new AtomicKafkaOperationalPreferenceFileStore(path, {
+        createTempId: (): string => {
+          renameSync(path, `${path}.original`);
+          if (replacement === "symlink") symlinkSync(target, path);
+          else writeFileSync(path, replacementBytes);
+          return "race";
+        },
+      });
+      await expect(store.commit(KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS)).rejects.toBeInstanceOf(
+        KafkaOperationalPreferenceFileWriteError,
+      );
+      expect((await lstat(path)).isSymbolicLink()).toBe(replacement === "symlink");
+      expect(await readFile(path, "utf8")).toBe(replacementBytes);
+      expect(await readFile(target, "utf8")).toBe(replacementBytes);
+      expect(await readFile(`${path}.original`)).toEqual(oversized);
+      expect((await readdir(dirname(path))).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    },
+  );
+
+  it("preserves earlier migration backups when a restored legacy file is upgraded again", async () => {
+    const path = preferencePath(await temporaryUserData());
+    await mkdir(dirname(path), { recursive: true });
+    const { codecs, ...legacy } = changedPreferences();
+    expect(codecs).toEqual({ key: "auto", value: "auto" });
+    const first = JSON.stringify({ version: 1, preferences: legacy });
+    const second = JSON.stringify({
+      version: 1,
+      preferences: { ...legacy, fetch: { maxMessages: 25, mode: "tail" } },
+    });
+    const store = new AtomicKafkaOperationalPreferenceFileStore(path);
+    await writeFile(path, first);
+    await store.commit(changedPreferences());
+    await writeFile(path, second);
+    await store.commit(changedPreferences());
+    expect(await readFile(`${path}.pre-codecs-v1`, "utf8")).toBe(first);
+    expect(await readFile(`${path}.pre-codecs-v1.1`, "utf8")).toBe(second);
+  });
+
   it("does not create a missing file, then atomically restores an exact versioned document", async () => {
     const path = preferencePath(await temporaryUserData());
     const store = new AtomicKafkaOperationalPreferenceFileStore(path, {
@@ -76,7 +231,7 @@ describe("Kafka operational-preference file store", () => {
     );
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
       preferences,
-      version: 1,
+      version: 2,
     });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);

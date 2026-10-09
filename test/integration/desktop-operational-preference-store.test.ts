@@ -18,6 +18,18 @@ const protectedPreferences = {
     valuePaths: ["/customer"],
   },
 };
+// Format 1 predates codec preferences; keep its fixture independent of new fields.
+const legacyDefaults = {
+  fetch: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.fetch,
+  latency: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.latency,
+  rules: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.rules,
+  stream: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.stream,
+  protection: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.protection,
+};
+const legacyProtectedPreferences = {
+  ...legacyDefaults,
+  protection: protectedPreferences.protection,
+};
 
 async function root(): Promise<string> {
   const path = await mkdtemp(join(tmpdir(), "streamskope-desktop-preferences-"));
@@ -79,7 +91,7 @@ describe("desktop preferences coexist with Chromium", () => {
 
   it("migrates every protection choice and archives original bytes before releasing the old browser namespace", async () => {
     const path = await root();
-    const bytes = `${JSON.stringify({ version: 1, preferences: protectedPreferences }, null, 2)}\n`;
+    const bytes = `${JSON.stringify({ version: 1, preferences: legacyProtectedPreferences }, null, 2)}\n`;
     const original = await legacy(path, bytes);
     const service = new KafkaOperationalPreferenceService(
       new DesktopOperationalPreferenceStore(path),
@@ -90,7 +102,7 @@ describe("desktop preferences coexist with Chromium", () => {
     });
     expect(JSON.parse(await readFile(currentPath(path), "utf8"))).toEqual({
       preferences: protectedPreferences,
-      version: 1,
+      version: 2,
     });
     await expect(readFile(original)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(archivedBytes(path)).resolves.toBe(bytes);
@@ -124,7 +136,7 @@ describe("desktop preferences coexist with Chromium", () => {
 
   it("does not archive the legacy document if its new private location cannot be committed", async () => {
     const path = await root();
-    const bytes = JSON.stringify({ version: 1, preferences: protectedPreferences });
+    const bytes = JSON.stringify({ version: 1, preferences: legacyProtectedPreferences });
     const original = await legacy(path, bytes);
     await writeFile(join(path, "workbench"), "operator-owned obstruction");
     const service = new KafkaOperationalPreferenceService(
@@ -139,11 +151,11 @@ describe("desktop preferences coexist with Chromium", () => {
     await mkdir(join(path, "workbench"));
     await writeFile(
       currentPath(path),
-      JSON.stringify({ version: 1, preferences: protectedPreferences }),
+      JSON.stringify({ version: 2, preferences: protectedPreferences }),
     );
     const older = JSON.stringify({
       version: 1,
-      preferences: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+      preferences: legacyDefaults,
     });
     await legacy(path, older);
     await expect(new DesktopOperationalPreferenceStore(path).load()).resolves.toEqual(
@@ -158,7 +170,7 @@ describe("desktop preferences coexist with Chromium", () => {
     await writeFile(currentPath(path), "unreadable current preferences");
     const bytes = JSON.stringify({
       version: 1,
-      preferences: KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+      preferences: legacyDefaults,
     });
     const original = await legacy(path, bytes);
     const service = new KafkaOperationalPreferenceService(

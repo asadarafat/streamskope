@@ -75,7 +75,7 @@ describe("Kafka filtered message export", () => {
     });
 
     const expected = `{
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "topic": "orders.eu",
   "filters": {
     "timestamp": "",

@@ -25,29 +25,28 @@ it("requires bounded private non-symlink configuration and finite shared query c
     const path = join(folder, "private.json");
     await writeFile(path, JSON.stringify(config), { mode: 0o600 });
     expect(parseCliConfiguration(await readCliJson(path, true)).protection.readOnly).toBe(true);
+    expect(parseCliConfiguration(config).codecs).toEqual({ key: "auto", value: "auto" });
+    expect(
+      parseCliConfiguration({ ...config, codecs: { key: "bytes", value: "utf8" } }).codecs,
+    ).toEqual({ key: "bytes", value: "utf8" });
+    expect(() =>
+      parseCliConfiguration({ ...config, codecs: { key: "unsafe", value: "auto" } }),
+    ).toThrow();
     expect(() => parseCliConfiguration({ ...config, password: "unexpected" })).toThrow();
     expect(() =>
-      parseCliQuery("query", { topic: "events", mode: "tail", maxMessages: 1 }, config.protection),
+      parseCliQuery("query", { topic: "events", mode: "tail", maxMessages: 1 }),
     ).toThrow();
     expect(() =>
-      parseCliQuery(
-        "query",
-        { topic: "events", mode: "earliest", maxMessages: 1001 },
-        config.protection,
-      ),
+      parseCliQuery("query", { topic: "events", mode: "earliest", maxMessages: 1001 }),
     ).toThrow();
     expect(() =>
-      parseCliQuery(
-        "query",
-        {
-          topic: "events",
-          mode: "earliest",
-          maxMessages: 10,
-          search: { key: "", value: "hidden", offset: "", timestamp: "", partition: null },
-        },
-        config.protection,
-      ),
-    ).toThrow("masking");
+      parseCliQuery("query", {
+        topic: "events",
+        mode: "earliest",
+        maxMessages: 10,
+        search: { key: "", value: "hidden", offset: "", timestamp: "", partition: null },
+      }),
+    ).not.toThrow();
     await symlink(path, join(folder, "link.json"));
     await expect(readCliJson(join(folder, "link.json"), true)).rejects.toThrow();
     if (process.platform !== "win32") {
@@ -93,13 +92,13 @@ it("returns machine-readable usage errors and never overwrites an existing expor
       query,
       JSON.stringify({
         topic: "events",
-        mode: "earliest",
+        mode: "tail",
         maxMessages: 10,
         search: { key: "", value: "do-not-echo", offset: "", timestamp: "", partition: null },
       }),
     );
     expect(await cliMain(["query", "--config", privatePath, "--query", query])).toBe(2);
-    expect(errors.at(-1)).toContain("masking");
+    expect(errors.at(-1)).toContain("INVALID_INPUT");
     await writeFile(privatePath, JSON.stringify({ secret: "do-not-echo" }), { mode: 0o600 });
     expect(await cliMain(["inspect", "--config", privatePath])).toBe(2);
     expect(errors.join("")).not.toContain("do-not-echo");

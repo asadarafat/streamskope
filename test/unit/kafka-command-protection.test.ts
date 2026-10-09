@@ -64,6 +64,72 @@ const writes = [
 ] as const;
 
 describe("host record protection", () => {
+  it.each(["messages.start", "records.trace"] as const)(
+    "admits %s for matching against protected projections",
+    async (name) => {
+      const service = preferences(false);
+      await service.update({
+        protection: {
+          readOnly: false,
+          maskKey: true,
+          maskHeaders: ["secret"],
+          valuePaths: ["/secret"],
+        },
+      });
+      const dispatch = vi.fn((): Promise<HostCommandResponse> =>
+        Promise.resolve({
+          ...request(name),
+          ok: true,
+          result: { correlationId: "protected-read" },
+        } as HostCommandResponse),
+      );
+      const guard = new KafkaCommandProtection({
+        preferences: service,
+        disconnected: (): boolean => false,
+        managedProfile: (): Promise<boolean> => Promise.resolve(false),
+        rejected: vi.fn(),
+      });
+      await guard.execute(request(name), "protected-read", dispatch);
+      expect(dispatch).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("rejects codec changes while connected and permits an explicit override after disconnect", async () => {
+    const service = preferences(false);
+    let disconnected = false;
+    const pendingPluginWork = vi.fn((): Promise<boolean> => Promise.resolve(true));
+    const guard = new KafkaCommandProtection({
+      preferences: service,
+      disconnected: (): boolean => disconnected,
+      pendingPluginWork,
+      managedProfile: (): Promise<boolean> => Promise.resolve(false),
+      rejected: vi.fn(),
+    });
+    const command: HostCommand = {
+      ...request("preferences.update"),
+      command: "preferences.update",
+      payload: { patch: { codecs: { key: "utf8", value: "json" } } },
+    };
+    const dispatch = vi.fn(async (): Promise<HostCommandResponse> => {
+      await service.update(command.payload.patch);
+      return {
+        ...command,
+        ok: true,
+        result: { correlationId: "codec", snapshot: service.currentSnapshot() },
+      };
+    });
+    expect(await guard.execute(command, "codec", dispatch)).toMatchObject({
+      ok: false,
+      error: { code: "AUTHORIZATION_DENIED" },
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(service.currentSnapshot().preferences.codecs).toEqual({ key: "auto", value: "auto" });
+    disconnected = true;
+    expect(await guard.execute(command, "codec", dispatch)).toMatchObject({ ok: true });
+    expect(service.currentSnapshot().preferences.codecs).toEqual({ key: "utf8", value: "json" });
+    expect(pendingPluginWork).not.toHaveBeenCalled();
+  });
+
   it.each([
     "plugins.delivery",
     "plugins.package.inspect",
@@ -99,12 +165,7 @@ describe("host record protection", () => {
       expect(rejected).not.toHaveBeenCalled();
     },
   );
-  it.each([
-    "records.replay.review",
-    "consumerGroups.reset.review",
-    "records.decode",
-    "records.trace",
-  ] as const)(
+  it.each(["records.replay.review", "consumerGroups.reset.review", "records.decode"] as const)(
     "rejects direct %s while masking is enabled before reaching record data",
     async (operation) => {
       const service = new KafkaOperationalPreferenceService(
@@ -213,7 +274,7 @@ describe("host record protection", () => {
     });
     expect(result).toMatchObject({
       ok: false,
-      error: { summary: "Disconnect before changing record protection." },
+      error: { summary: "Disconnect before changing record decoding or protection." },
     });
     expect(service.currentSnapshot().preferences.protection.readOnly).toBe(true);
     await facade.shutdown();

@@ -117,6 +117,11 @@ export type KafkaConsumerInput = KafkaClientInput & {
   readonly groupId: string;
   readonly signal?: AbortSignal;
   readonly onFetchSample?: (sample: KafkaLatencyFetchSample) => void;
+  /** Content predicates consume the same prepared, protected projection delivered to readers. */
+  readonly prepareRecord?: (
+    message: KafkaRawMessage,
+    signal?: AbortSignal,
+  ) => Promise<KafkaMessage>;
   readonly request: KafkaFetchRequest;
 };
 
@@ -152,6 +157,11 @@ export interface KafkaEngineFailureOptions {
 export interface StreamSkopeKafkaEngineOptions {
   readonly serviceHttp?: import("./bounded-json-http").BoundedJsonHttpPort;
   readonly protectRecord?: (message: KafkaMessage) => KafkaMessage;
+  readonly prepareRecord?: (
+    message: KafkaMessage,
+    context: import("../application").KafkaClusterServiceContext | null,
+    signal: AbortSignal,
+  ) => Promise<KafkaMessage>;
   readonly adminFactory?: KafkaAdminFactory;
   readonly consumerFactory?: KafkaConsumerFactory;
   readonly latencyProbe?: KafkaLatencyProbePort;

@@ -40,7 +40,6 @@ export function CorrelationTracePanel({
   const [value, setValue] = useState("");
   const [source, setSource] = useState<CorrelationTraceInput["selector"]["source"]>("header");
   const [path, setPath] = useState("correlation-id");
-  const [format, setFormat] = useState<CorrelationTraceInput["selector"]["format"]>("json");
   const [window, setWindow] = useState(initialKafkaTimeWindow);
   const [result, setResult] = useState<CorrelationTraceResult>();
   const [error, setError] = useState<string>();
@@ -101,7 +100,7 @@ export function CorrelationTracePanel({
           .map((item) => item.trim())
           .filter(Boolean),
         value,
-        selector: { source, path: source === "key" ? "" : path, format },
+        selector: { source, path: source === "key" ? "" : path, format: "auto" },
         ...resolveKafkaTimeWindow(window),
       });
       const response = await host.execute({
@@ -186,7 +185,7 @@ export function CorrelationTracePanel({
                 }}
               >
                 <MenuItem value="header">Header (UTF-8)</MenuItem>
-                <MenuItem value="key">Key (UTF-8)</MenuItem>
+                <MenuItem value="key">Key (saved encoding)</MenuItem>
                 <MenuItem value="payload">Payload field</MenuItem>
               </TextField>
               {source === "key" ? null : (
@@ -206,20 +205,11 @@ export function CorrelationTracePanel({
                 />
               )}
               {source === "payload" ? (
-                <TextField
-                  select
-                  label="Trace payload encoding"
-                  value={format}
-                  disabled={busy}
-                  onChange={(event) => {
-                    setFormat(event.target.value as typeof format);
-                    changed();
-                  }}
-                >
-                  <MenuItem value="json">UTF-8 JSON</MenuItem>
-                  <MenuItem value="avro">Confluent Avro</MenuItem>
-                  <MenuItem value="protobuf">Confluent Protobuf</MenuItem>
-                </TextField>
+                <Typography variant="body2">
+                  Uses the saved value encoding and protected projection, matching the message
+                  reader. Change the encoding in Workbench Preferences → Records before starting a
+                  new connection.
+                </Typography>
               ) : null}
               <TextField
                 label="Exact correlation value"

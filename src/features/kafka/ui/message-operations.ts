@@ -9,6 +9,7 @@ import {
   type KafkaExploredMessage,
   type KafkaOriginalRecord,
 } from "../contracts";
+import type { StructuredRecord } from "../contracts/structured-record";
 
 export const KAFKA_MESSAGE_OPERATION_LIMITS = {
   exportBytes: DESKTOP_TEXT_DOCUMENT_LIMITS.bytes,
@@ -68,11 +69,13 @@ export interface KafkaMessageExportInput {
 }
 
 export interface KafkaMessageExportRecord {
+  readonly structured?: StructuredRecord;
   readonly original: KafkaOriginalRecord;
   readonly headers: Readonly<Record<string, string>>;
   readonly key: string | null;
   readonly offset: string;
   readonly originalByteSize: number;
+  readonly recordByteSize?: number;
   readonly partition: number;
   readonly payload: string | null;
   readonly payloadTruncated: boolean;
@@ -86,7 +89,7 @@ export interface KafkaMessageExportSnapshot {
   readonly filters: KafkaMessageFilters;
   readonly messages: readonly KafkaMessageExportRecord[];
   readonly retainedMessageCount: number;
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly stale: boolean;
   readonly topic: string;
 }
@@ -257,7 +260,9 @@ function exportRecord(message: KafkaExploredMessage): KafkaMessageExportRecord {
     preview: message.preview,
     truncated: message.truncated,
     originalByteSize: message.originalByteSize,
+    ...(message.recordByteSize === undefined ? {} : { recordByteSize: message.recordByteSize }),
     original: message.original ?? { state: "unavailable", reason: "not-captured" },
+    ...(message.structured === undefined ? {} : { structured: message.structured }),
   };
 }
 
@@ -298,7 +303,7 @@ export function createKafkaMessageExportDocument(input: KafkaMessageExportInput)
     }
   }
   const snapshot: KafkaMessageExportSnapshot = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     topic: input.topic,
     filters: exportFilters(input.filters),
     retainedMessageCount: input.retainedMessageCount,

@@ -226,6 +226,57 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
     expect(await readdir(root)).toEqual([]);
   });
 
+  it("inspects migrated codec preferences and every exact predecessor backup without writes", async () => {
+    const root = await seed();
+    const path = join(root, "workbench/kafka-operational-preferences.json");
+    await mkdir(dirname(path), { recursive: true });
+    const { codecs, ...legacy } = KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS;
+    expect(codecs).toEqual({ key: "auto", value: "auto" });
+    const original = JSON.stringify({ version: 1, preferences: legacy });
+    await writeFile(path, original);
+    await new AtomicKafkaOperationalPreferenceFileStore(path).commit({
+      ...KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
+      codecs: { key: "utf8", value: "avro" },
+    });
+    const before = await readFile(path);
+    const report = await check(root);
+    expect(report.outcome).toBe("eligible");
+    expect(row(report, "preferences")).toMatchObject({
+      count: 2,
+      formats: [1, 2],
+      state: "verified",
+    });
+    expect(await readFile(path)).toEqual(before);
+    expect(await readFile(`${path}.pre-codecs-v1`, "utf8")).toBe(original);
+    await writeFile(`${path}.pre-codecs-v1.1`, "malformed", { mode: 0o600 });
+    expect(row(await check(root), "preferences")).toMatchObject({
+      state: "blocked",
+      reason: "unsupported-format",
+    });
+  });
+
+  it("blocks format 2 preferences whose protection settings are missing without repairing them", async () => {
+    const root = await directory();
+    const { protection, ...preferences } = KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS;
+    expect(protection).toEqual({
+      readOnly: false,
+      maskKey: false,
+      maskHeaders: [],
+      valuePaths: [],
+    });
+    await write(
+      root,
+      "workbench/kafka-operational-preferences.json",
+      JSON.stringify({ version: 2, preferences }),
+    );
+    const report = await check(root);
+    expect(report.outcome).toBe("blocked");
+    expect(row(report, "preferences")).toMatchObject({
+      state: "blocked",
+      reason: "unsupported-format",
+    });
+  });
+
   it("accepts real browser-encrypted envelopes and production nonsecret stores without invoking decrypting loaders or transport", async () => {
     const root = await seed();
     await new AtomicKafkaRuleFileStore(join(root, "rules/kafka-rules.json")).commit({ rules: [] });
@@ -259,15 +310,9 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
       count: 1,
       formats: [1],
     });
-    for (const kind of [
-      "rules",
-      "preferences",
-      "topic-history",
-      "queries",
-      "trust-recipes",
-      "observations",
-    ])
+    for (const kind of ["rules", "topic-history", "queries", "trust-recipes", "observations"])
       expect(row(report, kind)).toMatchObject({ state: "verified", formats: [1] });
+    expect(row(report, "preferences")).toMatchObject({ state: "verified", formats: [2] });
     for (const method of [kafkaLoad, natsLoad, network, fetch])
       expect(method).not.toHaveBeenCalled();
   });
