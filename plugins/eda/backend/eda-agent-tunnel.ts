@@ -23,6 +23,9 @@ export class EdaAgentTunnel {
     const server = createServer();
     const tunnel = new EdaAgentTunnel(server, port);
     server.on("connection", (socket) => {
+      // A Kafka client may reset or finish while upstream data is still arriving.
+      // Keep an error owner for the socket's entire lifetime, including access lookup.
+      socket.on("error", () => socket.destroy());
       if (!tunnel.ready || tunnel.sockets.size >= MAXIMUM_CONNECTIONS) {
         socket.destroy();
         return;
