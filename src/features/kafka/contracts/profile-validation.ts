@@ -1,6 +1,14 @@
 import { parsePluginProfileSource } from "../../../plugins/validation";
 
 import {
+  parseProfileServices,
+  parseProfileSasl,
+  parseProfileIdentity,
+  parseSummaryIdentity,
+  parseSummarySasl,
+  parseServiceSummaries,
+} from "./profile-security-validation";
+import {
   PROFILE_LIMITS,
   PROFILE_STORE_DURABILITIES,
   PROFILE_STORE_PROTECTIONS,
@@ -11,11 +19,11 @@ import {
   type ProfileSummary,
   type ProfileSummaryOAuth,
   PROFILE_TRUST_KINDS,
-  CLUSTER_SERVICE_AUTHENTICATION_MODES,
   type AcquiredProtectedValueInput,
-  type ClusterServiceEndpointInput,
   type ClusterServiceEndpointsInput,
   type ProfileCreateInput,
+  type ProfileSaslInput,
+  type ProfileClientIdentityInput,
   type ProfileOAuthInput,
   type ProfileTrustCreateValueInput,
   type ProfileTrustInput,
@@ -80,9 +88,10 @@ export function parseProfileSummary(value: unknown, path: string): ProfileSummar
       "id",
       "name",
       "oauth",
+      "sasl",
       "services",
       "source",
-      ...(transport === "tls" ? ["trust"] : []),
+      ...(transport === "tls" ? ["trust", "clientIdentity"] : []),
       "transport",
       "updatedAt",
       "revision",
@@ -110,7 +119,13 @@ export function parseProfileSummary(value: unknown, path: string): ProfileSummar
     id: text(profile.id, `${path}.id`, PROFILE_LIMITS.idCharacters),
     name: text(profile.name, `${path}.name`, PROFILE_LIMITS.nameCharacters),
     ...(Object.hasOwn(profile, "services")
-      ? { services: parseClusterServiceEndpoints(profile.services, `${path}.services`) }
+      ? {
+          services: parseServiceSummaries(
+            profile.services,
+            `${path}.services`,
+            parseProfileSummaryOAuth,
+          ),
+        }
       : {}),
     ...(Object.hasOwn(profile, "source")
       ? { source: parseProfileSource(profile.source, `${path}.source`) }
@@ -118,9 +133,12 @@ export function parseProfileSummary(value: unknown, path: string): ProfileSummar
     transport,
     updatedAt: text(profile.updatedAt, `${path}.updatedAt`, 128),
   };
-  const withOAuth = Object.hasOwn(profile, "oauth")
-    ? { ...base, oauth: parseProfileSummaryOAuth(profile.oauth, `${path}.oauth`) }
+  const withSasl = Object.hasOwn(profile, "sasl")
+    ? { ...base, sasl: parseSummarySasl(profile.sasl, `${path}.sasl`) }
     : base;
+  const withOAuth = Object.hasOwn(profile, "oauth")
+    ? { ...withSasl, oauth: parseProfileSummaryOAuth(profile.oauth, `${path}.oauth`) }
+    : withSasl;
   if (transport === "plaintext") {
     return { ...withOAuth, transport };
   }
@@ -128,6 +146,9 @@ export function parseProfileSummary(value: unknown, path: string): ProfileSummar
   exactKeys(trust, ["kind", "label", "materialPresent", "passwordPresent"], `${path}.trust`);
   return {
     ...withOAuth,
+    ...(profile.clientIdentity === undefined
+      ? {}
+      : { clientIdentity: parseSummaryIdentity(profile.clientIdentity, `${path}.clientIdentity`) }),
     transport,
     trust: {
       kind: declaredValue(trust.kind, PROFILE_TRUST_KINDS, `${path}.trust.kind`),
@@ -250,17 +271,20 @@ function parseProfileInput<
       readonly brokers: readonly string[];
       readonly name: string;
       readonly oauth?: ProfileOAuthInput<TOAuthValue>;
-      readonly services?: ClusterServiceEndpointsInput;
+      readonly sasl?: ProfileSaslInput<TOAuthValue>;
+      readonly services?: ClusterServiceEndpointsInput<TOAuthValue>;
       readonly source?: ProfileSource;
       readonly transport: "plaintext";
     }
   | {
       readonly apiCa?: TOAuthValue;
+      readonly clientIdentity?: ProfileClientIdentityInput<TOAuthValue>;
       readonly binding?: ProfileBindingInput;
       readonly brokers: readonly string[];
       readonly name: string;
       readonly oauth?: ProfileOAuthInput<TOAuthValue>;
-      readonly services?: ClusterServiceEndpointsInput;
+      readonly sasl?: ProfileSaslInput<TOAuthValue>;
+      readonly services?: ClusterServiceEndpointsInput<TOAuthValue>;
       readonly source?: ProfileSource;
       readonly transport: "tls";
       readonly trust: ProfileTrustInput<TTrustValue>;
@@ -272,9 +296,11 @@ function parseProfileInput<
   exactKeys(
     profile,
     transport === "plaintext"
-      ? ["brokers", "name", "oauth", "services", "source", "transport"]
+      ? ["brokers", "name", "oauth", "sasl", "services", "source", "transport"]
       : [
           "apiCa",
+          "clientIdentity",
+          "sasl",
           "binding",
           "brokers",
           "name",
@@ -287,7 +313,7 @@ function parseProfileInput<
     path,
   );
   const services = Object.hasOwn(profile, "services")
-    ? parseClusterServiceEndpoints(profile.services, `${path}.services`)
+    ? parseProfileServices(profile.services, `${path}.services`, parseOAuthProtected)
     : undefined;
   const base = {
     brokers: parseBoundedBrokers(
@@ -297,12 +323,17 @@ function parseProfileInput<
       PROFILE_LIMITS.brokerCharacters,
     ),
     name: text(profile.name, `${path}.name`, PROFILE_LIMITS.nameCharacters),
+    ...(profile.sasl === undefined
+      ? {}
+      : { sasl: parseProfileSasl(profile.sasl, `${path}.sasl`, parseOAuthProtected) }),
     ...(services === undefined ? {} : { services }),
     ...(Object.hasOwn(profile, "source")
       ? { source: parseProfileSource(profile.source, `${path}.source`) }
       : {}),
     transport,
   };
+  if (profile.sasl !== undefined && profile.oauth !== undefined)
+    throw new HostContractValidationError(path, "choose one broker authentication method");
   let parsedOAuth: ProfileOAuthInput<TOAuthValue> | undefined;
   if (Object.hasOwn(profile, "oauth")) {
     const oauth = record(profile.oauth, `${path}.oauth`);
@@ -344,6 +375,15 @@ function parseProfileInput<
   };
   return {
     ...withOAuth,
+    ...(profile.clientIdentity === undefined
+      ? {}
+      : {
+          clientIdentity: parseProfileIdentity(
+            profile.clientIdentity,
+            `${path}.clientIdentity`,
+            parseOAuthProtected,
+          ),
+        }),
     ...(profile.apiCa === undefined
       ? {}
       : {
@@ -365,38 +405,7 @@ export function parseClusterServiceEndpoints(
   value: unknown,
   path: string,
 ): ClusterServiceEndpointsInput {
-  const services = record(value, path);
-  exactKeys(services, ["connect", "redpandaAdmin", "schemaRegistry"], path);
-  const parseEndpoint = (
-    endpointValue: unknown,
-    endpointPath: string,
-  ): ClusterServiceEndpointInput => {
-    const endpoint = record(endpointValue, endpointPath);
-    exactKeys(endpoint, ["authentication", "baseUrl"], endpointPath);
-    return {
-      authentication: declaredValue(
-        endpoint.authentication,
-        CLUSTER_SERVICE_AUTHENTICATION_MODES,
-        `${endpointPath}.authentication`,
-      ),
-      baseUrl: text(
-        endpoint.baseUrl,
-        `${endpointPath}.baseUrl`,
-        PROFILE_LIMITS.tokenEndpointCharacters,
-      ),
-    };
-  };
-  return {
-    ...(Object.hasOwn(services, "connect")
-      ? { connect: parseEndpoint(services.connect, `${path}.connect`) }
-      : {}),
-    ...(Object.hasOwn(services, "redpandaAdmin")
-      ? { redpandaAdmin: parseEndpoint(services.redpandaAdmin, `${path}.redpandaAdmin`) }
-      : {}),
-    ...(Object.hasOwn(services, "schemaRegistry")
-      ? { schemaRegistry: parseEndpoint(services.schemaRegistry, `${path}.schemaRegistry`) }
-      : {}),
-  };
+  return parseProfileServices(value, path, parseProtectedUpdate);
 }
 
 export function parseProfileCreateInput(value: unknown, path: string): ProfileCreateInput {

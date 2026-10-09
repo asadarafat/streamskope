@@ -37,7 +37,7 @@ describe("production outer envelope inspection", () => {
     expect(
       inspectNatsProfileEnvelope(Buffer.from(JSON.stringify(nats))).profiles[0]?.protectedBytes,
     ).toEqual(bytes);
-    for (const version of [1, 2, 3])
+    for (const version of [1, 2, 3, 4])
       expect(
         inspectKafkaProfileEnvelope(Buffer.from(JSON.stringify({ version, profiles: [] }))).version,
       ).toBe(version);

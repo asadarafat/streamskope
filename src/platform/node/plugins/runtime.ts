@@ -51,7 +51,8 @@ import {
   type PluginTransitionHandle,
   type PluginTransitionMetadata,
 } from "./transition";
-import { pluginProblem as problem } from "./problem";
+import { pluginProblem as problem, pluginErrorSummary as summary } from "./problem";
+import { assertPluginProfileRefresh } from "./profile-refresh";
 import { PluginStore, type ActivePlugin } from "./store";
 import { PluginNetworkController } from "./network";
 import type { PluginNetworkTransport } from "./network-transport";
@@ -84,10 +85,6 @@ export interface PluginRuntimeOptions {
 export interface PluginRendererAsset {
   readonly content: Uint8Array;
   readonly contentType: string;
-}
-
-function summary(error: unknown): string {
-  return error instanceof Error ? error.message.slice(0, 1_024) : "The plugin could not be loaded.";
 }
 
 /** Only explicitly installed, verified first-party packages are loaded into this trusted host. */
@@ -241,6 +238,8 @@ export class PluginRuntime implements PluginRuntimePort {
           command.payload.profile.source.pluginId !== pluginId
         )
           throw problem("A plugin cannot assign profile ownership to another plugin.");
+        await assertPluginProfileRefresh(command, bindings);
+
         assertCurrent();
         return bindings.execute({ ...command, version: HOST_PROTOCOL_VERSION });
       },

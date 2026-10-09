@@ -1,4 +1,8 @@
 import type { HostErrorCode, HostErrorStage } from "../contracts";
+import {
+  classifyConnectionFailure,
+  connectionErrorChain,
+} from "../application/connection-diagnostics";
 
 import type { KafkaEngineFailureOptions } from "./types";
 
@@ -30,26 +34,8 @@ export function normalizeKafkaError(error: unknown): Error {
       });
 }
 
-function errorChain(error: unknown): readonly unknown[] {
-  const chain: unknown[] = [];
-  const pending: unknown[] = [error];
-  const seen = new Set<unknown>();
-  while (pending.length > 0 && chain.length < 32) {
-    const current = pending.shift();
-    if (current === undefined || seen.has(current)) continue;
-    seen.add(current);
-    chain.push(current);
-    if (current !== null && typeof current === "object") {
-      if ("cause" in current) pending.push(current.cause);
-      if ("errors" in current && Array.isArray(current.errors))
-        pending.push(...(current.errors as unknown[]).slice(0, 32));
-    }
-  }
-  return chain;
-}
-
 function errorCodes(error: unknown): readonly string[] {
-  return errorChain(error).flatMap((entry) => {
+  return connectionErrorChain(error).flatMap((entry) => {
     if (entry === null || typeof entry !== "object") return [];
     return ["code", "apiId"].flatMap((key) => {
       const value = (entry as Record<string, unknown>)[key];
@@ -59,7 +45,7 @@ function errorCodes(error: unknown): readonly string[] {
 }
 
 function errorText(error: unknown): string {
-  return errorChain(error)
+  return connectionErrorChain(error)
     .map((entry) =>
       entry instanceof Error
         ? `${entry.name} ${entry.message}`
@@ -86,38 +72,33 @@ export function mapKafkaAdminFailure(
   const codes = errorCodes(error);
   const text = errorText(error);
 
-  if (
-    includesAny(codes, [
-      "CERT_HAS_EXPIRED",
-      "DEPTH_ZERO_SELF_SIGNED_CERT",
-      "ERR_TLS_CERT_ALTNAME_INVALID",
-      "SELF_SIGNED_CERT_IN_CHAIN",
-      "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
-      "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
-    ]) ||
-    /CERTIFICATE|SELF.SIGNED|TLS|SSL/u.test(text)
-  ) {
+  const diagnostic = classifyConnectionFailure(error);
+  if (diagnostic === "tls-client" || diagnostic === "tls-trust") {
     return new KafkaEngineFailure({
       cause: error,
       cleanupCause,
       code: "TLS_TRUST",
-      recovery: "Select the CA that issued the broker certificate and verify the broker hostname.",
+      recovery:
+        diagnostic === "tls-client"
+          ? "Check the client certificate, matching private key, key passphrase and broker acceptance of its issuing CA."
+          : "Select the CA that issued the broker certificate and verify its validity and broker hostname.",
       retryable: false,
       stage: "tls",
-      summary: "Kafka broker certificate validation failed.",
+      summary:
+        diagnostic === "tls-client"
+          ? "Kafka client certificate authentication failed."
+          : "Kafka broker certificate validation failed.",
       target,
     });
   }
 
-  if (
-    includesAny(codes, ["SASL_AUTHENTICATION_FAILED", "SASL_AUTHENTICATION_ERROR"]) ||
-    /SASL.*AUTHENTICATION|AUTHENTICATION.*FAILED/u.test(text)
-  ) {
+  if (diagnostic === "authentication") {
     return new KafkaEngineFailure({
       cause: error,
       cleanupCause,
       code: "KAFKA_AUTHENTICATION",
-      recovery: "Verify the OAuth token claims, scope and broker authentication configuration.",
+      recovery:
+        "Verify the selected SASL mechanism and its username/password or OAuth credentials, and the broker listener authentication configuration.",
       retryable: false,
       stage: "kafka",
       summary: "Kafka rejected the authenticated client.",
@@ -142,10 +123,7 @@ export function mapKafkaAdminFailure(
     });
   }
 
-  if (
-    codes.some((code) => code.endsWith("AUTHORIZATION_FAILED")) ||
-    /AUTHORIZATION|NOT AUTHORIZED/u.test(text)
-  ) {
+  if (diagnostic === "authorization") {
     return new KafkaEngineFailure({
       cause: error,
       cleanupCause,
@@ -158,16 +136,7 @@ export function mapKafkaAdminFailure(
     });
   }
 
-  if (
-    includesAny(codes, [
-      "ECONNREFUSED",
-      "ECONNRESET",
-      "EHOSTUNREACH",
-      "ENETUNREACH",
-      "ENOTFOUND",
-    ]) ||
-    /CONNECTION REFUSED|ECONNREFUSED|ENOTFOUND|UNREACHABLE/u.test(text)
-  ) {
+  if (diagnostic === "unreachable") {
     return new KafkaEngineFailure({
       cause: error,
       cleanupCause,

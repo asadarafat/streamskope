@@ -7,7 +7,12 @@ import {
   type HostCommand,
   type HostCommandResponse,
   type StreamSkopeHost,
+  type ProfileSummary,
 } from "../contracts";
+import {
+  compatiblePluginProfileCommand,
+  PLUGIN_PROFILE_REFRESH_UPGRADE,
+} from "../../../plugins/profile-refresh-compatibility";
 import type {
   PluginRenderer,
   PluginViewContext,
@@ -20,6 +25,7 @@ export function currentPluginHost(
   host: StreamSkopeHost,
   lifetime?: AbortSignal,
   activationId?: string,
+  profiles?: () => readonly ProfileSummary[],
 ): StreamSkopeHost {
   const requireActive = (): void => {
     if (lifetime?.aborted === true) throw new Error("This plugin view is no longer active.");
@@ -29,6 +35,9 @@ export function currentPluginHost(
       command: Command,
     ): Promise<HostCommandResponse<Command["command"]>> => {
       requireActive();
+      if (!compatiblePluginProfileCommand(command, profiles?.()))
+        throw new Error(PLUGIN_PROFILE_REFRESH_UPGRADE);
+
       const response = await host.execute({
         ...command,
         ...(command.command === "plugin.execute" && activationId !== undefined
@@ -92,7 +101,12 @@ export function PluginView({
     const viewLifetime = new AbortController();
     const retire = (): void => viewLifetime.abort();
     lifetime?.addEventListener("abort", retire, { once: true });
-    const host = currentPluginHost(context.host, viewLifetime.signal, activationId);
+    const host = currentPluginHost(
+      context.host,
+      viewLifetime.signal,
+      activationId,
+      () => latestContext.current.profiles,
+    );
     let failed = false;
     reportFailure.current = (failure): void => {
       if (failed || lifetime?.aborted === true) return;

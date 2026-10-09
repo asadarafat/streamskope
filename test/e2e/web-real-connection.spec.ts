@@ -885,7 +885,8 @@ test.describe("real StreamSkope browser connection", () => {
     await editor.getByRole("combobox", { name: "Trust material format" }).click();
     await page.getByRole("option", { name: "PEM certificate" }).click();
     await editor.getByLabel("Trust material file").setInputFiles(fixture.caPath);
-    await editor.getByRole("switch", { name: "Use OAuth OAUTHBEARER" }).click();
+    await editor.getByRole("combobox", { name: "Broker authentication" }).click();
+    await page.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)", exact: true }).click();
     await editor.getByRole("textbox", { name: "OAuth token endpoint" }).fill(fixture.oauthEndpoint);
     await editor.getByRole("textbox", { name: "OAuth client ID" }).fill(config.oauthClientId);
     await editor

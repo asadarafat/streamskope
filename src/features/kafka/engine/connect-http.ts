@@ -69,7 +69,10 @@ export class ConnectHttpAdapter implements ConnectPort {
     path: string,
     body?: unknown,
   ): Promise<{ status: number; body: unknown }> {
-    const authorization = await c.authorization();
+    signal = c.signal === undefined ? signal : AbortSignal.any([signal, c.signal]);
+    signal.throwIfAborted();
+    const authorization = await c.authorization(signal);
+    signal.throwIfAborted();
     signal.throwIfAborted();
     return this.http.request({
       url: `${c.baseUrl.replace(/\/+$/u, "")}${path}`,
@@ -79,6 +82,7 @@ export class ConnectHttpAdapter implements ConnectPort {
       ...(body === undefined ? {} : { body }),
       ...(authorization === undefined ? {} : { authorization }),
       ...(c.caPem === undefined ? {} : { caPem: c.caPem }),
+      ...(c.clientIdentity === undefined ? {} : { clientIdentity: c.clientIdentity }),
     });
   }
   private ok(r: { status: number; body: unknown }): unknown {

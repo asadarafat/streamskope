@@ -17,14 +17,15 @@ launcher can prepare a separate native dependency cache when its health probe
 fails; it does not rewrite a shared `node_modules` installation. See
 [dependency maintenance](dependencies.md) before updating a lockfile or mitigation.
 
-| Task                                       | Additional prerequisites                                                                                                                               |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Browser workbench with both local fixtures | Linux AMD64 or ARM64, including a Linux VM; local Unix Docker endpoint, Containerlab, OpenSSL, Java `keytool`, and permission to manage the owned labs |
-| Focused unit/architecture tests            | Root npm installation; particular integration tests may require their own fixture                                                                      |
-| Documentation                              | Python 3.11+ with `venv`/pip; browser qualification also needs Playwright browsers and their OS libraries                                              |
-| EDA agent source work                      | Go toolchain matching [go.mod](../vendors/streamskope/apps/capture/agent/go.mod)                                                                       |
-| Desktop installer                          | A supported native packaging host; see [Build a desktop package](#build-a-desktop-package)                                                             |
-| Browser container                          | Linux AMD64 or ARM64 with Docker; Containerlab for deploying it                                                                                        |
+| Task                                         | Additional prerequisites                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Browser workbench with both local fixtures   | Linux AMD64 or ARM64, including a Linux VM; local Unix Docker endpoint, Containerlab, OpenSSL, Java `keytool`, and permission to manage the owned labs |
+| Focused unit/architecture tests              | Root npm installation; particular integration tests may require their own fixture                                                                      |
+| Production connection profile runtime matrix | Java 17+ with `keytool`, OpenSSL and network/cache access to the pinned Kafka archive; uses disposable loopback endpoints                              |
+| Documentation                                | Python 3.11+ with `venv`/pip; browser qualification also needs Playwright browsers and their OS libraries                                              |
+| EDA agent source work                        | Go toolchain matching [go.mod](../vendors/streamskope/apps/capture/agent/go.mod)                                                                       |
+| Desktop installer                            | A supported native packaging host; see [Build a desktop package](#build-a-desktop-package)                                                             |
+| Browser container                            | Linux AMD64 or ARM64 with Docker; Containerlab for deploying it                                                                                        |
 
 Keep live-system credentials in private files outside tracked source. The
 [qualification runbook](qualification.md) owns live-check configuration, writes,

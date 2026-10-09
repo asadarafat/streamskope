@@ -326,7 +326,10 @@ def inventory(root, uid, gid):
     return sorted(entries, key=lambda entry: entry["path"])
 
 
-def inspection(value, policy, version):
+def inspection(value, policy, version, target=None):
+    # Legacy targets have no inspector. A current inspector accepting format 4
+    # cannot establish that those older binaries can read the expanded credentials.
+    kafka_maximum = 3 if target is not None and not target["inspector"] else 4
     exact(
         value,
         {"schemaVersion", "dataContract", "hostRelease", "outcome", "documents", "unverified"},
@@ -357,7 +360,7 @@ def inspection(value, policy, version):
         require(
             isinstance(formats, list)
             and all(
-                integer(number, 1, 3 if kind in ("kafka-profiles", "profile-backups") else 1)
+                integer(number, 1, kafka_maximum if kind in ("kafka-profiles", "profile-backups") else 1)
                 for number in formats
             )
             and formats == sorted(set(formats)),
@@ -969,7 +972,7 @@ class Maintenance:
         )[1].strip()
         require(remaining == b"", "cleanup-unconfirmed")
 
-    def preflight(self, inspector, data=None):
+    def preflight(self, inspector, data=None, *, target=None):
         require(inspector["inspector"], "unsupported-target")
         path = self.data if data is None else Path(data)
         nonce = str(uuid.uuid4())
@@ -1001,7 +1004,7 @@ class Maintenance:
                 allow_failure=True,
             )
             require(code == 0, "preflight-blocked")
-            return inspection(decode(output), self.policy, inspector["version"])
+            return inspection(decode(output), self.policy, inspector["version"], target)
         finally:
             self.cleanup_inspector(name, nonce, inspector["imageId"], path)
 
@@ -1273,7 +1276,7 @@ class Maintenance:
             inventory(directory / "data", self.state["uid"], self.state["gid"]) == value["entries"],
             "backup-unavailable",
         )
-        inspection(value["inspection"], self.policy, inspector["version"])
+        inspection(value["inspection"], self.policy, inspector["version"], self.journal["to"])
         require(
             digest(canonical(inventory(self.data, self.state["uid"], self.state["gid"])))
             == backup["dataSnapshotSha256"],
@@ -1398,7 +1401,7 @@ class Maintenance:
             self.conflicts(original_id)
             if original["State"]["Running"]:
                 require(self.lease_identity() == journal["lease"], "ownership-unconfirmed")
-                self.preflight(inspector)
+                self.preflight(inspector, target=target)
                 self.capacity(inventory(self.data, self.state["uid"], self.state["gid"]))
                 try:
                     self.docker("stop", "--time", "120", original_id, timeout=150)
@@ -1422,7 +1425,7 @@ class Maintenance:
             if journal["phase"] == "deployed"
             else (None if journal["phase"] == "retired" else original_id)
         )
-        self.preflight(inspector)
+        self.preflight(inspector, target=target)
         if journal["phase"] == "stopped":
             self.backup(inspector, source)
         self.verify_backup(inspector)
@@ -1506,7 +1509,7 @@ class Maintenance:
         self.conflicts(owner["Id"])
         inspector = target if target["inspector"] else source
         require(source["contract"] == target["contract"], "unsupported-target")
-        self.preflight(inspector)
+        self.preflight(inspector, target=target)
         self.capacity(inventory(self.data, self.state["uid"], self.state["gid"]))
         if operation == "check":
             previous = (

@@ -13,6 +13,7 @@ import {
   HOST_PROTOCOL_VERSION,
   type HostCommand,
   type ProfileSummary,
+  type ProfileTlsSummary,
 } from "../../src/features/kafka/contracts";
 import { translateFacadeFailure } from "../../src/features/kafka/facade/facade-support";
 import type { PluginBackendHost } from "../../src/plugins/api";
@@ -37,7 +38,7 @@ const material = {
   sha256: "a".repeat(64),
   certificateCount: 2,
 };
-const saved = (id = "saved-profile"): ProfileSummary => ({
+const saved = (id = "saved-profile"): ProfileTlsSummary => ({
   id,
   revision: 2,
   name: "NSP example",
@@ -168,6 +169,104 @@ it("qualifies and saves host-only trust, then reuses the same profile on retry",
   ]) {
     expect(JSON.stringify([first, second, f.events])).not.toContain(secret);
   }
+});
+
+it("refreshes an existing profile through update qualification while retaining independent protected credentials", async () => {
+  const f = fixture();
+  const identity = { certificatePresent: true, privateKeyPresent: true, passphrasePresent: true };
+  f.profiles.push({
+    ...saved(),
+    sasl: { mechanism: "SCRAM-SHA-512", username: "existing-kafka-user", passwordPresent: true },
+    clientIdentity: identity,
+    services: {
+      schemaRegistry: {
+        baseUrl: "https://schema.example.test",
+        authentication: "basic",
+        basic: { username: "schema-user", passwordPresent: true },
+        trust: {
+          mode: "custom",
+          kind: "pem",
+          label: "schema.pem",
+          materialPresent: true,
+          passwordPresent: false,
+        },
+        clientIdentity: identity,
+      },
+      connect: {
+        baseUrl: "https://connect.example.test",
+        authentication: "bearer",
+        bearerPresent: true,
+        trust: { mode: "system" },
+      },
+    },
+  });
+  expect(await f.backend.execute(request())).toEqual({ ok: true, profileId: "saved-profile" });
+  const retained = {
+    sasl: {
+      mechanism: "SCRAM-SHA-512",
+      username: "existing-kafka-user",
+      password: { mode: "retain" },
+    },
+    clientIdentity: {
+      certificatePem: { mode: "retain" },
+      privateKeyPem: { mode: "retain" },
+      passphrase: { mode: "retain" },
+    },
+    services: {
+      schemaRegistry: {
+        basic: { username: "schema-user", password: { mode: "retain" } },
+        trust: { material: { mode: "retain" } },
+        clientIdentity: { privateKeyPem: { mode: "retain" } },
+      },
+      connect: { bearer: { mode: "retain" }, trust: { mode: "system" } },
+    },
+  };
+  expect(f.commands[0]).toMatchObject({
+    command: "profiles.test",
+    payload: {
+      mode: "update",
+      profileId: "saved-profile",
+      profile: { expectedRevision: 2, ...retained },
+    },
+  });
+  expect(f.commands[1]).toMatchObject({
+    command: "profiles.update",
+    payload: { profileId: "saved-profile", profile: retained },
+  });
+});
+
+it("starts automatic refresh with existing OAuth when services reuse the broker token", async () => {
+  const f = fixture();
+  f.profiles.push({
+    ...saved(),
+    oauth: {
+      clientId: "operator",
+      clientSecretPresent: true,
+      tokenEndpoint: `${credentials.apiUrl}/rest-gateway/rest/api/v1/auth/token`,
+      scope: "",
+    },
+    services: {
+      schemaRegistry: { baseUrl: "https://schema.example.test", authentication: "oauth" },
+    },
+  });
+  expect(await f.backend.execute(request())).toEqual({ ok: true, profileId: "saved-profile" });
+  expect(f.commands[0]).toMatchObject({
+    command: "profiles.test",
+    payload: {
+      mode: "update",
+      profile: {
+        oauth: {
+          clientId: "operator",
+          clientSecret: { mode: "replace", value: credentials.password },
+        },
+        services: { schemaRegistry: { authentication: "oauth" } },
+      },
+    },
+  });
+  expect(f.commands.map((command) => command.command)).toEqual([
+    "profiles.test",
+    "profiles.update",
+  ]);
 });
 
 it.each([false, true])(

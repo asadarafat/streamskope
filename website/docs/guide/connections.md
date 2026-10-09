@@ -16,13 +16,14 @@ Check the [compatibility matrix](../start/compatibility.md) before requesting cr
 Have your bootstrap broker addresses and authentication settings ready. TLS is
 the default and requires PEM, JKS or PKCS12 trust material. Explicit plaintext
 connections require no broker trust but leave broker metadata, messages and
-Kafka OAuth credentials unencrypted. Broker addresses must be reachable from
+Kafka credentials unencrypted. Broker addresses must be reachable from
 the machine running the StreamSkope host. Review the [workflow permissions](security.md#kafka-access-and-effects)
 with your administrator before requesting access.
 
-The profile's CA bundle also supplies trust for HTTPS OAuth, Schema Registry and
-Redpanda Admin requests. Follow [Configure certificate trust](tls-trust.md) when
-these services use different issuing CAs; there is no separate CA field per service.
+Schema Registry and Connect can each use separate credentials, certificate trust
+and a TLS client identity. Existing profiles continue to inherit broker trust unless
+you explicitly select another trust mode. The broker OAuth endpoint uses the broker
+trust settings. Follow [Configure certificate trust](tls-trust.md) for different issuing CAs.
 
 ## Configure manually
 
@@ -32,14 +33,21 @@ these services use different issuing CAs; there is no separate CA field per serv
    or truststore, or deliberately select **Plaintext (insecure)** for an isolated
    unsecured environment. Plaintext never results from missing trust or a failed
    TLS attempt.
-4. If your cluster uses OAuth, enable **Use OAuth OAUTHBEARER** and enter its
-   token endpoint, client ID, client secret and scope. OAuth and configured
-   Schema Registry or Redpanda Admin endpoints remain available with either
-   broker transport; HTTPS endpoints still verify certificates.
-5. Click **Test connection**. Wait for the result. If it fails, open **Raw logs**
-   and resolve the reported connection, certificate or authentication problem.
-6. Click **Save profile**. Find the saved Kafka profile and select **Connect**.
-7. Wait for **Connected**, then open **Topics**.
+4. Choose **Broker authentication**: no SASL, **OAuth 2.0 (OAUTHBEARER)**,
+   **SASL PLAIN**, **SASL SCRAM-SHA-256** or **SASL SCRAM-SHA-512**.
+   OAuth needs its token endpoint, client ID, client secret and optional scope.
+   PLAIN/SCRAM need **SASL username** and **SASL password**.
+5. If the broker requires a client certificate, enable **Broker mutual TLS** and
+   select its PEM client certificate and private key files. Supply **Broker private
+   key passphrase** when the key is encrypted. Client identity is separate from
+   the CA certificates used to verify the server; it can be combined with SASL.
+6. If needed, enter Schema Registry or Connect endpoints. Choose each service's
+   authentication and certificate trust independently. See [Schema Registry](schema-registry.md)
+   and [Kafka Connect](kafka-connect.md).
+7. Click **Test connection**. Wait for the broker and configured service checks.
+   If a stage fails, open **Raw logs** and correct that endpoint's settings.
+8. Click **Save profile**. Find the saved Kafka profile and select **Connect**.
+9. Wait for **Connected**, then open **Topics**.
 
 **You should see:** the topics your account can access. Testing checks the supplied
 settings; you still need to save and connect to use them.
@@ -101,8 +109,16 @@ and suggest OAuth settings, then test and save the connection as above.
 3. Reconnect and confirm that the expected topics are available.
 
 Editing non-secret settings retains protected values unless you replace or clear
-them. Desktop secrets use the operating-system credential service; browser
-development profiles are session-only.
+them. Changing authentication methods removes the previous method's credentials
+from the updated profile. Desktop secrets use the operating-system credential
+service; the production browser host uses its unlocked encrypted vault, while
+browser development profiles are session-only.
+
+Existing OAuth profiles and EDA/NSP-generated profiles keep their authentication,
+service-token inheritance and resource identity during migration. New credential
+fields are stored inside the protected profile content. Before using an older app
+against upgraded data, follow the backup and recovery procedure below; do not
+manually remove credential fields or plugin ownership metadata.
 
 Before replacing or downgrading the app, follow [Upgrade, back up and recover](recovery.md).
 That page owns storage locations, migration-specific snapshots and restoration.

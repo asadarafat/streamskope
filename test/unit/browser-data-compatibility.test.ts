@@ -83,11 +83,18 @@ describe("closed browser data evidence", () => {
     Object.assign(documents(report)[1]!, change);
     expect(() => parseBrowserDataInspection(report)).toThrow();
   });
+  it("accepts current security envelopes but rejects later unknown formats", () => {
+    const report = evidence();
+    Object.assign(documents(report)[2]!, { state: "verified", count: 1, formats: [4] });
+    expect(parseBrowserDataInspection(report).outcome).toBe("eligible");
+    documents(report)[2]!.formats = [5];
+    expect(() => parseBrowserDataInspection(report)).toThrow();
+  });
   it("accepts explicit failure and ordered supported historical Kafka envelopes", () => {
     const report = evidence();
     report.outcome = "blocked";
     Object.assign(documents(report)[2]!, { state: "blocked", reason: "managed-source-unverified" });
-    Object.assign(documents(report)[15]!, { state: "verified", count: 3, formats: [1, 2, 3] });
+    Object.assign(documents(report)[15]!, { state: "verified", count: 4, formats: [1, 2, 3, 4] });
     expect(parseBrowserDataInspection(report).outcome).toBe("blocked");
   });
 });

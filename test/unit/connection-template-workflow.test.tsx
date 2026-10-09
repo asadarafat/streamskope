@@ -81,7 +81,8 @@ describe("Material UI connection-template workflow", () => {
     expect(
       screen.queryByRole("button", { name: "Manage connection templates" }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(screen.getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)" }));
     expect(
       screen.queryByRole("button", { name: "Choose OAuth endpoint template" }),
     ).not.toBeInTheDocument();

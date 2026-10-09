@@ -10,6 +10,8 @@ import type {
   KafkaLatencyProbeRequest,
   KafkaTopicConfigurationChange,
   KafkaTopicConfigurationEntry,
+  ConnectionClientIdentity,
+  ConnectionSasl,
 } from "../contracts";
 import type {
   KafkaActiveConnection,
@@ -29,6 +31,7 @@ export interface OAuthToken {
 
 export interface OAuthTokenRequest {
   readonly caPem?: string;
+  readonly clientIdentity?: ConnectionClientIdentity;
   readonly clientId: string;
   readonly clientSecret: string;
   readonly scope: string;
@@ -43,16 +46,19 @@ interface KafkaClientInputBase {
   readonly brokers: readonly string[];
   readonly oauthTokenProvider?: OAuthTokenProvider;
   readonly operationTimeoutMs: number;
+  readonly sasl?: ConnectionSasl;
 }
 
 export type KafkaClientInput = KafkaClientInputBase &
   (
     | {
         readonly caPem?: never;
+        readonly clientIdentity?: never;
         readonly tlsEnabled: false;
       }
     | {
         readonly caPem: string;
+        readonly clientIdentity?: ConnectionClientIdentity;
         readonly tlsEnabled?: true;
       }
   );
@@ -144,6 +150,7 @@ export interface KafkaEngineFailureOptions {
 }
 
 export interface StreamSkopeKafkaEngineOptions {
+  readonly serviceHttp?: import("./bounded-json-http").BoundedJsonHttpPort;
   readonly protectRecord?: (message: KafkaMessage) => KafkaMessage;
   readonly adminFactory?: KafkaAdminFactory;
   readonly consumerFactory?: KafkaConsumerFactory;

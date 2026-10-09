@@ -377,8 +377,8 @@ test.describe("StreamSkope browser workbench", () => {
     await expect(editor.getByRole("textbox", { name: "Profile name" })).toBeFocused();
     await expect(editor.getByRole("textbox", { name: "Trust material label" })).toHaveCount(0);
     await expect(editor.getByRole("heading", { name: "Authentication" })).toBeVisible();
-    const authenticationSwitch = editor.getByRole("switch", {
-      name: "Use OAuth OAUTHBEARER",
+    const authenticationSwitch = editor.getByRole("combobox", {
+      name: "Broker authentication",
     });
     const profileActions = editor.getByRole("group", { name: "Profile actions" });
     const [authenticationBounds, actionBounds] = await Promise.all([
@@ -527,7 +527,8 @@ test.describe("StreamSkope browser workbench", () => {
     await expect(editor.getByRole("button", { name: "Manage connection templates" })).toHaveCount(
       0,
     );
-    await editor.getByRole("switch", { name: "Use OAuth OAUTHBEARER" }).click();
+    await editor.getByRole("combobox", { name: "Broker authentication" }).click();
+    await page.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)", exact: true }).click();
     await expect(
       editor.getByRole("button", { name: "Choose OAuth endpoint template" }),
     ).toHaveCount(0);

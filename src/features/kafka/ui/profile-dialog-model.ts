@@ -10,6 +10,19 @@ import {
   type ProtectedValueUpdateInput,
 } from "../contracts";
 
+import {
+  initialClientIdentity,
+  initialProtectedField,
+  initialServiceSecurity,
+  validateClientIdentity,
+  validateServiceSecurity,
+  type ClientIdentityForm,
+  type ProtectedFieldForm,
+  type ServiceSecurityForm,
+} from "./profile-security-form";
+
+export type BrokerAuthentication = "none" | "oauth" | "PLAIN" | "SCRAM-SHA-256" | "SCRAM-SHA-512";
+
 export type TrustValueMode = "acquired" | "clear" | "replace" | "retain";
 
 export interface ProfileForm {
@@ -18,7 +31,13 @@ export interface ProfileForm {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly name: string;
-  readonly oauthEnabled: boolean;
+  readonly authentication: BrokerAuthentication;
+  readonly saslUsername: string;
+  readonly saslPassword: ProtectedFieldForm;
+  readonly clientIdentity: ClientIdentityForm;
+  readonly connectSecurity: ServiceSecurityForm;
+  readonly schemaRegistrySecurity: ServiceSecurityForm;
+  readonly redpandaAdminSecurity: ServiceSecurityForm;
   readonly scope: string;
   readonly connectAuthentication: ClusterServiceAuthenticationMode;
   readonly connectUrl: string;
@@ -39,6 +58,9 @@ export interface ProfileForm {
 
 export interface ProfileFormIssues {
   readonly brokers?: string;
+  readonly saslUsername?: string;
+  readonly saslPassword?: string;
+  readonly clientIdentity?: string;
   readonly clientId?: string;
   readonly clientSecret?: string;
   readonly name?: string;
@@ -58,6 +80,9 @@ export function validateProfileForm(
 ): ProfileFormIssues {
   const issues: {
     brokers?: string;
+    saslUsername?: string;
+    saslPassword?: string;
+    clientIdentity?: string;
     clientId?: string;
     clientSecret?: string;
     name?: string;
@@ -96,7 +121,17 @@ export function validateProfileForm(
       issues.trustPassword = "Truststore password is required.";
     }
   }
-  if (form.oauthEnabled) {
+  if (form.transport === "tls") {
+    const identityIssue = validateClientIdentity(form.clientIdentity);
+    if (identityIssue !== undefined) issues.clientIdentity = identityIssue;
+  }
+  if (form.authentication !== "none" && form.authentication !== "oauth") {
+    if (form.saslUsername.length === 0) issues.saslUsername = "SASL username is required.";
+    if (form.saslPassword.value.length === 0 && !form.saslPassword.retain) {
+      issues.saslPassword = "SASL password is required.";
+    }
+  }
+  if (form.authentication === "oauth") {
     if (form.tokenEndpoint.trim().length === 0) {
       issues.tokenEndpoint = "OAuth token endpoint is required.";
     }
@@ -107,15 +142,28 @@ export function validateProfileForm(
       issues.clientSecret = "OAuth client secret is required.";
     }
   }
-  for (const [field, label, value, authentication] of [
+  for (const [field, label, value, authentication, security] of [
     [
       "schemaRegistryUrl",
       "Schema Registry",
       form.schemaRegistryUrl,
       form.schemaRegistryAuthentication,
+      form.schemaRegistrySecurity,
     ],
-    ["redpandaAdminUrl", "Redpanda Admin", form.redpandaAdminUrl, form.redpandaAdminAuthentication],
-    ["connectUrl", "Kafka Connect", form.connectUrl, form.connectAuthentication],
+    [
+      "redpandaAdminUrl",
+      "Redpanda Admin",
+      form.redpandaAdminUrl,
+      form.redpandaAdminAuthentication,
+      form.redpandaAdminSecurity,
+    ],
+    [
+      "connectUrl",
+      "Kafka Connect",
+      form.connectUrl,
+      form.connectAuthentication,
+      form.connectSecurity,
+    ],
   ] as const) {
     if (value.trim().length === 0) continue;
     try {
@@ -131,9 +179,12 @@ export function validateProfileForm(
     } catch {
       issues[field] = `${label} must be an HTTP(S) URL without credentials, query, or fragment.`;
     }
-    if (authentication === "oauth" && !form.oauthEnabled) {
+    if (authentication === "oauth" && form.authentication !== "oauth") {
       issues[field] = `${label} OAuth requires the profile OAuth configuration.`;
     }
+    const securityIssue = validateServiceSecurity(value, authentication, security);
+    if (issues[field] === undefined && securityIssue !== undefined)
+      issues[field] = `${label}: ${securityIssue}`;
   }
   return issues;
 }
@@ -150,7 +201,13 @@ export function initialProfileForm(profile?: ProfileSummary): ProfileForm {
       clientId: "",
       clientSecret: "",
       name: "",
-      oauthEnabled: false,
+      authentication: "none",
+      saslUsername: "",
+      saslPassword: initialProtectedField(),
+      clientIdentity: initialClientIdentity(),
+      connectSecurity: initialServiceSecurity(),
+      schemaRegistrySecurity: initialServiceSecurity(),
+      redpandaAdminSecurity: initialServiceSecurity(),
       scope: "",
       connectAuthentication: "none",
       connectUrl: "",
@@ -176,7 +233,13 @@ export function initialProfileForm(profile?: ProfileSummary): ProfileForm {
     clientId: profile.oauth?.clientId ?? "",
     clientSecret: "",
     name: profile.name,
-    oauthEnabled: profile.oauth !== undefined,
+    authentication: profile.sasl?.mechanism ?? (profile.oauth !== undefined ? "oauth" : "none"),
+    saslUsername: profile.sasl?.username ?? "",
+    saslPassword: initialProtectedField(profile.sasl?.passwordPresent),
+    clientIdentity: initialClientIdentity(profile.clientIdentity),
+    connectSecurity: initialServiceSecurity(profile.services?.connect),
+    schemaRegistrySecurity: initialServiceSecurity(profile.services?.schemaRegistry),
+    redpandaAdminSecurity: initialServiceSecurity(profile.services?.redpandaAdmin),
     scope: profile.oauth?.scope ?? "",
     connectAuthentication: profile.services?.connect?.authentication ?? "none",
     connectUrl: profile.services?.connect?.baseUrl ?? "",

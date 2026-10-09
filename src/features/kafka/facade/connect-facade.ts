@@ -2,6 +2,7 @@ import { HOST_PROTOCOL_VERSION, type HostCommandResponse } from "../contracts";
 import type { ConnectHostCommand } from "../contracts/connect";
 import { ConnectService, type ConnectPort } from "../application/connect-service";
 import type { KafkaApplicationSession } from "../application";
+import { serviceConnectionDiagnostic } from "../application/connection-diagnostics";
 
 import { failureResponse, type ActivityInput } from "./facade-support";
 export class ConnectFacade {
@@ -58,7 +59,14 @@ export class ConnectFacade {
           return { ...base, command: command.command, result: { correlationId, outcome } };
         }
       }
-    } catch {
+    } catch (error) {
+      const diagnostic = serviceConnectionDiagnostic(error, "Kafka Connect");
+      if (diagnostic !== undefined)
+        return failureResponse(command, {
+          ...diagnostic,
+          correlationId,
+          activeStateChanged: false,
+        });
       return failureResponse(command, {
         code: "VALIDATION",
         stage: "authorization",
@@ -67,7 +75,7 @@ export class ConnectFacade {
         activeStateChanged: false,
         summary: "Connect request could not be completed.",
         recovery:
-          "Configure the Connect endpoint and its OAuth/TLS trust in this profile. Check API permissions, refresh connector state, validate configuration and review again. No credentials or worker traces are included here.",
+          "Configure the Connect endpoint and its authentication and TLS trust in this profile. Check API permissions, refresh connector state, validate configuration and review again. No credentials or worker traces are included here.",
       });
     }
   }

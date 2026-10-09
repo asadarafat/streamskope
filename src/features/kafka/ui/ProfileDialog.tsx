@@ -32,6 +32,7 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import { ProfileClientIdentityFields } from "./ProfileClientIdentityFields";
 import { ProfileAuthenticationFields } from "./ProfileAuthenticationFields";
 import { ProfileServiceFields } from "./ProfileServiceFields";
 import { buildCreateInput, buildUpdateInput } from "./profile-dialog-input";
@@ -222,7 +223,7 @@ export function ProfileDialog({
         ...(oauth === undefined
           ? {}
           : {
-              oauthEnabled: true,
+              authentication: "oauth" as const,
               ...(oauth.endpoint === undefined ? {} : { tokenEndpoint: oauth.endpoint }),
               ...(oauth.clientId === undefined ? {} : { clientId: oauth.clientId }),
               ...(oauth.scope === undefined ? {} : { scope: oauth.scope }),
@@ -514,9 +515,8 @@ export function ProfileDialog({
                     Plaintext is insecure
                   </Typography>
                   <Typography component="p" variant="body2">
-                    Broker traffic, metadata, messages, and Kafka OAuth credentials are not
-                    protected by TLS. Use plaintext only in an isolated environment you explicitly
-                    trust.
+                    Broker traffic, metadata, messages, and Kafka credentials are not protected by
+                    TLS. Use plaintext only in an isolated environment you explicitly trust.
                   </Typography>
                 </Alert>
               ) : (
@@ -815,6 +815,15 @@ export function ProfileDialog({
                 </>
               )}
 
+              {form.transport === "tls" ? (
+                <ProfileClientIdentityFields
+                  disabled={busy}
+                  label="Broker"
+                  form={form.clientIdentity}
+                  onChange={(value) => update("clientIdentity", value)}
+                  issue={issues.clientIdentity}
+                />
+              ) : null}
               <ProfileAuthenticationFields
                 disabled={busy}
                 form={form}
@@ -899,9 +908,10 @@ export function ProfileDialog({
         </DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2">
-            This removes saved broker trust, its truststore password, and any trust-retrieval
-            binding or API CA when the update commits. OAuth and cluster-service settings remain,
-            but Kafka traffic and credentials will not be protected by TLS.
+            This removes saved broker trust, its truststore password, client certificate and private
+            key, and any trust-retrieval binding or API CA when the update commits. OAuth and
+            cluster-service settings remain, but Kafka traffic and credentials will not be protected
+            by TLS.
           </Typography>
         </DialogContent>
         <DialogActions>

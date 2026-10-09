@@ -5,7 +5,18 @@ description: Validate connector configuration, review lifecycle actions and inve
 
 # Manage Kafka Connect
 
-Connect to Kafka, then open **Kafka Connect** in the sidebar. Add the **Kafka Connect URL** under your profile's cluster services first. The endpoint must be reachable from the desktop host. HTTPS verifies certificates using the profile's trust bundle; HTTP authorization can reuse its protected OAuth bearer token. Basic authentication and a separate Connect token are not supported in this version.
+Connect to Kafka, then open **Kafka Connect** in the sidebar. Add the **Kafka Connect URL** under your profile's cluster services first. The endpoint must be reachable from the StreamSkope host.
+
+Choose **Connect authentication**: no HTTP authorization, the profile's OAuth bearer,
+HTTP Basic username/password, a separate bearer token, or a separate OAuth client.
+Choose **Connect certificate trust** independently: system authorities, broker
+trust, or a separate PEM/JKS/PKCS12 bundle. Configure Connect's own mutual TLS
+identity if its HTTPS endpoint requires a client certificate. Its separate OAuth
+token request uses these same service trust and identity settings.
+
+Test the profile to check broker and configured service access, then save and
+reconnect. Successful inventory access does not establish permission to change
+connectors. See [certificate trust](tls-trust.md) for separate issuing CAs.
 
 ## Discover and validate
 

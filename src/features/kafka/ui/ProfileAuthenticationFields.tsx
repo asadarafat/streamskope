@@ -2,22 +2,34 @@ import { Box, InputAdornment, Stack, Typography } from "@mui/material";
 
 import {
   StudioButton as Button,
-  StudioLabeledControl as FormControlLabel,
-  StudioSwitch as Switch,
+  StudioFormControl as FormControl,
+  StudioInputLabel as InputLabel,
+  StudioMenuItem as MenuItem,
+  StudioSelect as Select,
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import { ProfileProtectedTextField } from "./ProfileProtectedFields";
 import type { ProfileForm, ProfileFormIssues } from "./profile-dialog-model";
 
 type AuthenticationForm = Pick<
   ProfileForm,
-  "oauthEnabled" | "tokenEndpoint" | "clientId" | "scope" | "clientSecret"
+  | "authentication"
+  | "saslUsername"
+  | "saslPassword"
+  | "tokenEndpoint"
+  | "clientId"
+  | "scope"
+  | "clientSecret"
 >;
 
 interface ProfileAuthenticationFieldsProperties {
   readonly disabled: boolean;
   readonly form: AuthenticationForm;
-  readonly issues: Pick<ProfileFormIssues, "tokenEndpoint" | "clientId" | "scope" | "clientSecret">;
+  readonly issues: Pick<
+    ProfileFormIssues,
+    "tokenEndpoint" | "clientId" | "scope" | "clientSecret" | "saslUsername" | "saslPassword"
+  >;
   readonly onChange: <K extends keyof AuthenticationForm>(field: K, value: ProfileForm[K]) => void;
   readonly savedSecretPresent: boolean;
   readonly secretVisible: boolean;
@@ -34,7 +46,7 @@ export function ProfileAuthenticationFields({
   onSecretVisibilityChange,
 }: ProfileAuthenticationFieldsProperties): React.JSX.Element {
   const retainedOauthSecret =
-    savedSecretPresent && form.oauthEnabled && form.clientSecret.length === 0;
+    savedSecretPresent && form.authentication === "oauth" && form.clientSecret.length === 0;
   return (
     <>
       <Stack
@@ -52,26 +64,51 @@ export function ProfileAuthenticationFields({
             Authentication
           </Typography>
           <Typography color="text.secondary" variant="body2">
-            Enable OAuth 2.0 only when the broker requires OAUTHBEARER.
+            Choose the SASL mechanism configured on your Kafka listener. Mutual TLS is configured
+            separately.
           </Typography>
         </Box>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={form.oauthEnabled}
-              disabled={disabled}
-              onChange={(event) => {
-                onChange("oauthEnabled", event.target.checked);
-              }}
-              slotProps={{ input: { "aria-label": "Use OAuth OAUTHBEARER" } }}
-            />
-          }
-          label="OAuth 2.0"
-          labelPlacement="start"
-          sx={{ m: 0 }}
-        />
       </Stack>
-      {form.oauthEnabled ? (
+      <FormControl disabled={disabled} fullWidth>
+        <InputLabel id="broker-authentication-label">Broker authentication</InputLabel>
+        <Select
+          label="Broker authentication"
+          labelId="broker-authentication-label"
+          value={form.authentication}
+          onChange={(event) => onChange("authentication", event.target.value)}
+        >
+          <MenuItem value="none">No SASL authentication</MenuItem>
+          <MenuItem value="oauth">OAuth 2.0 (OAUTHBEARER)</MenuItem>
+          <MenuItem value="PLAIN">SASL PLAIN</MenuItem>
+          <MenuItem value="SCRAM-SHA-256">SASL SCRAM-SHA-256</MenuItem>
+          <MenuItem value="SCRAM-SHA-512">SASL SCRAM-SHA-512</MenuItem>
+        </Select>
+      </FormControl>
+      {form.authentication !== "none" && form.authentication !== "oauth" ? (
+        <Stack spacing={1.5}>
+          <TextField
+            disabled={disabled}
+            error={issues.saslUsername !== undefined}
+            fullWidth
+            helperText={issues.saslUsername}
+            label="SASL username"
+            onChange={(event) => onChange("saslUsername", event.target.value)}
+            value={form.saslUsername}
+          />
+          <ProfileProtectedTextField
+            disabled={disabled}
+            label="SASL password"
+            onChange={(value) => onChange("saslPassword", value)}
+            value={form.saslPassword}
+          />
+          {issues.saslPassword === undefined ? null : (
+            <Typography color="error" role="alert" variant="body2">
+              {issues.saslPassword}
+            </Typography>
+          )}
+        </Stack>
+      ) : null}
+      {form.authentication === "oauth" ? (
         <>
           <Stack spacing={0.75}>
             <TextField

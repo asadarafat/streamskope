@@ -45,6 +45,20 @@ afterEach(async () => {
 });
 
 describe("bounded host JSON transport", () => {
+  it("preserves an authentication rejection even when the server returns an HTML login page", async () => {
+    const url = await endpoint((_request, response) => {
+      response.statusCode = 401;
+      response.setHeader("content-type", "text/html");
+      response.end("<html>Login failed for secret-fixture</html>");
+    });
+    const adapter = new SchemaRegistryHttpAdapter(new NodeBoundedJsonHttp());
+    await expect(
+      adapter.listSubjects(
+        { baseUrl: url, authorization: (): Promise<string> => Promise.resolve("Basic fixture") },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ status: 401, message: "Schema Registry returned HTTP 401." });
+  });
   it("does not send Registry credentials over an untrusted TLS connection and preserves HTTP denial", async () => {
     const registry = await createHttpsTrustFixture((_request, response) => {
       response.statusCode = 403;

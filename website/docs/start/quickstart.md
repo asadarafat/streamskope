@@ -26,7 +26,7 @@ Ask your administrator for [inspection permissions](../guide/security.md#kafka-a
 
 1. Choose **Add connection → Kafka broker**, enter a name and bootstrap brokers, and keep TLS enabled
    for a secured cluster. Select the matching PEM, JKS or PKCS12 trust material.
-2. Configure OAuth if required. Follow [Connect your Kafka](../guide/connections.md#configure-manually)
+2. Choose the broker authentication method your administrator supplies. Follow [Connect your Kafka](../guide/connections.md#configure-manually)
    for field details and optional service connections.
 3. Choose **Test connection** and resolve any reported error before saving.
 4. Choose **Save profile**, then **Connect** on its Kafka row. Wait for **Connected**.

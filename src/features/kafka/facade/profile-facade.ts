@@ -86,22 +86,26 @@ export interface ProfileTestFacadeBindings {
 }
 
 function replacementValues(input: ProfileTestInput): readonly string[] {
-  const profile = input.profile;
-  return [
-    ...(profile.transport === "plaintext"
-      ? []
-      : [
-          ...(profile.trust.material.mode === "replace"
-            ? [
-                profile.trust.material.value,
-                "-----BEGIN CERTIFICATE-----",
-                "-----END CERTIFICATE-----",
-              ]
-            : []),
-          ...(profile.trust.password.mode === "replace" ? [profile.trust.password.value] : []),
-        ]),
-    ...(profile.oauth?.clientSecret.mode === "replace" ? [profile.oauth.clientSecret.value] : []),
-  ];
+  const values: string[] = [];
+  const visit = (value: unknown): void => {
+    if (value === null || typeof value !== "object") return;
+    if (
+      "mode" in value &&
+      value.mode === "replace" &&
+      "value" in value &&
+      typeof value.value === "string"
+    )
+      values.push(value.value);
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(input.profile);
+  values.push(
+    "-----BEGIN CERTIFICATE-----",
+    "-----END CERTIFICATE-----",
+    "-----BEGIN PRIVATE KEY-----",
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+  );
+  return values;
 }
 
 export async function executeProfileTestCommand(

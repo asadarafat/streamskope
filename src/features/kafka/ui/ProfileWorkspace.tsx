@@ -4,6 +4,8 @@ import { Box, Stack, Typography } from "@mui/material";
 import {
   HOST_PROTOCOL_VERSION,
   type KafkaClusterDiagnosticsSnapshot,
+  type ClusterServiceAuthenticationMode,
+  type ClusterServiceEndpointSummary,
   type ProfileSummary,
   type StreamSkopeHost,
 } from "../contracts";
@@ -48,8 +50,22 @@ function profileErrorText(summary: string, recovery: string): string {
   return `${summary} ${recovery}`;
 }
 
-function serviceAuthenticationLabel(authentication: "none" | "oauth"): string {
-  return authentication === "oauth" ? "Profile OAuth bearer token" : "No HTTP authorization";
+function serviceAuthenticationLabel(authentication: ClusterServiceAuthenticationMode): string {
+  return {
+    none: "No HTTP authorization",
+    oauth: "Profile OAuth bearer token",
+    basic: "HTTP Basic",
+    bearer: "Bearer token",
+    "oauth-client": "Separate OAuth client",
+  }[authentication];
+}
+
+function serviceTrustLabel(service: ClusterServiceEndpointSummary): string {
+  if (!service.baseUrl.startsWith("https:")) return "HTTP — no TLS";
+  if (service.trust?.mode === "system") return "System certificate authorities";
+  if (service.trust?.mode === "custom")
+    return `${service.trust.kind.toUpperCase()} — separate certificate trust`;
+  return "Broker certificate trust";
 }
 
 function TechnicalValue({ children }: { readonly children: React.ReactNode }): React.JSX.Element {
@@ -232,9 +248,15 @@ export function ProfileWorkspace({
 
   const transport = profile.transport ?? "tls";
   const plaintext = transport === "plaintext";
-  const authentication = profile.oauth === undefined ? "Not configured" : "OAuth 2.0";
+  const authentication =
+    profile.sasl === undefined
+      ? profile.oauth === undefined
+        ? "Not configured"
+        : "OAuth 2.0"
+      : `SASL ${profile.sasl.mechanism}`;
   const schemaRegistry = profile.services?.schemaRegistry;
   const redpandaAdmin = profile.services?.redpandaAdmin;
+  const connect = profile.services?.connect;
   return (
     <Box
       aria-label="Connection profile workspace"
@@ -301,7 +323,9 @@ export function ProfileWorkspace({
         {plaintext ? (
           <Alert severity="warning">
             Plaintext is insecure. Broker metadata and messages are not protected by TLS
-            {profile.oauth === undefined ? "." : ", and Kafka OAuth credentials cross without TLS."}
+            {profile.oauth === undefined && profile.sasl === undefined
+              ? "."
+              : ", and Kafka credentials cross without TLS."}
           </Alert>
         ) : null}
 
@@ -323,6 +347,19 @@ export function ProfileWorkspace({
               value={<TechnicalValue>{profile.brokers.join(", ")}</TechnicalValue>}
             />
             <StudioDetailRow label="Authentication" value={authentication} />
+            {profile.sasl === undefined ? null : (
+              <>
+                <StudioDetailRow label="SASL username" value={profile.sasl.username} />
+                <StudioDetailRow
+                  label="SASL password"
+                  value={
+                    profile.sasl.passwordPresent
+                      ? "Password retained by host"
+                      : "Password not stored"
+                  }
+                />
+              </>
+            )}
             <StudioDetailRow
               label="OAuth client"
               value={profile.oauth?.clientId ?? "Not configured"}
@@ -387,6 +424,14 @@ export function ProfileWorkspace({
                   label="Hostname verification"
                   value="Enabled by the application host"
                 />
+                <StudioDetailRow
+                  label="Client identity"
+                  value={
+                    profile.clientIdentity === undefined
+                      ? "Not configured"
+                      : "Mutual TLS certificate and key retained by host"
+                  }
+                />
               </>
             )}
             <StudioDetailRow
@@ -409,6 +454,24 @@ export function ProfileWorkspace({
 
           <Box sx={{ gridColumn: "1 / -1" }}>
             <ProfileEvidenceSection title="Cluster services" twoColumns>
+              <StudioDetailRow
+                label="Kafka Connect"
+                value={
+                  connect === undefined ? (
+                    "Not configured"
+                  ) : (
+                    <TechnicalValue>{connect.baseUrl}</TechnicalValue>
+                  )
+                }
+              />
+              <StudioDetailRow
+                label="Connect authentication"
+                value={
+                  connect === undefined
+                    ? "Not configured"
+                    : serviceAuthenticationLabel(connect.authentication)
+                }
+              />
               <StudioDetailRow
                 label="Schema Registry"
                 value={
@@ -445,6 +508,30 @@ export function ProfileWorkspace({
                     : serviceAuthenticationLabel(redpandaAdmin.authentication)
                 }
               />
+              {(
+                [
+                  ["Connect", connect],
+                  ["Schema Registry", schemaRegistry],
+                  ["Admin", redpandaAdmin],
+                ] as const
+              ).map(([label, service]) =>
+                service === undefined ? null : (
+                  <Box key={label} sx={{ display: "contents" }}>
+                    <StudioDetailRow
+                      label={`${label} certificate trust`}
+                      value={serviceTrustLabel(service)}
+                    />
+                    <StudioDetailRow
+                      label={`${label} client identity`}
+                      value={
+                        service.clientIdentity === undefined
+                          ? "Not configured"
+                          : "Mutual TLS identity retained by host"
+                      }
+                    />
+                  </Box>
+                ),
+              )}
             </ProfileEvidenceSection>
           </Box>
         </Box>

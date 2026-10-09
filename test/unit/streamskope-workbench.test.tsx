@@ -704,7 +704,8 @@ describe("StreamSkope workbench shell", () => {
     const dialog = screen.getByRole("dialog", { name: "Add Kafka profile" });
     await user.click(within(dialog).getByRole("combobox", { name: "Trust material format" }));
     await user.click(screen.getByRole("option", { name: "JKS truststore" }));
-    await user.click(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)" }));
     await user.click(within(dialog).getByRole("button", { name: "Test connection" }));
 
     expect(within(dialog).getByText("Profile name is required.")).toBeVisible();
@@ -739,7 +740,8 @@ describe("StreamSkope workbench shell", () => {
         type: "application/x-pem-file",
       }),
     );
-    await user.click(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)" }));
     const endpoint = within(dialog).getByRole("textbox", { name: "OAuth token endpoint" });
     await pasteText(user, endpoint, "http://127.0.0.1:5000/rest-gateway/rest/api/v1/auth/token");
     const clientId = within(dialog).getByRole("textbox", { name: "OAuth client ID" });
@@ -804,7 +806,8 @@ describe("StreamSkope workbench shell", () => {
     await user.click(screen.getByRole("button", { name: "Add connection" }));
     await user.click(screen.getByRole("menuitem", { name: "Existing Kafka cluster" }));
     dialog = screen.getByRole("dialog", { name: "Add Kafka profile" });
-    await user.click(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)" }));
     expect(within(dialog).getByLabelText("OAuth client secret")).toHaveValue("");
 
     view.unmount();
@@ -813,7 +816,8 @@ describe("StreamSkope workbench shell", () => {
     await user.click(screen.getByRole("button", { name: "Add connection" }));
     await user.click(screen.getByRole("menuitem", { name: "Existing Kafka cluster" }));
     dialog = screen.getByRole("dialog", { name: "Add Kafka profile" });
-    await user.click(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)" }));
     expect(within(dialog).getByLabelText("OAuth client secret")).toHaveValue("");
   });
 });

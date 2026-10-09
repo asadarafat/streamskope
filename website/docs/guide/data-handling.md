@@ -66,7 +66,7 @@ gone. Do not remove shared OS credential-service files to clean up one applicati
 The [browser host](../start/containerlab.md) mounts its private data directory
 at `/data`. `vault.json` holds authenticated vault metadata; `kafka-profiles.json`
 and `nats-profiles.json` are at this directory's root. Their protected credentials
-and trust values use passphrase-derived authenticated encryption, with the key
+including SASL/HTTP credentials, TLS private keys and trust values use passphrase-derived authenticated encryption, with the key
 held only by the unlocked host. This is separate from Electron's OS-backed keys.
 
 The host also stores `rules/`, `queries/`, `templates/`, `history/`, `workbench/`

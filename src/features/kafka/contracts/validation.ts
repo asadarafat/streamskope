@@ -1,3 +1,8 @@
+import {
+  parseConnectionIdentity,
+  parseProfileSasl,
+  parseResolvedServices,
+} from "./profile-security-validation";
 import { parseHostError } from "./host-error-validation";
 import { parseRelationshipCommand, parseRelationshipResponse } from "./relationship-protocol";
 import { parseObservationCommand, parseObservationResponse } from "./observation-protocol";
@@ -47,7 +52,6 @@ import {
   parseKafkaLatencyTextDocument,
 } from "./latency-validation";
 import {
-  parseClusterServiceEndpoints,
   parseProfileCreateInput,
   parseProfileIdPayload,
   parseProfileStoreCapability,
@@ -164,16 +168,19 @@ function parseTls(value: unknown, path: string): TlsConnectionInput {
   if (tls.enabled !== true) {
     throw new HostContractValidationError(`${path}.enabled`, "must be true or false");
   }
-  exactKeys(tls, ["caPem", "enabled"], path);
+  exactKeys(tls, ["caPem", "enabled", "clientIdentity"], path);
   return {
     caPem: boundedText(tls.caPem, `${path}.caPem`, SECURE_CONNECTION_LIMITS.caPemCharacters),
+    ...(tls.clientIdentity === undefined
+      ? {}
+      : { clientIdentity: parseConnectionIdentity(tls.clientIdentity, `${path}.clientIdentity`) }),
     enabled: true,
   };
 }
 
 function parseConnection(value: unknown, path: string): HostSecureConnectionInput {
   const connection = record(value, path);
-  exactKeys(connection, ["brokers", "name", "oauth", "services", "tls"], path);
+  exactKeys(connection, ["brokers", "name", "oauth", "sasl", "services", "tls"], path);
   const brokers = parseBrokers(
     connection.brokers,
     `${path}.brokers`,
@@ -185,6 +192,9 @@ function parseConnection(value: unknown, path: string): HostSecureConnectionInpu
     : undefined;
   const base = {
     brokers,
+    ...(connection.sasl === undefined
+      ? {}
+      : { sasl: parseProfileSasl(connection.sasl, `${path}.sasl`, text) }),
     name: boundedText(connection.name, `${path}.name`, SECURE_CONNECTION_LIMITS.nameCharacters),
     tls: Object.hasOwn(record(connection.tls, `${path}.tls`), "acquisitionId")
       ? parseAcquiredTls(connection.tls, `${path}.tls`)
@@ -194,7 +204,7 @@ function parseConnection(value: unknown, path: string): HostSecureConnectionInpu
   const withServices = Object.hasOwn(connection, "services")
     ? {
         ...parsed,
-        services: parseClusterServiceEndpoints(connection.services, `${path}.services`),
+        services: parseResolvedServices(connection.services, `${path}.services`),
       }
     : parsed;
   const issue = validateSecureConnectionInput(withServices)[0];

@@ -141,9 +141,7 @@ describe("plaintext Kafka profile workflow", () => {
     await user.click(within(dialog).getByRole("radio", { name: "Plaintext (insecure)" }));
 
     expect(within(dialog).getByText(/Plaintext is insecure/u)).toBeVisible();
-    expect(
-      within(dialog).getByText(/metadata, messages, and Kafka OAuth credentials/u),
-    ).toBeVisible();
+    expect(within(dialog).getByText(/metadata, messages, and Kafka credentials/u)).toBeVisible();
     expect(within(dialog).queryByRole("heading", { name: "TLS trust" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("heading", { name: "Authentication" })).toBeVisible();
     expect(within(dialog).getByRole("heading", { name: "Cluster services" })).toBeVisible();
@@ -181,7 +179,8 @@ describe("plaintext Kafka profile workflow", () => {
       within(dialog).getByRole("textbox", { name: "Bootstrap brokers" }),
       "127.0.0.1:19092",
     );
-    await user.click(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)" }));
     await user.type(
       within(dialog).getByRole("textbox", { name: "OAuth token endpoint" }),
       "https://identity.example.test/token",
@@ -210,7 +209,9 @@ describe("plaintext Kafka profile workflow", () => {
         transport: "plaintext",
       },
     });
-    expect(JSON.stringify(command)).not.toMatch(/trust|source|capture/i);
+    expect(command.payload.profile).not.toHaveProperty("trust");
+    expect(command.payload.profile).not.toHaveProperty("source");
+    expect(command.payload.profile.services?.schemaRegistry?.trust).toEqual({ mode: "system" });
   });
 
   it("requires destructive confirmation before saving TLS as plaintext", async () => {
@@ -287,7 +288,10 @@ describe("plaintext Kafka profile workflow", () => {
     expect(within(dialog).getByRole("textbox", { name: "Profile name" })).toBeDisabled();
     expect(within(dialog).getByRole("textbox", { name: "Bootstrap brokers" })).toBeDisabled();
     expect(within(dialog).getByRole("radio", { name: "TLS" })).toBeDisabled();
-    expect(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" })).toBeDisabled();
+    expect(within(dialog).getByRole("combobox", { name: "Broker authentication" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(within(dialog).getByRole("textbox", { name: "Schema Registry URL" })).toBeDisabled();
 
     complete?.({

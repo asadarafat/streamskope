@@ -4,6 +4,7 @@ import type { RequestOptions } from "node:http";
 import { request as requestHttps } from "node:https";
 
 import type { OAuthToken, OAuthTokenRequest } from "./types";
+import { tlsClientIdentityOptions } from "./tls-client-identity";
 
 const OAUTH_RESPONSE_BYTE_LIMIT = 65_536;
 
@@ -48,6 +49,7 @@ function postForm(
   caPem: string | undefined,
   signal: AbortSignal,
   authorization?: string,
+  clientIdentity?: OAuthTokenRequest["clientIdentity"],
 ): Promise<OAuthHttpResponse> {
   return new Promise((resolve, reject) => {
     const encodedBody = body.toString();
@@ -55,6 +57,7 @@ function postForm(
       endpoint,
       {
         ...(endpoint.protocol === "https:" && caPem !== undefined ? { ca: [caPem] } : {}),
+        ...(endpoint.protocol === "https:" ? tlsClientIdentityOptions(clientIdentity) : {}),
         headers: {
           ...(authorization === undefined ? {} : { authorization }),
           "content-length": Buffer.byteLength(encodedBody),
@@ -141,6 +144,7 @@ export async function requestOAuthToken(request: OAuthTokenRequest): Promise<OAu
     request.caPem,
     request.signal,
     authorization,
+    request.clientIdentity,
   );
   if (basicResponse.status >= 200 && basicResponse.status < 300) {
     return parseTokenResponse(basicResponse.body);
@@ -153,7 +157,14 @@ export async function requestOAuthToken(request: OAuthTokenRequest): Promise<OAu
     ...(request.scope.trim() ? { scope: request.scope } : {}),
     ...extras,
   });
-  const postResponse = await postForm(endpoint, postBody, request.caPem, request.signal);
+  const postResponse = await postForm(
+    endpoint,
+    postBody,
+    request.caPem,
+    request.signal,
+    undefined,
+    request.clientIdentity,
+  );
   if (postResponse.status < 200 || postResponse.status >= 300) {
     throw new OAuthEndpointResponseError(postResponse.status, postResponse.body);
   }

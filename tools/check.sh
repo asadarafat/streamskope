@@ -39,6 +39,7 @@ docs() {
 
 runtime() {
   patch_dependencies
+  npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/connection-profiles-real.json test/kafka/production-connection-profiles-real.test.ts
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts test/kafka/provider-stream-stop-real.test.ts
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/nats-real.json test/nats/provider-real.test.ts
   STREAMSKOPE_TEST_SUITE=production-startup node tools/package/e2e.mjs web test/e2e/web-production-startup.spec.ts

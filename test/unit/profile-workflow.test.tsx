@@ -181,7 +181,8 @@ describe("Material UI Kafka profile workflow", () => {
         },
       },
     });
-    await user.click(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "No SASL authentication" }));
     const count = host.commands.length;
     await user.click(within(dialog).getByRole("button", { name: "Test connection" }));
     expect(
@@ -469,7 +470,8 @@ describe("Material UI Kafka profile workflow", () => {
         type: "application/x-pem-file",
       }),
     );
-    await user.click(within(dialog).getByRole("switch", { name: "Use OAuth OAUTHBEARER" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Broker authentication" }));
+    await user.click(screen.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)" }));
     await pasteText(
       user,
       within(dialog).getByRole("textbox", { name: "OAuth token endpoint" }),

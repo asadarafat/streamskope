@@ -31,12 +31,16 @@ function canonicalConnection(
   caPem: string,
 ): SecureConnectionInput {
   const base = {
-    brokers: input.brokers,
+    brokers: [...input.brokers],
     name: input.name,
-    ...(input.oauth === undefined ? {} : { oauth: input.oauth }),
-    ...(input.services === undefined ? {} : { services: input.services }),
+    ...(input.sasl === undefined ? {} : { sasl: { ...input.sasl } }),
+    ...(input.oauth === undefined ? {} : { oauth: { ...input.oauth } }),
+    ...(input.services === undefined ? {} : { services: structuredClone(input.services) }),
     tls: {
       caPem,
+      ...("clientIdentity" in input.tls && input.tls.clientIdentity !== undefined
+        ? { clientIdentity: { ...input.tls.clientIdentity } }
+        : {}),
       enabled: true as const,
     },
   };
@@ -54,10 +58,11 @@ export function resolveHostConnection(
   if (input.tls.enabled === false) {
     return {
       connection: {
-        brokers: input.brokers,
+        brokers: [...input.brokers],
         name: input.name,
-        ...(input.oauth === undefined ? {} : { oauth: input.oauth }),
-        ...(input.services === undefined ? {} : { services: input.services }),
+        ...(input.sasl === undefined ? {} : { sasl: { ...input.sasl } }),
+        ...(input.oauth === undefined ? {} : { oauth: { ...input.oauth } }),
+        ...(input.services === undefined ? {} : { services: structuredClone(input.services) }),
         tls: input.tls,
       },
     };

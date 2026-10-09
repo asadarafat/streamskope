@@ -149,7 +149,7 @@ class Fixture:
 
         engine.owned = owned
 
-        def preflight(inspector, data=None):
+        def preflight(inspector, data=None, *, target=None):
             m.require(not (self.data / "managed").exists(), "preflight-blocked")
             return report(inspector["version"])
 
@@ -211,6 +211,43 @@ class TransactionTest(unittest.TestCase):
 
     def tearDown(self):
         self.fixture.close()
+
+    def test_current_inspection_does_not_authorize_security_profiles_for_legacy_target(self):
+        for kind in ("kafka-profiles", "profile-backups"):
+            with self.subTest(kind=kind):
+                value = report("0.11.0")
+                row = next(row for row in value["documents"] if row["kind"] == kind)
+                row.update(state="verified", count=1, formats=[4])
+                current = release("0.11.0", "b")
+                legacy = {**release("0.10.3", "a"), "inspector": False}
+                self.assertEqual(m.inspection(value, POLICY, "0.11.0", current), value)
+                with self.assertRaises(m.Refused) as rejected:
+                    m.inspection(value, POLICY, "0.11.0", legacy)
+                self.assertEqual(rejected.exception.reason, "preflight-blocked")
+                row["formats"] = [3]
+                self.assertEqual(m.inspection(value, POLICY, "0.11.0", legacy), value)
+
+    def test_legacy_rollback_with_expanded_credentials_is_refused_before_stopping_host(self):
+        f = self.fixture
+        f.source["inspector"] = False
+        f.open().execute("upgrade")
+        engine = f.open()
+        calls = list(f.calls)
+        state = (f.root / "installation.json").read_bytes()
+
+        def expanded(inspector, data=None, *, target=None):
+            value = report(inspector["version"])
+            value["documents"][2].update(state="verified", count=1, formats=[4])
+            return m.inspection(value, POLICY, inspector["version"], target)
+
+        engine.preflight = expanded
+        with self.assertRaises(m.Refused) as rejected:
+            engine.execute("rollback")
+        self.assertEqual(rejected.exception.reason, "preflight-blocked")
+        self.assertEqual(f.calls, calls)
+        self.assertEqual((f.root / "installation.json").read_bytes(), state)
+        self.assertTrue(f.active["State"]["Running"])
+        self.assertFalse((f.root / "maintenance.json").exists())
 
     def test_local_named_image_requires_the_sealed_image_identity_without_pulling(self):
         f = self.fixture
