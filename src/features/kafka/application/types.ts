@@ -29,6 +29,7 @@ export interface KafkaConnectionTestResult {
 export interface KafkaMessageStream extends AsyncIterable<KafkaMessage> {
   close(): Promise<void>;
   coverage?(): KafkaReadCoverage | undefined;
+  subscribeCoverage?(listener: (coverage: KafkaReadCoverage) => void): () => void;
   checkpoint?(): KafkaReadCheckpoint | undefined;
   acknowledge?(message: KafkaMessage): void;
 }

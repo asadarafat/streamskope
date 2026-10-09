@@ -114,6 +114,7 @@ export interface KafkaRawMessageStream extends AsyncIterable<KafkaRawMessage> {
   checkpoint?(): KafkaReadCheckpoint | undefined;
   close(): Promise<void>;
   coverage?(): KafkaReadCoverage | undefined;
+  subscribeCoverage?(listener: (coverage: KafkaReadCoverage) => void): () => void;
 }
 
 export type KafkaConsumerInput = KafkaClientInput & {

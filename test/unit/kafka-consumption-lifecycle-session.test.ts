@@ -58,26 +58,50 @@ function message(id: string, topic = "test"): ReturnType<typeof fixtureMessage> 
   return { ...fixtureMessage(id), topic };
 }
 
+class CoverageMessageStream extends ControlledMessageStream {
+  readonly currentCoverage: KafkaReadCoverage = {
+    reason: "reading",
+    scannedRecords: 0,
+    scannedBytes: 0,
+    matchedRecords: 0,
+    unavailableRecords: 0,
+    partitions: [{ partition: 0, startOffset: "0", endOffset: "10", nextOffset: "0" }],
+  };
+  coverageListener: ((coverage: KafkaReadCoverage) => void) | undefined;
+  readonly unsubscribeCoverage = vi.fn(() => {
+    this.coverageListener = undefined;
+  });
+  readonly subscribeCoverage = vi.fn((listener: (coverage: KafkaReadCoverage) => void) => {
+    this.coverageListener = listener;
+    return this.unsubscribeCoverage;
+  });
+
+  coverage(): KafkaReadCoverage {
+    return this.currentCoverage;
+  }
+
+  notifyCoverage(): void {
+    this.coverageListener?.(this.currentCoverage);
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("Kafka application consumption lifecycle", () => {
-  it.each(["periodic coverage", "final coverage", "checkpoint", "completion"] as const)(
+  it.each(["scan coverage", "final coverage", "checkpoint", "completion"] as const)(
     "contains a throwing %s observer, closes the stream and reports failure once",
     async (point) => {
       vi.useFakeTimers();
-      const coverage: KafkaReadCoverage = {
-        reason: "reading",
-        scannedRecords: 0,
-        scannedBytes: 0,
-        matchedRecords: 0,
-        unavailableRecords: 0,
-        partitions: [{ partition: 0, startOffset: "0", endOffset: "10", nextOffset: "0" }],
-      };
-      const stream = Object.assign(new ControlledMessageStream(), {
-        coverage: () => coverage,
-        checkpoint: () => ({ clusterId: "cluster", topicId: "topic", partitionCount: 1, coverage }),
+      const stream = new CoverageMessageStream();
+      Object.assign(stream, {
+        checkpoint: () => ({
+          clusterId: "cluster",
+          topicId: "topic",
+          partitionCount: 1,
+          coverage: stream.currentCoverage,
+        }),
       });
       const connection = new RecordingConnection();
       connection.messageStreamOperations.push(() => Promise.resolve(stream));
@@ -101,12 +125,11 @@ describe("Kafka application consumption lifecycle", () => {
       };
       await session.connect(firstConnection);
       await session.startConsumption({ ...tailRequest(), mode: "earliest" }, observer);
-      if (point === "periodic coverage") await vi.advanceTimersByTimeAsync(500);
-      else {
-        stream.end();
-        await vi.advanceTimersByTimeAsync(0);
-      }
+      if (point === "scan coverage") stream.notifyCoverage();
+      else stream.end();
+      await vi.advanceTimersByTimeAsync(0);
       expect(stream.closeCalls).toBe(1);
+      expect(stream.unsubscribeCoverage).toHaveBeenCalledOnce();
       expect(observer.onFailure).toHaveBeenCalledExactlyOnceWith(failure);
       expect(observer.onComplete).toHaveBeenCalledTimes(point === "completion" ? 1 : 0);
       const coverageCalls = observer.onCoverage.mock.calls.length;
@@ -117,14 +140,124 @@ describe("Kafka application consumption lifecycle", () => {
     },
   );
 
-  it("waits for owned cleanup before reporting a periodic coverage failure", async () => {
+  it("publishes scan notifications without polling and revokes callbacks before final cleanup", async () => {
+    vi.useFakeTimers();
+    const stream = new CoverageMessageStream();
+    const snapshot = vi.spyOn(stream, "coverage");
+    const close = vi.spyOn(stream, "close");
+    const connection = new RecordingConnection();
+    connection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const session = new KafkaApplicationSession(port);
+    const observer = {
+      onCoverage: vi.fn(),
+      onComplete: vi.fn(),
+      onEmpty: vi.fn(),
+      onMessage: vi.fn(),
+      onFailure: vi.fn(),
+    };
+    await session.connect(firstConnection);
+    await session.startConsumption({ ...tailRequest(), mode: "earliest" }, observer);
+    expect(stream.subscribeCoverage).toHaveBeenCalledOnce();
+    const listener = stream.coverageListener;
+    expect(listener).toBeDefined();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(observer.onCoverage).not.toHaveBeenCalled();
+    expect(snapshot).not.toHaveBeenCalled();
+    const progress = { ...stream.currentCoverage, scannedRecords: 5, scannedBytes: 100 };
+    listener?.(progress);
+    expect(observer.onCoverage).toHaveBeenCalledExactlyOnceWith(progress);
+    expect(snapshot).not.toHaveBeenCalled();
+    stream.end();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.unsubscribeCoverage).toHaveBeenCalledOnce();
+    expect(stream.unsubscribeCoverage.mock.invocationCallOrder[0]).toBeLessThan(
+      close.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(observer.onCoverage).toHaveBeenCalledTimes(2);
+    expect(observer.onComplete).toHaveBeenCalledOnce();
+    listener?.(progress);
+    expect(observer.onCoverage).toHaveBeenCalledTimes(2);
+    expect(observer.onFailure).not.toHaveBeenCalled();
+    await session.shutdown();
+  });
+
+  it("rejects scan callbacks as soon as stop revokes the consumption, including while cleanup waits", async () => {
+    const stream = new CoverageMessageStream();
+    const closing = deferred<void>();
+    vi.spyOn(stream, "close").mockImplementation(() => {
+      stream.end();
+      return closing.promise;
+    });
+    const connection = new RecordingConnection();
+    connection.messageStreamOperations.push(() => Promise.resolve(stream));
+    const port = new RecordingConnectionPort();
+    port.openOperations.push(() => Promise.resolve(connection));
+    const session = new KafkaApplicationSession(port);
+    const observer = {
+      onCoverage: vi.fn(),
+      onComplete: vi.fn(),
+      onEmpty: vi.fn(),
+      onMessage: vi.fn(),
+      onFailure: vi.fn(),
+    };
+    await session.connect(firstConnection);
+    await session.startConsumption({ ...tailRequest(), mode: "earliest" }, observer);
+    const listener = stream.coverageListener;
+    expect(listener).toBeDefined();
+    const stopping = session.stopConsumption();
+    listener?.(stream.currentCoverage);
+    await settleAsyncIteration();
+    expect(stream.unsubscribeCoverage).toHaveBeenCalledOnce();
+    expect(observer.onCoverage).not.toHaveBeenCalled();
+    closing.resolve();
+    await stopping;
+    listener?.(stream.currentCoverage);
+    expect(observer.onCoverage).not.toHaveBeenCalled();
+    expect(observer.onComplete).not.toHaveBeenCalled();
+    expect(observer.onFailure).not.toHaveBeenCalled();
+    await session.shutdown();
+  });
+
+  it.each(["subscription", "unsubscription"] as const)(
+    "contains a throwing coverage %s and still closes the stream",
+    async (point) => {
+      const stream = new CoverageMessageStream();
+      const failure = new Error("Coverage subscription failed");
+      const operation =
+        point === "subscription" ? stream.subscribeCoverage : stream.unsubscribeCoverage;
+      operation.mockImplementation(() => {
+        throw failure;
+      });
+      const connection = new RecordingConnection();
+      connection.messageStreamOperations.push(() => Promise.resolve(stream));
+      const port = new RecordingConnectionPort();
+      port.openOperations.push(() => Promise.resolve(connection));
+      const session = new KafkaApplicationSession(port);
+      const observer = {
+        onCoverage: vi.fn(),
+        onComplete: vi.fn(),
+        onEmpty: vi.fn(),
+        onMessage: vi.fn(),
+        onFailure: vi.fn(),
+      };
+      await session.connect(firstConnection);
+      await session.startConsumption({ ...tailRequest(), mode: "earliest" }, observer);
+      if (point === "unsubscription") stream.end();
+      await settleAsyncIteration();
+      expect(stream.closeCalls).toBe(1);
+      expect(observer.onFailure).toHaveBeenCalledExactlyOnceWith(failure);
+      expect(observer.onComplete).not.toHaveBeenCalled();
+      expect(observer.onCoverage).not.toHaveBeenCalled();
+      await session.shutdown();
+    },
+  );
+
+  it("waits for owned cleanup before reporting a scan coverage failure", async () => {
     vi.useFakeTimers();
     const closing = deferred<void>();
-    const stream = Object.assign(new ControlledMessageStream(), {
-      coverage: (): never => {
-        throw new Error("Coverage unavailable");
-      },
-    });
+    const stream = new CoverageMessageStream();
     const close = vi.spyOn(stream, "close").mockImplementation(() => {
       stream.end();
       return closing.promise;
@@ -135,6 +268,9 @@ describe("Kafka application consumption lifecycle", () => {
     port.openOperations.push(() => Promise.resolve(connection));
     const session = new KafkaApplicationSession(port);
     const observer = {
+      onCoverage: vi.fn(() => {
+        throw new Error("Coverage unavailable");
+      }),
       onComplete: vi.fn(),
       onEmpty: vi.fn(),
       onFailure: vi.fn(),
@@ -142,8 +278,10 @@ describe("Kafka application consumption lifecycle", () => {
     };
     await session.connect(firstConnection);
     await session.startConsumption({ ...tailRequest(), mode: "earliest" }, observer);
-    await vi.advanceTimersByTimeAsync(500);
+    stream.notifyCoverage();
+    await vi.advanceTimersByTimeAsync(0);
     expect(close).toHaveBeenCalledOnce();
+    expect(stream.unsubscribeCoverage).toHaveBeenCalledOnce();
     expect(observer.onFailure).not.toHaveBeenCalled();
     closing.resolve();
     await vi.advanceTimersByTimeAsync(0);
@@ -159,11 +297,7 @@ describe("Kafka application consumption lifecycle", () => {
       const progressFailure = new Error("Progress observer failed");
       const cleanupFailure = new Error("Progress cleanup failed");
       const notificationFailure = new Error("Failure observer failed");
-      const stream = Object.assign(new ControlledMessageStream(), {
-        coverage: (): never => {
-          throw progressFailure;
-        },
-      });
+      const stream = new CoverageMessageStream();
       const close = vi.spyOn(stream, "close").mockImplementation(() => {
         stream.fail(new Error("Consumer interrupted by cleanup"));
         return Promise.reject(cleanupFailure);
@@ -174,6 +308,9 @@ describe("Kafka application consumption lifecycle", () => {
       port.openOperations.push(() => Promise.resolve(connection));
       const session = new KafkaApplicationSession(port);
       const observer = {
+        onCoverage: vi.fn(() => {
+          throw progressFailure;
+        }),
         onComplete: vi.fn(),
         onEmpty: vi.fn(),
         onMessage: vi.fn(),
@@ -183,7 +320,8 @@ describe("Kafka application consumption lifecycle", () => {
       };
       await session.connect(firstConnection);
       await session.startConsumption({ ...tailRequest(), mode: "earliest" }, observer);
-      await vi.advanceTimersByTimeAsync(500);
+      stream.notifyCoverage();
+      await vi.advanceTimersByTimeAsync(0);
       expect(observer.onFailure).toHaveBeenCalledExactlyOnceWith(progressFailure);
       expect(observer.onComplete).not.toHaveBeenCalled();
       const expected: unknown = notificationFails

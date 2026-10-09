@@ -25,6 +25,7 @@ import type {
 const FINITE_MAX_FETCHES = 64;
 const FINITE_MAX_WAIT_TIME_MS = 100;
 const CONTINUOUS_MAX_WAIT_TIME_MS = 1_000;
+const COVERAGE_NOTIFICATION_INTERVAL_MS = 500;
 
 type ReadIdentity = Omit<KafkaReadCheckpoint, "coverage">;
 
@@ -122,6 +123,8 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   private readonly preparationController = new AbortController();
   private closePromise: Promise<void> | undefined;
   private readonly tracker: KafkaReadTracker | undefined;
+  private readonly coverageListeners = new Set<(coverage: KafkaReadCoverage) => void>();
+  private lastCoverageNotification: number | undefined;
 
   constructor(
     private readonly consumer: Consumer<Buffer, Buffer, Buffer, Buffer>,
@@ -138,6 +141,29 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
     return this.tracker?.snapshot();
   }
 
+  subscribeCoverage(listener: (coverage: KafkaReadCoverage) => void): () => void {
+    if (this.tracker !== undefined && !this.preparationController.signal.aborted)
+      this.coverageListeners.add(listener);
+    return (): void => {
+      this.coverageListeners.delete(listener);
+    };
+  }
+
+  private notifyCoverage(): void {
+    if (this.tracker === undefined || this.coverageListeners.size === 0) return;
+    const now = performance.now();
+    if (
+      this.lastCoverageNotification !== undefined &&
+      now - this.lastCoverageNotification < COVERAGE_NOTIFICATION_INTERVAL_MS
+    )
+      return;
+    const coverage = this.tracker.snapshot();
+    if (coverage.scannedRecords === 0) return;
+    this.lastCoverageNotification = now;
+    // Run inside the owned iteration so observer failure follows its cleanup path.
+    for (const listener of this.coverageListeners) listener(coverage);
+  }
+
   acknowledge(message: KafkaRawMessage): void {
     this.tracker?.acknowledge(message);
   }
@@ -149,6 +175,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
   }
 
   close(): Promise<void> {
+    this.coverageListeners.clear();
     this.preparationController.abort();
     this.tracker?.finish("cancelled");
     this.closePromise ??= this.closeResources();
@@ -178,6 +205,7 @@ class PlatformaticMessageStream implements KafkaRawMessageStream {
                     ? await this.prepareRecord(raw, this.preparationController.signal)
                     : undefined,
                 );
+          this.notifyCoverage();
           if (accepted) yield raw;
           if (this.tracker?.finished) break;
         }

@@ -846,27 +846,32 @@ export class KafkaApplicationSession {
           ? error
           : new Error("Kafka consumption observer failed.", { cause: error });
     };
-    const progressTimer =
-      consumption.request.mode === "tail"
-        ? undefined
-        : setInterval(() => {
-            if (!this.isCurrentConsumption(consumption) || failure !== undefined) return;
-            try {
-              reportCoverage();
-            } catch (error) {
-              observerFailed(error);
-              clearInterval(progressTimer);
-              const cleanup = this.closeConsumptionStream(consumption);
-              // The pump awaits this same cleanup. Retain a rejection even if the
-              // iterator is still unwinding, so a later lifecycle action owns it.
-              void cleanup.catch(() => {
-                if (this.isCurrentConsumption(consumption))
-                  this.trackConsumptionStop(cleanup, consumption.connection, true);
-              });
-            }
-          }, 500);
-    progressTimer?.unref?.();
+    let receivingCoverage = true;
+    let unsubscribeCoverage: (() => void) | undefined;
     try {
+      if (consumption.request.mode !== "tail") {
+        unsubscribeCoverage = consumption.stream.subscribeCoverage?.((coverage) => {
+          if (
+            !receivingCoverage ||
+            !this.isCurrentConsumption(consumption) ||
+            failure !== undefined
+          )
+            return;
+          try {
+            consumption.observer.onCoverage?.(coverage);
+          } catch (error) {
+            observerFailed(error);
+            receivingCoverage = false;
+            const cleanup = this.closeConsumptionStream(consumption);
+            // The pump awaits this same cleanup. Retain a rejection even if the
+            // iterator is still unwinding, so a later lifecycle action owns it.
+            void cleanup.catch(() => {
+              if (this.isCurrentConsumption(consumption))
+                this.trackConsumptionStop(cleanup, consumption.connection, true);
+            });
+          }
+        });
+      }
       for await (const message of consumption.stream) {
         if (!this.isCurrentConsumption(consumption) || failure !== undefined) {
           break;
@@ -888,7 +893,12 @@ export class KafkaApplicationSession {
         failure ??= error;
       }
     } finally {
-      if (progressTimer !== undefined) clearInterval(progressTimer);
+      receivingCoverage = false;
+      try {
+        unsubscribeCoverage?.();
+      } catch (error) {
+        observerFailed(error);
+      }
       this.clearEmptyTimer(consumption);
       const cleanup = this.closeConsumptionStream(consumption);
       try {

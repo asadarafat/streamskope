@@ -177,6 +177,10 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
   coverage(): KafkaReadCoverage | undefined {
     return this.rawStream.coverage?.();
   }
+
+  subscribeCoverage(listener: (coverage: KafkaReadCoverage) => void): () => void {
+    return this.rawStream.subscribeCoverage?.(listener) ?? ((): void => undefined);
+  }
   private closePromise: Promise<void> | undefined;
 
   constructor(

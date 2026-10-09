@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type {
   KafkaFetchRequest,
   KafkaMessage,
+  KafkaReadCoverage,
   KafkaConsumerGroupDetails,
   OAuthConnectionInput,
   SecureConnectionInput,
@@ -146,6 +147,7 @@ class RecordingRawMessageStream implements AsyncIterable<RawMessage> {
   closeCalls = 0;
   readonly acknowledgements: unknown[] = [];
   checkpointValue: KafkaReadCheckpoint | undefined;
+  readonly coverageListeners = new Set<(coverage: KafkaReadCoverage) => void>();
 
   constructor(private readonly messages: readonly RawMessage[]) {}
 
@@ -160,6 +162,13 @@ class RecordingRawMessageStream implements AsyncIterable<RawMessage> {
 
   checkpoint(): KafkaReadCheckpoint | undefined {
     return this.checkpointValue;
+  }
+
+  subscribeCoverage(listener: (coverage: KafkaReadCoverage) => void): () => void {
+    this.coverageListeners.add(listener);
+    return (): void => {
+      this.coverageListeners.delete(listener);
+    };
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<RawMessage> {
@@ -333,6 +342,13 @@ describe("StreamSkope Kafka engine connection test", () => {
       );
       expect(factory.inputs[0]).toMatchObject({ checkpoint });
       expect(stream.checkpoint?.()).toBe(checkpoint);
+      const progress: KafkaReadCoverage[] = [];
+      const unsubscribe = stream.subscribeCoverage?.((coverage) => progress.push(coverage));
+      expect(rawStream.coverageListeners.size).toBe(1);
+      for (const listener of rawStream.coverageListeners) listener(checkpoint.coverage);
+      expect(progress).toEqual([checkpoint.coverage]);
+      unsubscribe?.();
+      expect(rawStream.coverageListeners.size).toBe(0);
       const result = await stream[Symbol.asyncIterator]().next();
       if (result.done) throw new Error("Expected a fixture projection");
       stream.acknowledge?.({ ...result.value });
