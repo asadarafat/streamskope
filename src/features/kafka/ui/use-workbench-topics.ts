@@ -26,6 +26,7 @@ import {
 } from "./query-time-window";
 import type { QueryTimeWindowControlsProps } from "./QueryTimeWindowControls";
 import type { ObservationNavigation } from "./ObservationFindings";
+import { useReadContinuation } from "./use-read-continuation";
 
 type TopicWorkbenchState = Pick<
   KafkaUiState,
@@ -37,6 +38,8 @@ type TopicWorkbenchState = Pick<
   | "topics"
   | "messageFilters"
   | "messages"
+  | "searchProgress"
+  | "backend"
 >;
 
 interface WorkbenchTopicController {
@@ -47,6 +50,10 @@ interface WorkbenchTopicController {
   readonly timeWindow: QueryTimeWindowControlsProps;
   readonly messageRequestError: string | undefined;
   readonly consumptionStopping: boolean;
+  readonly continuationAvailable: boolean;
+  readonly continuationBusy: boolean;
+  readonly continuationNotice: string | undefined;
+  readonly continueConsumption: () => Promise<void>;
   readonly selectedMessageId: string | null;
   readonly selectedTopic: string | null;
   readonly selectionNotice: string | undefined;
@@ -114,6 +121,44 @@ export function useWorkbenchTopics(
     state.consumptionState,
     state.consumptionRequest,
   );
+  const continuationContextForTopic = useCallback(
+    (topic: string | null): string =>
+      JSON.stringify({
+        topic,
+        mode: fetchMode,
+        maximum: fetchMaximum,
+        window: fetchMode === "time-window" ? timeWindowDraft : null,
+        filters: state.messageFilters,
+        codecs:
+          state.preferenceSnapshot?.preferences.codecs ??
+          KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.codecs,
+        protection:
+          state.preferenceSnapshot?.preferences.protection ??
+          KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.protection,
+      }),
+    [fetchMode, fetchMaximum, timeWindowDraft, state.messageFilters, state.preferenceSnapshot],
+  );
+  const onContinued = useCallback((): void => {
+    setSelectedMessageId(null);
+    setSelectionNotice(undefined);
+  }, []);
+  const {
+    continuationAvailable,
+    continuationBusy,
+    continuationNotice,
+    continueConsumption,
+    bindContinuation,
+  } = useReadContinuation({
+    host,
+    context: continuationContextForTopic(selectedTopic),
+    progress: state.searchProgress,
+    connected: connected && state.backend !== "unavailable",
+    active: consumptionActive,
+    stopping: consumptionStopping,
+    topicMatches: state.consumptionRequest?.topic === selectedTopic,
+    onError: setMessageRequestError,
+    onContinued,
+  });
   const confirmedFetchDefaults =
     state.preferenceSnapshot?.preferences.fetch ?? KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS.fetch;
   const requestTopics = useCallback(async (): Promise<void> => {
@@ -277,6 +322,7 @@ export function useWorkbenchTopics(
       setMessageRequestError(undefined);
       setSelectedMessageId(null);
       setSelectionNotice(undefined);
+      bindContinuation(continuationContextForTopic(topic));
       try {
         const request = requestForTopic(topic);
         const query = parseKafkaInvestigationQuery({
@@ -290,9 +336,11 @@ export function useWorkbenchTopics(
           version: HOST_PROTOCOL_VERSION,
         });
         if (!response.ok) {
+          bindContinuation(null);
           setMessageRequestError(response.error.summary);
         }
       } catch (error) {
+        bindContinuation(null);
         setMessageRequestError(
           error instanceof HostContractValidationError
             ? error.message
@@ -300,7 +348,7 @@ export function useWorkbenchTopics(
         );
       }
     },
-    [host, requestForTopic],
+    [host, requestForTopic, continuationContextForTopic, bindContinuation],
   );
 
   const activateTopic = useCallback(
@@ -404,6 +452,10 @@ export function useWorkbenchTopics(
     },
     messageRequestError,
     consumptionStopping,
+    continuationAvailable,
+    continuationBusy,
+    continuationNotice,
+    continueConsumption,
     selectedMessageId,
     selectedTopic,
     selectionNotice,

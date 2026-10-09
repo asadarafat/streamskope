@@ -3,9 +3,11 @@ import { validateKafkaRuleExpression } from "./rule-expression-parser";
 import { HostContractValidationError } from "./validation-error";
 import {
   boundedText,
+  canonicalIsoTimestamp,
   declaredValue,
   exactKeys,
   nonNegativeInteger,
+  positiveBoundedInteger,
   record,
   text,
 } from "./validation-primitives";
@@ -123,6 +125,65 @@ export interface KafkaReadCoverage {
     readonly endOffset: string;
     readonly nextOffset: string;
   }[];
+}
+
+export const KAFKA_CONTINUATION_LIMITS = { lifetimeMs: 30 * 60_000, passes: 10_000 } as const;
+
+export interface KafkaSearchProgress {
+  readonly pass: number;
+  readonly scannedRecords: number;
+  readonly scannedBytes: number;
+  readonly matchedRecords: number;
+  readonly unavailableRecords: number;
+  readonly continuation: { readonly id: string; readonly expiresAt: string } | null;
+}
+
+export function parseKafkaContinuationInput(
+  value: unknown,
+  path: string,
+): { continuationId: string } {
+  const input = record(value, path);
+  exactKeys(input, ["continuationId"], path);
+  return { continuationId: text(input.continuationId, `${path}.continuationId`, 128) };
+}
+
+export function parseKafkaSearchProgress(value: unknown, path: string): KafkaSearchProgress {
+  const progress = record(value, path);
+  exactKeys(
+    progress,
+    [
+      "pass",
+      "scannedRecords",
+      "scannedBytes",
+      "matchedRecords",
+      "unavailableRecords",
+      "continuation",
+    ],
+    path,
+  );
+  let continuation: KafkaSearchProgress["continuation"] = null;
+  if (progress.continuation !== null) {
+    const token = record(progress.continuation, `${path}.continuation`);
+    exactKeys(token, ["id", "expiresAt"], `${path}.continuation`);
+    continuation = {
+      id: text(token.id, `${path}.continuation.id`, 128),
+      expiresAt: canonicalIsoTimestamp(token.expiresAt, `${path}.continuation.expiresAt`),
+    };
+  }
+  const result = {
+    pass: positiveBoundedInteger(progress.pass, `${path}.pass`, KAFKA_CONTINUATION_LIMITS.passes),
+    scannedRecords: nonNegativeInteger(progress.scannedRecords, `${path}.scannedRecords`),
+    scannedBytes: nonNegativeInteger(progress.scannedBytes, `${path}.scannedBytes`),
+    matchedRecords: nonNegativeInteger(progress.matchedRecords, `${path}.matchedRecords`),
+    unavailableRecords: nonNegativeInteger(
+      progress.unavailableRecords,
+      `${path}.unavailableRecords`,
+    ),
+    continuation,
+  };
+  if (result.matchedRecords + result.unavailableRecords > result.scannedRecords)
+    throw new HostContractValidationError(path, "contains inconsistent cumulative coverage");
+  return result;
 }
 
 export function parseKafkaReadCoverage(value: unknown, path: string): KafkaReadCoverage {

@@ -16,6 +16,7 @@ import type {
 } from "../contracts";
 
 import type { KafkaLatencyProbeMeasurement } from "./latency-types";
+import type { KafkaReadCheckpoint } from "./read-checkpoint";
 
 export type ConnectionCheck =
   "oauth" | "tls" | "kafka-authentication" | "metadata" | "schema-registry" | "connect";
@@ -28,6 +29,8 @@ export interface KafkaConnectionTestResult {
 export interface KafkaMessageStream extends AsyncIterable<KafkaMessage> {
   close(): Promise<void>;
   coverage?(): KafkaReadCoverage | undefined;
+  checkpoint?(): KafkaReadCheckpoint | undefined;
+  acknowledge?(message: KafkaMessage): void;
 }
 
 export interface KafkaClusterMetadata {
@@ -43,6 +46,7 @@ export interface KafkaConsumerGroupInventory {
 
 export interface KafkaConsumptionObserver {
   onCoverage?(coverage: KafkaReadCoverage): void;
+  onCheckpoint?(checkpoint: KafkaReadCheckpoint): void;
   onComplete(): void;
   onEmpty(): void;
   onFailure(error: unknown): void;
@@ -106,7 +110,11 @@ export interface KafkaActiveConnection {
   listTopics(signal?: AbortSignal): Promise<readonly string[]>;
   listConsumerGroups?(signal?: AbortSignal): Promise<KafkaConsumerGroupInventory>;
   listAcls?(signal?: AbortSignal): Promise<readonly KafkaAclBinding[]>;
-  openMessageStream(request: KafkaFetchRequest, signal: AbortSignal): Promise<KafkaMessageStream>;
+  openMessageStream(
+    request: KafkaFetchRequest,
+    signal: AbortSignal,
+    checkpoint?: KafkaReadCheckpoint,
+  ): Promise<KafkaMessageStream>;
   runLatencyProbe?(
     request: KafkaLatencyProbeRequest,
     runId: string,

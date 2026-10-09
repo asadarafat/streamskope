@@ -1,6 +1,8 @@
-import { Box, Typography } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 
 import type { KafkaReadCoverage, KafkaReadReason } from "../contracts";
+import type { KafkaSearchProgress } from "../contracts/query-search";
+import { StudioButton as Button } from "../../../platform/ui/controls";
 
 const reasons: Record<KafkaReadReason, string> = {
   reading: "Read in progress",
@@ -17,9 +19,19 @@ const reasons: Record<KafkaReadReason, string> = {
 export function QueryReadCoverage({
   coverage,
   search,
+  progress = null,
+  continuationAvailable = false,
+  continuationBusy = false,
+  continuationNotice,
+  onContinue,
 }: {
   readonly coverage: KafkaReadCoverage | null;
   readonly search: boolean;
+  readonly progress?: KafkaSearchProgress | null;
+  readonly continuationAvailable?: boolean;
+  readonly continuationBusy?: boolean;
+  readonly continuationNotice?: string | undefined;
+  readonly onContinue?: (() => void) | undefined;
 }): React.JSX.Element {
   return (
     <Box
@@ -35,6 +47,38 @@ export function QueryReadCoverage({
           ? ` ${coverage.unavailableRecords.toLocaleString()} records could not be evaluated; search results are partial.`
           : ""}
       </Typography>
+      {progress === null ? null : (
+        <Stack direction="row" useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", gap: 1 }}>
+          <Typography aria-label="Cumulative read progress" component="p" variant="caption">
+            Pass {progress.pass.toLocaleString()} · Total:{" "}
+            {progress.scannedRecords.toLocaleString()} records scanned;{" "}
+            {progress.matchedRecords.toLocaleString()} {search ? "matches" : "records"} returned.
+            {progress.unavailableRecords > 0
+              ? ` ${progress.unavailableRecords.toLocaleString()} records could not be evaluated.`
+              : ""}
+          </Typography>
+          {progress.continuation === null && !continuationBusy ? null : (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={onContinue}
+              disabled={!continuationAvailable || continuationBusy || onContinue === undefined}
+            >
+              {continuationBusy ? "Continuing…" : search ? "Continue search" : "Continue read"}
+            </Button>
+          )}
+          {continuationNotice ? (
+            <Typography component="p" variant="caption">
+              {continuationNotice}
+            </Typography>
+          ) : progress.continuation === null ? null : (
+            <Typography component="p" variant="caption">
+              Continue reads the remaining offset ranges and replaces this result page. Export this
+              page first to keep its records.
+            </Typography>
+          )}
+        </Stack>
+      )}
       {coverage === null ? null : (
         <Box component="details">
           <Typography component="summary" variant="caption" sx={{ cursor: "pointer" }}>

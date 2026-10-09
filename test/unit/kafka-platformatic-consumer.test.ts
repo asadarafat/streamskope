@@ -28,6 +28,8 @@ const kafkaState = vi.hoisted(() => ({
     readonly topics: readonly string[];
   }>,
   messages: [] as KafkaRawMessage[],
+  metadataCalls: [] as Array<Record<string, unknown>>,
+  identities: [] as Array<{ clusterId: string; topicId: string; partitionCount?: number }>,
   offsets: new Map<string, readonly bigint[]>(),
   offsetFailure: undefined as Error | undefined,
   pendingOffsets: undefined as Promise<ReadonlyMap<string, readonly bigint[]>> | undefined,
@@ -68,6 +70,28 @@ vi.mock("@platformatic/kafka", () => {
       consume(options: Record<string, unknown>): Promise<FakeMessagesStream> {
         kafkaState.consumeCalls.push(options);
         return Promise.resolve(new FakeMessagesStream());
+      }
+
+      metadata(options: { readonly topics: readonly string[] }): Promise<unknown> {
+        kafkaState.metadataCalls.push(options);
+        const identity = kafkaState.identities.shift() ?? {
+          clusterId: "fixture-cluster",
+          topicId: "fixture-topic",
+        };
+        return Promise.resolve({
+          ...this.currentMetadata,
+          id: identity.clusterId,
+          topics: new Map([
+            [
+              options.topics[0],
+              {
+                id: identity.topicId,
+                partitionsCount:
+                  identity.partitionCount ?? kafkaState.offsets.get("-1")?.length ?? 1,
+              },
+            ],
+          ]),
+        });
       }
 
       listOffsets(options: {
@@ -135,6 +159,8 @@ beforeEach(() => {
   kafkaState.fetchUnsubscribeCalls = 0;
   kafkaState.listOffsetCalls.length = 0;
   kafkaState.messages.length = 0;
+  kafkaState.metadataCalls.length = 0;
+  kafkaState.identities.length = 0;
   kafkaState.offsets.clear();
   kafkaState.offsetFailure = undefined;
   kafkaState.pendingOffsets = undefined;
@@ -162,6 +188,99 @@ it("retains the client's ordered header entries including duplicate names and nu
 });
 
 describe("Platformatic Kafka fetch adapter", () => {
+  it("checkpoints only acknowledged delivery, including a stop with a pending record", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [3n]);
+    kafkaState.messages.push(rawMessage(0n), rawMessage(1n), rawMessage(2n));
+    const stream = await new PlatformaticConsumerFactory().open(
+      input({ mode: "earliest", topic: "orders", maxMessages: 3 }),
+    );
+    const iterator = stream[Symbol.asyncIterator]();
+    try {
+      const first = await iterator.next();
+      if (first.done) throw new Error("Expected first fixture record");
+      expect(stream.coverage?.()?.partitions[0]?.nextOffset).toBe("1");
+      expect(stream.checkpoint?.()?.coverage).toMatchObject({
+        scannedRecords: 0,
+        matchedRecords: 0,
+        partitions: [{ nextOffset: "0" }],
+      });
+      stream.acknowledge?.(first.value);
+      expect(stream.checkpoint?.()?.coverage.partitions[0]?.nextOffset).toBe("1");
+      const second = await iterator.next();
+      if (second.done) throw new Error("Expected second fixture record");
+      await stream.close();
+      expect(stream.checkpoint?.()).toMatchObject({
+        clusterId: "fixture-cluster",
+        topicId: "fixture-topic",
+        partitionCount: 1,
+        coverage: {
+          reason: "cancelled",
+          scannedRecords: 1,
+          matchedRecords: 1,
+          partitions: [{ nextOffset: "1", endOffset: "3" }],
+        },
+      });
+    } finally {
+      await stream.close();
+      await iterator.return?.();
+    }
+  });
+
+  it("keeps ordinary finite reads usable when stable topic IDs are unavailable", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [1n]);
+    kafkaState.identities.push({
+      clusterId: "fixture-cluster",
+      topicId: "00000000-0000-0000-0000-000000000000",
+    });
+    kafkaState.messages.push(rawMessage(0n));
+    const stream = await new PlatformaticConsumerFactory().open(
+      input({ mode: "earliest", topic: "orders", maxMessages: 1 }),
+    );
+    expect(await collect(stream)).toEqual([0n]);
+    expect(stream.checkpoint?.()).toBeUndefined();
+  });
+
+  it("rejects identity changes during offset planning before starting a reader", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [2n]);
+    kafkaState.identities.push(
+      { clusterId: "fixture-cluster", topicId: "old-topic" },
+      { clusterId: "fixture-cluster", topicId: "replacement-topic" },
+    );
+    await expect(
+      new PlatformaticConsumerFactory().open(
+        input({ mode: "earliest", topic: "orders", maxMessages: 1 }),
+      ),
+    ).rejects.toMatchObject({ name: "KafkaReadCheckpointError", reason: "identity-changed" });
+    expect(kafkaState.consumeCalls).toEqual([]);
+    expect(kafkaState.closeCalls).toEqual([false]);
+  });
+
+  it("rejects a resumed checkpoint belonging to another topic identity", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [2n]);
+    await expect(
+      new PlatformaticConsumerFactory().open({
+        ...input({ mode: "earliest", topic: "orders", maxMessages: 1 }),
+        checkpoint: {
+          clusterId: "fixture-cluster",
+          topicId: "deleted-topic",
+          partitionCount: 1,
+          coverage: {
+            reason: "result-limit",
+            scannedRecords: 1,
+            scannedBytes: 1,
+            matchedRecords: 1,
+            unavailableRecords: 0,
+            partitions: [{ partition: 0, startOffset: "0", endOffset: "2", nextOffset: "1" }],
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ reason: "identity-changed" });
+    expect(kafkaState.consumeCalls).toEqual([]);
+  });
   it.each([false, true])(
     "cancels projection at the finite deadline (search=%s) without inventing failed coverage",
     async (search) => {

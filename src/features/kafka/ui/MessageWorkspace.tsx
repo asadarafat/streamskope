@@ -15,6 +15,7 @@ import {
   type KafkaFetchRequest,
   type KafkaLiveRuleCapability,
 } from "../contracts";
+import type { KafkaSearchProgress } from "../contracts/query-search";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 import {
   StudioAlert as Alert,
@@ -68,6 +69,11 @@ export function MessageWorkspace({
   connectionAvailable,
   unavailableFilterRecords = 0,
   readCoverage = null,
+  searchProgress = null,
+  continuationAvailable = false,
+  continuationBusy = false,
+  continuationNotice,
+  onContinue,
   consumptionError,
   consumptionRequest,
   consumptionState,
@@ -107,6 +113,11 @@ export function MessageWorkspace({
   readonly connectionAvailable: boolean;
   readonly unavailableFilterRecords?: number;
   readonly readCoverage?: KafkaReadCoverage | null;
+  readonly searchProgress?: KafkaSearchProgress | null;
+  readonly continuationAvailable?: boolean;
+  readonly continuationBusy?: boolean;
+  readonly continuationNotice?: string | undefined;
+  readonly onContinue?: (() => void) | undefined;
   readonly onSearch?: (filter: KafkaSearchFilter) => void;
   readonly consumptionError: HostError | null;
   readonly consumptionRequest: KafkaFetchRequest | null;
@@ -363,7 +374,7 @@ export function MessageWorkspace({
                     Read
                   </Typography>
                   <Select
-                    disabled={active}
+                    disabled={active || continuationBusy}
                     inputProps={{ "aria-label": "Read mode" }}
                     onChange={(event) => onFetchModeChange(event.target.value)}
                     sx={{ width: 112 }}
@@ -381,7 +392,7 @@ export function MessageWorkspace({
                     Limit
                   </Typography>
                   <Select
-                    disabled={active}
+                    disabled={active || continuationBusy}
                     inputProps={{ "aria-label": "Record limit" }}
                     onChange={(event) => onFetchMaximumChange(Number(event.target.value))}
                     sx={{ width: 92 }}
@@ -403,6 +414,7 @@ export function MessageWorkspace({
                   ? consumptionStopping
                   : !connectionAvailable ||
                     active ||
+                    continuationBusy ||
                     (fetchMode === "time-window" && timeWindow?.error !== undefined)
               }
               onClick={operationBelongsToTopic ? onStop : onStart}
@@ -489,12 +501,17 @@ export function MessageWorkspace({
           </TopicWorkspaceToolbar>
         )}
         {selectedTopic !== null && fetchMode === "time-window" && timeWindow !== undefined ? (
-          <QueryTimeWindowControls {...timeWindow} disabled={active} />
+          <QueryTimeWindowControls {...timeWindow} disabled={active || continuationBusy} />
         ) : null}
         {topicMatches && consumptionRequest?.mode !== "tail" ? (
           <QueryReadCoverage
             coverage={readCoverage}
             search={consumptionRequest?.search !== undefined}
+            progress={searchProgress}
+            continuationAvailable={continuationAvailable}
+            continuationBusy={continuationBusy}
+            continuationNotice={continuationNotice}
+            onContinue={onContinue}
           />
         ) : null}
         {filters.offsetExact !== undefined && (
@@ -632,6 +649,7 @@ export function MessageWorkspace({
                   disabled={
                     !connectionAvailable ||
                     active ||
+                    continuationBusy ||
                     fetchMode === "tail" ||
                     filters.activeRuleMatchesOnly ||
                     !expressionValidation.valid ||

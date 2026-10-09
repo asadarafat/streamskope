@@ -222,6 +222,9 @@ export function emitConsumptionState(
     event: "consumption.state",
     payload: {
       ...(consumption.coverage === undefined ? {} : { coverage: consumption.coverage }),
+      ...(consumption.searchProgress === undefined
+        ? {}
+        : { searchProgress: consumption.searchProgress }),
       droppedMessages: consumption.droppedMessages,
       ...(error === undefined ? {} : { error }),
       receivedMessages: consumption.receivedMessages,

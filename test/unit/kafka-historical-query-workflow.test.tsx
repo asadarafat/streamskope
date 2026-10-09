@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import {
   HOST_PROTOCOL_VERSION,
@@ -11,6 +11,7 @@ import {
   type HostCommandResponse,
   type HostEvent,
   type HostEventListener,
+  type KafkaExploredMessage,
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
 import { StreamSkopeApp } from "../../src/features/kafka/ui/StreamSkopeApp";
@@ -45,7 +46,10 @@ class QueryHost implements StreamSkopeHost {
   }
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 it("validates an explicit historical interval and converts its offsets before reading", async () => {
   const host = new QueryHost();
@@ -113,7 +117,7 @@ it("validates an explicit historical interval and converts its offsets before re
       payload: { ...payload, state: "fetching" },
     }),
   );
-  await user.click(screen.getByRole("button", { name: "Cancel fetch test" }));
+  await user.click(screen.getByRole("button", { name: "Pause read test" }));
   expect(host.commands.at(-1)?.command).toBe("messages.stop");
   act(() =>
     host.emit({
@@ -193,13 +197,41 @@ it("keeps sample filtering explicit and sends a finite broker search with honest
       version: HOST_PROTOCOL_VERSION,
       sequence: 3,
       payload: {
-        state: "empty",
+        state: "fetching",
         request,
         receivedMessages: 0,
         droppedMessages: 0,
         ruleEvaluation: { applicableRules: 0, omittedRules: 0, state: "ready" },
+      },
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Pause search test" }));
+  expect(host.commands.at(-1)?.command).toBe("messages.stop");
+  expect(screen.queryByRole("button", { name: "Continue search" })).not.toBeInTheDocument();
+  act(() =>
+    host.emit({
+      event: "consumption.state",
+      version: HOST_PROTOCOL_VERSION,
+      sequence: 4,
+      payload: {
+        state: "stopped",
+        request,
+        receivedMessages: 0,
+        droppedMessages: 0,
+        ruleEvaluation: { applicableRules: 0, omittedRules: 0, state: "ready" },
+        searchProgress: {
+          pass: 1,
+          scannedRecords: 15,
+          scannedBytes: 45,
+          matchedRecords: 0,
+          unavailableRecords: 0,
+          continuation: {
+            id: "paused-search",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          },
+        },
         coverage: {
-          reason: "fetch-limit",
+          reason: "cancelled",
           scannedRecords: 15,
           scannedBytes: 45,
           matchedRecords: 0,
@@ -210,9 +242,189 @@ it("keeps sample filtering explicit and sends a finite broker search with honest
     }),
   );
   expect(screen.getByRole("region", { name: "Read coverage" })).toHaveTextContent(
-    "Partial read: fetch budget exhausted. 15 records scanned; 0 matches returned.",
+    "Partial read: cancelled. 15 records scanned; 0 matches returned.",
   );
   expect(screen.queryByText("The snapshot contains no readable records.")).not.toBeInTheDocument();
+  const resume = screen.getByRole("button", { name: "Continue search" });
+  expect(resume).toBeEnabled();
+  expect(screen.getByLabelText("Cumulative read progress")).toHaveTextContent(
+    "Pass 1 · Total: 15 records scanned; 0 matches returned.",
+  );
+  await user.click(resume);
+  expect(host.commands.at(-1)).toMatchObject({
+    command: "messages.continue",
+    payload: { continuationId: "paused-search" },
+  });
+  expect(resume).toBeDisabled();
   await user.click(screen.getByRole("checkbox", { name: "Rule matches only" }));
   expect(search).toBeDisabled();
+});
+
+it("continues a fixed relative interval into a new result page and invalidates edited controls", async () => {
+  const host = new QueryHost();
+  const user = userEvent.setup();
+  const now = Date.now();
+  const date = vi.spyOn(Date, "now").mockReturnValue(now);
+  render(<StreamSkopeApp host={host} />);
+  act(() => {
+    host.emit({
+      event: "connection.state",
+      payload: { connectionName: "Local search", state: "connected" },
+      sequence: 1,
+      version: HOST_PROTOCOL_VERSION,
+    });
+    host.emit({
+      event: "topics.changed",
+      payload: { refreshedAt: new Date(now).toISOString(), state: "ready", topics: ["test"] },
+      sequence: 2,
+      version: HOST_PROTOCOL_VERSION,
+    });
+  });
+  await user.click(await screen.findByRole("button", { name: "test" }));
+  await user.click(screen.getByRole("combobox", { name: "Read mode" }));
+  await user.click(screen.getByRole("option", { name: "Time window" }));
+  await user.click(screen.getByRole("button", { name: "Load messages test" }));
+  const command = host.commands.at(-1);
+  if (command?.command !== "messages.start")
+    throw new Error("Expected the initial historical read");
+  const request = command.payload;
+  expect(request).toMatchObject({
+    mode: "time-window",
+    startTimeMs: now - 120_000,
+    endTimeMs: now,
+  });
+  const payload = {
+    request,
+    receivedMessages: 1,
+    droppedMessages: 0,
+    ruleEvaluation: { applicableRules: 0, omittedRules: 0, state: "ready" as const },
+  };
+  const coverage = {
+    reason: "fetch-limit" as const,
+    scannedRecords: 10,
+    scannedBytes: 100,
+    matchedRecords: 1,
+    unavailableRecords: 0,
+    partitions: [{ partition: 0, startOffset: "0", endOffset: "100", nextOffset: "10" }],
+  };
+  const progress = {
+    pass: 1,
+    scannedRecords: 10,
+    scannedBytes: 100,
+    matchedRecords: 1,
+    unavailableRecords: 0,
+    continuation: { id: "fixed-time-range", expiresAt: new Date(now + 60_000).toISOString() },
+  };
+  const message = (offset: string, key: string): KafkaExploredMessage => ({
+    id: offset,
+    topic: "test",
+    offset,
+    key,
+    payload: `record:${key}`,
+    preview: `record:${key}`,
+    partition: 0,
+    originalByteSize: key.length * 2,
+    headers: {},
+    truncated: false,
+    timestamp: new Date(now - 10_000).toISOString(),
+    ruleEvaluation: {
+      state: "evaluated",
+      activeMatches: [],
+      activeMatchCount: 0,
+      suppressedMatches: [],
+      suppressedMatchCount: 0,
+      errors: [],
+      errorCount: 0,
+      evaluatedRules: 0,
+      omittedRules: 0,
+      omittedEvidence: 0,
+      durationMicros: 0,
+    },
+  });
+  act(() => {
+    host.emit({
+      event: "consumption.state",
+      sequence: 3,
+      version: HOST_PROTOCOL_VERSION,
+      payload: { ...payload, coverage, searchProgress: progress, state: "complete" },
+    });
+    host.emit({
+      event: "messages.batch",
+      sequence: 4,
+      version: HOST_PROTOCOL_VERSION,
+      payload: { topic: "test", droppedMessages: 0, messages: [message("2", "first-page-record")] },
+    });
+  });
+  const grid = await screen.findByRole("grid", { name: "Kafka messages" }, { timeout: 15_000 });
+  expect(within(grid).getByText("first-page-record")).toBeVisible();
+  expect(screen.getByText(/replaces this result page/)).toBeVisible();
+  date.mockReturnValue(now + 30_000);
+  await user.click(screen.getByRole("button", { name: "Continue read" }));
+  expect(host.commands.at(-1)).toMatchObject({
+    command: "messages.continue",
+    payload: { continuationId: "fixed-time-range" },
+  });
+  expect(host.commands.filter((item) => item.command === "messages.start")).toHaveLength(2);
+  act(() =>
+    host.emit({
+      event: "consumption.state",
+      sequence: 5,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        ...payload,
+        searchProgress: { ...progress, pass: 2, continuation: null },
+        state: "loading",
+      },
+    }),
+  );
+  expect(screen.queryByText("first-page-record")).not.toBeInTheDocument();
+  act(() => {
+    host.emit({
+      event: "messages.batch",
+      sequence: 6,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        topic: "test",
+        droppedMessages: 0,
+        messages: [message("12", "second-page-record")],
+      },
+    });
+    host.emit({
+      event: "consumption.state",
+      sequence: 7,
+      version: HOST_PROTOCOL_VERSION,
+      payload: {
+        ...payload,
+        coverage: {
+          ...coverage,
+          partitions: [{ partition: 0, startOffset: "0", endOffset: "100", nextOffset: "20" }],
+        },
+        searchProgress: {
+          ...progress,
+          pass: 2,
+          scannedRecords: 20,
+          scannedBytes: 200,
+          matchedRecords: 2,
+          continuation: { ...progress.continuation, id: "third-pass-token" },
+        },
+        state: "complete",
+      },
+    });
+  });
+  expect(
+    within(
+      await screen.findByRole("grid", { name: "Kafka messages" }, { timeout: 15_000 }),
+    ).getByText("second-page-record"),
+  ).toBeVisible();
+  expect(screen.getByLabelText("Cumulative read progress")).toHaveTextContent(
+    "Pass 2 · Total: 20 records scanned; 2 records returned.",
+  );
+  expect(screen.getByRole("button", { name: "Continue read" })).toBeEnabled();
+  await user.click(screen.getByRole("combobox", { name: "Record limit" }));
+  await user.click(screen.getByRole("option", { name: "100" }));
+  expect(screen.getByRole("button", { name: "Continue read" })).toBeDisabled();
+  await user.click(screen.getByRole("combobox", { name: "Record limit" }));
+  await user.click(screen.getByRole("option", { name: "1,000" }));
+  expect(screen.getByRole("button", { name: "Continue read" })).toBeDisabled();
+  expect(screen.getByText("Start a new read to continue with the current settings.")).toBeVisible();
 });

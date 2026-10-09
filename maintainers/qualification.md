@@ -144,6 +144,19 @@ identities, host serialization, immutable original bytes, duplicate headers,
 malformed records, missing schemas, tombstones, empty values, bounded search,
 tracing, schema-3 export and selective masking before matching.
 
+The same runtime command and report also include
+`test/kafka/resumable-search-real.test.ts`. Its owned broker proves continuation
+past 10,000 records across three partitions, exact cumulative coverage, fixed
+snapshot ends despite new arrivals, and cancellation followed by continuation
+from delivered records without missing or duplicate positions. Separate cases
+change retention, replace a topic with the same name, and add a partition to
+require rejection. Protected JSON/Avro/Protobuf pages include malformed records,
+tombstones and duplicate headers, with unavailable counts and masking preserved.
+Fresh-read and reconnect cases check token revocation. This is host-session
+continuation evidence; it does not qualify durable restart recovery or a complete
+topic export. The controlled Registry fixture retains the vendor-scope limitation
+below.
+
 That protocol fixture does not qualify a Registry vendor deployment. The separate
 `test/kafka/record-codec-real.test.ts` uses the owned AIO Kafka and real Registry,
 including referenced schemas. The required runtime browser structured-events suite

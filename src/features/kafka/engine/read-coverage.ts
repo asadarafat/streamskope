@@ -19,6 +19,13 @@ export class KafkaReadTracker {
   private matchedRecords = 0;
   private unavailableRecords = 0;
   private readonly next: Map<number, bigint>;
+  private pending:
+    | {
+        readonly message: KafkaRawMessage;
+        readonly before: KafkaReadCoverage;
+        advancedWithoutAcknowledgement: boolean;
+      }
+    | undefined;
 
   constructor(private readonly plan: KafkaFetchPlan) {
     this.predicate =
@@ -51,11 +58,29 @@ export class KafkaReadTracker {
     };
   }
 
+  /** A yielded record is not a delivered record until the owning session accepts it. */
+  acknowledge(message: KafkaRawMessage): void {
+    if (this.pending?.message === message && !this.pending.advancedWithoutAcknowledgement)
+      this.pending = undefined;
+  }
+
+  checkpoint(): KafkaReadCoverage {
+    const coverage = this.pending?.before ?? this.snapshot();
+    return {
+      ...coverage,
+      reason:
+        this.pending !== undefined && this.reason === "range-complete" ? "cancelled" : this.reason,
+    };
+  }
+
   accept(message: KafkaRawMessage, prepared?: KafkaMessage): boolean {
     if (this.finished || message.topic !== this.plan.request.topic) return false;
     const next = this.next.get(message.partition);
     const end = this.plan.endOffsets?.get(message.partition);
     if (next === undefined || end === undefined || message.offset < next) return false;
+    // The owner acknowledges before requesting another item. Late acknowledgements
+    // cannot release a checkpoint past later records that have not been accepted.
+    if (this.pending !== undefined) this.pending.advancedWithoutAcknowledgement = true;
     if (message.offset >= end) {
       this.next.set(message.partition, end);
       this.checkRangeComplete();
@@ -72,9 +97,6 @@ export class KafkaReadTracker {
       this.finish("byte-limit");
       return false;
     }
-    this.next.set(message.partition, message.offset + 1n);
-    this.scannedRecords += 1;
-    this.scannedBytes += bytes;
     const request = this.plan.request;
     const inTime =
       request.mode !== "time-window" ||
@@ -109,7 +131,14 @@ export class KafkaReadTracker {
         if (result === "unavailable") this.unavailableRecords += 1;
       }
     }
-    if (match) this.matchedRecords += 1;
+    if (match) {
+      if (this.pending === undefined)
+        this.pending = { message, before: this.snapshot(), advancedWithoutAcknowledgement: false };
+      this.matchedRecords += 1;
+    }
+    this.next.set(message.partition, message.offset + 1n);
+    this.scannedRecords += 1;
+    this.scannedBytes += bytes;
     this.checkRangeComplete();
     if (this.matchedRecords >= this.plan.maxMessages) this.finish("result-limit");
     if (this.scannedRecords >= KAFKA_QUERY_LIMITS.scanRecords) this.finish("scan-limit");

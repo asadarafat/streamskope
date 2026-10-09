@@ -6,7 +6,15 @@ import {
   type HostError,
   type HostEvent,
   type KafkaMessage,
+  type KafkaFetchRequest,
 } from "../contracts";
+import type { KafkaReadCheckpoint } from "../application/read-checkpoint";
+import {
+  KafkaReadContinuations,
+  KafkaContinuationError,
+  type KafkaReadContinuation,
+} from "../application/read-continuation";
+import type { KafkaOperationalPreferenceSnapshot } from "../contracts/operational-preference-types";
 import {
   ConnectionAttemptSupersededError,
   type KafkaApplicationSession,
@@ -64,7 +72,19 @@ interface ConsumptionFacadeBindings {
 }
 
 interface FacadeConsumption extends ActiveFacadeConsumption {
+  readonly intent: number;
   readonly connectionName: string | null;
+  readonly recordBinding: string;
+  readonly previous?: KafkaReadContinuation;
+  checkpoint?: KafkaReadCheckpoint;
+}
+
+function recordBinding(snapshot: KafkaOperationalPreferenceSnapshot): string {
+  return JSON.stringify({
+    codecs: snapshot.preferences.codecs,
+    protection: snapshot.preferences.protection,
+    store: snapshot.store.state,
+  });
 }
 
 interface FacadeStop {
@@ -80,9 +100,11 @@ export class ConsumptionFacadeController {
   private stoppingConsumption: FacadeStop | undefined;
   private messagePresentationPaused = false;
   private readonly scheduleMessageFlush;
+  private readonly continuations: KafkaReadContinuations;
 
   constructor(private readonly bindings: ConsumptionFacadeBindings) {
     this.scheduleMessageFlush = bindings.scheduleMessageFlush ?? defaultScheduleMessageFlush;
+    this.continuations = new KafkaReadContinuations(() => bindings.now().getTime());
   }
 
   private discardStoppingConsumption(): void {
@@ -97,6 +119,7 @@ export class ConsumptionFacadeController {
   }
 
   invalidate(): void {
+    this.continuations.invalidate();
     this.consumptionIntent += 1;
     this.discardStoppingConsumption();
     const consumption = this.activeConsumption;
@@ -117,6 +140,7 @@ export class ConsumptionFacadeController {
   }
 
   prepareShutdown(): (error?: unknown) => void {
+    this.continuations.invalidate();
     const intent = ++this.consumptionIntent;
     const consumption = this.activeConsumption ?? this.stoppingConsumption?.consumption;
     this.activeConsumption = undefined;
@@ -282,6 +306,69 @@ export class ConsumptionFacadeController {
     command: Extract<HostCommand, { readonly command: "messages.start" }>,
     correlationId: string,
   ): Promise<HostCommandResponse> {
+    this.continuations.invalidate();
+    return this.startRead(command, command.payload, correlationId);
+  }
+
+  async continueMessages(
+    command: Extract<HostCommand, { readonly command: "messages.continue" }>,
+    correlationId: string,
+  ): Promise<HostCommandResponse> {
+    const intent = this.consumptionIntent;
+    try {
+      const preferences = await this.bindings.preferences.get();
+      if (intent !== this.consumptionIntent) throw new ConnectionAttemptSupersededError();
+      if (this.activeConsumption !== undefined || this.stoppingConsumption !== undefined)
+        throw new KafkaContinuationError();
+      const previous = this.continuations.take(
+        command.payload.continuationId,
+        recordBinding(preferences),
+      );
+      return this.startRead(command, previous.request, correlationId, previous);
+    } catch (error) {
+      return failureResponse(
+        command,
+        this.bindings.translateFailure(error, {
+          activeStateChanged: false,
+          connection: undefined,
+          correlationId,
+        }).error,
+      );
+    }
+  }
+
+  private finishRead(consumption: FacadeConsumption): void {
+    if (consumption.checkpoint === undefined) return;
+    consumption.coverage = this.continuations.coverage(
+      consumption.checkpoint.coverage,
+      consumption.previous,
+    );
+    const ownsContinuation =
+      this.stoppingConsumption?.consumption === consumption
+        ? this.stoppingConsumption.intent === this.consumptionIntent
+        : consumption.intent === this.consumptionIntent;
+    if (!ownsContinuation) {
+      consumption.searchProgress = this.continuations.progress(
+        consumption.checkpoint.coverage,
+        consumption.previous,
+      );
+      return;
+    }
+    consumption.searchProgress = this.continuations.finish(
+      consumption.request,
+      consumption.recordBinding,
+      consumption.checkpoint,
+      consumption.droppedMessages,
+      consumption.previous,
+    );
+  }
+
+  private async startRead(
+    command: Extract<HostCommand, { readonly command: "messages.start" | "messages.continue" }>,
+    request: KafkaFetchRequest,
+    correlationId: string,
+    previousRead?: KafkaReadContinuation,
+  ): Promise<HostCommandResponse> {
     const intent = ++this.consumptionIntent;
     this.discardStoppingConsumption();
     const connectionName = this.bindings.session.snapshot().connectionName;
@@ -289,6 +376,13 @@ export class ConsumptionFacadeController {
     try {
       const preferenceSnapshot = await this.bindings.preferences.get();
       if (intent !== this.consumptionIntent) throw new ConnectionAttemptSupersededError();
+      // The previous read can fail while preferences load. Its presentation state
+      // must not block this read's continuation; the session still awaits cleanup.
+      this.discardStoppingConsumption();
+      this.continuations.invalidate();
+      const binding = recordBinding(preferenceSnapshot);
+      if (previousRead !== undefined && binding !== previousRead.binding)
+        throw new KafkaContinuationError();
       const previous = this.activeConsumption;
       if (previous !== undefined) {
         this.cancelConsumptionFlush(previous);
@@ -296,18 +390,21 @@ export class ConsumptionFacadeController {
         discardFacadeMessages(previous);
       }
       const consumption: FacadeConsumption = {
+        intent,
         cancelScheduledFlush: undefined,
         cancelScheduledSample: undefined,
         presentationPaused: this.messagePresentationPaused,
         operationId: command.id,
         connectionName,
+        recordBinding: binding,
+        ...(previousRead === undefined ? {} : { previous: previousRead }),
         correlationId,
         droppedMessages: 0,
         flushScheduled: false,
         messages: [],
         queuedBytes: 0,
         receivedMessages: 0,
-        request: command.payload,
+        request,
         ruleFailureRecorded: false,
         state: "loading",
         streamMonitoring: createStreamMonitoring(this.bindings.monotonicNow()),
@@ -331,84 +428,108 @@ export class ConsumptionFacadeController {
       if (this.activeConsumption !== consumption) {
         throw new ConnectionAttemptSupersededError();
       }
-      const capability = await this.bindings.liveRules.prepare(command.payload.topic);
+      const capability = await this.bindings.liveRules.prepare(request.topic);
       if (this.activeConsumption !== consumption) {
         throw new ConnectionAttemptSupersededError();
       }
-      this.publishConsumption(consumption, "loading");
+      let loadingPublished = false;
+      const publishLoading = (): void => {
+        if (!loadingPublished) {
+          loadingPublished = true;
+          this.publishConsumption(consumption, "loading");
+        }
+      };
+      if (previousRead === undefined) publishLoading();
       if (capability.state === "unavailable") {
         this.bindings.recordActivity(unavailableLiveRuleActivity(consumption, capability));
       }
-      await this.bindings.session.startConsumption(command.payload, {
-        onCoverage: (coverage): void => {
-          if (this.activeConsumption === consumption) {
-            consumption.coverage = coverage;
-            if (consumption.state !== "loading")
-              this.publishConsumption(consumption, consumption.state);
-          }
-        },
-        onComplete: (): void => {
-          runTerminal(() => {
-            if (this.activeConsumption !== consumption) {
-              return;
+      await this.bindings.session.startConsumption(
+        request,
+        {
+          onCoverage: (coverage): void => {
+            if (this.activeConsumption === consumption) {
+              publishLoading();
+              consumption.coverage = this.continuations.coverage(coverage, previousRead);
+              consumption.searchProgress = this.continuations.progress(coverage, previousRead);
+              if (consumption.state !== "loading")
+                this.publishConsumption(consumption, consumption.state);
             }
-            this.flushMessages(consumption, true);
-            this.activeConsumption = undefined;
-            this.bindings.liveRules.deactivate();
-            const state = consumption.receivedMessages === 0 ? "empty" : "complete";
-            this.publishConsumption(consumption, state);
-            this.bindings.recordActivity({
-              correlationId: consumption.correlationId,
-              detail: `${fetchDescription(consumption.request)} ended with ${String(
-                consumption.receivedMessages,
-              )} message${consumption.receivedMessages === 1 ? "" : "s"}.`,
-              object: consumption.request.topic,
-              operation: "Consume messages",
-              outcome: "succeeded",
-              severity: "info",
+          },
+          onCheckpoint: (checkpoint): void => {
+            if (
+              this.activeConsumption === consumption ||
+              this.stoppingConsumption?.consumption === consumption
+            )
+              consumption.checkpoint = checkpoint;
+          },
+          onComplete: (): void => {
+            runTerminal(() => {
+              if (this.activeConsumption !== consumption) {
+                return;
+              }
+              this.flushMessages(consumption, true);
+              this.finishRead(consumption);
+              this.activeConsumption = undefined;
+              this.bindings.liveRules.deactivate();
+              const state = consumption.receivedMessages === 0 ? "empty" : "complete";
+              this.publishConsumption(consumption, state);
+              this.bindings.recordActivity({
+                correlationId: consumption.correlationId,
+                detail: `${fetchDescription(consumption.request)} ended with ${String(
+                  consumption.receivedMessages,
+                )} message${consumption.receivedMessages === 1 ? "" : "s"}.`,
+                object: consumption.request.topic,
+                operation: "Consume messages",
+                outcome: "succeeded",
+                severity: "info",
+              });
             });
-          });
-        },
-        onEmpty: (): void => {
-          if (this.activeConsumption === consumption) {
-            this.flushMessages(consumption);
-            this.publishConsumption(consumption, "empty");
-          }
-        },
-        onFailure: (error): void => {
-          runTerminal(() => {
-            if (this.activeConsumption !== consumption) {
-              return;
+          },
+          onEmpty: (): void => {
+            if (this.activeConsumption === consumption) {
+              this.flushMessages(consumption);
+              this.publishConsumption(consumption, "empty");
             }
-            this.flushMessages(consumption, true);
-            this.activeConsumption = undefined;
-            this.stoppingConsumption = {
-              consumption,
-              intent: this.consumptionIntent,
-              operation: undefined,
-            };
-            this.bindings.liveRules.deactivate();
-            const translated = this.bindings.translateFailure(error, {
-              activeStateChanged: false,
-              connection: undefined,
-              correlationId: consumption.correlationId,
+          },
+          onFailure: (error): void => {
+            runTerminal(() => {
+              if (this.activeConsumption !== consumption) {
+                return;
+              }
+              this.flushMessages(consumption, true);
+              this.activeConsumption = undefined;
+              this.stoppingConsumption = {
+                consumption,
+                intent: this.consumptionIntent,
+                operation: undefined,
+              };
+              this.bindings.liveRules.deactivate();
+              const translated = this.bindings.translateFailure(error, {
+                activeStateChanged: false,
+                connection: undefined,
+                correlationId: consumption.correlationId,
+              });
+              this.publishConsumption(consumption, "failed", translated.error);
+              this.bindings.recordFailureActivity(
+                consumption.request.topic,
+                "Consume messages",
+                consumption.correlationId,
+                `${fetchDescription(consumption.request)} failed. ${translated.detail}`,
+              );
             });
-            this.publishConsumption(consumption, "failed", translated.error);
-            this.bindings.recordFailureActivity(
-              consumption.request.topic,
-              "Consume messages",
-              consumption.correlationId,
-              `${fetchDescription(consumption.request)} failed. ${translated.detail}`,
-            );
-          });
+          },
+          onMessage: (message): void => {
+            if (this.activeConsumption === consumption) publishLoading();
+            this.enqueueMessage(consumption, message);
+          },
         },
-        onMessage: (message): void => {
-          this.enqueueMessage(consumption, message);
-        },
-      });
+        undefined,
+        previousRead?.checkpoint,
+      );
       if (this.activeConsumption !== consumption) {
         throw new ConnectionAttemptSupersededError();
       }
+      publishLoading();
       if (consumption.state === "loading") {
         this.publishConsumption(
           consumption,
@@ -450,10 +571,10 @@ export class ConsumptionFacadeController {
         this.publishConsumption(consumption, "failed", translated.error);
       }
       this.bindings.recordFailureActivity(
-        command.payload.topic,
+        request.topic,
         "Consume messages",
         correlationId,
-        `${fetchDescription(command.payload)} failed. ${translated.detail}`,
+        `${fetchDescription(request)} failed. ${translated.detail}`,
         [],
         operationError instanceof ConnectionAttemptSupersededError ? "cancelled" : "failed",
       );
@@ -536,6 +657,7 @@ export class ConsumptionFacadeController {
       this.bindings.liveRules.deactivate();
       if (consumption !== undefined) {
         this.flushMessages(consumption, true);
+        this.finishRead(consumption);
         this.publishConsumption(consumption, "stopped");
       } else {
         this.bindings.publish({

@@ -102,11 +102,15 @@ const request: KafkaFetchRequest = {
 function Harness({
   download = (): Promise<void> => Promise.resolve(),
   consumptionError = null,
+  consumptionRequest = request,
+  continuationBusy = false,
   onStop = (): void => undefined,
   initialFilters = initialKafkaMessageFilters,
 }: {
   readonly download?: TextDocumentTransferPort["download"];
   readonly consumptionError?: HostError | null;
+  readonly consumptionRequest?: KafkaFetchRequest;
+  readonly continuationBusy?: boolean;
   readonly onStop?: () => void;
   readonly initialFilters?: KafkaMessageFilters;
 }): React.JSX.Element {
@@ -132,12 +136,15 @@ function Harness({
       <MessageWorkspace
         connectionAvailable
         consumptionError={consumptionError}
-        consumptionRequest={request}
-        consumptionState={consumptionError === null ? "streaming" : "failed"}
+        consumptionRequest={consumptionRequest}
+        consumptionState={
+          consumptionError !== null ? "failed" : continuationBusy ? "loading" : "streaming"
+        }
         consumptionStopping={false}
+        continuationBusy={continuationBusy}
         droppedMessages={0}
         fetchMaximum={1_000}
-        fetchMode="tail"
+        fetchMode={consumptionRequest.mode}
         filters={filters}
         liveRuleCapability={{ applicableRules: 1, omittedRules: 0, state: "ready" }}
         messages={messages}
@@ -178,6 +185,26 @@ afterEach(() => {
 });
 
 describe("Kafka message operation Material UI workflow", () => {
+  it("keeps pause available while a continuation response is pending after the host starts reading", async () => {
+    const onStop = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <Harness
+        consumptionRequest={{ ...request, mode: "earliest" }}
+        continuationBusy
+        onStop={onStop}
+      />,
+    );
+    const pause = screen.getByRole("button", { name: "Pause read orders" });
+    expect(pause).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: "Read mode" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(pause);
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
   it("clears an exact locator while preserving independently edited message filters", async () => {
     const user = userEvent.setup();
     render(

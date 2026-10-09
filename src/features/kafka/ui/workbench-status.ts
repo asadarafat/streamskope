@@ -19,7 +19,7 @@ export function isKafkaConsumptionActive(
   );
 }
 
-export type KafkaConsumptionStopLabel = "Stop tail" | "Cancel fetch" | "Retry stop";
+export type KafkaConsumptionStopLabel = "Stop tail" | "Pause search" | "Pause read" | "Retry stop";
 
 export function kafkaConsumptionStopLabel(
   state: ConsumptionState,
@@ -37,7 +37,9 @@ export function kafkaConsumptionStopLabel(
   return isKafkaConsumptionActive(state, request)
     ? request.mode === "tail"
       ? "Stop tail"
-      : "Cancel fetch"
+      : request.search === undefined
+        ? "Pause read"
+        : "Pause search"
     : null;
 }
 

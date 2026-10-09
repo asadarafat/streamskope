@@ -21,6 +21,7 @@ import type {
   KafkaLatencyProbeMeasurement,
   KafkaMessageStream,
 } from "../application";
+import type { KafkaReadCheckpoint } from "../application/read-checkpoint";
 
 export type { ConnectionCheck, KafkaConnectionTestResult } from "../application";
 
@@ -109,11 +110,14 @@ export interface KafkaRawMessage {
 }
 
 export interface KafkaRawMessageStream extends AsyncIterable<KafkaRawMessage> {
+  acknowledge?(message: KafkaRawMessage): void;
+  checkpoint?(): KafkaReadCheckpoint | undefined;
   close(): Promise<void>;
   coverage?(): KafkaReadCoverage | undefined;
 }
 
 export type KafkaConsumerInput = KafkaClientInput & {
+  readonly checkpoint?: KafkaReadCheckpoint;
   readonly groupId: string;
   readonly signal?: AbortSignal;
   readonly onFetchSample?: (sample: KafkaLatencyFetchSample) => void;
@@ -140,7 +144,11 @@ export interface KafkaLatencyProbePort {
 
 export interface KafkaEngineConnection extends KafkaActiveConnection {
   listTopics(signal?: AbortSignal): Promise<readonly string[]>;
-  openMessageStream(request: KafkaFetchRequest, signal: AbortSignal): Promise<KafkaMessageStream>;
+  openMessageStream(
+    request: KafkaFetchRequest,
+    signal: AbortSignal,
+    checkpoint?: KafkaReadCheckpoint,
+  ): Promise<KafkaMessageStream>;
 }
 
 export interface KafkaEngineFailureOptions {

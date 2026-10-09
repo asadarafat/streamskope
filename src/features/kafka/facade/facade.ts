@@ -341,7 +341,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     )
       this.authorizationIntent += 1;
     const intent = this.authorizationIntent;
-    if (command.command === "messages.start" || command.command === "messages.stop") {
+    if (
+      command.command === "messages.start" ||
+      command.command === "messages.continue" ||
+      command.command === "messages.stop"
+    ) {
       this.consumptionCommandIntent += 1;
     }
     const consumptionIntent = this.consumptionCommandIntent;
@@ -349,7 +353,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       if (!this.commandAdmission.accepts(internal))
         return Promise.resolve(this.unavailableResponse(command, correlationId));
       return intent === this.authorizationIntent &&
-        (command.command !== "messages.start" ||
+        ((command.command !== "messages.start" && command.command !== "messages.continue") ||
           consumptionIntent === this.consumptionCommandIntent)
         ? this.dispatch(command, correlationId)
         : Promise.resolve(
@@ -561,6 +565,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         });
       case "messages.start":
         return this.consumption.startMessages(command, correlationId);
+      case "messages.continue":
+        return this.consumption.continueMessages(command, correlationId);
       case "messages.stop":
         return this.consumption.stopMessages(command, correlationId);
       default:

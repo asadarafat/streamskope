@@ -15,6 +15,10 @@ import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-jso
 import { RedpandaTransformHttpAdapter } from "../../src/features/kafka/engine/redpanda-transform-http";
 import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine/engine";
+import {
+  KafkaReadCheckpointError,
+  type KafkaReadCheckpoint,
+} from "../../src/features/kafka/application/read-checkpoint";
 import type {
   KafkaAdminFactory,
   KafkaAdminInput,
@@ -140,12 +144,22 @@ interface RawMessage {
 
 class RecordingRawMessageStream implements AsyncIterable<RawMessage> {
   closeCalls = 0;
+  readonly acknowledgements: unknown[] = [];
+  checkpointValue: KafkaReadCheckpoint | undefined;
 
   constructor(private readonly messages: readonly RawMessage[]) {}
 
   close(): Promise<void> {
     this.closeCalls += 1;
     return Promise.resolve();
+  }
+
+  acknowledge(message: unknown): void {
+    this.acknowledgements.push(message);
+  }
+
+  checkpoint(): KafkaReadCheckpoint | undefined {
+    return this.checkpointValue;
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<RawMessage> {
@@ -278,6 +292,83 @@ describe("StreamSkope Kafka engine connection test", () => {
     await expect(activeConnection.close()).rejects.toMatchObject({ errors: [cleanupFailure] });
     expect(rawStream.closeCalls).toBe(1);
     expect(admin.closeCalls).toBe(1);
+  });
+
+  it("forwards owned checkpoints and acknowledges only the raw record behind a delivered projection", async () => {
+    const raw: RawMessage = {
+      topic: "test",
+      partition: 0,
+      offset: 1n,
+      timestamp: 1000n,
+      headers: new Map(),
+      value: Buffer.from("visible"),
+    };
+    const checkpoint: KafkaReadCheckpoint = {
+      clusterId: "cluster",
+      topicId: "topic",
+      partitionCount: 1,
+      coverage: {
+        reason: "result-limit",
+        scannedRecords: 1,
+        scannedBytes: 1,
+        matchedRecords: 1,
+        unavailableRecords: 0,
+        partitions: [{ partition: 0, startOffset: "0", endOffset: "3", nextOffset: "1" }],
+      },
+    };
+    const rawStream = new RecordingRawMessageStream([raw]);
+    rawStream.checkpointValue = checkpoint;
+    const factory = new RecordingConsumerFactory(rawStream);
+    const engine = new StreamSkopeKafkaEngine({
+      adminFactory: new RecordingAdminFactory(new RecordingAdmin(["test"])),
+      consumerFactory: factory,
+      requestOAuthToken: (): Promise<OAuthToken> => Promise.resolve({ value: "active-token" }),
+    });
+    const active = await engine.openConnection(connection, new AbortController().signal);
+    try {
+      const stream = await active.openMessageStream(
+        { mode: "earliest", topic: "test", maxMessages: 1 },
+        new AbortController().signal,
+        checkpoint,
+      );
+      expect(factory.inputs[0]).toMatchObject({ checkpoint });
+      expect(stream.checkpoint?.()).toBe(checkpoint);
+      const result = await stream[Symbol.asyncIterator]().next();
+      if (result.done) throw new Error("Expected a fixture projection");
+      stream.acknowledge?.({ ...result.value });
+      expect(rawStream.acknowledgements).toEqual([]);
+      stream.acknowledge?.(result.value);
+      stream.acknowledge?.(result.value);
+      expect(rawStream.acknowledgements).toEqual([raw]);
+    } finally {
+      await active.close();
+    }
+  });
+
+  it("preserves actionable checkpoint invalidation errors instead of a generic broker failure", async () => {
+    const engine = new StreamSkopeKafkaEngine({
+      adminFactory: new RecordingAdminFactory(new RecordingAdmin(["test"])),
+      consumerFactory: {
+        open: () => Promise.reject(new KafkaReadCheckpointError("retention-changed")),
+      },
+      requestOAuthToken: (): Promise<OAuthToken> => Promise.resolve({ value: "active-token" }),
+    });
+    const active = await engine.openConnection(connection, new AbortController().signal);
+    try {
+      await expect(
+        active.openMessageStream(
+          { mode: "earliest", topic: "test", maxMessages: 1 },
+          new AbortController().signal,
+        ),
+      ).rejects.toMatchObject({
+        code: "VALIDATION",
+        stage: "validation",
+        retryable: false,
+        message: "The remaining captured offsets are no longer retained by Kafka.",
+      });
+    } finally {
+      await active.close();
+    }
   });
 
   it("reuses one OAuth refresh for concurrent authenticated Registry requests", async () => {

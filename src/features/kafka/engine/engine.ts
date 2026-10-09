@@ -26,6 +26,7 @@ import type {
   KafkaClusterServiceContext,
 } from "../application";
 import { classifyConnectionFailure } from "../application/connection-diagnostics";
+import { KafkaReadCheckpointError, type KafkaReadCheckpoint } from "../application/read-checkpoint";
 
 import { serviceConnectionContext } from "./service-connection-context";
 import { testClusterServices } from "./service-connection-test";
@@ -159,6 +160,20 @@ function withCleanupFailure(
 }
 
 class TranslatedKafkaMessageStream implements KafkaMessageStream {
+  private readonly originals = new WeakMap<KafkaMessage, KafkaRawMessage>();
+
+  acknowledge(message: KafkaMessage): void {
+    const original = this.originals.get(message);
+    if (original !== undefined) {
+      this.rawStream.acknowledge?.(original);
+      this.originals.delete(message);
+    }
+  }
+
+  checkpoint(): KafkaReadCheckpoint | undefined {
+    return this.rawStream.checkpoint?.();
+  }
+
   coverage(): KafkaReadCoverage | undefined {
     return this.rawStream.coverage?.();
   }
@@ -181,7 +196,9 @@ class TranslatedKafkaMessageStream implements KafkaMessageStream {
   async *[Symbol.asyncIterator](): AsyncIterator<KafkaMessage> {
     try {
       for await (const raw of this.rawStream) {
-        yield await this.prepareRecord(raw);
+        const message = await this.prepareRecord(raw);
+        this.originals.set(message, raw);
+        yield message;
       }
     } catch (error) {
       throw mapKafkaAdminFailure(error, this.target);
@@ -427,6 +444,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   async openMessageStream(
     request: KafkaFetchRequest,
     cancellationSignal: AbortSignal,
+    checkpoint?: KafkaReadCheckpoint,
   ): Promise<KafkaMessageStream> {
     let parsedRequest: KafkaFetchRequest;
     try {
@@ -487,6 +505,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       return operation;
     };
     const operation = this.consumerFactory.open({
+      ...(checkpoint === undefined ? {} : { checkpoint }),
       prepareRecord: prepare,
       ...this.clientInput,
       groupId: `streamskope-${randomUUID()}`,
@@ -529,6 +548,16 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
             : timeoutFailure("broker", target);
         throw cleanupFailure === undefined ? failure : withCleanupFailure(failure, cleanupFailure);
       }
+      if (error instanceof KafkaReadCheckpointError)
+        throw new KafkaEngineFailure({
+          cause: error,
+          code: "VALIDATION",
+          recovery: "Start a new read to capture the current topic identity and retained offsets.",
+          retryable: false,
+          stage: "validation",
+          summary: error.message,
+          target,
+        });
       throw mapKafkaAdminFailure(error, target);
     } finally {
       clearTimeout(timeout);

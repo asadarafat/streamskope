@@ -165,9 +165,9 @@ describe("topic-led workspace", () => {
       ),
     ).not.toBeInTheDocument();
     const streamAction = screen.getByRole("button", {
-      name: "Cancel fetch audit.events",
+      name: "Pause read audit.events",
     });
-    expect(streamAction).toHaveTextContent("Cancel fetch");
+    expect(streamAction).toHaveTextContent("Pause read");
 
     await user.click(streamAction);
     expect(host.commands.filter((command) => command.command === "messages.stop")).toHaveLength(1);

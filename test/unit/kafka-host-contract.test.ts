@@ -43,7 +43,7 @@ const zeroRuleEvaluation = {
 
 describe("Kafka host contract", () => {
   it("declares the complete current command and event vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(55);
+    expect(HOST_PROTOCOL_VERSION).toBe(56);
     expect(HOST_COMMANDS).toEqual([
       "relationships.capture",
       "relationships.cancel",
@@ -135,6 +135,7 @@ describe("Kafka host contract", () => {
       "queries.put",
       "queries.delete",
       "messages.start",
+      "messages.continue",
       "messages.stop",
       "trustAcquisition.hostKey.discover",
       "trustAcquisition.capabilities",
