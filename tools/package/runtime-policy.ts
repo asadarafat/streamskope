@@ -9,6 +9,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/application/session.ts",
     // Export owns finite read and artifact expiry deadlines, cleared on revocation or settlement.
     "src/features/kafka/application/record-export-service.ts",
+    "src/features/kafka/application/finite-record-read.ts",
+    "src/features/kafka/application/record-analysis-service.ts",
     "src/platform/node/record-export-artifacts.ts",
     "src/features/kafka/ui/use-record-export.ts",
     // Reviewed batches own only abortable delays between explicit writes.

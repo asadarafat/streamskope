@@ -34,6 +34,18 @@ export function testHostResponse<Command extends HostCommand>(
           },
         },
       };
+    else if (command.command === "records.analysis.status")
+      envelope = {
+        ...envelope,
+        result: {
+          correlationId,
+          snapshot: {
+            scopeId: "00000000-0000-4000-8000-000000000000",
+            revision: 0,
+            operation: null,
+          },
+        },
+      };
     else if (command.command === "records.export.status")
       envelope = {
         ...envelope,

@@ -74,6 +74,7 @@ def inspect_message_limits(page=None):
         "const {KAFKA_QUERY_TRANSFER_LIMITS:t}=require('./src/features/kafka/contracts/query-transfer.ts');"
         "const {KAFKA_ORIGINAL_RECORD_LIMITS:o}=require('./src/features/kafka/contracts/record-bytes.ts');"
         "const {RECORD_EXPORT_LIMITS:r}=require('./src/features/kafka/contracts/record-export.ts');"
+        "const {RECORD_ANALYSIS_LIMITS:a}=require('./src/features/kafka/contracts/record-analysis.ts');"
         "process.stdout.write(JSON.stringify({"
         "retained:m.retainedMessages,bytes:m.retainedBytes,record:m.messageBytes,"
         "preview:m.previewBytes,fetch:f.maxMessages,original:o.bytes,"
@@ -82,6 +83,8 @@ def inspect_message_limits(page=None):
         "continuationMs:c.lifetimeMs,continuationPasses:c.passes,"
         "rangeRecords:r.records,rangeScan:r.scanRecords,rangeScanBytes:r.scanBytes,rangeBytes:r.bytes,"
         "rangeMs:r.durationMs,rangeDownloadMs:r.downloadDurationMs,rangePasses:r.passes,rangeTtl:r.artifactLifetimeMs,rangeDownloads:r.downloads,rangeReceipt:r.receiptBytes,"
+        "analysisColumns:a.columns,analysisPath:a.pathCharacters,analysisSegments:a.pathSegments,analysisGroups:a.groups,"
+        "analysisKey:a.groupKeyBytes,analysisCell:a.cellBytes,analysisRows:a.previewRows,analysisPreview:a.previewBytes,analysisResult:a.resultBytes,analysisWork:a.work,analysisRecordWork:a.recordWork,"
         "queries:l.queries,libraryBytes:l.fileBytes,queryBytes:t.documentBytes}));",
     ], cwd=ROOT, text=True))
     expected = {
@@ -103,6 +106,13 @@ def inspect_message_limits(page=None):
         "Range export downloads": f"{limits['rangeTtl'] / 60_000:g} minutes / {limits['rangeDownloads']} simultaneous reads",
         "Range download duration": f"{limits['rangeDownloadMs'] / 60_000:g} minutes",
         "Range export receipt": f"{limits['rangeReceipt'] / 1_048_576:g} MiB",
+        "Analysis selected fields": f"{limits['analysisColumns']} / {limits['analysisPath']} path characters / {limits['analysisSegments']} segments",
+        "Analysis groups": f"{limits['analysisGroups']} / {limits['analysisKey'] / 1024:g} KiB per group key",
+        "Analysis scalar value": f"{limits['analysisCell'] / 1024:g} KiB",
+        "Analysis preview": f"{limits['analysisRows']} rows / {limits['analysisPreview'] / 1024:g} KiB",
+        "Analysis result": f"{limits['analysisResult'] / 1024:g} KiB",
+        "Analysis evaluation work": f"{limits['analysisWork']:,} units",
+        "Analysis work per record": f"{limits['analysisRecordWork']:,} units",
         "Saved query library": f"{limits['queries']} queries / {limits['libraryBytes'] / 1_048_576:g} MiB",
         "Portable query document": f"{limits['queryBytes'] / 1024:g} KiB",
     }

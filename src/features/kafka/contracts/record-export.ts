@@ -1,15 +1,15 @@
 import type { HostError } from "./host-errors";
-import type { KafkaRecordProtection } from "./operational-preference-types";
 import type { KafkaReadCoverage, KafkaSearchFilter } from "./query-search";
-import type { RecordCodecPreferences } from "./structured-record";
+import {
+  FINITE_RECORD_READ_LIMITS,
+  type FiniteRecordRange,
+  type RecordReadSettings,
+  type RecordReadSource,
+} from "./finite-record-read";
 
 export const RECORD_EXPORT_LIMITS = Object.freeze({
-  records: 100_000,
-  scanRecords: 1_000_000,
-  scanBytes: 1024 * 1_048_576,
+  ...FINITE_RECORD_READ_LIMITS,
   bytes: 256 * 1_048_576,
-  durationMs: 5 * 60_000,
-  passes: 1_000,
   artifactLifetimeMs: 15 * 60_000,
   receiptBytes: 1_048_576,
   downloads: 2,
@@ -17,9 +17,7 @@ export const RECORD_EXPORT_LIMITS = Object.freeze({
 });
 export type RecordExportLimits = { readonly [Key in keyof typeof RECORD_EXPORT_LIMITS]: number };
 export type RecordExportFormat = "csv" | "jsonl";
-export type RecordExportRange =
-  | { readonly mode: "earliest" }
-  | { readonly mode: "time-window"; readonly startTimeMs: number; readonly endTimeMs: number };
+export type RecordExportRange = FiniteRecordRange;
 export interface RecordExportInput {
   readonly requestId: string;
   readonly topic: string;
@@ -28,15 +26,8 @@ export interface RecordExportInput {
   readonly format: RecordExportFormat;
   readonly maxRecords: number;
 }
-export interface RecordExportSettings {
-  readonly codecs: RecordCodecPreferences;
-  readonly protection: KafkaRecordProtection;
-}
-export interface RecordExportSource {
-  readonly connectionName: string;
-  readonly clusterId: string | null;
-  readonly topicId: string | null;
-}
+export type RecordExportSettings = RecordReadSettings;
+export type RecordExportSource = RecordReadSource;
 export interface RecordExportCounts {
   readonly passes: number;
   readonly scannedRecords: number;

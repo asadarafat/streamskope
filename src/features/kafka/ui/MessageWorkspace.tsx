@@ -28,6 +28,9 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import { RecordAnalysisDialog } from "./RecordAnalysisDialog";
+import { RecordAnalysisStatus } from "./RecordAnalysisStatus";
+import type { RecordAnalysisController } from "./use-record-analysis";
 import { RecordExportDialog } from "./RecordExportDialog";
 import { RecordExportStatus } from "./RecordExportStatus";
 import type { RecordExportController } from "./use-record-export";
@@ -110,6 +113,7 @@ export function MessageWorkspace({
   selectionNotice,
   transfer = browserTextDocumentTransfer,
   recordExport,
+  recordAnalysis,
 }: {
   readonly host?: import("../contracts").StreamSkopeHost;
   readonly profiles?: readonly import("../contracts").ProfileSummary[];
@@ -155,6 +159,7 @@ export function MessageWorkspace({
   readonly selectionNotice: string | undefined;
   readonly transfer?: TextDocumentTransferPort;
   readonly recordExport?: RecordExportController;
+  readonly recordAnalysis?: RecordAnalysisController;
 }): React.JSX.Element {
   const compactDesktop = useMediaQuery(
     `(max-width:${String(streamSkopeLayout.fullDesktopMinimumWidth - 0.05)}px)`,
@@ -172,6 +177,7 @@ export function MessageWorkspace({
   useEffect(() => {
     if (!connectionAvailable || messagesStale) setBaseline(null);
   }, [connectionAvailable, messagesStale]);
+  const [analysisTab, setAnalysisTab] = useState<"setup" | "results" | null>(null);
   const [exportMenu, setExportMenu] = useState<HTMLElement | null>(null);
   const [exportRangeOpen, setExportRangeOpen] = useState(false);
   const [exportError, setExportError] = useState<string>();
@@ -478,6 +484,15 @@ export function MessageWorkspace({
             >
               Filters{activeFilterCount === 0 ? "" : ` · ${activeFilterCount.toLocaleString()}`}
             </Button>
+            {recordAnalysis && (
+              <Button
+                disabled={!connectionAvailable}
+                onClick={() => setAnalysisTab("setup")}
+                size="small"
+              >
+                Analyze range…
+              </Button>
+            )}
             <Button
               aria-label="Export records"
               aria-haspopup="menu"
@@ -533,6 +548,21 @@ export function MessageWorkspace({
           </TopicWorkspaceToolbar>
         )}
         {recordExport && <RecordExportStatus controller={recordExport} />}
+        {recordAnalysis && (
+          <RecordAnalysisStatus
+            controller={recordAnalysis}
+            onOpen={() => setAnalysisTab(recordAnalysis.snapshot?.operation ? "results" : "setup")}
+          />
+        )}
+        {analysisTab && recordAnalysis && selectedTopic !== null && (
+          <RecordAnalysisDialog
+            topic={selectedTopic}
+            filters={filters}
+            controller={recordAnalysis}
+            initialTab={analysisTab}
+            onClose={() => setAnalysisTab(null)}
+          />
+        )}
         {exportRangeOpen && recordExport && selectedTopic !== null && (
           <RecordExportDialog
             topic={selectedTopic}

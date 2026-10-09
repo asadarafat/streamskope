@@ -50,6 +50,7 @@ import {
 } from "./stream-monitor-observer";
 import { initialKafkaUiState, reduceKafkaUiState, selectKafkaMessageById } from "./state";
 import { createArtifactTransfer } from "./artifact-transfer";
+import { useRecordAnalysis } from "./use-record-analysis";
 import { useRecordExport } from "./use-record-export";
 import { createTextDocumentTransfer } from "./text-document-transfer";
 import {
@@ -126,6 +127,11 @@ export function StreamSkopeWorkbench({
 
   const connected = state.connectionState === "connected";
   const artifactTransfer = useMemo(() => createArtifactTransfer(desktop), [desktop]);
+  const recordAnalysis = useRecordAnalysis({
+    host,
+    connected,
+    backendAvailable: state.backend === "ready",
+  });
   const recordExport = useRecordExport({
     host,
     connected,
@@ -579,6 +585,7 @@ export function StreamSkopeWorkbench({
       >
         <MessageWorkspace
           recordExport={recordExport}
+          recordAnalysis={recordAnalysis}
           profiles={state.profiles}
           canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
           host={host}

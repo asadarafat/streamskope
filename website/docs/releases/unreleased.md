@@ -60,3 +60,12 @@ invalidated by a new read, reconnect, changed record settings or host restart.
 Retention gaps, topic replacement and partition changes require a new read instead
 of silently extending or skipping the original range. See
 [continuing a finite read](../guide/messages.md#continue-a-finite-read).
+
+**Analyze range** counts matching Kafka records across a captured finite range,
+with optional protected key/value fields and typed count-by groups. Its bounded
+preview is separate from the aggregate count: reaching the preview limit does not
+stop the scan. Masked or unsupported group values are reported as exclusions, and
+limits or cancellation produce an explicit partial result. Analysis uses the same
+finite reader as range export; results are temporary and cleared on reconnect,
+lock or changed record settings. See
+[range analysis](../guide/messages.md#count-and-inspect-a-range).

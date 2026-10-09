@@ -593,3 +593,9 @@ export {
   parseRecordExportSnapshot,
   parseRecordExportReceipt,
 } from "./record-export-validation";
+
+export * from "./record-analysis";
+export {
+  parseRecordAnalysisInput,
+  parseRecordAnalysisSnapshot,
+} from "./record-analysis-validation";

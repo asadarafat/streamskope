@@ -1,3 +1,8 @@
+import {
+  parseRecordAnalysisCommand,
+  parseRecordAnalysisResponse,
+} from "./record-analysis-protocol";
+import { parseRecordAnalysisSnapshot } from "./record-analysis-validation";
 import { parseRecordExportCommand, parseRecordExportResponse } from "./record-export-protocol";
 import { parseRecordExportSnapshot } from "./record-export-validation";
 import { parseKafkaExploredMessage } from "./message-validation";
@@ -226,6 +231,7 @@ export function parseHostCommand(value: unknown): HostCommand {
     parseEnvironmentCommand(command, id, envelope.payload, version) ??
     parseRecoveryCommand(command, id, envelope.payload, version) ??
     parseCorrelationCommand(command, id, envelope.payload, version) ??
+    parseRecordAnalysisCommand(command, id, envelope.payload, version) ??
     parseRecordExportCommand(command, id, envelope.payload, version) ??
     parseSampleCommand(command, id, envelope.payload, version) ??
     parsePluginHostCommand(command, id, envelope.payload, version) ??
@@ -485,6 +491,7 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
     parseEnvironmentResponse(command, id, result, version) ??
     parseRecoveryResponse(command, id, result, version) ??
     parseCorrelationResponse(command, id, result, version) ??
+    parseRecordAnalysisResponse(command, id, result, version) ??
     parseRecordExportResponse(command, id, result, version) ??
     parseSampleResponse(command, id, version, result);
   if (sampleResponse) return sampleResponse;
@@ -688,6 +695,8 @@ export function parseHostEvent(value: unknown): HostEvent {
   }
 
   switch (event) {
+    case "records.analysis.changed":
+      return { event, payload: parseRecordAnalysisSnapshot(payload), sequence, version };
     case "records.export.changed":
       return { event, payload: parseRecordExportSnapshot(payload), sequence, version };
     case "backend.availability":

@@ -25,16 +25,22 @@ export class KafkaCommandAdmission extends ProviderCommandAdmission {
 
   async dispatch(command: HostCommand, bindings: DispatchBindings): Promise<HostCommandResponse> {
     if (!this.accepts(bindings.internal)) return bindings.unavailable();
-    if (command.command === "records.export.start" && this.connectionChanges > 0)
+    if (
+      (command.command === "records.export.start" ||
+        command.command === "records.analysis.start") &&
+      this.connectionChanges > 0
+    ) {
+      const feature = command.command === "records.export.start" ? "export" : "analysis";
       return failureResponse(command, {
         code: "VALIDATION",
         stage: "validation",
         correlationId: bindings.correlationId,
         retryable: false,
         activeStateChanged: false,
-        summary: "Wait for the connection change before starting an export.",
-        recovery: "Confirm the connected profile, then start a new export from that connection.",
+        summary: `Wait for the connection change before starting an ${feature}.`,
+        recovery: `Confirm the connected profile, then start a new ${feature} from that connection.`,
       });
+    }
     const changesConnection = [
       "connection.connect",
       "profiles.connect",
