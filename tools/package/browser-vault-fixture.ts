@@ -102,6 +102,8 @@ export interface BrowserVaultFixture {
   unlockAfterReplacement(): Promise<void>;
   lock(): Promise<void>;
   assertNoSecrets(text: string): void;
+  /** Uses this fixture's authenticated session and the running Kafka host's own protocol. */
+  kafkaCommand(name: string, payload: unknown): Promise<Record<string, unknown>>;
 }
 
 /** Credentials and exact expected profile remain owned by this disposable fixture's closure. */
@@ -223,6 +225,33 @@ export async function createBrowserVaultFixture(instance: {
   return {
     verifyUnlocked,
     assertNoSecrets,
+    kafkaCommand: async (name, payload): Promise<Record<string, unknown>> => {
+      const health = await request(
+        port,
+        "/__streamskope_host/providers/kafka/health",
+        undefined,
+        cookie,
+      );
+      assert.equal(health.status, 200);
+      const version: unknown = record(JSON.parse(health.body)).protocolVersion;
+      assert.ok(typeof version === "number" && Number.isSafeInteger(version) && version > 0);
+      const reply = await request(
+        port,
+        "/__streamskope_host/providers/kafka/commands",
+        {
+          id: randomUUID(),
+          version,
+          command: name,
+          payload,
+        },
+        cookie,
+      );
+      assert.equal(reply.status, 200);
+      assertNoSecrets(reply.body);
+      const body = record(JSON.parse(reply.body));
+      assert.equal(body.ok, true, "The native Kafka fixture command must be accepted.");
+      return record(body.result);
+    },
     lock: async (): Promise<void> => {
       assert.equal((await request(port, "/__streamskope_session/lock", {}, cookie)).status, 200);
     },

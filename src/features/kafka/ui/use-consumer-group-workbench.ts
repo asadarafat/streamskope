@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   HOST_PROTOCOL_VERSION,
@@ -23,6 +23,8 @@ interface ConsumerGroupWorkbenchController {
   readonly onNavigationChange: (navigation: NavigationView) => void;
   readonly onRefresh: () => void;
   readonly onSelect: (groupId: string) => void;
+  readonly restoreSelection: (groupId: string) => void;
+  readonly detailRequested: boolean;
   readonly requestError: string | undefined;
   readonly selectedGroupId: string | null;
 }
@@ -37,8 +39,11 @@ export function useConsumerGroupWorkbench({
   const [filter, setFilter] = useState("");
   const [requestError, setRequestError] = useState<string>();
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [detailRequested, setDetailRequested] = useState(false);
+  const generation = useRef(0);
 
   const requestInventory = useCallback(async (): Promise<void> => {
+    const current = generation.current;
     setRequestError(undefined);
     try {
       await host.execute({
@@ -48,6 +53,7 @@ export function useConsumerGroupWorkbench({
         version: HOST_PROTOCOL_VERSION,
       });
     } catch {
+      if (current !== generation.current) return;
       setRequestError(
         "The application host did not accept the consumer-group request. Open Activity for diagnostics.",
       );
@@ -66,16 +72,21 @@ export function useConsumerGroupWorkbench({
 
   const select = useCallback(
     async (groupId: string): Promise<void> => {
+      const current = ++generation.current;
       setSelectedGroupId(groupId);
+      setDetailRequested(true);
       setRequestError(undefined);
       try {
-        await host.execute({
+        const response = await host.execute({
           command: "consumerGroups.load",
           id: globalThis.crypto.randomUUID(),
           payload: { groupId },
           version: HOST_PROTOCOL_VERSION,
         });
+        if (current === generation.current && !response.ok)
+          setRequestError(`${response.error.summary} ${response.error.recovery}`);
       } catch {
+        if (current !== generation.current) return;
         setRequestError(
           "The application host did not accept the consumer-group detail request. Open Activity for diagnostics.",
         );
@@ -85,23 +96,31 @@ export function useConsumerGroupWorkbench({
   );
 
   useEffect(() => {
+    generation.current++;
     setFilter("");
     setSelectedGroupId(null);
-  }, [connectionName]);
+    setDetailRequested(false);
+    return (): void => {
+      generation.current++;
+    };
+  }, [connectionName, host]);
 
-  useEffect(() => {
-    if (
-      (inventory.state === "ready" || inventory.state === "empty") &&
-      selectedGroupId !== null &&
-      !inventory.groups.some((group) => group.id === selectedGroupId)
-    ) {
-      setSelectedGroupId(null);
-    }
-  }, [inventory, selectedGroupId]);
+  const restoreSelection = useCallback((groupId: string): void => {
+    generation.current++;
+    setSelectedGroupId(groupId);
+    setDetailRequested(false);
+    setRequestError(undefined);
+  }, []);
 
   return {
     filter,
-    onClearSelection: (): void => setSelectedGroupId(null),
+    onClearSelection: (): void => {
+      generation.current++;
+      setSelectedGroupId(null);
+      setDetailRequested(false);
+    },
+    restoreSelection,
+    detailRequested,
     onFilterChange: setFilter,
     onNavigationChange: changeNavigation,
     onRefresh: (): void => {

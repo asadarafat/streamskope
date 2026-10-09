@@ -1,6 +1,10 @@
 import { join } from "node:path";
 
 import { NATS_LIMITS } from "../../features/nats/contracts";
+import {
+  inspectKafkaQueryLibraryDocument,
+  KAFKA_QUERY_LIBRARY_LIMITS,
+} from "../../features/kafka/contracts";
 import { isPluginCompatibleWithHost, parseReleaseVersion } from "../../plugins/compatibility";
 import { STREAMSKOPE_RELEASE } from "../../plugins/host-release";
 
@@ -28,7 +32,6 @@ import { inspectNatsProfileEnvelope } from "./nats-profile-file-store";
 import { AtomicKafkaRuleFileStore } from "./kafka-rule-file-store";
 import { AtomicKafkaOperationalPreferenceFileStore } from "./kafka-operational-preference-file-store";
 import { AtomicKafkaTopicConfigurationHistoryFileStore } from "./kafka-topic-configuration-history-file-store";
-import { AtomicKafkaQueryFileStore } from "./kafka-query-file-store";
 import { AtomicKafkaTrustRecipeFileStore } from "./kafka-trust-recipe-file-store";
 import { AtomicObservationFileStore } from "./kafka-observation-file-store";
 import { PluginStore } from "./plugins/store";
@@ -53,6 +56,7 @@ const BACKUP =
   /^kafka-profiles\.json\.(?:pre-upgrade\.bak|(?:pre-transport-v2|pre-security-v3)(?:\.[1-9]\d?)?)$/u;
 const PREFERENCE_BACKUP =
   /^workbench\/kafka-operational-preferences\.json\.pre-codecs-v1(?:\.[1-9]\d?)?$/u;
+const QUERY_BACKUP = /^queries\/kafka-queries\.json\.pre-views-v1(?:\.[1-9]\d?)?$/u;
 const RECOVERY = /^plugins\/\.recovery\/([a-z][a-z0-9]*(?:[.-][a-z0-9]+)*)\.json$/u;
 const DIRECTORIES = [
   "rules",
@@ -251,11 +255,26 @@ export async function inspectBrowserData(
       formats: [1],
     }),
   );
-  await inspect("queries", exists("queries/kafka-queries.json"), async () => ({
-    count: (await new AtomicKafkaQueryFileStore(join(root, "queries/kafka-queries.json")).load())
-      .length,
-    formats: [1],
-  }));
+  const queryPaths = [...files.keys()].filter(
+    (path) => path === "queries/kafka-queries.json" || QUERY_BACKUP.test(path),
+  );
+  for (const path of queryPaths) allowed.set(path, "file");
+  await inspect("queries", queryPaths.length > 0, async () => {
+    const formats = new Set<number>();
+    let count = 0;
+    for (const path of queryPaths) {
+      const document = inspectKafkaQueryLibraryDocument(
+        JSON.parse(
+          (await read(path, KAFKA_QUERY_LIBRARY_LIMITS.fileBytes)).toString("utf8"),
+        ) as unknown,
+      );
+      if (QUERY_BACKUP.test(path) && document.schemaVersion !== 1) fail("unsupported-format");
+      // Report actual on-disk formats; canonical defaults never cause a write or a size rejection.
+      formats.add(document.schemaVersion);
+      if (path === "queries/kafka-queries.json") count = document.queries.length;
+    }
+    return { count, formats: [...formats].sort() };
+  });
   await inspect("trust-recipes", exists("templates/trust-acquisition-recipes.json"), async () => ({
     count:
       (

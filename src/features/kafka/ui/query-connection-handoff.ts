@@ -1,19 +1,20 @@
 import type { ProviderConnectionDestination } from "../../../platform/ui/provider-workspaces";
-import { parseKafkaInvestigationQuery, type KafkaInvestigationQuery } from "../contracts";
+
+import { parseViewSettings, type KafkaViewSettings } from "./investigation-view-settings";
 
 /** One reviewed settings intent; no host, messages, credentials or activation authority. */
-export function createKafkaQueryConnectionHandoff(): {
-  readonly prepare: (query: KafkaInvestigationQuery, profileId: string | undefined) => void;
+export function createKafkaViewConnectionHandoff(): {
+  readonly prepare: (query: KafkaViewSettings, profileId: string | undefined) => void;
   readonly disconnected: (destination: ProviderConnectionDestination | undefined) => void;
   readonly connected: (profileId: string) => void;
-  readonly restored: () => KafkaInvestigationQuery | undefined;
+  readonly restored: () => KafkaViewSettings | undefined;
 } {
   let pending:
-    { readonly query: KafkaInvestigationQuery; readonly profileId: string | undefined } | undefined;
-  let restored: KafkaInvestigationQuery | undefined;
+    { readonly query: KafkaViewSettings; readonly profileId: string | undefined } | undefined;
+  let restored: KafkaViewSettings | undefined;
   return {
     prepare: (query, profileId): void => {
-      pending = { query: parseKafkaInvestigationQuery(query), profileId };
+      pending = { query: parseViewSettings(query), profileId };
       restored = undefined;
     },
     disconnected: (destination): void => {
@@ -34,6 +35,6 @@ export function createKafkaQueryConnectionHandoff(): {
       pending = undefined;
     },
     // A render cannot consume the snapshot: StrictMode may replay that activation.
-    restored: (): KafkaInvestigationQuery | undefined => restored,
+    restored: (): KafkaViewSettings | undefined => restored,
   };
 }

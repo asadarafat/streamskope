@@ -108,11 +108,32 @@ Do not delete Chromium's `Preferences` file to perform it. If storage remains
 unavailable, restore filesystem access or a complete known-good backup rather than
 repeatedly resetting it.
 
+### Saved-view library recovery
+
+The view library keeps its existing path, `queries/kafka-queries.json`. Reading
+legacy version-1 queries supplies default presentation without rewriting the file.
+The first save or delete that changes the library preserves the exact original as
+`kafka-queries.json.pre-views-v1` (or an unused numbered generation), then writes
+version 2. Later saves do not replace that predecessor or silently downgrade.
+These JSON files can include sensitive filter literals and resource names.
+
+Back up the whole data directory before upgrading. An older host cannot read
+version-2 views. Browser maintenance refuses normal rollback when the current
+library or its retained sidecars are incompatible with the older image. Normal
+rollback changes the image; it does **not** restore historical data. To recover an
+older host, first stop the host and separately restore a verified complete
+pre-upgrade backup using the [browser backup/restore procedure](browser-deployment.md#back-up-and-restore), preserving the original
+lease and data-directory ownership. Verify hashes and permissions before running
+normal rollback; follow the [in-place downgrade precautions](browser-deployment.md#recover-data-before-an-incompatible-downgrade). Do not remove view files, backups or lease metadata just to make
+compatibility checks pass. Desktop recovery likewise needs the complete compatible
+backup; changes made after that backup will be absent.
+
 ## Choose the correct rollback snapshot
 
 | Situation                                                                             | Snapshot to preserve and use                                                                                                                                             |
 | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Downgrade from API 4 plugins                                                          | Complete pre-upgrade backup containing the older desktop-compatible plugin packages                                                                                      |
+| Downgrade after the saved-view library becomes version 2                              | Complete pre-upgrade data backup containing version-1 queries and compatible settings                                                                                    |
 | Routine downgrade                                                                     | Your complete backup made with the target release before upgrading                                                                                                       |
 | Downgrade across explicit TLS/plaintext transport migration                           | The exact profile filename recorded by `rollbackGeneration` in the version-3 profile document                                                                            |
 | Downgrade after saving password SASL, client identity or independent service security | The exact `.pre-security-v3` generation recorded by `rollbackGeneration` in the version-4 profile document; restore a complete compatible data backup for a browser host |

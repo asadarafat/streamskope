@@ -28,6 +28,10 @@ import {
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import {
+  useMessageViewPresentation,
+  type MessageViewPresentationController,
+} from "./use-message-view-presentation";
 import { RecordAnalysisDialog } from "./RecordAnalysisDialog";
 import { RecordAnalysisStatus } from "./RecordAnalysisStatus";
 import type { RecordAnalysisController } from "./use-record-analysis";
@@ -45,7 +49,7 @@ import {
   type KafkaMessageFilters,
   type KafkaMessageTextFilterField,
 } from "./message-operations";
-import { HorizontalPaneSeparator, usePersistentPaneWidth } from "./HorizontalPaneSeparator";
+import { HorizontalPaneSeparator } from "./HorizontalPaneSeparator";
 import {
   browserTextDocumentTransfer,
   type TextDocumentTransferPort,
@@ -114,6 +118,7 @@ export function MessageWorkspace({
   transfer = browserTextDocumentTransfer,
   recordExport,
   recordAnalysis,
+  presentation,
 }: {
   readonly host?: import("../contracts").StreamSkopeHost;
   readonly profiles?: readonly import("../contracts").ProfileSummary[];
@@ -160,6 +165,7 @@ export function MessageWorkspace({
   readonly transfer?: TextDocumentTransferPort;
   readonly recordExport?: RecordExportController;
   readonly recordAnalysis?: RecordAnalysisController;
+  readonly presentation?: MessageViewPresentationController;
 }): React.JSX.Element {
   const compactDesktop = useMediaQuery(
     `(max-width:${String(streamSkopeLayout.fullDesktopMinimumWidth - 0.05)}px)`,
@@ -167,12 +173,10 @@ export function MessageWorkspace({
   const compactInspectorToolbar = useMediaQuery(
     `(max-width:${String(streamSkopeLayout.messageInspectorFullColumnsMinimumWidth - 0.05)}px)`,
   );
-  const [inspectorPaneWidth, setInspectorPaneWidth] = usePersistentPaneWidth(
-    "streamskope-inspector-pane-width",
-    streamSkopeLayout.inspectorDefaultWidth,
-    streamSkopeLayout.inspectorMinimumWidth,
-    streamSkopeLayout.inspectorMaximumWidth,
-  );
+  const localPresentation = useMessageViewPresentation();
+  const messagePresentation = presentation ?? localPresentation;
+  const inspectorPaneWidth = messagePresentation.value.inspectorWidth;
+  const filterPanelOpen = messagePresentation.value.filtersOpen;
   const [baseline, setBaseline] = useState<KafkaExploredMessage | null>(null);
   useEffect(() => {
     if (!connectionAvailable || messagesStale) setBaseline(null);
@@ -183,7 +187,6 @@ export function MessageWorkspace({
   const [exportError, setExportError] = useState<string>();
   const [exportStatus, setExportStatus] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const topicMatches =
     selectedTopic !== null &&
     consumptionRequest !== null &&
@@ -476,7 +479,7 @@ export function MessageWorkspace({
               aria-controls="kafka-message-filter-region"
               aria-expanded={filterPanelOpen}
               onClick={() => {
-                setFilterPanelOpen((current) => !current);
+                messagePresentation.change({ filtersOpen: !filterPanelOpen });
               }}
               size="small"
               sx={{ flex: "0 0 auto", whiteSpace: "nowrap" }}
@@ -875,6 +878,7 @@ export function MessageWorkspace({
             >
               <LazyMessageDataGrid
                 compactInspectorColumns={selectedMessage !== null && !compactDesktop}
+                presentation={messagePresentation}
                 messages={visibleMessages}
                 onSelectMessage={onSelectMessage}
                 selectedMessageId={selectedMessageId}
@@ -922,7 +926,7 @@ export function MessageWorkspace({
             label="Resize messages and inspector"
             maximum={streamSkopeLayout.inspectorMaximumWidth}
             minimum={streamSkopeLayout.inspectorMinimumWidth}
-            onChange={setInspectorPaneWidth}
+            onChange={(inspectorWidth) => messagePresentation.change({ inspectorWidth })}
             paneSide="after"
             value={inspectorPaneWidth}
           />

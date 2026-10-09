@@ -547,10 +547,13 @@ export type { KafkaSearchMatch, KafkaSearchMessage } from "./query-predicate";
 export {
   KAFKA_QUERY_LIBRARY_LIMITS,
   parseKafkaSavedQuery,
+  parseKafkaSavedView,
+  inspectKafkaQueryLibraryDocument,
   parseKafkaQueryLibraryDocument,
+  serializeKafkaQueryLibraryDocument,
   parseKafkaQueryLibrarySnapshot,
 } from "./query-library";
-export type { KafkaSavedQuery, KafkaQueryLibrarySnapshot } from "./query-library";
+export type { KafkaSavedQuery, KafkaSavedView, KafkaQueryLibrarySnapshot } from "./query-library";
 export {
   KAFKA_QUERY_TRANSFER_LIMITS,
   serializeKafkaQuery,
@@ -599,3 +602,5 @@ export {
   parseRecordAnalysisInput,
   parseRecordAnalysisSnapshot,
 } from "./record-analysis-validation";
+
+export * from "./investigation-view";

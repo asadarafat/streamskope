@@ -159,16 +159,23 @@ test("restores a full backup with native credential protection and reconnects", 
     await page.getByRole("textbox", { name: "End time (exclusive)" }).fill(endTime);
     await page.getByRole("button", { name: "Show message filters" }).click();
     await page.getByRole("textbox", { name: "Key contains" }).fill("streamskope-seed");
-    await page.getByRole("button", { name: "Saved queries" }).click();
-    let queries = page.getByRole("dialog", { name: "Saved queries" });
-    await queries.getByRole("textbox", { name: "Query name" }).fill("Native incident");
+    await page.getByRole("button", { name: /^Saved (?:queries|views)$/ }).click();
+    let queries = page.getByRole("dialog", { name: /^Saved (?:queries|views)$/ });
+    await queries.getByRole("textbox", { name: /^(?:Query|View) name$/ }).fill("Native incident");
     await queries.getByRole("combobox", { name: "Local connection profile" }).click();
     await page.getByRole("option", { name: "Electron local aio" }).click();
-    await queries.getByRole("button", { name: "Save current as new" }).click();
-    await expect(queries).toContainText("Query saved.");
+    await queries.getByRole("button", { name: /^Save current (?:as new|view)$/ }).click();
+    await expect(queries).toContainText(/(?:Query|View) saved\./);
     await queries.getByRole("button", { name: "Close", exact: true }).click();
     await application.close();
     application = undefined;
+
+    const baselineQueryBytes = await readFile(join(active, "queries/kafka-queries.json"));
+    const baselineQueryDocument = JSON.parse(baselineQueryBytes.toString("utf8")) as {
+      schemaVersion: number;
+    };
+    if (plan !== undefined || previousExecutable !== undefined)
+      expect(baselineQueryDocument.schemaVersion).toBe(1);
 
     // Copy the previous release's full backup before the installer replacement.
     await cp(active, join(root, "pre-upgrade"), { recursive: true, preserveTimestamps: true });
@@ -202,11 +209,11 @@ test("restores a full backup with native credential protection and reconnects", 
       expect(installed?.archiveSha256).not.toBe(initialInstall.archiveSha256);
     }
     page = await application.firstWindow();
-    await page.getByRole("button", { name: "Saved queries" }).click();
-    queries = page.getByRole("dialog", { name: "Saved queries" });
-    await queries.getByRole("combobox", { name: "Saved query" }).click();
+    await page.getByRole("button", { name: /^Saved (?:queries|views)$/ }).click();
+    queries = page.getByRole("dialog", { name: /^Saved (?:queries|views)$/ });
+    await queries.getByRole("combobox", { name: /^Saved (?:query|view)$/ }).click();
     await page.getByRole("option", { name: "Native incident" }).click();
-    await queries.getByRole("button", { name: "Open query" }).click();
+    await queries.getByRole("button", { name: /^Open (?:query|view)$/ }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     reconnects.push(
       await reconnectSavedProfile(page, "after installer replacement", [
@@ -218,6 +225,32 @@ test("restores a full backup with native credential protection and reconnects", 
       startTime,
     );
     await expect(page.getByRole("textbox", { name: "End time (exclusive)" })).toHaveValue(endTime);
+    expect(await readFile(join(active, "queries/kafka-queries.json"))).toEqual(baselineQueryBytes);
+    if (!(await page.getByRole("textbox", { name: "Key contains" }).isVisible()))
+      await page.getByRole("button", { name: "Show message filters" }).click();
+    await page.getByRole("button", { name: "Saved views" }).click();
+    queries = page.getByRole("dialog", { name: "Saved views" });
+    await queries.getByRole("combobox", { name: "Saved view" }).click();
+    await page.getByRole("option", { name: "Native incident" }).click();
+    await queries.getByRole("button", { name: "Replace selected" }).click();
+    await expect(queries).toContainText("View saved.");
+    await queries.getByRole("button", { name: "Close", exact: true }).click();
+    const migrated = JSON.parse(
+      await readFile(join(active, "queries/kafka-queries.json"), "utf8"),
+    ) as unknown;
+    expect(migrated).toMatchObject({
+      schemaVersion: 2,
+      queries: [
+        {
+          name: "Native incident",
+          view: { schemaVersion: 1, messages: { filtersOpen: true } },
+        },
+      ],
+    });
+    if (baselineQueryDocument.schemaVersion === 1)
+      expect(await readFile(join(active, "queries/kafka-queries.json.pre-views-v1"))).toEqual(
+        baselineQueryBytes,
+      );
     await application.close();
     application = undefined;
 
@@ -229,7 +262,7 @@ test("restores a full backup with native credential protection and reconnects", 
     const queryBackup = await readFile(join(backup, "queries/kafka-queries.json"), "utf8");
     expect(queryBackup).not.toContain(config.oauthClientSecret);
     expect(JSON.parse(queryBackup)).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: baselineQueryDocument.schemaVersion,
       queries: [
         {
           name: "Native incident",
@@ -254,6 +287,14 @@ test("restores a full backup with native credential protection and reconnects", 
         config.seedPayload,
       ]),
     );
+    await page.getByRole("button", { name: "Saved views" }).click();
+    queries = page.getByRole("dialog", { name: "Saved views" });
+    await queries.getByRole("combobox", { name: "Saved view" }).click();
+    await page.getByRole("option", { name: "Native incident" }).click();
+    await queries.getByRole("button", { name: "Open view" }).click();
+    await expect(page.getByRole("textbox", { name: "Key contains" })).toHaveValue(
+      "streamskope-seed",
+    );
     await openWorkbenchResource(page, "Connection Profiles");
     await page.getByRole("button", { name: "Disconnect profile Electron local aio" }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
@@ -265,13 +306,13 @@ test("restores a full backup with native credential protection and reconnects", 
     await expect(
       page.getByRole("button", { name: "Connect profile Electron local aio" }),
     ).toHaveCount(0);
-    await page.getByRole("button", { name: "Saved queries" }).click();
-    queries = page.getByRole("dialog", { name: "Saved queries" });
-    await queries.getByRole("combobox", { name: "Saved query" }).click();
+    await page.getByRole("button", { name: /^Saved (?:queries|views)$/ }).click();
+    queries = page.getByRole("dialog", { name: /^Saved (?:queries|views)$/ });
+    await queries.getByRole("combobox", { name: /^Saved (?:query|view)$/ }).click();
     await page.getByRole("option", { name: "Native incident" }).click();
     await queries.getByRole("button", { name: "Delete selected" }).click();
-    await queries.getByRole("button", { name: "Delete query", exact: true }).click();
-    await expect(queries).toContainText("Query deleted.");
+    await queries.getByRole("button", { name: /^Delete (?:query|view)$/, exact: true }).click();
+    await expect(queries).toContainText(/(?:Query|View) deleted\./);
     await application.close();
     application = undefined;
     await rename(active, join(root, "preserved-after-change"));
@@ -279,11 +320,11 @@ test("restores a full backup with native credential protection and reconnects", 
 
     application = await launch();
     page = await application.firstWindow();
-    await page.getByRole("button", { name: "Saved queries" }).click();
-    queries = page.getByRole("dialog", { name: "Saved queries" });
-    await queries.getByRole("combobox", { name: "Saved query" }).click();
+    await page.getByRole("button", { name: /^Saved (?:queries|views)$/ }).click();
+    queries = page.getByRole("dialog", { name: /^Saved (?:queries|views)$/ });
+    await queries.getByRole("combobox", { name: /^Saved (?:query|view)$/ }).click();
     await page.getByRole("option", { name: "Native incident" }).click();
-    await queries.getByRole("button", { name: "Open query" }).click();
+    await queries.getByRole("button", { name: /^Open (?:query|view)$/ }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     reconnects.push(
       await reconnectSavedProfile(page, "after backup restoration", [
@@ -303,7 +344,8 @@ test("restores a full backup with native credential protection and reconnects", 
       .click();
     await expect(readMode).toBeEnabled({ timeout: 20_000 });
     await expect(page.getByLabel("Active fetch request")).toContainText("→");
-    await page.getByRole("button", { name: "Show message filters" }).click();
+    if (!(await page.getByRole("textbox", { name: "Key contains" }).isVisible()))
+      await page.getByRole("button", { name: "Show message filters" }).click();
     await expect(page.getByRole("textbox", { name: "Key contains" })).toHaveValue(
       "streamskope-seed",
     );
@@ -355,6 +397,13 @@ test("restores a full backup with native credential protection and reconnects", 
       upgradedProfileReconnected:
         plan === undefined && previousExecutable === undefined ? "not-run" : true,
       upgradedSavedQueryRetained: true,
+      savedViewMigration: {
+        baselineFormat: baselineQueryDocument.schemaVersion,
+        currentFormat: 2,
+        legacyInspectionPreservedBytes: true,
+        exactPredecessorPreserved: baselineQueryDocument.schemaVersion === 1,
+        filterLayoutRetainedAcrossRestart: true,
+      },
       candidateRestarted: true,
       savedQueryRestored: true,
       backupCreatedWithBaselineRelease: true,

@@ -8,10 +8,12 @@ import { afterEach, expect, it } from "vitest";
 import { KafkaQueryLibrary } from "../../src/features/kafka/application";
 import {
   HOST_PROTOCOL_VERSION,
+  createDefaultKafkaInvestigationView,
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   type HostCommand,
   type HostEvent,
   type KafkaInvestigationQuery,
+  type KafkaInvestigationView,
   type ProfileSummary,
   type StreamSkopeHost,
 } from "../../src/features/kafka/contracts";
@@ -42,6 +44,7 @@ async function fixture(
   strict = false,
   customDefaults = false,
   withSibling = false,
+  view: KafkaInvestigationView = createDefaultKafkaInvestigationView(),
 ): Promise<{
   commands: HostCommand[];
   user: ReturnType<typeof userEvent.setup>;
@@ -51,7 +54,13 @@ async function fixture(
 }> {
   const commands: HostCommand[] = [];
   const library = new KafkaQueryLibrary();
-  await library.put({ id: "incident", name: "Incident", profileId: "fixture", configuration });
+  await library.put({
+    id: "incident",
+    name: "Incident",
+    profileId: "fixture",
+    configuration,
+    view,
+  });
   const listeners = new Set<(event: HostEvent) => void>();
   let sequence = 0;
   let cleanupBlocked = false;
@@ -223,10 +232,10 @@ async function fixture(
   );
   render(strict ? <StrictMode>{application}</StrictMode> : application);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Saved queries" }));
-  await user.click(await screen.findByRole("combobox", { name: "Saved query" }));
+  await user.click(await screen.findByRole("button", { name: "Saved views" }));
+  await user.click(await screen.findByRole("combobox", { name: "Saved view" }));
   await user.click(await screen.findByRole("option", { name: "Incident" }));
-  await user.click(screen.getByRole("button", { name: "Open query" }));
+  await user.click(screen.getByRole("button", { name: "Open view" }));
   expect(commands.some((command) => command.command === "profiles.connect")).toBe(false);
   expect(commands.some((command) => command.command === "messages.start")).toBe(false);
   return {
@@ -342,4 +351,31 @@ it("discards the pending Kafka query when leaving for another provider", async (
   );
   expect(screen.queryByRole("textbox", { name: "Start time (inclusive)" })).not.toBeInTheDocument();
   expect(commands.filter((command) => command.command === "messages.start")).toEqual([]);
+});
+
+it("carries the full task and presentation through StrictMode activation and delayed preferences", async () => {
+  const defaults = createDefaultKafkaInvestigationView({ kind: "topic", workspace: "latency" });
+  const view = {
+    ...defaults,
+    messages: {
+      ...defaults.messages,
+      filtersOpen: true,
+      inspectorWidth: 416,
+      visibleColumns: ["key", "preview"] as const,
+    },
+  };
+  const { commands, user } = await fixture(true, true, false, view);
+  await user.click(
+    await screen.findByRole("button", { name: "Connect insecure plaintext profile Fixture" }),
+  );
+  expect(await screen.findByLabelText("Latency workspace")).toBeVisible();
+  expect(
+    commands.some(
+      (command) => command.command === "latency.start" || command.command === "messages.start",
+    ),
+  ).toBe(false);
+  await user.click(screen.getByRole("tab", { name: "Messages" }));
+  expect(screen.getByRole("button", { name: "Hide message filters" })).toBeVisible();
+  expect(screen.getByRole("textbox", { name: "Key contains" })).toHaveValue("incident");
+  expect(screen.getByRole("combobox", { name: "Record limit" })).toHaveTextContent("100");
 });

@@ -10,12 +10,7 @@ import {
 } from "react";
 import { Box, Stack, Typography } from "@mui/material";
 
-import {
-  HOST_PROTOCOL_VERSION,
-  type HostEvent,
-  type KafkaInvestigationQuery,
-  type StreamSkopeHost,
-} from "../contracts";
+import { HOST_PROTOCOL_VERSION, type HostEvent, type StreamSkopeHost } from "../contracts";
 import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 import { ProviderWorkbenchShell } from "../../../platform/ui/ProviderWorkbenchShell";
@@ -27,8 +22,9 @@ import { ObservedHealthPage } from "./ObservedHealthPage";
 import { ConnectPage } from "./ConnectPage";
 import { EnvironmentPage } from "./EnvironmentPage";
 import { ReviewedWriteAction } from "./ReviewedWriteAction";
-import { initialKafkaMessageFilters } from "./message-operations";
-import { SavedQueriesDialog } from "./SavedQueriesDialog";
+import { SavedViewsDialog } from "./SavedViewsDialog";
+import { useInvestigationViews } from "./use-investigation-views";
+import type { KafkaViewSettings } from "./investigation-view-settings";
 import { ActivityLogDrawer } from "./ActivityLogDrawer";
 import { AclPage } from "./AclPage";
 import { ConnectionProfilesPage } from "./ConnectionProfilesPage";
@@ -88,9 +84,9 @@ export interface StreamSkopeWorkbenchProperties {
     Extract<HostEvent, { readonly event: "connection.state" }> | undefined;
   readonly isInteractive?: (() => boolean) | undefined;
   readonly initialQueryImport?: string | undefined;
-  readonly initialRestoredQuery?: KafkaInvestigationQuery | undefined;
-  readonly onPendingQueryConnection?:
-    ((query: KafkaInvestigationQuery, profileId: string | undefined) => void) | undefined;
+  readonly initialRestoredView?: KafkaViewSettings | undefined;
+  readonly onPendingViewConnection?:
+    ((query: KafkaViewSettings, profileId: string | undefined) => void) | undefined;
   readonly streamMonitorObserver?: RendererStreamMonitorObserver;
 }
 
@@ -99,15 +95,13 @@ export function StreamSkopeWorkbench({
   host,
   streamMonitorObserver,
   initialQueryImport,
-  initialRestoredQuery,
-  onPendingQueryConnection,
+  initialRestoredView,
+  onPendingViewConnection,
   providerControl,
   profilesPage,
   initialConnectionEvent,
   isInteractive,
 }: StreamSkopeWorkbenchProperties): React.JSX.Element {
-  const [queriesOpen, setQueriesOpen] = useState(initialQueryImport !== undefined);
-  const [queryImport, setQueryImport] = useState(initialQueryImport);
   const [state, dispatch] = useReducer(reduceKafkaUiState, initialConnectionEvent, (event) =>
     event === undefined
       ? initialKafkaUiState
@@ -167,6 +161,7 @@ export function StreamSkopeWorkbench({
   const {
     captureQuery,
     restoreQuery,
+    clearQuery,
     fetchMaximum,
     fetchMode,
     timeWindow,
@@ -198,39 +193,6 @@ export function StreamSkopeWorkbench({
     openObservedRecord,
     stopConsumption,
   } = useWorkbenchTopics(host, connected, navigation, setNavigation, state);
-
-  const restoreQuerySettings = useCallback(
-    (query: KafkaInvestigationQuery, profileId: string | undefined): void => {
-      const profile = state.profiles.find((entry) => entry.id === profileId);
-      const needsConnection =
-        !connected || (profile !== undefined && profile.name !== state.connectionName);
-      restoreQuery(query, needsConnection);
-      if (needsConnection) onPendingQueryConnection?.(query, profileId);
-      dispatch({
-        type: "query.restored",
-        filters: query.filters ?? query.request.search ?? initialKafkaMessageFilters,
-      });
-      if (profile !== undefined) setSelectedProfileId(profile.id);
-      setNavigation(needsConnection ? "profiles" : "topics");
-      setQueriesOpen(false);
-      setQueryImport(undefined);
-    },
-    [
-      connected,
-      onPendingQueryConnection,
-      restoreQuery,
-      setSelectedProfileId,
-      state.connectionName,
-      state.profiles,
-    ],
-  );
-  const initialRestoredQueryApplied = useRef(false);
-  useEffect(() => {
-    if (initialRestoredQuery === undefined || !connected || initialRestoredQueryApplied.current)
-      return;
-    initialRestoredQueryApplied.current = true;
-    restoreQuerySettings(initialRestoredQuery, undefined);
-  }, [connected, initialRestoredQuery, restoreQuerySettings]);
 
   useRendererStreamMonitorLifecycle({
     dispatch,
@@ -356,10 +318,6 @@ export function StreamSkopeWorkbench({
     (next: NavigationView): void => {
       if (!isNavigationAvailable(next, connected)) return;
       setNavigation(next);
-      if (next === "topics") {
-        setSelectedTopic(null);
-        setTopicWorkspace("messages");
-      }
       navigator.close();
     },
     [connected, navigator.close],
@@ -373,12 +331,36 @@ export function StreamSkopeWorkbench({
     onSelect: selectConsumerGroup,
     requestError: consumerGroupRequestError,
     selectedGroupId: selectedConsumerGroupId,
+    restoreSelection: restoreConsumerGroup,
+    detailRequested: consumerGroupDetailRequested,
   } = useConsumerGroupWorkbench({
     connected,
     connectionName: state.connectionName,
     host,
     inventory: state.consumerGroupInventory,
     onNavigationChange: openResourcePage,
+  });
+  const closeViewEditors = useCallback((): void => setRuleEditorMode(null), []);
+  const views = useInvestigationViews({
+    state,
+    connected,
+    navigation,
+    selectedTopic,
+    topicWorkspace,
+    selectedGroupId: selectedConsumerGroupId,
+    captureQuery,
+    restoreQuery,
+    clearQuery,
+    restoreGroup: restoreConsumerGroup,
+    setTopicWorkspace,
+    setNavigation,
+    setSelectedProfileId,
+    dispatch,
+    closeEditors: closeViewEditors,
+    stopping: consumptionStopping || continuationBusy,
+    initialQueryImport,
+    initialRestoredView,
+    onPendingViewConnection,
   });
   const topicStatus = topicStatusLabel(state.topicListState, state.topics.length);
   useEffect(() => {
@@ -408,10 +390,12 @@ export function StreamSkopeWorkbench({
   const ruleNotification = state.ruleNotifications[0];
   const selectNavigation = (next: NavigationView): void => {
     if (!isNavigationAvailable(next, connected)) return;
-    if (next === "consumer-groups") {
-      clearConsumerGroupSelection();
-    }
     changeNavigation(next);
+  };
+  const openInventory = (next: NavigationView): void => {
+    if (next === "topics") setSelectedTopic(null);
+    if (next === "consumer-groups") clearConsumerGroupSelection();
+    selectNavigation(next);
   };
   const changeTopicWorkspace = (next: TopicWorkspaceView): void => {
     setTopicWorkspace(next);
@@ -584,6 +568,7 @@ export function StreamSkopeWorkbench({
         }}
       >
         <MessageWorkspace
+          presentation={views.presentation}
           recordExport={recordExport}
           recordAnalysis={recordAnalysis}
           profiles={state.profiles}
@@ -610,7 +595,7 @@ export function StreamSkopeWorkbench({
           fetchMode={fetchMode}
           timeWindow={timeWindow}
           filters={state.messageFilters}
-          key={`${state.connectionName ?? "disconnected"}:${state.connectionState}:${selectedTopic ?? "no-topic"}:${JSON.stringify([state.preferenceSnapshot?.preferences.protection, state.preferenceSnapshot?.preferences.codecs])}`}
+          key={`${views.revision}:${state.connectionName ?? "disconnected"}:${state.connectionState}:${selectedTopic ?? "no-topic"}:${JSON.stringify([state.preferenceSnapshot?.preferences.protection, state.preferenceSnapshot?.preferences.codecs])}`}
           liveRuleCapability={state.liveRuleCapability}
           messages={visibleMessages}
           messagesStale={state.messagesStale}
@@ -696,6 +681,8 @@ export function StreamSkopeWorkbench({
         host={host}
         canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
         connected={connected}
+        key={views.revision}
+        detailRequested={consumerGroupDetailRequested}
         detail={state.consumerGroupDetail}
         filter={consumerGroupFilter}
         inventory={state.consumerGroupInventory}
@@ -817,6 +804,7 @@ export function StreamSkopeWorkbench({
       />
     ) : (
       <TopicDetailPage
+        key={views.revision}
         action={
           <ReviewedWriteAction
             key={selectedTopic}
@@ -852,8 +840,8 @@ export function StreamSkopeWorkbench({
       onNavigate={selectNavigation}
       providerControl={providerControl}
       headerActions={
-        <StudioButton aria-label="Saved queries" onClick={() => setQueriesOpen(true)}>
-          Queries
+        <StudioButton aria-label="Saved views" onClick={views.show}>
+          Views
         </StudioButton>
       }
       onOpenCommandPalette={() => setCommandPaletteOpen(true)}
@@ -864,7 +852,7 @@ export function StreamSkopeWorkbench({
       breadcrumbs={
         <WorkbenchBreadcrumbs
           navigation={navigation}
-          onNavigate={selectNavigation}
+          onNavigate={openInventory}
           selectedConsumerGroupId={selectedConsumerGroupId}
           selectedTopic={selectedTopic}
         />
@@ -896,23 +884,19 @@ export function StreamSkopeWorkbench({
       }
       overlays={
         <>
-          {queriesOpen ? (
-            <SavedQueriesDialog
+          {views.open ? (
+            <SavedViewsDialog
               host={host}
               transfer={textDocumentTransfer}
-              initialImport={queryImport}
+              initialImport={views.queryImport}
               profiles={state.profiles}
-              currentTopic={selectedTopic}
-              readActive={
-                ["loading", "fetching", "streaming"].includes(state.consumptionState) ||
-                (state.consumptionState === "empty" && state.consumptionRequest?.mode === "tail")
-              }
-              captureCurrent={captureQuery}
-              onClose={() => {
-                setQueriesOpen(false);
-                setQueryImport(undefined);
-              }}
-              onRestore={restoreQuerySettings}
+              currentResource={views.currentResource}
+              currentQueryAvailable={selectedTopic !== null}
+              readActive={views.readActive}
+              captureCurrent={views.capture}
+              onClose={views.close}
+              onRestore={views.restore}
+              restoreError={views.error}
             />
           ) : null}
           <WorkbenchCommandPalette
@@ -929,7 +913,7 @@ export function StreamSkopeWorkbench({
               mode: fetchMode,
               timeError: timeWindow.error,
               filters: state.messageFilters,
-              openQueries: () => setQueriesOpen(true),
+              openQueries: views.show,
               toggleProfile: toggleProfileConnection,
               startRead: startConsumption,
               stopRead: stopConsumption,

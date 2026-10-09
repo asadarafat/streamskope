@@ -1,6 +1,7 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
+import type { KafkaTopicViewWorkspace } from "../contracts/investigation-view";
 import {
   streamSkopeGeometry,
   streamSkopeMuiMonospaceTypography,
@@ -13,7 +14,7 @@ import {
 
 import type { NavigationView } from "./workbench-navigation";
 
-export type TopicWorkspaceView = "configuration" | "latency" | "messages" | "monitor" | "rules";
+export type TopicWorkspaceView = KafkaTopicViewWorkspace;
 
 interface WorkbenchContextBarProperties {
   readonly compact: boolean;

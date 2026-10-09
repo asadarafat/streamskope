@@ -1,14 +1,14 @@
 import {
-  parseKafkaSavedQuery,
+  parseKafkaSavedView,
   parseKafkaQueryLibraryDocument,
-  type KafkaSavedQuery,
+  type KafkaSavedView,
   type KafkaQueryLibrarySnapshot,
 } from "../contracts";
 
 export interface KafkaQueryStore {
   readonly durability: "session" | "durable";
-  load(): Promise<readonly KafkaSavedQuery[]>;
-  commit(queries: readonly KafkaSavedQuery[]): Promise<void>;
+  load(): Promise<readonly KafkaSavedView[]>;
+  commit(queries: readonly KafkaSavedView[]): Promise<void>;
 }
 
 export class KafkaQueryLibraryError extends Error {
@@ -17,17 +17,17 @@ export class KafkaQueryLibraryError extends Error {
   readonly retryable = true;
   readonly target = undefined;
   readonly recovery =
-    "Review the query name and capacity (100 queries). If storage is unreadable, preserve the queries file and restore a valid backup; then reopen Saved queries.";
+    "Review the view name and capacity (100 views). Reopen Saved views to inspect current state before retrying; preserve unreadable storage and restore a verified backup if needed.";
 }
 
 export class InMemoryKafkaQueryStore implements KafkaQueryStore {
   readonly durability = "session" as const;
-  private queries: readonly KafkaSavedQuery[] = [];
-  load(): Promise<readonly KafkaSavedQuery[]> {
+  private queries: readonly KafkaSavedView[] = [];
+  load(): Promise<readonly KafkaSavedView[]> {
     return Promise.resolve(this.queries);
   }
-  commit(queries: readonly KafkaSavedQuery[]): Promise<void> {
-    this.queries = parseKafkaQueryLibraryDocument({ schemaVersion: 1, queries }).queries;
+  commit(queries: readonly KafkaSavedView[]): Promise<void> {
+    this.queries = parseKafkaQueryLibraryDocument({ schemaVersion: 2, queries }).queries;
     return Promise.resolve();
   }
 }
@@ -43,9 +43,9 @@ export class KafkaQueryLibrary {
   list(): Promise<KafkaQueryLibrarySnapshot> {
     return this.run();
   }
-  put(query: KafkaSavedQuery): Promise<KafkaQueryLibrarySnapshot> {
+  put(query: KafkaSavedView): Promise<KafkaQueryLibrarySnapshot> {
     return this.run((queries) => {
-      const validated = parseKafkaSavedQuery(query);
+      const validated = parseKafkaSavedView(query);
       const index = queries.findIndex((entry) => entry.id === validated.id);
       return index < 0
         ? [...queries, validated]
@@ -57,18 +57,18 @@ export class KafkaQueryLibrary {
   }
 
   private run(
-    change?: (queries: readonly KafkaSavedQuery[]) => readonly KafkaSavedQuery[],
+    change?: (queries: readonly KafkaSavedView[]) => readonly KafkaSavedView[],
   ): Promise<KafkaQueryLibrarySnapshot> {
     const result = this.pending.then(async () => {
       try {
         const original = parseKafkaQueryLibraryDocument({
-          schemaVersion: 1,
+          schemaVersion: 2,
           queries: await this.store.load(),
         }).queries;
         const queries =
           change === undefined
             ? original
-            : parseKafkaQueryLibraryDocument({ schemaVersion: 1, queries: change(original) })
+            : parseKafkaQueryLibraryDocument({ schemaVersion: 2, queries: change(original) })
                 .queries;
         if (change !== undefined && JSON.stringify(queries) !== JSON.stringify(original))
           await this.store.commit(queries);
@@ -76,7 +76,7 @@ export class KafkaQueryLibrary {
       } catch (error) {
         if (error instanceof KafkaQueryLibraryError) throw error;
         throw new KafkaQueryLibraryError(
-          "The saved query could not be loaded or committed. Existing queries were preserved.",
+          "The saved view could not be loaded or committed. Reopen Saved views to inspect current state before retrying.",
         );
       }
     });
