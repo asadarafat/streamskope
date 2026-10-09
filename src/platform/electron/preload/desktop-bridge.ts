@@ -1,5 +1,6 @@
 import {
   parseDesktopAction,
+  parseArtifactReference,
   parseDesktopSaveResult,
   parseDesktopTextDocument,
   type DesktopActionListener,
@@ -7,7 +8,11 @@ import {
   type StreamSkopeDesktop,
 } from "../../desktop";
 
-import { DESKTOP_ACTION_CHANNEL, DESKTOP_DOCUMENT_SAVE_CHANNEL } from "./channels";
+import {
+  DESKTOP_ACTION_CHANNEL,
+  DESKTOP_DOCUMENT_SAVE_CHANNEL,
+  DESKTOP_ARTIFACT_SAVE_CHANNEL,
+} from "./channels";
 import type { PreloadContextBridge } from "./host-bridge";
 
 type PreloadEventListener = (event: unknown, value: unknown) => void;
@@ -22,6 +27,12 @@ export function createStreamSkopeDesktop(
   ipcRenderer: DesktopPreloadIpcRenderer,
 ): StreamSkopeDesktop {
   return {
+    saveArtifact: async (value): Promise<DesktopSaveResult> => {
+      const reference = parseArtifactReference(value);
+      return parseDesktopSaveResult(
+        await ipcRenderer.invoke(DESKTOP_ARTIFACT_SAVE_CHANNEL, reference),
+      );
+    },
     saveTextDocument: async (value): Promise<DesktopSaveResult> => {
       const document = parseDesktopTextDocument(value);
       return parseDesktopSaveResult(

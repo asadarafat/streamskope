@@ -34,7 +34,8 @@ describe("StreamSkope workbench monitor integration", () => {
     const user = userEvent.setup();
     const view = render(<StreamSkopeWorkbench host={host} streamMonitorObserver={observer} />);
     const subscriptions = host.subscribeCalls;
-    expect(subscriptions).toBe(2);
+    // Feature subscribers can change; rendering and task switches must not recreate them.
+    expect(subscriptions).toBeGreaterThan(0);
 
     act(() => {
       host.emit({

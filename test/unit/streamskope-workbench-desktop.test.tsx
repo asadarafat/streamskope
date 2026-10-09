@@ -45,6 +45,9 @@ class RecordingHost implements StreamSkopeHost {
 }
 
 class RecordingDesktop implements StreamSkopeDesktop {
+  saveArtifact(): Promise<never> {
+    return Promise.reject(new Error("Artifact save is not exercised by this fixture."));
+  }
   private readonly listeners = new Set<DesktopActionListener>();
 
   emit(action: DesktopAction["action"]): void {

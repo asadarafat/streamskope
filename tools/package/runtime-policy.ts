@@ -7,6 +7,10 @@ const MEBIBYTE = 1_048_576;
 export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
   backgroundWorkOwnerFiles: Object.freeze([
     "src/features/kafka/application/session.ts",
+    // Export owns finite read and artifact expiry deadlines, cleared on revocation or settlement.
+    "src/features/kafka/application/record-export-service.ts",
+    "src/platform/node/record-export-artifacts.ts",
+    "src/features/kafka/ui/use-record-export.ts",
     // Reviewed batches own only abortable delays between explicit writes.
     "src/features/kafka/application/record-batch-service.ts",
     // Two-minute review expiry closes idle isolated destination connections.

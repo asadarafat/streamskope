@@ -4,11 +4,22 @@ import {
   DESKTOP_PLATFORM_VERSION,
   DesktopPlatformContractError,
   parseDesktopAction,
+  parseArtifactReference,
   parseDesktopSaveResult,
   parseDesktopTextDocument,
 } from "../../src/platform/desktop";
 
 describe("desktop platform contract", () => {
+  it("accepts only an opaque artifact and declared part, never renderer paths or data", () => {
+    const reference = { artifactId: "823b690d-2cd2-42b8-a3d0-d2e07b1330ec", part: "data" };
+    expect(parseArtifactReference(reference)).toEqual(reference);
+    for (const value of [
+      { ...reference, filePath: "/tmp/private" },
+      { ...reference, artifactId: "../../private" },
+      { ...reference, part: "key" },
+    ])
+      expect(() => parseArtifactReference(value)).toThrow(DesktopPlatformContractError);
+  });
   const document = {
     byteSize: 17,
     content: '{\n  "ok": true\n}\n',

@@ -263,6 +263,8 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   }
   private closePromise: Promise<void> | undefined;
   private readonly streams = new Set<TranslatedKafkaMessageStream>();
+  private readonly pendingReaderOpens = new Set<Promise<void>>();
+  private readonly lateReaders = new Set<KafkaRawMessageStream>();
   private readonly serviceContexts = new Map<string, KafkaClusterServiceContext>();
 
   constructor(
@@ -508,15 +510,21 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       prepared.set(raw, operation);
       return operation;
     };
-    const operation = this.consumerFactory.open({
-      ...(checkpoint === undefined ? {} : { checkpoint }),
-      prepareRecord: prepare,
-      ...this.clientInput,
-      groupId: `streamskope-${randomUUID()}`,
-      request: parsedRequest,
-      signal,
+    let settleOpening!: () => void;
+    const openingSettled = new Promise<void>((resolve) => {
+      settleOpening = resolve;
     });
+    this.pendingReaderOpens.add(openingSettled);
+    let operation: Promise<KafkaRawMessageStream> | undefined;
     try {
+      operation = this.consumerFactory.open({
+        ...(checkpoint === undefined ? {} : { checkpoint }),
+        prepareRecord: prepare,
+        ...this.clientInput,
+        groupId: `streamskope-${randomUUID()}`,
+        request: parsedRequest,
+        signal,
+      });
       const rawStream = await abortableOperation(operation, signal, () => new OperationAborted());
       const translated = new TranslatedKafkaMessageStream(
         rawStream,
@@ -541,7 +549,10 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
         }
         try {
           if (lateStream !== undefined) {
+            // Preserve the original connection owner when cancellation wins the open race.
+            this.lateReaders.add(lateStream);
             await lateStream.close();
+            this.lateReaders.delete(lateStream);
           }
         } catch (lateError) {
           cleanupFailure = lateError;
@@ -565,6 +576,8 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       throw mapKafkaAdminFailure(error, target);
     } finally {
       clearTimeout(timeout);
+      this.pendingReaderOpens.delete(openingSettled);
+      settleOpening();
     }
   }
 
@@ -662,8 +675,15 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   }
 
   private async closeResources(): Promise<void> {
+    // Opens admitted before revocation can still return a reader. Join their cleanup before
+    // taking the final inventory, including late readers whose first close failed.
+    await Promise.all([...this.pendingReaderOpens]);
     const results = await Promise.allSettled([
       ...[...this.streams].map(async (stream) => stream.close()),
+      ...[...this.lateReaders].map(async (stream): Promise<void> => {
+        await stream.close();
+        this.lateReaders.delete(stream);
+      }),
       this.admin.close(),
     ]);
     const failures = results.flatMap((result) =>

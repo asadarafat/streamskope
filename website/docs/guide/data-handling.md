@@ -26,7 +26,7 @@ Desktop paths below are relative to the [application-data directory](recovery.md
 | NSP recovery identifiers               | `plugins/.recovery/streamskope.nsp.json`         | Non-secret API/account and request/execution identifiers; survive restart and plugin version changes until confirmed cleanup clears them                                                                                                  |
 | Browser-engine state                   | Other Electron files under application data      | Runtime caches/state; include in a same-machine full backup, but do not treat them as a message archive                                                                                                                                   |
 | Read messages and activity history     | Bounded workbench memory                         | No durable message archive; closing/replacing a view or process can discard it                                                                                                                                                            |
-| Downloaded JSON and copied text        | User-selected file or OS clipboard               | Plaintext; remains outside the profile store and is not removed by uninstalling a plugin                                                                                                                                                  |
+| Downloaded exports and copied text     | User-selected file or OS clipboard               | Plaintext; remains outside the profile store and is not removed by uninstalling a plugin                                                                                                                                                  |
 
 Releases through v0.7.0 use the legacy `preferences/` location. On upgrade, valid legacy
 `preferences/` directories migrate into `workbench/` without changing
@@ -110,13 +110,25 @@ or a throughput guarantee. Both the record-count and byte limits apply.
 | Original record bytes            | 256 KiB                                        | Key, value and ordered headers are retained as Base64 within this bound; otherwise explicitly unavailable      |
 | Value preview                    | 8 KiB                                          | Shows a bounded prefix, with original-size/truncation information                                              |
 | Maximum bounded fetch count      | 1,000                                          | A bounded read does not imply a complete topic export                                                          |
-| Serialized export record content | 8 MiB                                          | An oversized export fails; narrow the filters and retry                                                        |
-| Complete JSON export document    | 16 MiB                                         | Includes formatting and metadata; this is a separate final size check                                          |
+| Serialized export record content | 8 MiB                                          | Current-page JSON fails when oversized; narrow the filters and retry                                           |
+| Complete JSON export document    | 16 MiB                                         | Current-page JSON including formatting and metadata; separate final size check                                 |
 | Default recent time window       | 2 minutes                                      | Resolved before Load messages; Custom interval accepts explicit start/end with a time zone                     |
 | Broker search pass               | 10,000 records / 32 MiB / 30 seconds           | The first reached budget stops the pass with partial coverage; continuation keeps the original captured ranges |
 | Read continuation                | Latest checkpoint / 30 minutes / 10,000 passes | Single-use, host-memory checkpoint for the same connection and record settings; unavailable after restart      |
 | Saved query library              | 100 queries / 1 MiB                            | Unreadable or unsupported files are preserved for recovery                                                     |
 | Portable query document          | 32 KiB                                         | Versioned settings only; import requires review and explicit opening                                           |
+
+Range exports use independent host bounds:
+
+| Boundary                | Limit                             | What happens                                                              |
+| ----------------------- | --------------------------------- | ------------------------------------------------------------------------- |
+| Range export records    | 100,000                           | Maximum written matches; a lower user limit can stop first                |
+| Range export scan       | 1,000,000 records / 1 GiB         | Scan limits include non-matching records                                  |
+| Range export output     | 256 MiB                           | Stops before writing a row that would exceed the limit                    |
+| Range export duration   | 5 minutes / 1,000 passes          | The first reached budget stops the captured range                         |
+| Range export downloads  | 15 minutes / 2 simultaneous reads | One ready artifact; data and receipt can be read together                 |
+| Range download duration | 5 minutes                         | Each transfer must finish before its own deadline and the artifact expiry |
+| Range export receipt    | 1 MiB                             | Separate bounded JSON evidence document                                   |
 
 Check [Monitor](operations.md#stream-monitor) for historical display omissions and
 current pressure. Ordinary retention eviction as the selected window advances is
@@ -137,7 +149,9 @@ a durable job or a saved query.
 
 ## Understand an export
 
-The message export uses **schema version 3**: UTF-8 JSON containing the filtered records from one topic.
+### Current-page JSON
+
+The current-page export uses **schema version 3**: UTF-8 JSON containing the filtered records from one topic.
 It includes the structured key/value projection, writer-schema identity, decoding
 errors, ordered header previews, original-byte availability, partitions, offsets
 and timestamps;
@@ -176,9 +190,48 @@ original bytes; version 2 retained originals but did not include the shared stru
 projection. Consumers must recognize version 3 explicitly rather than treating its
 interpreted payload as the original UTF-8 wire value.
 
-Exports still describe only the retained records, not a complete broker backup.
+Current-page exports describe only the retained grid records, not a complete broker backup.
 If you need a complete archive, use an
 approved Kafka data-export process with its own offset coverage and retention checks.
+
+### Range JSONL and CSV
+
+**Export → Read range…** reads the captured finite range on the host. It reuses the
+same structured projection and protection policy as the grid, including explicit
+null/error/masked states, writer schemas, duplicate ordered headers and immutable
+original-byte availability. Original bytes remain subject to their capture bound;
+a larger export does not make an oversized individual record complete.
+
+JSONL contains one record per line. CSV has a fixed header and JSON-encoded text
+and structured cells; decode those cells as JSON to recover their meaning. This
+preserves numeric precision, newlines and duplicate headers, and avoids treating
+record text as spreadsheet formulas. Neither format is encrypted after download.
+
+Download the separate **receipt** with each file. Its
+`streamskope.record-export/v1` schema identifies the exact topic, connection,
+filters, range, codec/protection settings, start/end times, cumulative counts,
+partition coverage, outcome and stopping reason. `output.sha256` and `output.bytes`
+identify the data file. Zero matches produce a valid empty JSONL file or CSV header
+and a receipt; no rows does not imply an unbounded search of all broker history.
+
+The host spool is encrypted with runtime keys in a private temporary location
+outside the durable profile/vault directory. Exports are not resumable after
+host restart. Disconnect, browser lock, host shutdown, expiry, explicit discard or
+replacement revokes download authority and removes the owned temporary copy during
+normal operation. An abrupt process termination can leave unreadable encrypted
+temporary files after its runtime key is lost; expiry limits download authority,
+not guaranteed filesystem deletion after a crash. A failed cleanup keeps its
+operation visible. Retry cleanup when offered; an unresolved broker close can
+require disconnecting or restarting the host.
+
+Desktop Save writes a private plaintext `.partial` file beside your chosen
+destination before committing the final file. Normal cancellation or failure
+removes that owned partial file; an abrupt process termination can leave it
+behind. Review and remove any such destination partial file yourself. Browser
+downloads use the browser's normal temporary-file behavior. Neither destination
+is covered by the encrypted host spool.
+
+An interrupted download or Save can fail even after transfer started; check the final file against its receipt.
 
 ## Other export and developer artifacts
 

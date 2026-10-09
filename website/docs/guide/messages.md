@@ -187,19 +187,53 @@ decodes its fragment locally and does not visit that URL.
 
 ## Export the records you need
 
+### Save the current page
+
 1. Stop an active tail or wait for the bounded read to finish so the sample is stable.
 2. Set the filters you want. The shown/retained count indicates how much of the
    retained sample is visible; selecting a row does not limit the export to that row.
-3. Click **Export** (accessible name **Export filtered JSON**). Desktop opens a save
-   dialog; browser development downloads JSON. There is no format or scope picker.
-4. Open the saved JSON and check its topic, filters, retained/exported counts,
-   stale-state marker and record truncation fields before using it as evidence.
+3. Click **Export → Current page JSON**. Desktop opens a save dialog; the browser
+   starts a download. This exports only the filtered records still retained in the grid.
+4. Check the JSON's topic, filters, retained/exported counts, stale-state marker and
+   truncation fields before using it as evidence.
 
-Only filtered records still retained in the workbench are exported. Review
-[Data, exports and limits](data-handling.md) for plaintext contents, byte limits
-and incomplete-evidence fields. Older records may have left the window; **Monitor**
-distinguishes ordinary history eviction from overload drops. An export error means
-no successful export was confirmed; narrow the sample and retry.
+Older records may have left the window. **Monitor** distinguishes ordinary history
+eviction from overload drops. Narrow the sample if the page export exceeds its byte limit.
+
+### Read and export a larger range
+
+1. Connect to Kafka and open the topic's **Messages** tab.
+2. Set the message filters, then choose **Export → Read range…**. Turn off
+   **Rule matches only**: live-rule annotations cannot be reused for this new read.
+   Key, value, timestamp, offset, partition and JSON expression filters are supported.
+3. Choose **From beginning** (the earliest retained offsets) or **Time interval**,
+   select **JSONL** or **CSV**, and set the maximum exported record count. A tail or
+   newest-record read is never silently converted into an export range.
+4. Click **Start export**. The host captures the range's end offsets, filters,
+   encoding preferences and masking settings, then writes the export without
+   filling the grid. You can browse another topic; the **Range export** status
+   retains the original topic and progress when you return to Messages.
+5. Wait for completion, or choose **Cancel export** to stop and keep the successfully
+   written prefix. **Partial range export** means the range was not fully covered.
+   Limits, cancellation, filter evaluation failures and Kafka retention can affect coverage.
+6. Choose **Download export** and **Download receipt**. Inspect the receipt's outcome,
+   counts, partition offsets and SHA-256 hash before relying on the file.
+
+One export is retained at a time. Starting another requires confirmation to replace
+its prepared download. **Discard export** removes that temporary host copy. Ready
+files expire after 15 minutes and are revoked on disconnect, browser lock or host
+shutdown. Downloaded copies remain on your device. Desktop reports a confirmed
+Save or cancellation; browser **download started** means you must check the browser's
+download list for completion.
+
+A failed start acknowledgement offers **Retry same export request**, preserving the
+request identity. If cleanup cannot be confirmed, refresh status and follow the recovery message.
+Retry cleanup when offered; an unresolved broker close may require disconnect or
+host restart. Starting another export cannot bypass the unresolved operation.
+
+Review [Data, exports and limits](data-handling.md) for plaintext contents, bounded
+coverage, per-record decoding errors, and the differences between page JSON, range
+JSONL and CSV. A range export is not a complete Kafka backup.
 
 ## Next: check a consumer
 

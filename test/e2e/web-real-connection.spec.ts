@@ -273,7 +273,8 @@ test.describe("real StreamSkope browser connection", () => {
     );
 
     const downloadStarted = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await page.getByRole("menuitem", { name: "Current page JSON" }).click();
     const download = await downloadStarted;
     const downloadPath = await download.path();
     if (downloadPath === null) {

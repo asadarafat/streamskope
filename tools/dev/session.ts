@@ -18,6 +18,7 @@ import {
 import { developmentOrigin, resolveDevelopmentNetwork } from "../../src/platform/dev-host/network";
 import type { ProviderHostRegistry } from "../../src/platform/node/provider-host";
 import type { PluginRendererAsset } from "../../src/platform/node/plugins/runtime";
+import type { RecordExportDelivery } from "../../src/platform/node/record-export-artifacts";
 
 import { stopWebDevelopmentOwner } from "./stop-owner";
 
@@ -59,6 +60,7 @@ interface WebDevelopmentCommandBaseDependencies {
 }
 
 export interface WebDevelopmentProviderApplication {
+  readonly exportFiles?: RecordExportDelivery;
   readonly providers: ProviderHostRegistry;
   readonly pluginAsset?: (pathname: string) => Promise<PluginRendererAsset | undefined>;
 }

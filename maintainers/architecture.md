@@ -102,6 +102,34 @@ cleanup, even after a sibling fails. Consumption retains its final flush. Preser
 the host's admission/cleanup ordering: plugin cleanup can still need its owned host
 commands before the final command drain completes.
 
+## Trace a finite record export
+
+[RecordExportService](../src/features/kafka/application/record-export-service.ts)
+owns the captured query, bounded read passes, accepted-row acknowledgements and
+cleanup through a narrow session read scope and artifact sink. It receives every
+late-opened reader before checking authority, so cancellation cannot lose the
+handle that must be closed. A user cancellation may seal a verified partial file;
+connection changes and host lock revoke file access immediately. Replacement
+waits for cleanup, and unresolved cleanup remains visible.
+
+Commands and events carry metadata only. The Node factory supplies one
+[encrypted temporary artifact owner](../src/platform/node/record-export-artifacts.ts)
+to the application and a separate, host-only delivery port to each host. Browser
+downloads use an authenticated same-origin attachment route; native Save accepts
+an opaque artifact reference, rechecks authority after the file dialog and streams
+to a private sibling file before rename. Artifact bytes never enter provider RPC
+or a renderer Blob. The pure [cross-host file contracts](../src/platform/desktop/contracts.ts)
+can be shared by Node and renderer code without importing Electron.
+
+Start changes with the [protocol tests](../test/unit/record-export-contract.test.ts),
+[application fault tests](../test/unit/record-export-service.test.ts) and
+[real artifact tests](../test/integration/record-export-artifacts.test.ts).
+The [real broker export](../test/kafka/streaming-export-real.test.ts),
+[production browser download](../test/e2e/web-streaming-export.spec.ts) and
+[native Save journey](../test/e2e/electron-record-export.spec.ts) establish separate
+reader, authorization and delivery evidence. This export is transient; it does
+not introduce a durable job journal or restart resume.
+
 ## Messaging providers and connection plugins
 
 The [provider registry](../src/platform/node/provider-host.ts) seals each route with

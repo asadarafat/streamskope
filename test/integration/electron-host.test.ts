@@ -19,11 +19,14 @@ import {
   ElectronShellStartupError,
 } from "../../src/platform/electron/main/electron-shell";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
+import { NodeRecordExportArtifacts } from "../../src/platform/node/record-export-artifacts";
+import { sealedArtifact } from "../support/record-export-artifact";
 import { ProviderWireValidationError } from "../../src/platform/node/provider-host";
 import { DESKTOP_PLATFORM_VERSION, DesktopPlatformContractError } from "../../src/platform/desktop";
 import {
   DESKTOP_ACTION_CHANNEL,
   DESKTOP_DOCUMENT_SAVE_CHANNEL,
+  DESKTOP_ARTIFACT_SAVE_CHANNEL,
   EXTERNAL_URL_OPEN_CHANNEL,
   HOST_COMMAND_CHANNEL,
   HOST_EVENT_CHANNEL,
@@ -631,6 +634,57 @@ describe("Electron main boundary", () => {
     expect(electronMock.externalUrls).toEqual([request.url, request.url]);
     await shell.close();
     expect(electronMock.handlers.has(EXTERNAL_URL_OPEN_CHANNEL)).toBe(false);
+  });
+
+  it("saves an opaque host artifact through owned IPC and never trusts renderer paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "streamskope-native-artifact-"));
+    const store = new NodeRecordExportArtifacts({ temporaryRoot: root });
+    const { artifact, text } = await sealedArtifact(store);
+    const shell = await createElectronShell({
+      backend: new FakeBackend(),
+      exportFiles: store.delivery,
+      preloadPath: "/tmp/streamskope/preload.js",
+      rendererUrl: "http://127.0.0.1:5173/",
+    });
+    const handler = electronMock.handlers.get(DESKTOP_ARTIFACT_SAVE_CHANNEL)!;
+    const sender = electronMock.windows[0]!.webContents;
+    const reference = { artifactId: artifact.artifactId, part: "data" };
+    const destination = join(root, "chosen.jsonl");
+    try {
+      await expect(async () => handler({ sender: {} }, reference)).rejects.toThrow(
+        "must originate",
+      );
+      await expect(async () =>
+        handler({ sender }, { ...reference, path: destination }),
+      ).rejects.toThrow(DesktopPlatformContractError);
+      expect(electronMock.saveDialogCalls).toHaveLength(0);
+      electronMock.setSaveDialogResult({ canceled: true });
+      await expect(handler({ sender }, reference)).resolves.toEqual({
+        state: "cancelled",
+        version: DESKTOP_PLATFORM_VERSION,
+      });
+      await expect(readFile(destination)).rejects.toThrow();
+      electronMock.setSaveDialogResult({ canceled: false, filePath: destination });
+      await expect(handler({ sender }, reference)).resolves.toEqual({
+        state: "saved",
+        version: DESKTOP_PLATFORM_VERSION,
+      });
+      expect(await readFile(destination, "utf8")).toBe(text);
+      vi.spyOn(electronMock.dialog, "showSaveDialog").mockImplementationOnce(async () => {
+        store.revoke();
+        await store.drain();
+        return { canceled: false, filePath: destination };
+      });
+      await expect(handler({ sender }, reference)).rejects.toThrow();
+      await expect(handler({ sender }, reference)).rejects.toThrow("unavailable");
+      expect(await readFile(destination, "utf8")).toBe(text);
+    } finally {
+      await shell.close();
+      store.revoke();
+      await store.drain();
+      await rm(root, { recursive: true, force: true });
+    }
+    expect(electronMock.handlers.has(DESKTOP_ARTIFACT_SAVE_CHANNEL)).toBe(false);
   });
 
   it("owns native menus and saves only an authorized validated document", async () => {

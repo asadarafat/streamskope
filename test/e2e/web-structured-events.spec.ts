@@ -86,7 +86,8 @@ test("decodes, compares, traces and previews a schema sample in the real browser
     await expect(inspector.getByLabel("Decoded JSON")).toBeVisible();
     await expect(inspector.getByText("Encoding: UTF-8 JSON", { exact: true })).toBeVisible();
     const downloadStarted = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await page.getByRole("menuitem", { name: "Current page JSON" }).click();
     const downloadPath = await (await downloadStarted).path();
     if (downloadPath === null) throw new Error("Structured export was not retained.");
     expect(JSON.parse(await readFile(downloadPath, "utf8"))).toMatchObject({
@@ -277,7 +278,8 @@ test("continues a protected finite read into replacement pages with fixed ranges
     ).toBeVisible();
     await expect(grid).not.toContainText(secret);
     const downloadStarted = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await page.getByRole("menuitem", { name: "Current page JSON" }).click();
     const file = await (await downloadStarted).path();
     if (file === null) throw new Error("Continued page export was not retained.");
     const exported = await readFile(file, "utf8");

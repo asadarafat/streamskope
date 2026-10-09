@@ -10,6 +10,7 @@ import type {
   PluginChangePrompt,
 } from "../../../plugins/contracts";
 
+import type { RecordExportResults } from "./record-export-protocol";
 import {
   isAclReviewCommandName,
   type AclReviewCommandName,
@@ -25,7 +26,11 @@ import type { KafkaOperationalPreferenceResult } from "./operational-preference-
 import type { HostCommandAccepted, HostCommandName } from "./types";
 
 interface SpecificCommandResults
-  extends TrustAcquisitionCommandResults, TrustRecipeCommandResults, AclReviewResults {
+  extends
+    TrustAcquisitionCommandResults,
+    TrustRecipeCommandResults,
+    AclReviewResults,
+    RecordExportResults {
   readonly "relationships.capture": {
     readonly correlationId: string;
     readonly graph: import("./relationships").RelationshipGraph;
@@ -183,6 +188,10 @@ interface SpecificCommandResults
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "records.export.start": true,
+  "records.export.status": true,
+  "records.export.cancel": true,
+  "records.export.discard": true,
   "relationships.capture": true,
   "observations.capture": true,
   "observations.history": true,

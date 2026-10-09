@@ -23,10 +23,14 @@ import {
   StudioCheckbox as Checkbox,
   StudioLabeledControl as FormControlLabel,
   StudioMenuItem as MenuItem,
+  StudioMenu as Menu,
   StudioSelect as Select,
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
 
+import { RecordExportDialog } from "./RecordExportDialog";
+import { RecordExportStatus } from "./RecordExportStatus";
+import type { RecordExportController } from "./use-record-export";
 import { ReplayRecordsAction } from "./ReplayRecordsAction";
 import { CorrelationTracePanel } from "./CorrelationTracePanel";
 import { QueryReadCoverage } from "./QueryReadCoverage";
@@ -105,6 +109,7 @@ export function MessageWorkspace({
   selectedTopic,
   selectionNotice,
   transfer = browserTextDocumentTransfer,
+  recordExport,
 }: {
   readonly host?: import("../contracts").StreamSkopeHost;
   readonly profiles?: readonly import("../contracts").ProfileSummary[];
@@ -149,6 +154,7 @@ export function MessageWorkspace({
   readonly selectedTopic: string | null;
   readonly selectionNotice: string | undefined;
   readonly transfer?: TextDocumentTransferPort;
+  readonly recordExport?: RecordExportController;
 }): React.JSX.Element {
   const compactDesktop = useMediaQuery(
     `(max-width:${String(streamSkopeLayout.fullDesktopMinimumWidth - 0.05)}px)`,
@@ -166,6 +172,8 @@ export function MessageWorkspace({
   useEffect(() => {
     if (!connectionAvailable || messagesStale) setBaseline(null);
   }, [connectionAvailable, messagesStale]);
+  const [exportMenu, setExportMenu] = useState<HTMLElement | null>(null);
+  const [exportRangeOpen, setExportRangeOpen] = useState(false);
   const [exportError, setExportError] = useState<string>();
   const [exportStatus, setExportStatus] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -471,17 +479,41 @@ export function MessageWorkspace({
               Filters{activeFilterCount === 0 ? "" : ` · ${activeFilterCount.toLocaleString()}`}
             </Button>
             <Button
-              aria-label="Export filtered JSON"
-              disabled={visibleMessages.length === 0 || exporting}
-              onClick={() => {
-                void exportFilteredMessages();
-              }}
+              aria-label="Export records"
+              aria-haspopup="menu"
+              aria-expanded={exportMenu !== null}
+              disabled={exporting}
+              onClick={(event) => setExportMenu(event.currentTarget)}
               size="small"
               sx={{ flex: "0 0 auto", whiteSpace: "nowrap" }}
               variant="outlined"
             >
               {exporting ? "Preparing…" : "Export"}
             </Button>
+            <Menu
+              anchorEl={exportMenu}
+              open={exportMenu !== null}
+              onClose={() => setExportMenu(null)}
+            >
+              <MenuItem
+                disabled={visibleMessages.length === 0 || exporting}
+                onClick={() => {
+                  setExportMenu(null);
+                  void exportFilteredMessages();
+                }}
+              >
+                Current page JSON
+              </MenuItem>
+              <MenuItem
+                disabled={!connectionAvailable || recordExport?.snapshot?.available !== true}
+                onClick={() => {
+                  setExportMenu(null);
+                  setExportRangeOpen(true);
+                }}
+              >
+                Read range…
+              </MenuItem>
+            </Menu>
             {host && (
               <ReplayRecordsAction
                 host={host}
@@ -499,6 +531,15 @@ export function MessageWorkspace({
               tone={statusTone}
             />
           </TopicWorkspaceToolbar>
+        )}
+        {recordExport && <RecordExportStatus controller={recordExport} />}
+        {exportRangeOpen && recordExport && selectedTopic !== null && (
+          <RecordExportDialog
+            topic={selectedTopic}
+            filters={filters}
+            controller={recordExport}
+            onClose={() => setExportRangeOpen(false)}
+          />
         )}
         {selectedTopic !== null && fetchMode === "time-window" && timeWindow !== undefined ? (
           <QueryTimeWindowControls {...timeWindow} disabled={active || continuationBusy} />

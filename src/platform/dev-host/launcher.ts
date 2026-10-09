@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import type { PluginRendererAsset } from "../node/plugins/runtime";
+import type { RecordExportDelivery } from "../node/record-export-artifacts";
 
 import {
   developmentOrigin,
@@ -22,6 +23,7 @@ export type WebDevelopmentLaunchOptions = DevelopmentNetworkOptions &
     readonly rendererRoot: string;
     readonly token?: string;
     readonly pluginAsset?: (pathname: string) => Promise<PluginRendererAsset | undefined>;
+    readonly exportFiles?: RecordExportDelivery;
   };
 
 export interface RunningWebDevelopment {
@@ -50,6 +52,7 @@ export async function launchWebDevelopment(
   const gatewayToken = randomBytes(32).toString("base64url");
   const providers = resolveDevelopmentProviders(options);
   const pluginAsset = options.pluginAsset ?? options.backend?.pluginAsset?.bind(options.backend);
+  const exportFiles = options.exportFiles ?? options.backend?.exportFiles;
   let network;
   let renderer;
   try {
@@ -62,6 +65,7 @@ export async function launchWebDevelopment(
       port: options.rendererPort,
       root: options.rendererRoot,
       ...(pluginAsset === undefined ? {} : { pluginAsset }),
+      ...(exportFiles === undefined ? {} : { exportFiles }),
     });
   } catch (error) {
     try {

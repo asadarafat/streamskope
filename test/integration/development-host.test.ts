@@ -20,6 +20,8 @@ import {
   type RunningWebDevelopment,
 } from "../../src/platform/dev-host";
 import { testHostAccepted } from "../support/host-response";
+import { NodeRecordExportArtifacts } from "../../src/platform/node/record-export-artifacts";
+import { sealedArtifact } from "../support/record-export-artifact";
 
 const RENDERER_ORIGIN = "http://127.0.0.1:4173";
 const INVOCATION_TOKEN = "0123456789abcdef0123456789abcdef";
@@ -706,6 +708,40 @@ describe("browser development host", () => {
     await assertPortCanBeRebound(hostPort);
     const ownerResponse = await fetch(`http://127.0.0.1:${occupiedRenderer.port}`);
     await expect(ownerResponse.text()).resolves.toBe("unrelated owner");
+  });
+
+  it("serves export artifacts through the development cookie gate without proxying them as commands", async () => {
+    const root = await mkdtemp(join(tmpdir(), "streamskope-export-renderer-"));
+    cleanups.push(() => rm(root, { force: true, recursive: true }));
+    await writeFile(join(root, "index.html"), "<main>Export transport</main>");
+    const artifacts = new NodeRecordExportArtifacts({ temporaryRoot: root });
+    cleanups.push(async () => {
+      artifacts.revoke();
+      await artifacts.drain();
+    });
+    const { artifact, text } = await sealedArtifact(artifacts);
+    const launch = trackLaunch(
+      await launchWebDevelopment({
+        backend: new FakeBackend(),
+        exportFiles: artifacts.delivery,
+        hostPort: await reserveFreePort(),
+        rendererPort: await reserveFreePort(),
+        rendererRoot: root,
+        token: INVOCATION_TOKEN,
+      }),
+    );
+    const path = `${launch.rendererOrigin}/__streamskope_host/exports/${artifact.artifactId}/data`;
+    expect((await fetch(path)).status).toBe(403);
+    const cookie = (await fetch(launch.browserUrl)).headers.get("set-cookie")!.split(";", 1)[0]!;
+    expect(
+      (await fetch(path, { headers: { cookie, origin: "https://foreign.example" } })).status,
+    ).toBe(403);
+    const head = await fetch(path, { method: "HEAD", headers: { cookie } });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toBe(String(Buffer.byteLength(text)));
+    const result = await fetch(path, { headers: { cookie } });
+    expect(result.status).toBe(200);
+    expect(await result.text()).toBe(text);
   });
 
   it("reports a clean renderer URL and keeps host authorization inside its gateway", async () => {

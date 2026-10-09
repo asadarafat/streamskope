@@ -19,6 +19,7 @@ import {
 } from "../diagnostics";
 
 import { readBoundedFile } from "./bounded-file";
+import type { RecordExportDownloadAuthority } from "./record-export-artifacts";
 import type { PluginRendererAsset } from "./plugins/runtime";
 import type { ProviderHostRegistry } from "./provider-host";
 import { startProviderHttpHost, type RunningDevelopmentHost } from "./provider-http-host";
@@ -60,6 +61,7 @@ export interface WebGatewayRuntime {
   readonly handleAuthorizedRequest?: (
     request: IncomingMessage,
     response: ServerResponse,
+    authority: RecordExportDownloadAuthority,
   ) => Promise<boolean>;
   readonly discardPluginFile?: (commandId: string) => void;
 }
@@ -99,6 +101,7 @@ const vaultCodes: Record<PassphraseVaultErrorCode, OperationalDiagnosticCode> = 
 };
 
 interface UnlockedRuntime {
+  readonly authorization: AbortController;
   readonly runtime: WebGatewayRuntime;
   readonly host: RunningDevelopmentHost;
   readonly privateToken: string;
@@ -218,6 +221,7 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
     state = "closing";
     stopUpstreams();
     const owner = active;
+    owner?.authorization.abort();
     pendingLock = (async (): Promise<void> => {
       try {
         if (owner !== undefined) {
@@ -362,6 +366,7 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
             token: privateToken,
           });
           active = {
+            authorization: new AbortController(),
             runtime,
             host,
             privateToken,
@@ -479,7 +484,16 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
       return;
     }
     const owner = active!;
-    if (await owner.runtime.handleAuthorizedRequest?.(request, response)) return;
+    if (
+      await owner.runtime.handleAuthorizedRequest?.(request, response, {
+        signal: owner.authorization.signal,
+        assertCurrent: () => {
+          if (!authorized(request) || active !== owner)
+            throw new GatewayProblem(401, "LOCKED", "The session has ended.");
+        },
+      })
+    )
+      return;
     if (pathname === `${SESSION_PATH}/browser-runtime.js` && request.method === "GET") {
       response.setHeader("Content-Type", "text/javascript; charset=utf-8");
       response.end(

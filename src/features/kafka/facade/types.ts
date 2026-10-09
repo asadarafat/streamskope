@@ -9,6 +9,7 @@ import type {
 } from "../application";
 
 export interface KafkaBackendFacadeOptions {
+  readonly recordExportArtifacts?: import("../application/record-export-artifacts").RecordExportArtifacts;
   readonly observationStore?: import("../application/observation-store").ObservationStore;
   readonly connect?: import("../application/connect-service").ConnectPort;
   readonly replayConnections?: import("../application").KafkaConnectionPort;

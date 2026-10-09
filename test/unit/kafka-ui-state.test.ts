@@ -77,6 +77,55 @@ function tailRequest(topic = "test", maxMessages = 1_000): KafkaFetchRequest {
 }
 
 describe("Kafka renderer state", () => {
+  it("accepts replayed host availability for a late workspace without rewinding connection or message ordering", () => {
+    const connection: HostEvent = {
+      event: "connection.state",
+      payload: { connectionName: "Existing connection", state: "connected" },
+      sequence: 100,
+      version: HOST_PROTOCOL_VERSION,
+    };
+    const connected = reduceKafkaHostEvent(initialKafkaUiState, connection);
+    expect(connected.backend).toBe("checking");
+    const ready: HostEvent = {
+      event: "backend.availability",
+      payload: { state: "ready" },
+      sequence: 1,
+      version: HOST_PROTOCOL_VERSION,
+    };
+    const available = reduceKafkaHostEvent(connected, ready);
+    expect(available.backend).toBe("ready");
+    expect(available.lastSequence).toBe(100);
+    expect(available.connectionName).toBe("Existing connection");
+    expect(available.connectionState).toBe("connected");
+    expect(reduceKafkaHostEvent(available, ready)).toBe(available);
+    expect(
+      reduceKafkaHostEvent(available, {
+        ...connection,
+        sequence: 99,
+        payload: { connectionName: null, state: "disconnected" },
+      }),
+    ).toBe(available);
+    expect(
+      reduceKafkaHostEvent(available, {
+        event: "messages.batch",
+        payload: { messages: [message("stale")], droppedMessages: 0, topic: "test" },
+        sequence: 99,
+        version: HOST_PROTOCOL_VERSION,
+      }),
+    ).toBe(available);
+    const unavailable = reduceKafkaHostEvent(available, {
+      ...ready,
+      payload: { state: "unavailable", recovery: "Reconnect to the host." },
+      sequence: 2,
+    });
+    expect(unavailable.backend).toBe("unavailable");
+    expect(reduceKafkaHostEvent(unavailable, ready)).toBe(unavailable);
+    expect(unavailable.lastSequence).toBe(100);
+    const recovered = reduceKafkaHostEvent(unavailable, { ...ready, sequence: 103 });
+    expect(recovered.backend).toBe("ready");
+    expect(recovered.lastSequence).toBe(103);
+  });
+
   it("retains only the canonical newest activity entries", () => {
     let state = initialKafkaUiState;
     for (let index = 0; index <= HOST_ACTIVITY_HISTORY_LIMIT; index += 1) {

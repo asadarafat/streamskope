@@ -18,15 +18,20 @@ import {
 import {
   DESKTOP_PLATFORM_VERSION,
   parseDesktopTextDocument,
+  parseArtifactReference,
+  type DesktopSaveResult,
   type DesktopActionName,
 } from "../../desktop";
 import {
   DESKTOP_ACTION_CHANNEL,
   DESKTOP_DOCUMENT_SAVE_CHANNEL,
+  DESKTOP_ARTIFACT_SAVE_CHANNEL,
   EXTERNAL_URL_OPEN_CHANNEL,
 } from "../preload/channels";
 import { ProviderHostRegistry } from "../../node/provider-host";
 import { createKafkaProviderEndpoint } from "../../node/kafka-provider";
+import type { RecordExportDelivery } from "../../node/record-export-artifacts";
+import { NodeRecordExportSaver } from "../../node/record-export-save";
 
 import { PACKAGED_RENDERER_HOST, PACKAGED_RENDERER_SCHEME } from "./packaged-renderer-origin";
 import { attachElectronProviders } from "./electron-provider-routes";
@@ -34,6 +39,7 @@ import { createKafkaElectronDeliveryBinding } from "./kafka-provider-delivery";
 import type { ElectronProviderDeliveryBinding } from "./provider-delivery";
 
 interface ElectronShellBaseOptions {
+  readonly exportFiles?: RecordExportDelivery;
   readonly preloadPath: string;
   readonly rendererUrl: string;
 }
@@ -253,6 +259,11 @@ export async function createElectronShell(
 
   let cleaned = false;
   let desktopDocumentHandlerRegistered = false;
+  let desktopArtifactHandlerRegistered = false;
+  const artifactAuthorization = new AbortController();
+  const artifactSaves = new Set<Promise<unknown>>();
+  const artifactSaver =
+    options.exportFiles === undefined ? undefined : new NodeRecordExportSaver(options.exportFiles);
   let externalUrlHandlerRegistered = false;
   let detachProviders: (() => Promise<void>) | undefined;
   let cleanupPromise: Promise<void> | undefined;
@@ -260,6 +271,7 @@ export async function createElectronShell(
   const cleanup = (): Promise<void> => {
     if (cleanupPromise !== undefined) return cleanupPromise;
     cleaned = true;
+    artifactAuthorization.abort();
     let complete = (): void => undefined;
     let reject = (_error: unknown): void => undefined;
     cleanupPromise = new Promise<void>((resolve, fail) => {
@@ -269,6 +281,7 @@ export async function createElectronShell(
     const failures: unknown[] = [];
     for (const [registered, channel] of [
       [desktopDocumentHandlerRegistered, DESKTOP_DOCUMENT_SAVE_CHANNEL],
+      [desktopArtifactHandlerRegistered, DESKTOP_ARTIFACT_SAVE_CHANNEL],
       [externalUrlHandlerRegistered, EXTERNAL_URL_OPEN_CHANNEL],
     ] as const) {
       if (!registered) continue;
@@ -284,8 +297,13 @@ export async function createElectronShell(
     } catch (cause) {
       detached = Promise.reject(new Error("Desktop provider detach failed.", { cause }));
     }
-    void Promise.allSettled([detached]).then(([result]) => {
-      if (result?.status === "rejected") failures.push(result.reason as unknown);
+    const finishSaves = async (): Promise<void> => {
+      await Promise.allSettled([...artifactSaves]);
+      await artifactSaver?.drain();
+    };
+    void Promise.allSettled([detached, finishSaves()]).then((results) => {
+      for (const result of results)
+        if (result.status === "rejected") failures.push(result.reason as unknown);
       if (failures.length > 0) {
         reject(new AggregateError(failures, "Desktop shell cleanup failed."));
       } else complete();
@@ -371,6 +389,50 @@ export async function createElectronShell(
       };
     });
     desktopDocumentHandlerRegistered = true;
+    ipcMain.handle(DESKTOP_ARTIFACT_SAVE_CHANNEL, (event, value) => {
+      assertOwnedRendererSender(event, window.webContents);
+      const reference = parseArtifactReference(value);
+      const delivery = options.exportFiles;
+      const assertCurrent = (): void => {
+        artifactAuthorization.signal.throwIfAborted();
+        if (cleaned || delivery === undefined) throw new Error("Desktop export is unavailable.");
+      };
+      assertCurrent();
+      const operation = (async (): Promise<DesktopSaveResult> => {
+        const metadata = delivery!.describe(reference);
+        const selected = await dialog.showSaveDialog(window, {
+          defaultPath: metadata.fileName,
+          filters: [
+            {
+              extensions: [
+                reference.part === "receipt"
+                  ? "json"
+                  : metadata.fileName.endsWith(".csv")
+                    ? "csv"
+                    : "jsonl",
+              ],
+              name: "Export",
+            },
+          ],
+          properties: ["createDirectory", "showOverwriteConfirmation"],
+        });
+        if (selected.canceled || selected.filePath === undefined)
+          return { state: "cancelled", version: DESKTOP_PLATFORM_VERSION };
+        assertCurrent();
+        await artifactSaver!.save(reference, selected.filePath, {
+          signal: artifactAuthorization.signal,
+          assertCurrent,
+        });
+        return { state: "saved", version: DESKTOP_PLATFORM_VERSION };
+      })();
+      artifactSaves.add(operation);
+      void operation.then(
+        () => artifactSaves.delete(operation),
+        () => artifactSaves.delete(operation),
+      );
+      return operation;
+    });
+    desktopArtifactHandlerRegistered = true;
     ipcMain.handle(EXTERNAL_URL_OPEN_CHANNEL, async (event, value) => {
       assertOwnedRendererSender(event, window.webContents);
       if (cleaned) throw new Error("Desktop shell is closing.");

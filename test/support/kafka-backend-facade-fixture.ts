@@ -1,3 +1,4 @@
+import type { RecordExportArtifacts } from "../../src/features/kafka/application/record-export-artifacts";
 import {
   HOST_PROTOCOL_VERSION,
   KAFKA_MESSAGE_LIMITS,
@@ -286,6 +287,7 @@ export function createFacade(
   schemaRegistry?: SchemaRegistryPort,
   plugins?: PluginRuntimePort,
   now?: () => Date,
+  recordExportArtifacts?: RecordExportArtifacts,
 ): KafkaBackendFacade {
   let correlation = 0;
   const evaluator = new StreamSkopeKafkaRuleEvaluator();
@@ -330,6 +332,7 @@ export function createFacade(
       ...(scheduleMessageFlush === undefined ? {} : { scheduleMessageFlush }),
       ...(trustAcquisitions === undefined ? {} : { trustAcquisitions }),
       ...(plugins === undefined ? {} : { plugins }),
+      ...(recordExportArtifacts === undefined ? {} : { recordExportArtifacts }),
     },
   );
 }

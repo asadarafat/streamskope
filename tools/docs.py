@@ -73,12 +73,15 @@ def inspect_message_limits(page=None):
         "const {KAFKA_QUERY_LIBRARY_LIMITS:l}=require('./src/features/kafka/contracts/query-library.ts');"
         "const {KAFKA_QUERY_TRANSFER_LIMITS:t}=require('./src/features/kafka/contracts/query-transfer.ts');"
         "const {KAFKA_ORIGINAL_RECORD_LIMITS:o}=require('./src/features/kafka/contracts/record-bytes.ts');"
+        "const {RECORD_EXPORT_LIMITS:r}=require('./src/features/kafka/contracts/record-export.ts');"
         "process.stdout.write(JSON.stringify({"
         "retained:m.retainedMessages,bytes:m.retainedBytes,record:m.messageBytes,"
         "preview:m.previewBytes,fetch:f.maxMessages,original:o.bytes,"
         "content:e.exportContentBytes,document:e.exportBytes,window:f.defaultTimeWindowMs,"
         "scan:q.scanRecords,scanBytes:q.scanBytes,scanMs:q.durationMs,"
         "continuationMs:c.lifetimeMs,continuationPasses:c.passes,"
+        "rangeRecords:r.records,rangeScan:r.scanRecords,rangeScanBytes:r.scanBytes,rangeBytes:r.bytes,"
+        "rangeMs:r.durationMs,rangeDownloadMs:r.downloadDurationMs,rangePasses:r.passes,rangeTtl:r.artifactLifetimeMs,rangeDownloads:r.downloads,rangeReceipt:r.receiptBytes,"
         "queries:l.queries,libraryBytes:l.fileBytes,queryBytes:t.documentBytes}));",
     ], cwd=ROOT, text=True))
     expected = {
@@ -93,6 +96,13 @@ def inspect_message_limits(page=None):
         "Default recent time window": f"{limits['window'] / 60_000:g} minutes",
         "Broker search pass": f"{limits['scan']:,} records / {limits['scanBytes'] / 1_048_576:g} MiB / {limits['scanMs'] / 1000:g} seconds",
         "Read continuation": f"Latest checkpoint / {limits['continuationMs'] / 60_000:g} minutes / {limits['continuationPasses']:,} passes",
+        "Range export records": f"{limits['rangeRecords']:,}",
+        "Range export scan": f"{limits['rangeScan']:,} records / {limits['rangeScanBytes'] / (1024 * 1_048_576):g} GiB",
+        "Range export output": f"{limits['rangeBytes'] / 1_048_576:g} MiB",
+        "Range export duration": f"{limits['rangeMs'] / 60_000:g} minutes / {limits['rangePasses']:,} passes",
+        "Range export downloads": f"{limits['rangeTtl'] / 60_000:g} minutes / {limits['rangeDownloads']} simultaneous reads",
+        "Range download duration": f"{limits['rangeDownloadMs'] / 60_000:g} minutes",
+        "Range export receipt": f"{limits['rangeReceipt'] / 1_048_576:g} MiB",
         "Saved query library": f"{limits['queries']} queries / {limits['libraryBytes'] / 1_048_576:g} MiB",
         "Portable query document": f"{limits['queryBytes'] / 1024:g} KiB",
     }

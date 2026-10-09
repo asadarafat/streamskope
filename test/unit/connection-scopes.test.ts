@@ -125,6 +125,58 @@ function fixture(): {
 }
 
 describe("connection-scoped authorities", () => {
+  it("exposes only connection-fenced finite reader authority and forwards the private checkpoint", async () => {
+    const f = fixture();
+    const scope = f.scopes.recordRead()!;
+    const request = { topic: "scope.events", mode: "earliest", maxMessages: 10 } as const;
+    const stream = new ControlledMessageStream();
+    const open = vi.spyOn(f.connection, "openMessageStream").mockResolvedValue(stream);
+    const checkpoint = {
+      clusterId: "cluster",
+      topicId: "topic",
+      partitionCount: 0,
+      coverage: {
+        reason: "range-complete",
+        scannedRecords: 0,
+        scannedBytes: 0,
+        matchedRecords: 0,
+        unavailableRecords: 0,
+        partitions: [],
+      },
+    } as const;
+    const signal = new AbortController().signal;
+    expect(Object.keys(scope).sort()).toEqual(["connectionName", "isCurrent", "openMessageStream"]);
+    expect(await scope.openMessageStream(request, signal, checkpoint)).toBe(stream);
+    expect(open).toHaveBeenCalledWith(request, signal, checkpoint);
+    f.reconnect();
+    await expect(scope.openMessageStream(request, signal)).rejects.toThrow("connection changed");
+    expect(open).toHaveBeenCalledOnce();
+    await expect(
+      f.scopes.recordRead()!.openMessageStream(request, AbortSignal.abort()),
+    ).rejects.toThrow();
+    expect(open).toHaveBeenCalledOnce();
+    f.disconnect();
+    expect(f.scopes.recordRead()).toBeNull();
+  });
+
+  it("returns a late-opened export reader to its original owner so revocation cannot leak it", async () => {
+    const f = fixture();
+    const opened = deferred<ControlledMessageStream>();
+    vi.spyOn(f.connection, "openMessageStream").mockReturnValue(opened.promise);
+    const scope = f.scopes.recordRead()!;
+    const pending = scope.openMessageStream(
+      { topic: "events", mode: "earliest", maxMessages: 1 },
+      new AbortController().signal,
+    );
+    f.reconnect();
+    const stream = new ControlledMessageStream();
+    opened.resolve(stream);
+    expect(await pending).toBe(stream);
+    expect(scope.isCurrent()).toBe(false);
+    await stream.close();
+    expect(stream.closeCalls).toBe(1);
+  });
+
   it.each(["disconnect", "reconnect", "replace"] as const)(
     "revokes old read and write authorities on %s, even when the profile name is unchanged",
     async (invalidate) => {

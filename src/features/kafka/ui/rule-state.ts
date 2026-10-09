@@ -176,6 +176,7 @@ function reduceHostEvent(state: KafkaRuleUiState, event: HostEvent): KafkaRuleUi
   }
   const sequenced = { ...state, lastSequence: event.sequence };
   switch (event.event) {
+    case "records.export.changed":
     case "plugin.event":
     case "plugins.changed":
     case "plugins.network.progress":

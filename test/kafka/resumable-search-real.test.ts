@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { Admin, Producer } from "@platformatic/kafka";
+import { Admin, Consumer, Producer } from "@platformatic/kafka";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import {
@@ -18,6 +18,7 @@ import {
 } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { fetchFixtureToken, loadFixtureConfig } from "../support/kafka-fixture";
+import { kafkaFixtureFailure, waitForKafkaTopicOffsets } from "../support/kafka-topic-readiness";
 import {
   disposeNativeFixtureResources,
   startNativeKafkaFixture,
@@ -108,7 +109,9 @@ async function withTopic(
   const producer = new Producer<Buffer, Buffer | null, Buffer, Buffer>({
     ...options,
     autocreateTopics: false,
+    repeatOnStaleMetadata: false,
   });
+  const readiness = new Consumer({ ...options, groupId: randomUUID(), autocreateTopics: false });
   const backend = createKafkaBackend();
   const messages: KafkaExploredMessage[] = [];
   const states: State[] = [];
@@ -179,30 +182,28 @@ async function withTopic(
         expect(await execute("connection.connect", input)).toMatchObject({ ok: true });
       },
       seed: async (records, expectedTopicId = createdTopicId): Promise<void> => {
-        // CreateTopics acknowledges the controller before the broker necessarily
-        // exposes the new UUID and leader. Poll read-only metadata, never writes.
-        await vi.waitFor(
-          async () => {
-            const metadata = await producer.metadata({
-              topics: [topic],
-              forceUpdate: true,
-              autocreateTopics: false,
-            });
-            const current = metadata.topics.get(topic);
-            expect(current?.id).toBe(expectedTopicId);
-            expect(current?.partitions).toHaveLength(partitions);
-            for (const partition of current?.partitions ?? []) {
-              expect(partition.leader).toBeGreaterThanOrEqual(0);
-              expect(partition.isr).toContain(partition.leader);
-            }
-          },
-          { timeout: 15_000, interval: 100 },
+        const initialOffsets = await waitForKafkaTopicOffsets(
+          readiness,
+          topic,
+          expectedTopicId,
+          partitions,
         );
+        const expectedOffsets = [...initialOffsets];
+        // A replacement can reuse the name while the producer still caches the old UUID.
+        producer.clearMetadata();
         for (let index = 0; index < records.length; index += 500) {
-          await producer.send({
-            messages: records.slice(index, index + 500).map((record) => ({ topic, ...record })),
-          });
+          const batch = records.slice(index, index + 500);
+          try {
+            await producer.send({ messages: batch.map((record) => ({ topic, ...record })) });
+          } catch (error) {
+            throw kafkaFixtureFailure("Fixture seed failed without replaying writes", error);
+          }
+          for (const record of batch) expectedOffsets[record.partition]! += 1n;
         }
+        expect(
+          await waitForKafkaTopicOffsets(readiness, topic, expectedTopicId, partitions),
+          "Fixture broker offsets must match exactly the records seeded, before reading",
+        ).toEqual(expectedOffsets);
       },
       onBatch: (callback): void => {
         onBatch = callback;
@@ -237,6 +238,7 @@ async function withTopic(
     await disposeNativeFixtureResources([
       (): Promise<void> => backend.shutdown(),
       (): Promise<void> => producer.close(),
+      (): Promise<void> => readiness.close(),
       async (): Promise<void> => {
         if (created) await admin.deleteTopics({ topics: [topic] });
       },
