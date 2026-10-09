@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import { expect, test, type ElectronApplication } from "@playwright/test";
 
@@ -19,7 +18,10 @@ test.use({ trace: "off" });
 
 test("saves a host range export and receipt through native Save with cancellation and exact file hashes", async () => {
   test.setTimeout(180000);
-  const root = await mkdtemp(join(tmpdir(), "streamskope-native-export-"));
+  // The source shell externalizes host packages, so keep its generated entry
+  // beneath the repository where Node can resolve the installed dependencies.
+  await mkdir(resolve("dist"), { recursive: true });
+  const root = await mkdtemp(join(resolve("dist"), "streamskope-native-export-"));
   const fixture = await startStructuredBrowserFixture();
   let application: ElectronApplication | undefined;
   try {
