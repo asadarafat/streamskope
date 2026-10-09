@@ -1,4 +1,24 @@
 export { isHostAcknowledgementCommand } from "./host-command-results";
+export {
+  KAFKA_RECORD_LOCATOR_LIMITS,
+  KAFKA_RECORD_LOCATOR_REASONS,
+  createEmptyKafkaSavedRecordContext,
+  kafkaRecordLocator,
+  sameKafkaRecordLocator,
+  parseKafkaRecordProvenance,
+  parseKafkaRecordLocator,
+  parseKafkaRecordLocatorLoadInput,
+  parseKafkaSavedRecordContext,
+} from "./record-locator";
+export type {
+  KafkaRecordProvenance,
+  KafkaRecordLocator,
+  KafkaRecordBookmark,
+  KafkaSavedRecordContext,
+  KafkaRecordLocatorLoadInput,
+  KafkaRecordLocatorOutcome,
+  KafkaRecordLocatorReason,
+} from "./record-locator";
 export { KAFKA_PROVIDER_EVENT_CODEC } from "./provider-host";
 export {
   parseKafkaWriteInput,

@@ -9,6 +9,7 @@ import { KafkaQueryLibrary } from "../../src/features/kafka/application";
 import {
   HOST_PROTOCOL_VERSION,
   createDefaultKafkaInvestigationView,
+  createEmptyKafkaSavedRecordContext,
   createKafkaQueryLink,
   type HostCommand,
   type HostEvent,
@@ -36,7 +37,7 @@ class LibraryHost implements StreamSkopeHost {
         command.command === "queries.list"
           ? await this.library.list()
           : command.command === "queries.put"
-            ? await this.library.put(command.payload.query)
+            ? await this.library.put(command.payload.query, command.payload.expected)
             : await this.library.delete(command.payload.id);
       return {
         command: command.command,
@@ -190,6 +191,7 @@ it("requires a missing profile reference to be resolved and blocks opening durin
     id: "incident",
     name: "Incident",
     profileId: "deleted-profile",
+    records: createEmptyKafkaSavedRecordContext(),
     view: createDefaultKafkaInvestigationView(),
     configuration,
   });
@@ -202,6 +204,7 @@ it("requires a missing profile reference to be resolved and blocks opening durin
     currentQueryAvailable: false,
     captureCurrent: (): KafkaViewSettings => ({
       configuration,
+      records: createEmptyKafkaSavedRecordContext(),
       view: createDefaultKafkaInvestigationView(),
     }),
     onRestore,
@@ -220,7 +223,11 @@ it("requires a missing profile reference to be resolved and blocks opening durin
   rerender(<SavedViewsDialog {...props} readActive={false} />);
   await user.click(open);
   expect(onRestore).toHaveBeenCalledExactlyOnceWith(
-    { configuration, view: createDefaultKafkaInvestigationView() },
+    {
+      configuration,
+      view: createDefaultKafkaInvestigationView(),
+      records: createEmptyKafkaSavedRecordContext(),
+    },
     undefined,
   );
   expect(host.commands.map((command) => command.command)).toEqual(["queries.list"]);
@@ -230,6 +237,7 @@ it("opens a group-only saved view and clearly disables query-only export", async
   const host = new LibraryHost();
   const settings = {
     configuration: null,
+    records: createEmptyKafkaSavedRecordContext(),
     view: createDefaultKafkaInvestigationView({ kind: "consumer-group", groupId: "payments" }),
   };
   await host.library.put({ id: "payments", name: "Payments group", ...settings });

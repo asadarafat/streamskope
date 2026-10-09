@@ -140,8 +140,8 @@ usable when the action that initiated the write becomes disabled.
 3. Open **Views** in the header, enter **View name**, optionally choose a
    **Local connection profile**, and click **Save current view**.
 4. Later, choose the entry in **Saved view** and click **Open view**. Opening
-   restores the destination and controls and clears old records, comparison and
-   read coverage. It never connects, reads records, refreshes group detail or
+   restores the destination, controls and unloaded record positions, and clears old
+   record contents, comparison results and read coverage. It never connects, reads records, refreshes group detail or
    starts a latency probe. Stop an active read/probe and wait for confirmation
    before opening another view.
 5. Connect the chosen profile if needed, review the destination and settings,
@@ -160,8 +160,9 @@ optional local profile ID. A group-only view needs no topic. A deleted profile
 must be replaced or its reference cleared; a different profile with the same name
 is not substituted. Missing topics remain selected for review before a read.
 
-Views contain no credentials, records, bookmarks, comparison baselines,
-continuation tokens, running jobs, latency results or configuration drafts. They
+Views may also retain the selected record position, comparison baseline position
+and named bookmarks. They contain no credentials, record contents, decoded values,
+original bytes, continuation tokens, running jobs, latency results or configuration drafts. They
 do not replace current encoding or protection preferences. Filters and resource
 names can still contain sensitive text; protect saved-view files accordingly.
 The dynamic **Rule matches only** switch cannot be saved; use a JSON expression
@@ -170,11 +171,56 @@ for a repeatable independent filter.
 Desktop and the installed browser host store up to 100 views in
 `queries/kafka-queries.json`. Browser development keeps its library only until
 that development host restarts. Existing query entries open with default layout;
-the first save/delete that changes the library writes version 2 and preserves the exact legacy
-file as a private `.pre-views-v1` predecessor. An unreadable, oversized or
+the first save/delete that changes the library writes version 3 and preserves the exact legacy
+file as a private `.pre-views-v1` (version 1) or `.pre-records-v2` (version 2) predecessor. An unreadable, oversized or
 unsupported library is preserved and reported as unavailable. Restore a valid
 backup before retrying. Back up the entire [application data](recovery.md),
-including predecessor files; older hosts cannot read version 2.
+including predecessor files; hosts supporting only versions 1 or 2 cannot read version 3.
+
+### Bookmark and reload a record
+
+1. Read a record and open its inspector. Choose **Bookmark record**. This action
+   requires source identity captured by the delivering reader; a record without
+   verified cluster/topic identity and its original batch epoch cannot be bookmarked.
+2. Choose an existing **Saved view**, or enter a new **View name** to save the
+   current view. Enter **New bookmark name**, then choose **Save bookmark**.
+   Adding to an existing view preserves that view's settings and other positions.
+   The same position updates its existing bookmark rather than creating a duplicate.
+3. To resume, open **Views**, choose the view and **Open view**. Selected and
+   baseline positions start **Not loaded**, even after restart. Connect the intended
+   profile if needed, then choose **Reload selected** or **Load baseline** in
+   **Saved record positions**. Stop an active read or probe first.
+4. Choose a **Record bookmark** and **Use as selection** or **Use as baseline** to
+   prepare another position. Choosing does not read it; Reload is separate. From
+   **Views → Saved bookmark**, **Open bookmarked topic** opens its controls and
+   unloaded position. Then choose **Reload selected**.
+5. Use the existing inspector and **Compare** tab for the loaded records. Reloaded
+   records use current encoding and protection. They do not enter the grid's
+   filtered window or change its read coverage, and do not run live rules.
+
+**Save current view** also captures supported selected and pinned baseline
+positions. An ordinary transient comparison remains available when durable
+bookmarking is unsupported. Changing connection, encoding or protection clears
+loaded record contents; the saved positions remain available for explicit reload.
+All positions in one view must identify the same Kafka cluster; comparisons may
+span topics within that cluster. A profile name alone never establishes identity.
+To start an investigation on another cluster, choose **Clear saved positions**.
+This clears positions and reloaded contents in the current workspace; saved views
+remain unchanged. A pending reload must confirm its stop before positions can be cleared.
+
+The library allows 32 bookmarks per view and 256 overall, with names up to 128
+characters, within its existing 1 MiB file limit. In **Views**, choose a **Saved
+bookmark** to rename or remove it. Removing a bookmark never deletes a Kafka
+record. Concurrent edits are rejected; refresh and review before retrying.
+
+Reload distinguishes verified retention expiry, a replaced topic/cluster, reused
+record history, a confirmed missing topic, denied access, and a conclusive offset
+gap. Incomplete evidence is reported as unavailable, not proof of deletion. A
+missing record is never silently replaced with the next offset. Kafka resource
+identity and batch epochs verify log positions; they are not forensic proof
+against administrative restores that clone resource identities and log metadata.
+If cleanup is unconfirmed, **Retry stop** remains available and new reloads stay
+blocked until the original reader confirms its stop.
 
 ### Share query settings
 

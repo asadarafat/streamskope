@@ -27,7 +27,7 @@ export class InMemoryKafkaQueryStore implements KafkaQueryStore {
     return Promise.resolve(this.queries);
   }
   commit(queries: readonly KafkaSavedView[]): Promise<void> {
-    this.queries = parseKafkaQueryLibraryDocument({ schemaVersion: 2, queries }).queries;
+    this.queries = parseKafkaQueryLibraryDocument({ schemaVersion: 3, queries }).queries;
     return Promise.resolve();
   }
 }
@@ -43,10 +43,23 @@ export class KafkaQueryLibrary {
   list(): Promise<KafkaQueryLibrarySnapshot> {
     return this.run();
   }
-  put(query: KafkaSavedView): Promise<KafkaQueryLibrarySnapshot> {
+  put(query: KafkaSavedView, expected?: KafkaSavedView | null): Promise<KafkaQueryLibrarySnapshot> {
     return this.run((queries) => {
       const validated = parseKafkaSavedView(query);
       const index = queries.findIndex((entry) => entry.id === validated.id);
+      if (expected !== undefined) {
+        const previous = expected === null ? null : parseKafkaSavedView(expected);
+        if (
+          previous === null
+            ? index >= 0
+            : previous.id !== validated.id ||
+              index < 0 ||
+              JSON.stringify(previous) !== JSON.stringify(queries[index])
+        )
+          throw new KafkaQueryLibraryError(
+            "This saved view changed or was deleted since it was opened. Refresh Saved views, review the current settings and bookmarks, then retry your change. Nothing was overwritten.",
+          );
+      }
       return index < 0
         ? [...queries, validated]
         : queries.map((entry) => (entry.id === validated.id ? validated : entry));
@@ -62,13 +75,13 @@ export class KafkaQueryLibrary {
     const result = this.pending.then(async () => {
       try {
         const original = parseKafkaQueryLibraryDocument({
-          schemaVersion: 2,
+          schemaVersion: 3,
           queries: await this.store.load(),
         }).queries;
         const queries =
           change === undefined
             ? original
-            : parseKafkaQueryLibraryDocument({ schemaVersion: 2, queries: change(original) })
+            : parseKafkaQueryLibraryDocument({ schemaVersion: 3, queries: change(original) })
                 .queries;
         if (change !== undefined && JSON.stringify(queries) !== JSON.stringify(original))
           await this.store.commit(queries);

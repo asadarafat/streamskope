@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import {
   createDefaultKafkaInvestigationView,
+  createEmptyKafkaSavedRecordContext,
   KAFKA_TOPIC_VIEW_WORKSPACES,
   type KafkaInvestigationQuery,
 } from "../../src/features/kafka/contracts";
@@ -22,6 +23,7 @@ const query: KafkaInvestigationQuery = {
   request: { topic: "orders", mode: "earliest", maxMessages: 25 },
 };
 const settings = {
+  records: createEmptyKafkaSavedRecordContext(),
   configuration: query,
   view: {
     ...createDefaultKafkaInvestigationView(),

@@ -239,7 +239,7 @@ test("restores a full backup with native credential protection and reconnects", 
       await readFile(join(active, "queries/kafka-queries.json"), "utf8"),
     ) as unknown;
     expect(migrated).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       queries: [
         {
           name: "Native incident",
@@ -249,6 +249,10 @@ test("restores a full backup with native credential protection and reconnects", 
     });
     if (baselineQueryDocument.schemaVersion === 1)
       expect(await readFile(join(active, "queries/kafka-queries.json.pre-views-v1"))).toEqual(
+        baselineQueryBytes,
+      );
+    if (baselineQueryDocument.schemaVersion === 2)
+      expect(await readFile(join(active, "queries/kafka-queries.json.pre-records-v2"))).toEqual(
         baselineQueryBytes,
       );
     await application.close();
@@ -399,9 +403,9 @@ test("restores a full backup with native credential protection and reconnects", 
       upgradedSavedQueryRetained: true,
       savedViewMigration: {
         baselineFormat: baselineQueryDocument.schemaVersion,
-        currentFormat: 2,
+        currentFormat: 3,
         legacyInspectionPreservedBytes: true,
-        exactPredecessorPreserved: baselineQueryDocument.schemaVersion === 1,
+        exactPredecessorPreserved: baselineQueryDocument.schemaVersion < 3,
         filterLayoutRetainedAcrossRestart: true,
       },
       candidateRestarted: true,

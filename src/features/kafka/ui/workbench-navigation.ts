@@ -73,3 +73,16 @@ export function navigationGroupLabel(navigation: NavigationView): string {
 export function isNavigationAvailable(navigation: NavigationView, connected: boolean): boolean {
   return navigation === "profiles" || connected;
 }
+
+export function workbenchResources(connected: boolean): readonly {
+  readonly label: string;
+  readonly items: readonly (WorkbenchResourceDestination & { readonly available: boolean })[];
+}[] {
+  return WORKBENCH_RESOURCE_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      available: isNavigationAvailable(item.value, connected),
+    })),
+  }));
+}

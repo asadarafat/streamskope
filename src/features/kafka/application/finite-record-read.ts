@@ -1,9 +1,11 @@
+import type { KafkaRecordLocator } from "../contracts/record-locator";
 import { KAFKA_FETCH_LIMITS, type KafkaFetchRequest, type KafkaMessage } from "../contracts";
 import type { FiniteRecordInput, RecordReadSource } from "../contracts/finite-record-read";
 import { KAFKA_QUERY_LIMITS, type KafkaReadCoverage } from "../contracts/query-search";
 
 import type { RecordReadScope } from "./connection-scope";
 import type { KafkaReadCheckpoint } from "./read-checkpoint";
+import { KafkaReadOpenCleanupError, type KafkaReadOpenCleanup } from "./read-open-cleanup";
 import { ownedCleanupFailure } from "./session-lifecycle";
 import type { KafkaMessageStream } from "./types";
 
@@ -37,6 +39,7 @@ type StopReason = "cancelled" | "deadline" | "revoked" | "consumer-limit" | "rec
 type CleanupDebt = "reader-close" | "late-open-no-handle" | null;
 
 export interface FiniteReadOptions {
+  readonly expectedLocator?: KafkaRecordLocator;
   readonly scope: RecordReadScope;
   readonly input: FiniteRecordInput;
   readonly limits: {
@@ -74,6 +77,7 @@ export class FiniteRecordRead {
   private reader: KafkaMessageStream | undefined;
   private closing: Promise<void> | undefined;
   private cleanupDebt: CleanupDebt = null;
+  private openCleanup: KafkaReadOpenCleanup | undefined;
   private task: Promise<FiniteReadResult> | undefined;
   private stopReason: StopReason | undefined;
   private settled = false;
@@ -139,6 +143,11 @@ export class FiniteRecordRead {
   async retryCleanup(): Promise<void> {
     await this.task?.catch(() => undefined);
     await this.closeReader(true);
+    if (this.openCleanup !== undefined) {
+      await this.openCleanup.close();
+      this.openCleanup = undefined;
+      this.cleanupDebt = null;
+    }
     if (this.cleanupDebt !== null) throw this.failure("cleanup");
   }
 
@@ -222,6 +231,7 @@ export class FiniteRecordRead {
           request,
           this.controller.signal,
           checkpoint,
+          this.options.expectedLocator,
         );
         this.reader = reader;
         this.assertCurrent();
@@ -295,6 +305,7 @@ export class FiniteRecordRead {
         }
       } catch (error) {
         if (ownedCleanupFailure(error) !== undefined) this.cleanupDebt = "late-open-no-handle";
+        if (error instanceof KafkaReadOpenCleanupError) this.openCleanup = error.cleanup;
         problem = error;
       } finally {
         try {

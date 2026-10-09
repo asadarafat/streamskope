@@ -1,4 +1,5 @@
-import { KAFKA_MESSAGE_LIMITS, type KafkaExploredMessage } from "./types";
+import { KAFKA_MESSAGE_LIMITS, type KafkaExploredMessage, type KafkaMessage } from "./types";
+import { parseKafkaRecordProvenance } from "./record-locator";
 import { parseStructuredRecord, recordFieldText } from "./structured-record";
 import { parseKafkaOriginalRecord } from "./record-bytes";
 import { parseKafkaLiveRuleEvaluation } from "./live-rule-validation";
@@ -30,7 +31,7 @@ function parseHeaders(value: unknown, path: string): Readonly<Record<string, str
   );
 }
 
-export function parseKafkaExploredMessage(value: unknown, path: string): KafkaExploredMessage {
+export function parseKafkaMessage(value: unknown, path: string): KafkaMessage {
   const message = record(value, path);
   exactKeys(
     message,
@@ -43,18 +44,23 @@ export function parseKafkaExploredMessage(value: unknown, path: string): KafkaEx
       "recordByteSize",
       "original",
       "structured",
+      "provenance",
       "partition",
       "payload",
       "payloadTruncated",
       "preview",
-      "ruleEvaluation",
       "timestamp",
       "topic",
       "truncated",
     ],
     path,
   );
-  const parsed: KafkaExploredMessage = {
+  const parsed: KafkaMessage = {
+    ...(message.provenance === undefined
+      ? {}
+      : {
+          provenance: parseKafkaRecordProvenance(message.provenance, `${path}.provenance`),
+        }),
     ...(message.structured === undefined
       ? {}
       : { structured: parseStructuredRecord(message.structured, `${path}.structured`) }),
@@ -79,7 +85,6 @@ export function parseKafkaExploredMessage(value: unknown, path: string): KafkaEx
       ? {}
       : { payloadTruncated: truth(message.payloadTruncated, `${path}.payloadTruncated`) }),
     preview: boundedUtf8Text(message.preview, `${path}.preview`, KAFKA_MESSAGE_LIMITS.previewBytes),
-    ruleEvaluation: parseKafkaLiveRuleEvaluation(message.ruleEvaluation, `${path}.ruleEvaluation`),
     timestamp: text(message.timestamp, `${path}.timestamp`, 128),
     topic: text(message.topic, `${path}.topic`, 512),
     truncated: truth(message.truncated, `${path}.truncated`),
@@ -132,4 +137,13 @@ export function parseKafkaExploredMessage(value: unknown, path: string): KafkaEx
     );
   }
   return parsed;
+}
+
+export function parseKafkaExploredMessage(value: unknown, path: string): KafkaExploredMessage {
+  const message = record(value, path);
+  const { ruleEvaluation, ...base } = message;
+  return {
+    ...parseKafkaMessage(base, path),
+    ruleEvaluation: parseKafkaLiveRuleEvaluation(ruleEvaluation, `${path}.ruleEvaluation`),
+  };
 }

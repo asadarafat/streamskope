@@ -51,7 +51,7 @@ export interface KafkaInvestigationView {
 }
 
 /**
- * Fixed schema-1 defaults, also used to expand compact disk format 2. Changing
+ * Fixed schema-1 defaults, also used to expand compact disk formats 2 and 3. Changing
  * these requires a format migration; responsive presentation is never stored here.
  */
 export function createDefaultKafkaInvestigationView(

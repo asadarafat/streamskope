@@ -28,6 +28,8 @@ export const KAFKA_COMMAND_ACCESS = {
   "records.replay.apply": "remote-write",
   "records.replay.cancel": "local",
   "records.analysis.start": "remote-read",
+  "records.locator.load": "remote-read",
+  "records.locator.cancel": "local",
   "records.analysis.status": "local",
   "records.analysis.cancel": "local",
   "records.analysis.discard": "local",

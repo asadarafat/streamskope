@@ -16,12 +16,15 @@ import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 import { ProviderWorkbenchShell } from "../../../platform/ui/ProviderWorkbenchShell";
 import { useProductNavigator } from "../../../platform/ui/use-product-navigator";
 import { StudioButton } from "../../../platform/ui/controls";
+import { kafkaRecordLocator, type KafkaRecordLocator } from "../contracts/record-locator";
 
 import { RelationshipsPage } from "./RelationshipsPage";
 import { ObservedHealthPage } from "./ObservedHealthPage";
 import { ConnectPage } from "./ConnectPage";
 import { EnvironmentPage } from "./EnvironmentPage";
 import { ReviewedWriteAction } from "./ReviewedWriteAction";
+import { useInvestigationRecords, workbenchRecordScope } from "./use-investigation-records";
+import { SavedRecordPositions } from "./SavedRecordPositions";
 import { SavedViewsDialog } from "./SavedViewsDialog";
 import { useInvestigationViews } from "./use-investigation-views";
 import type { KafkaViewSettings } from "./investigation-view-settings";
@@ -67,7 +70,7 @@ import { useWorkbenchTopics } from "./use-workbench-topics";
 import { WorkbenchStatusBar } from "./WorkbenchStatusBar";
 import { useConsumerGroupWorkbench } from "./use-consumer-group-workbench";
 import type { NavigationView } from "./workbench-navigation";
-import { isNavigationAvailable, WORKBENCH_RESOURCE_GROUPS } from "./workbench-navigation";
+import { isNavigationAvailable, workbenchResources } from "./workbench-navigation";
 import {
   LazyLatencyWorkspace,
   LazyOperationalPreferencesDialog,
@@ -110,6 +113,7 @@ export function StreamSkopeWorkbench({
   const [rendererStreamMonitor] = useState(
     () => streamMonitorObserver ?? createRendererStreamMonitorObserver(),
   );
+  const [bookmarkCandidate, setBookmarkCandidate] = useState<KafkaRecordLocator>();
   const [navigation, setNavigation] = useState<NavigationView>("profiles");
   const navigator = useProductNavigator();
   const [profileRequestError, setProfileRequestError] = useState<string>();
@@ -191,8 +195,13 @@ export function StreamSkopeWorkbench({
     startConsumption,
     activateTopic,
     openObservedRecord,
+    openRecordTopic,
     stopConsumption,
   } = useWorkbenchTopics(host, connected, navigation, setNavigation, state);
+
+  const gridSelection = selectKafkaMessageById(visibleMessages, selectedMessageId);
+  const recordScope = workbenchRecordScope(state, consumptionStopping || continuationBusy);
+  const records = useInvestigationRecords({ host, ...recordScope });
 
   useRendererStreamMonitorLifecycle({
     dispatch,
@@ -349,6 +358,8 @@ export function StreamSkopeWorkbench({
     topicWorkspace,
     selectedGroupId: selectedConsumerGroupId,
     captureQuery,
+    captureRecords: () => records.capture(gridSelection),
+    restoreRecords: records.restore,
     restoreQuery,
     clearQuery,
     restoreGroup: restoreConsumerGroup,
@@ -357,7 +368,7 @@ export function StreamSkopeWorkbench({
     setSelectedProfileId,
     dispatch,
     closeEditors: closeViewEditors,
-    stopping: consumptionStopping || continuationBusy,
+    stopping: consumptionStopping || continuationBusy || records.busy,
     initialQueryImport,
     initialRestoredView,
     onPendingViewConnection,
@@ -380,7 +391,8 @@ export function StreamSkopeWorkbench({
           : navigation === "transforms"
             ? `${state.transformInventory.transforms.length.toLocaleString()} transforms`
             : topicStatus;
-  const selectedMessage = selectKafkaMessageById(visibleMessages, selectedMessageId);
+  const selectedMessage =
+    records.selected?.topic === selectedTopic ? records.selected : gridSelection;
   const selectedProfile =
     state.profiles.find((profile) => profile.id === selectedProfileId) ?? null;
   const operationStatus =
@@ -601,6 +613,7 @@ export function StreamSkopeWorkbench({
           messagesStale={state.messagesStale}
           onClearFilters={() => dispatch({ type: "messages.filters.cleared" })}
           onClearSelection={() => {
+            records.selectGrid(null);
             setSelectedMessageId(null);
             setSelectionNotice(undefined);
           }}
@@ -618,6 +631,7 @@ export function StreamSkopeWorkbench({
             dispatch({ activeOnly, type: "messages.rule-filter.changed" });
           }}
           onSelectMessage={(id) => {
+            records.selectGrid(selectKafkaMessageById(visibleMessages, id));
             setSelectedMessageId(id);
             setSelectionNotice(undefined);
           }}
@@ -648,10 +662,36 @@ export function StreamSkopeWorkbench({
           retainedMessageCount={state.messages.length}
           windowEvictions={state.rendererWindowEvictions}
           savedProfileCount={state.profiles.length}
+          comparison={{ baseline: records.baseline, onPin: records.pin }}
+          onBookmark={(message) => {
+            const locator = kafkaRecordLocator(message);
+            if (locator !== null) {
+              setBookmarkCandidate(locator);
+              views.show();
+            }
+          }}
+          recordPositions={
+            <SavedRecordPositions
+              controller={records}
+              connected={connected && state.backend === "ready"}
+              readBlocked={recordScope.readBlocked}
+              onOpenTopic={openRecordTopic}
+              onChoose={(locator, slot) => {
+                if (slot === "selected") setSelectedMessageId(null);
+                records.choose(locator, slot);
+              }}
+            />
+          }
+          selectedRecordCurrent={records.selected?.topic === selectedTopic}
+          readBusy={records.busy}
           selectedMessage={selectedMessage}
           selectedMessageId={selectedMessageId}
           selectedTopic={selectedTopic}
-          selectionNotice={selectionNotice}
+          selectionNotice={
+            records.selected?.topic === selectedTopic
+              ? "This record was reloaded separately; grid filters and read coverage do not include it."
+              : selectionNotice
+          }
           transfer={textDocumentTransfer}
         />
       </Profiler>
@@ -823,24 +863,22 @@ export function StreamSkopeWorkbench({
       </TopicDetailPage>
     );
 
-  const resources = WORKBENCH_RESOURCE_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.map((item) => ({
-      ...item,
-      available: isNavigationAvailable(item.value, connected),
-    })),
-  }));
-
   return (
     <ProviderWorkbenchShell
       navigator={navigator}
-      resources={resources}
+      resources={workbenchResources(connected)}
       navigation={navigation}
       resourceLabel="Kafka resources"
       onNavigate={selectNavigation}
       providerControl={providerControl}
       headerActions={
-        <StudioButton aria-label="Saved views" onClick={views.show}>
+        <StudioButton
+          aria-label="Saved views"
+          onClick={() => {
+            setBookmarkCandidate(undefined);
+            views.show();
+          }}
+        >
           Views
         </StudioButton>
       }
@@ -894,8 +932,15 @@ export function StreamSkopeWorkbench({
               currentQueryAvailable={selectedTopic !== null}
               readActive={views.readActive}
               captureCurrent={views.capture}
-              onClose={views.close}
-              onRestore={views.restore}
+              bookmarkCandidate={bookmarkCandidate}
+              onClose={() => {
+                setBookmarkCandidate(undefined);
+                views.close();
+              }}
+              onRestore={(settings, profileId) => {
+                setBookmarkCandidate(undefined);
+                views.restore(settings, profileId);
+              }}
               restoreError={views.error}
             />
           ) : null}
@@ -909,7 +954,7 @@ export function StreamSkopeWorkbench({
                 state.consumptionState,
                 state.consumptionRequest,
               ),
-              stopping: consumptionStopping,
+              stopping: consumptionStopping || records.busy,
               mode: fetchMode,
               timeError: timeWindow.error,
               filters: state.messageFilters,

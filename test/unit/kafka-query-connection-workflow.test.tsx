@@ -9,6 +9,7 @@ import { KafkaQueryLibrary } from "../../src/features/kafka/application";
 import {
   HOST_PROTOCOL_VERSION,
   createDefaultKafkaInvestigationView,
+  createEmptyKafkaSavedRecordContext,
   KAFKA_OPERATIONAL_PREFERENCE_DEFAULTS,
   type HostCommand,
   type HostEvent,
@@ -60,6 +61,7 @@ async function fixture(
     profileId: "fixture",
     configuration,
     view,
+    records: createEmptyKafkaSavedRecordContext(),
   });
   const listeners = new Set<(event: HostEvent) => void>();
   let sequence = 0;

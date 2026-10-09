@@ -93,7 +93,7 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
       if (!(await lstat(directory)).isDirectory()) throw new Error("Unsafe library directory.");
       await chmod(directory, 0o700);
       const backup =
-        original?.document.schemaVersion === 1
+        original !== null && original.document.schemaVersion < 3
           ? await this.preservePredecessor(original)
           : undefined;
       await writeAtomicPrivateTextFile({
@@ -102,8 +102,7 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
         createTempId: this.createTempId,
         beforeCommit: async (): Promise<void> => {
           await this.assertUnchanged(original);
-          if (backup !== undefined && original !== null)
-            await this.verifyBackup(backup, original.bytes);
+          if (backup !== undefined && original !== null) await this.verifyBackup(backup, original);
         },
       });
       replaced = true;
@@ -158,20 +157,27 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
       throw new Error("Library changed after loading.");
   }
 
-  private async verifyBackup(path: string, original: Buffer): Promise<void> {
+  private async verifyBackup(path: string, original: SourceSnapshot): Promise<void> {
     const backup = await this.readSource(path);
     if (
       backup === null ||
-      backup.document.schemaVersion !== 1 ||
-      !backup.bytes.equals(original) ||
+      backup.document.schemaVersion !== original.document.schemaVersion ||
+      !backup.bytes.equals(original.bytes) ||
       (process.platform !== "win32" && (backup.metadata.mode & 0o777) !== 0o600)
     )
       throw new Error("Legacy backup could not be verified.");
   }
 
   private async preservePredecessor(original: SourceSnapshot): Promise<string> {
+    const suffix =
+      original.document.schemaVersion === 1
+        ? ".pre-views-v1"
+        : original.document.schemaVersion === 2
+          ? ".pre-records-v2"
+          : undefined;
+    if (suffix === undefined) throw new Error("No predecessor migration was selected.");
     for (let generation = 0; generation < 100; generation += 1) {
-      const path = `${this.path}.pre-views-v1${generation === 0 ? "" : `.${generation}`}`;
+      const path = `${this.path}${suffix}${generation === 0 ? "" : `.${generation}`}`;
       let handle: Awaited<ReturnType<typeof open>>;
       try {
         handle = await open(
@@ -184,12 +190,12 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
         const previous = await this.readSource(path);
         if (
           previous === null ||
-          previous.document.schemaVersion !== 1 ||
+          previous.document.schemaVersion !== original.document.schemaVersion ||
           (process.platform !== "win32" && (previous.metadata.mode & 0o777) !== 0o600)
         )
           throw new Error("Existing predecessor backup is unsafe.", { cause: error });
         if (!previous.bytes.equals(original.bytes)) continue;
-        await this.verifyBackup(path, original.bytes);
+        await this.verifyBackup(path, original);
         await this.syncDirectory(dirname(path));
         return path;
       }
@@ -200,7 +206,7 @@ export class AtomicKafkaQueryFileStore implements KafkaQueryStore {
         await handle.writeFile(original.bytes);
         await handle.sync();
         await handle.close();
-        await this.verifyBackup(path, original.bytes);
+        await this.verifyBackup(path, original);
         verified = true;
         await this.syncDirectory(dirname(path));
         return path;

@@ -132,9 +132,11 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
         format >
           (kind === "kafka-profiles" || kind === "profile-backups"
             ? 4
-            : kind === "preferences" || kind === "queries"
-              ? 2
-              : 1) ||
+            : kind === "queries"
+              ? 3
+              : kind === "preferences"
+                ? 2
+                : 1) ||
         format <= previousFormat
       )
         return invalid();

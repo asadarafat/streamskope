@@ -11,6 +11,7 @@ export const KAFKA_LIVE_RULE_CAPABILITY_STATES = [
 export const KAFKA_LIVE_RULE_EVALUATION_STATES = ["evaluated", "partial", "unavailable"] as const;
 
 export const KAFKA_LIVE_RULE_UNAVAILABLE_REASONS = [
+  "not-evaluated",
   "catalog-unavailable",
   "payload-null",
   "payload-truncated",

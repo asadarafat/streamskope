@@ -8,6 +8,8 @@ import {
   type KafkaMessage,
   type KafkaReadCoverage,
 } from "../../src/features/kafka/contracts";
+import { KafkaReadOpenCleanupError } from "../../src/features/kafka/application/read-open-cleanup";
+import type { KafkaRecordLocator } from "../../src/features/kafka/contracts/record-locator";
 import { PlatformaticConsumerFactory } from "../../src/features/kafka/engine/platformatic-consumer";
 import type { KafkaConsumerInput, KafkaRawMessage } from "../../src/features/kafka/engine/types";
 import { translateKafkaRecord } from "../../src/features/kafka/engine/message-record";
@@ -22,6 +24,10 @@ interface FetchDiagnosticSubscriber {
 
 const kafkaState = vi.hoisted(() => ({
   closeCalls: [] as boolean[],
+  closeFailures: [] as Error[],
+  pendingClose: undefined as Promise<void> | undefined,
+  onConsume: undefined as (() => void) | undefined,
+  streamCloseFailures: [] as Error[],
   consumeCalls: [] as Array<Record<string, unknown>>,
   consumers: [] as unknown[],
   fetchSubscribers: new Set<FetchDiagnosticSubscriber>(),
@@ -32,6 +38,8 @@ const kafkaState = vi.hoisted(() => ({
   }>,
   messages: [] as KafkaRawMessage[],
   metadataCalls: [] as Array<Record<string, unknown>>,
+  missingTopic: false,
+  metadataFailure: undefined as Error | undefined,
   identities: [] as Array<{ clusterId: string; topicId: string; partitionCount?: number }>,
   offsets: new Map<string, readonly bigint[]>(),
   offsetFailure: undefined as Error | undefined,
@@ -39,13 +47,16 @@ const kafkaState = vi.hoisted(() => ({
   streamCloseCalls: 0,
 }));
 
-vi.mock("@platformatic/kafka", () => {
-  class FakeMessagesStream implements AsyncIterable<KafkaRawMessage> {
+vi.mock("@platformatic/kafka", async (importOriginal) => {
+  const { EventEmitter } = await import("node:events");
+  const actual = await importOriginal<typeof import("@platformatic/kafka")>();
+  class FakeMessagesStream extends EventEmitter implements AsyncIterable<KafkaRawMessage> {
     readonly offsetsToFetch = new Map<string, bigint>();
 
     close(): Promise<void> {
       kafkaState.streamCloseCalls += 1;
-      return Promise.resolve();
+      const failure = kafkaState.streamCloseFailures.shift();
+      return failure === undefined ? Promise.resolve() : Promise.reject(failure);
     }
 
     async *[Symbol.asyncIterator](): AsyncIterator<KafkaRawMessage> {
@@ -56,6 +67,7 @@ vi.mock("@platformatic/kafka", () => {
   }
 
   return {
+    ...actual,
     Consumer: class {
       readonly currentMetadata = {
         brokers: new Map([[1, { host: "kafka-1", port: 9093 }]]),
@@ -67,16 +79,24 @@ vi.mock("@platformatic/kafka", () => {
 
       close(force = false): Promise<void> {
         kafkaState.closeCalls.push(force);
-        return Promise.resolve();
+        const failure = kafkaState.closeFailures.shift();
+        if (kafkaState.pendingClose !== undefined) return kafkaState.pendingClose;
+        return failure === undefined ? Promise.resolve() : Promise.reject(failure);
       }
 
-      consume(options: Record<string, unknown>): Promise<FakeMessagesStream> {
+      consume(
+        options: Record<string, unknown>,
+        callback: (error: Error | null, stream?: FakeMessagesStream) => void,
+      ): void {
         kafkaState.consumeCalls.push(options);
-        return Promise.resolve(new FakeMessagesStream());
+        kafkaState.onConsume?.();
+        callback(null, new FakeMessagesStream());
       }
 
       metadata(options: { readonly topics: readonly string[] }): Promise<unknown> {
         kafkaState.metadataCalls.push(options);
+        if (kafkaState.metadataFailure !== undefined)
+          return Promise.reject(kafkaState.metadataFailure);
         const identity = kafkaState.identities.shift() ?? {
           clusterId: "fixture-cluster",
           topicId: "fixture-topic",
@@ -84,16 +104,18 @@ vi.mock("@platformatic/kafka", () => {
         return Promise.resolve({
           ...this.currentMetadata,
           id: identity.clusterId,
-          topics: new Map([
-            [
-              options.topics[0],
-              {
-                id: identity.topicId,
-                partitionsCount:
-                  identity.partitionCount ?? kafkaState.offsets.get("-1")?.length ?? 1,
-              },
-            ],
-          ]),
+          topics: kafkaState.missingTopic
+            ? new Map()
+            : new Map([
+                [
+                  options.topics[0],
+                  {
+                    id: identity.topicId,
+                    partitionsCount:
+                      identity.partitionCount ?? kafkaState.offsets.get("-1")?.length ?? 1,
+                  },
+                ],
+              ]),
         });
       }
 
@@ -156,6 +178,10 @@ async function collect(stream: AsyncIterable<KafkaRawMessage>): Promise<readonly
 
 beforeEach(() => {
   kafkaState.closeCalls.length = 0;
+  kafkaState.closeFailures.length = 0;
+  kafkaState.pendingClose = undefined;
+  kafkaState.onConsume = undefined;
+  kafkaState.streamCloseFailures.length = 0;
   kafkaState.consumeCalls.length = 0;
   kafkaState.consumers.length = 0;
   kafkaState.fetchSubscribers.clear();
@@ -163,11 +189,169 @@ beforeEach(() => {
   kafkaState.listOffsetCalls.length = 0;
   kafkaState.messages.length = 0;
   kafkaState.metadataCalls.length = 0;
+  kafkaState.missingTopic = false;
+  kafkaState.metadataFailure = undefined;
   kafkaState.identities.length = 0;
   kafkaState.offsets.clear();
   kafkaState.offsetFailure = undefined;
   kafkaState.pendingOffsets = undefined;
   kafkaState.streamCloseCalls = 0;
+});
+
+describe("durable locator preflight and retained cleanup", () => {
+  const expected: KafkaRecordLocator = {
+    schemaVersion: 1,
+    clusterId: "fixture-cluster",
+    topicId: "12345678-1234-1234-1234-123456789abc",
+    topic: "orders",
+    partition: 0,
+    offset: "7",
+    leaderEpoch: 3,
+  };
+  const identity = { clusterId: expected.clusterId, topicId: expected.topicId };
+  const guarded = (): KafkaConsumerInput => ({
+    ...input({
+      topic: "orders",
+      mode: "earliest",
+      maxMessages: 1,
+      search: { key: "", value: "", offset: "", timestamp: "", partition: 0, offsetExact: "7" },
+    }),
+    expectedLocator: expected,
+  });
+  it("distinguishes an absent topic from a present topic without a stable UUID", async () => {
+    kafkaState.missingTopic = true;
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toMatchObject({
+      reason: "topic-missing",
+    });
+    kafkaState.missingTopic = false;
+    kafkaState.identities.push({ ...identity, topicId: "orders" });
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toMatchObject({
+      reason: "unavailable",
+    });
+    expect(kafkaState.listOffsetCalls).toHaveLength(0);
+  });
+  it("recognizes only the SDK's exact unknown-topic conversion and preserves authorization failures", async () => {
+    kafkaState.metadataFailure = Object.assign(new Error("Unknown topic orders."), {
+      code: "PLT_KFK_USER",
+    });
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toMatchObject({
+      reason: "topic-missing",
+    });
+    kafkaState.metadataFailure = Object.assign(new Error("denied"), {
+      apiId: "TOPIC_AUTHORIZATION_FAILED",
+    });
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toBe(
+      kafkaState.metadataFailure,
+    );
+    kafkaState.metadataFailure = Object.assign(new Error("Unknown topic another."), {
+      code: "PLT_KFK_USER",
+    });
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toBe(
+      kafkaState.metadataFailure,
+    );
+  });
+  it("reports expiry only after confirming identity again after both bounds reads", async () => {
+    kafkaState.identities.push(identity, identity);
+    kafkaState.offsets.set("-2", [8n]);
+    kafkaState.offsets.set("-1", [10n]);
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toMatchObject({
+      reason: "expired",
+    });
+    expect(kafkaState.metadataCalls).toHaveLength(2);
+    expect(kafkaState.consumeCalls).toHaveLength(0);
+  });
+  it("does not call replacement during bounds lookup retention expiry", async () => {
+    kafkaState.identities.push(identity, {
+      ...identity,
+      topicId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    });
+    kafkaState.offsets.set("-2", [8n]);
+    kafkaState.offsets.set("-1", [10n]);
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toMatchObject({
+      reason: "resource-replaced",
+    });
+  });
+  it("does not call a truncated high watermark a missing record", async () => {
+    kafkaState.identities.push(identity, identity);
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [7n]);
+    await expect(new PlatformaticConsumerFactory().open(guarded())).rejects.toMatchObject({
+      reason: "unavailable",
+    });
+  });
+  it("allows partition growth while guarding an existing partition", async () => {
+    kafkaState.identities.push(
+      { ...identity, partitionCount: 1 },
+      { ...identity, partitionCount: 2 },
+    );
+    kafkaState.offsets.set("-2", [0n, 0n]);
+    kafkaState.offsets.set("-1", [10n, 2n]);
+    const stream = await new PlatformaticConsumerFactory().open(guarded());
+    expect(kafkaState.consumeCalls[0]).toMatchObject({
+      offsets: [{ topic: "orders", partition: 0, offset: 7n }],
+    });
+    await stream.close();
+  });
+  it.each(["stream", "consumer"] as const)(
+    "retries only failed %s cleanup and joins concurrent closes",
+    async (failing) => {
+      kafkaState.offsets.set("-2", [0n]);
+      kafkaState.offsets.set("-1", [10n]);
+      const stream = await new PlatformaticConsumerFactory().open(
+        input({ topic: "orders", mode: "tail", maxMessages: 10 }),
+      );
+      (failing === "stream" ? kafkaState.streamCloseFailures : kafkaState.closeFailures).push(
+        new Error("close failed"),
+      );
+      const first = stream.close();
+      expect(stream.close()).toBe(first);
+      await expect(first).rejects.toThrow("did not close cleanly");
+      await stream.close();
+      expect(kafkaState.streamCloseCalls).toBe(failing === "stream" ? 2 : 1);
+      expect(kafkaState.closeCalls).toHaveLength(failing === "consumer" ? 2 : 1);
+    },
+  );
+  it("retains a failed-open consumer behind an exact close-only retry handle", async () => {
+    kafkaState.offsetFailure = new Error("planning failed");
+    kafkaState.closeFailures.push(new Error("closing failed"));
+    const failure = await new PlatformaticConsumerFactory()
+      .open(input({ topic: "orders", mode: "earliest", maxMessages: 1 }))
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(KafkaReadOpenCleanupError);
+    await (failure as KafkaReadOpenCleanupError).cleanup.close();
+    expect(kafkaState.closeCalls).toEqual([false, true]);
+    expect(kafkaState.consumers).toHaveLength(1);
+  });
+  it("joins the original pending consumer close when a cancelled consume returns its stream late", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [10n]);
+    let finishClose!: () => void;
+    kafkaState.pendingClose = new Promise<void>((resolve) => {
+      finishClose = resolve;
+    });
+    const controller = new AbortController();
+    kafkaState.onConsume = (): void => {
+      controller.abort();
+    };
+    let settled = false;
+    const opening = new PlatformaticConsumerFactory()
+      .open({
+        ...input({ topic: "orders", mode: "tail", maxMessages: 10 }),
+        signal: controller.signal,
+      })
+      .catch((error: unknown) => {
+        settled = true;
+        return error;
+      });
+    await vi.waitFor(() => expect(kafkaState.closeCalls).toHaveLength(1));
+    expect(settled).toBe(false);
+    expect(kafkaState.streamCloseCalls).toBe(0);
+    expect(kafkaState.closeCalls).toEqual([true]);
+    finishClose();
+    expect(await opening).toMatchObject({ name: "AbortError" });
+    expect(kafkaState.closeCalls).toEqual([true]);
+    expect(kafkaState.streamCloseCalls).toBe(1);
+  });
 });
 
 it("retains the client's ordered header entries including duplicate names and null values", async () => {

@@ -39,6 +39,21 @@ it("retains native installer execution provenance and strips unrelated values", 
     validateBrowserInstallerEvidence({ ...receipt, token: "private", host: "private" }, expected),
   ).toEqual(receipt);
 });
+it("never accepts an actual locally qualified v2 predecessor as published-release transition authority", () => {
+  const receipt = structuredClone(fixture());
+  Object.assign(receipt.transition, {
+    predecessor: {
+      version: "0.10.4-qa.d9a7c7b365eb",
+      sourceRevision: "d9a7c7b365eb5bd78157de3ce2055001a53ba38f",
+      platform: "linux/arm64",
+      image: "streamskope:0.10.4-qa.d9a7c7b365eb",
+      imageId: "sha256:ac286c6049e3886ff2c025ab2be853cb8cc5ade189767b35cacc4baa07d79e0e",
+    },
+  });
+  expect(() => validateBrowserInstallerEvidence(receipt, expected)).toThrow(
+    "exact predecessor and target",
+  );
+});
 it.each([
   { schemaVersion: 1 },
   { schemaVersion: 2 },

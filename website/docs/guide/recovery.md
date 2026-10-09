@@ -111,14 +111,23 @@ repeatedly resetting it.
 ### Saved-view library recovery
 
 The view library keeps its existing path, `queries/kafka-queries.json`. Reading
-legacy version-1 queries supplies default presentation without rewriting the file.
-The first save or delete that changes the library preserves the exact original as
-`kafka-queries.json.pre-views-v1` (or an unused numbered generation), then writes
-version 2. Later saves do not replace that predecessor or silently downgrade.
-These JSON files can include sensitive filter literals and resource names.
+legacy version-1 queries or version-2 views supplies empty saved-record positions
+without rewriting the file. The first save or delete that changes the library
+writes version 3 and preserves the exact original first:
 
-Back up the whole data directory before upgrading. An older host cannot read
-version-2 views. Browser maintenance refuses normal rollback when the current
+| Original library  | Preserved predecessor               |
+| ----------------- | ----------------------------------- |
+| Version 1 queries | `kafka-queries.json.pre-views-v1`   |
+| Version 2 views   | `kafka-queries.json.pre-records-v2` |
+
+An existing different valid predecessor uses an unused numbered generation;
+later saves do not replace it or silently downgrade. These JSON files contain
+settings and record locators, including potentially sensitive filter literals,
+resource names and offsets. They contain no saved record bodies or original bytes.
+
+Back up the whole data directory before upgrading. Hosts supporting only version
+1 or 2 cannot read version-3 saved positions. Browser maintenance refuses normal
+rollback when the current
 library or its retained sidecars are incompatible with the older image. Normal
 rollback changes the image; it does **not** restore historical data. To recover an
 older host, first stop the host and separately restore a verified complete
@@ -133,7 +142,7 @@ backup; changes made after that backup will be absent.
 | Situation                                                                             | Snapshot to preserve and use                                                                                                                                             |
 | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Downgrade from API 4 plugins                                                          | Complete pre-upgrade backup containing the older desktop-compatible plugin packages                                                                                      |
-| Downgrade after the saved-view library becomes version 2                              | Complete pre-upgrade data backup containing version-1 queries and compatible settings                                                                                    |
+| Downgrade after the saved-view library becomes version 3                              | Complete pre-upgrade data backup containing the target's supported query/view format and compatible settings; retain both predecessor families with that backup          |
 | Routine downgrade                                                                     | Your complete backup made with the target release before upgrading                                                                                                       |
 | Downgrade across explicit TLS/plaintext transport migration                           | The exact profile filename recorded by `rollbackGeneration` in the version-3 profile document                                                                            |
 | Downgrade after saving password SASL, client identity or independent service security | The exact `.pre-security-v3` generation recorded by `rollbackGeneration` in the version-4 profile document; restore a complete compatible data backup for a browser host |

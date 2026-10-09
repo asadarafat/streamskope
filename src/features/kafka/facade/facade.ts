@@ -358,7 +358,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
             correlationId,
           }).error,
         ),
-      dispatch: () => this.dispatch(command, correlationId),
+      dispatch: (context) =>
+        this.dispatch(command, correlationId, context?.suppressedLocatorLoad ?? false),
     });
   }
 
@@ -380,11 +381,13 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private async dispatch(
     command: HostCommand,
     correlationId: string,
+    suppressedLocatorLoad: boolean | Promise<boolean> = false,
   ): Promise<HostCommandResponse> {
     if (!this.available) {
       return this.unavailableResponse(command, correlationId);
     }
-    if (isRecordRangeCommand(command)) return this.recordRanges.execute(command, correlationId);
+    if (isRecordRangeCommand(command))
+      return this.recordRanges.execute(command, correlationId, suppressedLocatorLoad);
     if (isPluginHostCommand(command)) return this.plugins.execute(command, correlationId);
     if (isAclReviewCommand(command)) return this.aclReviews.execute(command, correlationId);
 

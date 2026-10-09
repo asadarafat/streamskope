@@ -56,7 +56,7 @@ const BACKUP =
   /^kafka-profiles\.json\.(?:pre-upgrade\.bak|(?:pre-transport-v2|pre-security-v3)(?:\.[1-9]\d?)?)$/u;
 const PREFERENCE_BACKUP =
   /^workbench\/kafka-operational-preferences\.json\.pre-codecs-v1(?:\.[1-9]\d?)?$/u;
-const QUERY_BACKUP = /^queries\/kafka-queries\.json\.pre-views-v1(?:\.[1-9]\d?)?$/u;
+const QUERY_BACKUP = /^queries\/kafka-queries\.json\.pre-(views-v1|records-v2)(?:\.[1-9]\d?)?$/u;
 const RECOVERY = /^plugins\/\.recovery\/([a-z][a-z0-9]*(?:[.-][a-z0-9]+)*)\.json$/u;
 const DIRECTORIES = [
   "rules",
@@ -268,7 +268,9 @@ export async function inspectBrowserData(
           (await read(path, KAFKA_QUERY_LIBRARY_LIMITS.fileBytes)).toString("utf8"),
         ) as unknown,
       );
-      if (QUERY_BACKUP.test(path) && document.schemaVersion !== 1) fail("unsupported-format");
+      const backup = QUERY_BACKUP.exec(path);
+      if (backup !== null && document.schemaVersion !== (backup[1] === "views-v1" ? 1 : 2))
+        fail("unsupported-format");
       // Report actual on-disk formats; canonical defaults never cause a write or a size rejection.
       formats.add(document.schemaVersion);
       if (path === "queries/kafka-queries.json") count = document.queries.length;

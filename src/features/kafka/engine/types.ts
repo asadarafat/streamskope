@@ -21,6 +21,7 @@ import type {
   KafkaLatencyProbeMeasurement,
   KafkaMessageStream,
 } from "../application";
+import type { KafkaRecordLocator, KafkaRecordProvenance } from "../contracts/record-locator";
 import type { KafkaReadCheckpoint } from "../application/read-checkpoint";
 
 export type { ConnectionCheck, KafkaConnectionTestResult } from "../application";
@@ -99,6 +100,7 @@ export interface KafkaAdminFactory {
 }
 
 export interface KafkaRawMessage {
+  readonly provenance?: KafkaRecordProvenance;
   readonly headers: ReadonlyMap<Buffer, Buffer | null | undefined>;
   readonly headerEntries?: readonly (readonly [Buffer, Buffer | null | undefined])[];
   readonly key?: Buffer | null;
@@ -119,6 +121,7 @@ export interface KafkaRawMessageStream extends AsyncIterable<KafkaRawMessage> {
 
 export type KafkaConsumerInput = KafkaClientInput & {
   readonly checkpoint?: KafkaReadCheckpoint;
+  readonly expectedLocator?: KafkaRecordLocator;
   readonly groupId: string;
   readonly signal?: AbortSignal;
   readonly onFetchSample?: (sample: KafkaLatencyFetchSample) => void;
@@ -149,6 +152,7 @@ export interface KafkaEngineConnection extends KafkaActiveConnection {
     request: KafkaFetchRequest,
     signal: AbortSignal,
     checkpoint?: KafkaReadCheckpoint,
+    expectedLocator?: KafkaRecordLocator,
   ): Promise<KafkaMessageStream>;
 }
 

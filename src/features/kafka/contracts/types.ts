@@ -11,7 +11,8 @@ import type { ProviderHostPort } from "../../../platform/providers/host";
 import { ACL_REVIEW_COMMANDS } from "./acl-review-commands";
 import type { HostError } from "./host-errors";
 import type { KafkaSavedQuery } from "./query-library";
-import type { KafkaOriginalRecord } from "./record-bytes";
+import type { KafkaExploredMessage } from "./message-types";
+export type { KafkaMessage, KafkaExploredMessage } from "./message-types";
 import type { KafkaReadCoverage, KafkaSearchFilter, KafkaSearchProgress } from "./query-search";
 import type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 import type {
@@ -31,11 +32,7 @@ import type {
   TrustAcquisitionRecipeSnapshot,
   LegacyTrustRecipeSelection,
 } from "./trust-recipe-types";
-import type {
-  KafkaLiveRuleCapability,
-  KafkaLiveRuleEvaluation,
-  KafkaRuleNotification,
-} from "./live-rule-types";
+import type { KafkaLiveRuleCapability, KafkaRuleNotification } from "./live-rule-types";
 import type {
   KafkaRuleDefinition,
   KafkaRuleEvaluationInput,
@@ -88,7 +85,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 59 as const;
+export const HOST_PROTOCOL_VERSION = 60 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -110,6 +107,8 @@ export const HOST_COMMANDS = [
   "records.replay.apply",
   "records.replay.cancel",
   "records.analysis.start",
+  "records.locator.load",
+  "records.locator.cancel",
   "records.analysis.status",
   "records.analysis.cancel",
   "records.analysis.discard",
@@ -385,6 +384,7 @@ export interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | import("./record-locator-protocol").RecordLocatorCommand
   | import("./record-analysis-protocol").RecordAnalysisCommand
   | import("./record-export-protocol").RecordExportCommand
   | import("./connect").ConnectHostCommand
@@ -430,7 +430,10 @@ type HostCommandDefinition =
     })
   | (HostCommandBase & {
       readonly command: "queries.put";
-      readonly payload: { readonly query: KafkaSavedQuery };
+      readonly payload: {
+        readonly query: KafkaSavedQuery;
+        readonly expected?: KafkaSavedQuery | null;
+      };
     })
   | (HostCommandBase & {
       readonly command: "queries.delete";
@@ -830,29 +833,6 @@ export type ConsumptionState =
   | "failed";
 export type ActivitySeverity = "info" | "warning" | "error";
 export type ActivityOutcome = "started" | "succeeded" | "cancelled" | "failed";
-
-export interface KafkaMessage {
-  readonly structured?: import("./structured-record").StructuredRecord;
-  readonly original?: KafkaOriginalRecord;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly id: string;
-  readonly key: string | null;
-  readonly offset: string;
-  readonly originalByteSize: number;
-  /** Full broker record bytes including every ordered header. */
-  readonly recordByteSize?: number;
-  readonly partition: number;
-  readonly payload: string | null;
-  readonly payloadTruncated?: boolean;
-  readonly preview: string;
-  readonly timestamp: string;
-  readonly topic: string;
-  readonly truncated: boolean;
-}
-
-export interface KafkaExploredMessage extends KafkaMessage {
-  readonly ruleEvaluation: KafkaLiveRuleEvaluation;
-}
 
 export interface ActivityEntry {
   readonly correlationId: string;
