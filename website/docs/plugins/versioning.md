@@ -165,6 +165,26 @@ releases cannot load API 4; preserve a complete pre-upgrade backup for rollback.
 Legacy compatibility does not qualify a plugin against target versions beyond its
 original support declaration.
 
+## Refresh profiles with independent credentials
+
+Older plugin packages can still refresh profiles using their original connection
+settings. A profile can now also contain SASL passwords, mutual TLS identities,
+and separate Schema Registry or Connect credentials and trust. A plugin refresh
+must explicitly preserve those settings using protected retain/replace instructions.
+Copying a safe profile summary does not provide credential instructions.
+
+If a plugin omits these settings or copies only their presence flags, StreamSkope
+blocks that refresh before changing the saved profile. The message directs you to
+update the plugin in **Preferences → Plugins**. To remove settings deliberately,
+use the core connection profile editor first. Existing connection profiles and
+plugin recovery information are retained; follow the plugin's recovery guide for
+any remote resources created before the rejected profile refresh.
+
+The updated EDA and NSP plugin sources preserve the expanded settings. Publish and
+install the corresponding qualified plugin packages to use those refresh paths;
+a desktop update does not update installed plugin code. This safeguard does not
+change plugin API 4 or imply that unpublished plugin changes are available.
+
 ## Component versions
 
 | Component                     | Version responsibility                                                                                                                    |

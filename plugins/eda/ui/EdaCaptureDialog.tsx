@@ -33,6 +33,7 @@ import {
   StudioMenuItem as MenuItem,
   StudioTextField as TextField,
 } from "../../../src/platform/ui/controls";
+import { retainedServiceEndpoints } from "../../../src/features/kafka/contracts/profile-retain-input";
 
 import type { EdaUiHost as StreamSkopeHost } from "./host";
 import { EdaCaptureStatusPanel } from "./EdaCaptureStatusPanel";
@@ -387,7 +388,18 @@ export function EdaCaptureDialog({
               transport: "plaintext",
               expectedRevision: existing.revision ?? 1,
               ...(profile.source === undefined ? {} : { source: profile.source }),
-              ...(existing.services === undefined ? {} : { services: existing.services }),
+              ...(existing.services === undefined
+                ? {}
+                : { services: retainedServiceEndpoints(existing.services) }),
+              ...(existing.sasl === undefined
+                ? {}
+                : {
+                    sasl: {
+                      mechanism: existing.sasl.mechanism,
+                      username: existing.sasl.username,
+                      password: { mode: "retain" as const },
+                    },
+                  }),
               ...(existing.oauth === undefined
                 ? {}
                 : {

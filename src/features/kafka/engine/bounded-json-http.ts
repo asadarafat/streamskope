@@ -1,11 +1,16 @@
 import { request as requestHttp } from "node:http";
 import { request as requestHttps } from "node:https";
 
+import type { ConnectionClientIdentity } from "../contracts";
+
+import { tlsClientIdentityOptions } from "./tls-client-identity";
+
 export interface BoundedJsonHttpRequest {
   readonly authorization?: string;
   readonly body?: unknown;
   readonly contentType?: string;
   readonly caPem?: string;
+  readonly clientIdentity?: ConnectionClientIdentity;
   readonly method: "DELETE" | "GET" | "POST" | "PUT";
   readonly signal: AbortSignal;
   readonly url: string;
@@ -52,6 +57,9 @@ export class NodeBoundedJsonHttp implements BoundedJsonHttpPort {
     if (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") {
       return Promise.reject(new BoundedJsonHttpError("Service URL must use HTTP or HTTPS."));
     }
+    if (endpoint.username || endpoint.password) {
+      return Promise.reject(new BoundedJsonHttpError("Service URL must not include credentials."));
+    }
     const encodedBody = input.body === undefined ? undefined : JSON.stringify(input.body);
     if (
       encodedBody !== undefined &&
@@ -68,6 +76,7 @@ export class NodeBoundedJsonHttp implements BoundedJsonHttpPort {
           ...(endpoint.protocol === "https:" && input.caPem !== undefined
             ? { ca: [input.caPem] }
             : {}),
+          ...(endpoint.protocol === "https:" ? tlsClientIdentityOptions(input.clientIdentity) : {}),
           headers: {
             accept: "application/json",
             ...(input.authorization === undefined ? {} : { authorization: input.authorization }),
@@ -111,6 +120,10 @@ export class NodeBoundedJsonHttp implements BoundedJsonHttpPort {
             try {
               resolve({ body: JSON.parse(text) as unknown, status });
             } catch {
+              if (status < 200 || status >= 300) {
+                resolve({ body: null, status });
+                return;
+              }
               reject(new BoundedJsonHttpError("Service returned invalid JSON."));
             }
           });

@@ -436,6 +436,14 @@ export type {
 } from "./live-rule-types";
 export type {
   AcquiredProtectedValueInput,
+  ProfileSaslInput,
+  ProfileClientIdentityInput,
+  ProfileServiceTrustInput,
+  ProfileSummarySasl,
+  ProfileSummaryClientIdentity,
+  ClusterServiceEndpointSummary,
+  ClusterServiceEndpointsSummary,
+  KafkaSaslMechanism,
   ClusterServiceAuthenticationMode,
   ClusterServiceEndpointInput,
   ClusterServiceEndpointsInput,
@@ -465,6 +473,13 @@ export type {
   ProtectedValueCreateInput,
   ProtectedValueUpdateInput,
 } from "./profile-types";
+export { KAFKA_SASL_MECHANISMS } from "./profile-types";
+export type {
+  ConnectionClientIdentity,
+  ConnectionSasl,
+  ResolvedClusterServiceEndpoint,
+  ResolvedClusterServiceEndpoints,
+} from "./connection-security";
 export type {
   KafkaRuleDefinition,
   KafkaRuleEvaluationInput,

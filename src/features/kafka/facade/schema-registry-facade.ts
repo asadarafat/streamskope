@@ -8,6 +8,7 @@ import {
   type SchemaRegistryInventorySnapshot,
 } from "../contracts";
 import type { KafkaApplicationSession, SchemaRegistryPort } from "../application";
+import { serviceConnectionDiagnostic } from "../application/connection-diagnostics";
 
 import { failureResponse, successResponse, type ActivityInput } from "./facade-support";
 
@@ -53,6 +54,9 @@ function compatibilityEvent(
 }
 
 function safeFailure(error: unknown, correlationId: string, target: string): HostError {
+  const diagnostic = serviceConnectionDiagnostic(error, "Schema Registry");
+  if (diagnostic !== undefined)
+    return { ...diagnostic, correlationId, target, activeStateChanged: false };
   const status =
     error !== null &&
     typeof error === "object" &&
@@ -120,7 +124,8 @@ function schemaFailureState(
     error instanceof Error &&
     error.name === "SchemaRegistryResponseError" &&
     (!("status" in error) || error.status === null);
-  if (failure.code === "AUTHORIZATION_DENIED") return "denied";
+  if (failure.code === "AUTHORIZATION_DENIED" || failure.code === "HTTPS_AUTHENTICATION")
+    return "denied";
   if (invalid) return "invalid-response";
   if (failure.code === "BACKEND_UNAVAILABLE") return "unavailable";
   return "failed";

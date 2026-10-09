@@ -18,3 +18,7 @@ export function pluginProblem(
   trustedProblems.add(error);
   return error;
 }
+
+export function pluginErrorSummary(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 1_024) : "The plugin could not be loaded.";
+}

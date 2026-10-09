@@ -119,7 +119,11 @@ async function execute<Command extends HostCommand>(
 ): Promise<HostCommandResponse<Command["command"]>> {
   const parsed = parseHostCommand(request);
   const response = parseCorrelatedHostResponse(await facade.execute(parsed), request);
-  expect(response).toMatchObject({ command: request.command, id: request.id, version: 53 });
+  expect(response).toMatchObject({
+    command: request.command,
+    id: request.id,
+    version: request.version,
+  });
   const correlationId = response.ok ? response.result.correlationId : response.error.correlationId;
   expect(correlationId).toMatch(/^correlation-\d+$/u);
   expect(correlationId).not.toBe(request.id);

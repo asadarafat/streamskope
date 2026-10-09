@@ -120,7 +120,7 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
       row.count < 0 ||
       row.count > 8192 ||
       !Array.isArray(row.formats) ||
-      row.formats.length > 3
+      row.formats.length > 4
     )
       return invalid();
     let previousFormat = 0;
@@ -129,7 +129,7 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
         typeof format !== "number" ||
         !Number.isInteger(format) ||
         format < 1 ||
-        format > (kind === "kafka-profiles" || kind === "profile-backups" ? 3 : 1) ||
+        format > (kind === "kafka-profiles" || kind === "profile-backups" ? 4 : 1) ||
         format <= previousFormat
       )
         return invalid();
@@ -182,7 +182,7 @@ export const REVIEWED_BROWSER_PREDECESSORS = Object.freeze([
   }),
 ]);
 
-/** Reviewed unchanged persisted formats; this legacy image has no inspection executable. */
+/** Reviewed predecessor identity only; maintenance must also limit its Kafka formats to 1–3. */
 export function reviewedLegacyBrowserDataContract(identity: {
   readonly version: string;
   readonly sourceRevision: string;

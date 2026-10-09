@@ -21,6 +21,10 @@ import { Admin } from "@platformatic/kafka";
 
 import { loadFixtureConfig } from "./kafka-fixture";
 import { NativeKafkaFixtureError, type NativeFixturePhase } from "./native-fixture-error";
+import {
+  createKafkaAuthenticationMaterials,
+  type KafkaAuthenticationFixture,
+} from "./kafka-authentication-materials";
 
 const run = promisify(execFile);
 const KAFKA_VERSION = "4.3.1";
@@ -150,7 +154,9 @@ export async function startNativeKafkaFixture(
     directory: () => mkdtemp(join(tmpdir(), "streamskope-native-kafka-")),
     configuration: loadFixtureConfig,
   },
+  options: { readonly authenticationMatrix?: boolean } = {},
 ): Promise<{
+  readonly authentication?: KafkaAuthenticationFixture;
   readonly environment: Record<string, string>;
   readonly metadata: { kafkaVersion: string; archiveSha512: string; transport: string };
   dispose(): Promise<void>;
@@ -271,8 +277,15 @@ export async function startNativeKafkaFixture(
       throw new Error("OAuth fixture port allocation failed.");
     const oauthRoot = `http://127.0.0.1:${address.port}`;
     const ports = new Set<number>();
-    while (ports.size < 3) ports.add(await availablePort());
-    const [clientPort, internalPort, controllerPort] = [...ports];
+    while (ports.size < (options.authenticationMatrix ? 6 : 3)) ports.add(await availablePort());
+    const [
+      clientPort,
+      internalPort,
+      controllerPort,
+      mutualTlsPort,
+      mutualSaslPort,
+      saslPlaintextPort,
+    ] = [...ports];
     const ca = join(directory, "ca.pem");
     const keystore = join(directory, "server.p12");
     const password = randomBytes(24).toString("hex");
@@ -354,6 +367,23 @@ export async function startNativeKafkaFixture(
       "sasl.oauthbearer.expected.issuer": issuer,
       "sasl.oauthbearer.expected.audience": "streamskope-native",
     };
+    const authentication = options.authenticationMatrix
+      ? await createKafkaAuthenticationMaterials({
+          directory,
+          tlsPort: clientPort!,
+          mutualTlsPort: mutualTlsPort!,
+          mutualSaslPort: mutualSaslPort!,
+          saslPlaintextPort: saslPlaintextPort!,
+          brokerCaPath: ca,
+        })
+      : undefined;
+    if (authentication !== undefined) {
+      Object.assign(properties, authentication.properties, {
+        listeners: `${properties.listeners},${authentication.listeners}`,
+        "advertised.listeners": `${properties["advertised.listeners"]},${authentication.listeners}`,
+        "listener.security.protocol.map": `${properties["listener.security.protocol.map"]},MTLS:SSL,MUTUAL:SASL_SSL,CLEAR:SASL_PLAINTEXT`,
+      });
+    }
     const settings = join(directory, "server.properties");
     await writeFile(
       settings,
@@ -379,10 +409,11 @@ export async function startNativeKafkaFixture(
         "kafka.tools.StorageTool",
         "format",
         "--standalone",
-        "--cluster-id",
-        randomBytes(16).toString("base64url"),
+        // Base64url IDs may start with "-"; bind the value so it is never parsed as another flag.
+        `--cluster-id=${randomBytes(16).toString("base64url")}`,
         "--config",
         settings,
+        ...(authentication?.storageArguments ?? []),
       ],
       { cwd: directory, timeout: 30_000 },
     );
@@ -429,6 +460,7 @@ export async function startNativeKafkaFixture(
     }
     if (!ready) throw new Error("Native Kafka fixture did not become ready.");
     return {
+      ...(authentication === undefined ? {} : { authentication: authentication.fixture }),
       environment: {
         STREAMSKOPE_TEST_KAFKA_ENDPOINT: `127.0.0.1:${clientPort}`,
         STREAMSKOPE_TEST_OAUTH_ENDPOINT: `${oauthRoot}/rest-gateway/rest/api/v1/auth/token`,
@@ -437,7 +469,9 @@ export async function startNativeKafkaFixture(
       metadata: {
         kafkaVersion: KAFKA_VERSION,
         archiveSha512: ARCHIVE_SHA512,
-        transport: "TLS / RS256 OAUTHBEARER; loopback only",
+        transport: options.authenticationMatrix
+          ? "TLS, mTLS and explicit plaintext / PLAIN, SCRAM and RS256 OAUTHBEARER; loopback only"
+          : "TLS / RS256 OAUTHBEARER; loopback only",
       },
       dispose,
     };

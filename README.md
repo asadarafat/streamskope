@@ -58,9 +58,9 @@ supported provider capabilities.
 - Manage Kafka Connect, validate connector configuration and inspect supported DLQ context.
 - Compare topic settings across clusters and promote selected, reviewed differences.
 - Test message rules and inspect deployed Redpanda transforms.
-- Save TLS and OAuth connection profiles, with optional SSH or HTTPS secret retrieval.
+- Save TLS/mutual TLS and OAuth, PLAIN or SCRAM connection profiles, with optional SSH or HTTPS secret retrieval.
 
-Kafka authentication supports **OAUTHBEARER or no SASL**. Avro/Protobuf inspection
+Kafka authentication supports **OAUTHBEARER, PLAIN, SCRAM-SHA-256/512 or no SASL**. Schema Registry and Connect have independent credentials and certificate trust. Avro/Protobuf inspection
 requires a separate Schema Registry and an explicit encoding selection in
 [Message details → Decoded](website/docs/guide/structured-events.md).
 Transform operations require Redpanda. Check the [compatibility matrix](website/docs/start/compatibility.md)
@@ -70,7 +70,7 @@ for implemented capabilities, tested environments and limitations.
 
 1. [Install and open StreamSkope](website/docs/start/installation.md) for your platform.
 2. [Connect your Kafka](website/docs/guide/connections.md) using reachable brokers,
-   trust material and any required OAuth credentials.
+   trust material and the required authentication credentials.
 3. [Read your first message](website/docs/start/quickstart.md#3-open-a-record) from a known topic.
 
 Use an inspection account with the [required permissions](website/docs/guide/security.md).

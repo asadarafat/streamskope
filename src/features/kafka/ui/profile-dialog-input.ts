@@ -5,6 +5,7 @@ import type {
   ProfileTrustCreateValueInput,
   ProfileTrustUpdateValueInput,
   ProfileUpdateInput,
+  ProtectedValueUpdateInput,
   RemoteTrustAcquisitionSummary,
 } from "../contracts";
 import type { ProfileBindingInput } from "../contracts/profile-binding";
@@ -16,8 +17,18 @@ import {
   type ProfileForm,
   type TrustValueMode,
 } from "./profile-dialog-model";
+import {
+  buildClientIdentity,
+  buildServiceEndpoint,
+  createProtectedField,
+  updateProtectedField,
+  type ProtectedFieldForm,
+} from "./profile-security-form";
 
-function buildServices(form: ProfileForm): ClusterServiceEndpointsInput | undefined {
+function buildServices<T extends ProtectedValueUpdateInput>(
+  form: ProfileForm,
+  protectedValue: (field: ProtectedFieldForm) => T,
+): ClusterServiceEndpointsInput<T> | undefined {
   const connect = form.connectUrl.trim();
   const schemaRegistry = form.schemaRegistryUrl.trim();
   const redpandaAdmin = form.redpandaAdminUrl.trim();
@@ -26,22 +37,33 @@ function buildServices(form: ProfileForm): ClusterServiceEndpointsInput | undefi
   return {
     ...(connect.length === 0
       ? {}
-      : { connect: { authentication: form.connectAuthentication, baseUrl: connect } }),
+      : {
+          connect: buildServiceEndpoint(
+            connect,
+            form.connectAuthentication,
+            form.connectSecurity,
+            protectedValue,
+          ),
+        }),
     ...(schemaRegistry.length === 0
       ? {}
       : {
-          schemaRegistry: {
-            authentication: form.schemaRegistryAuthentication,
-            baseUrl: schemaRegistry,
-          },
+          schemaRegistry: buildServiceEndpoint(
+            schemaRegistry,
+            form.schemaRegistryAuthentication,
+            form.schemaRegistrySecurity,
+            protectedValue,
+          ),
         }),
     ...(redpandaAdmin.length === 0
       ? {}
       : {
-          redpandaAdmin: {
-            authentication: form.redpandaAdminAuthentication,
-            baseUrl: redpandaAdmin,
-          },
+          redpandaAdmin: buildServiceEndpoint(
+            redpandaAdmin,
+            form.redpandaAdminAuthentication,
+            form.redpandaAdminSecurity,
+            protectedValue,
+          ),
         }),
   };
 }
@@ -87,24 +109,39 @@ export function buildCreateInput(
   const base = {
     brokers: splitBrokers(form.brokers),
     name: form.name.trim(),
-    ...(buildServices(form) === undefined ? {} : { services: buildServices(form)! }),
+    ...(buildServices(form, createProtectedField) === undefined
+      ? {}
+      : { services: buildServices(form, createProtectedField)! }),
   };
-  const withOAuth = form.oauthEnabled
-    ? {
-        ...base,
-        oauth: {
-          clientId: form.clientId.trim(),
-          clientSecret: createProtectedValue(form.clientSecret),
-          scope: form.scope.trim(),
-          tokenEndpoint: form.tokenEndpoint.trim(),
-        },
-      }
-    : base;
+  const withOAuth =
+    form.authentication === "oauth"
+      ? {
+          ...base,
+          oauth: {
+            clientId: form.clientId.trim(),
+            clientSecret: createProtectedValue(form.clientSecret),
+            scope: form.scope.trim(),
+            tokenEndpoint: form.tokenEndpoint.trim(),
+          },
+        }
+      : form.authentication === "none"
+        ? base
+        : {
+            ...base,
+            sasl: {
+              mechanism: form.authentication,
+              username: form.saslUsername,
+              password: createProtectedField(form.saslPassword),
+            },
+          };
   if (form.transport === "plaintext") {
     return { ...withOAuth, transport: "plaintext" };
   }
   return {
     ...withOAuth,
+    ...(form.clientIdentity.enabled
+      ? { clientIdentity: buildClientIdentity(form.clientIdentity, createProtectedField)! }
+      : {}),
     ...(form.apiCa === undefined ? {} : { apiCa: form.apiCa }),
     ...(binding === undefined ? {} : { binding }),
     transport: "tls",
@@ -131,27 +168,42 @@ export function buildUpdateInput(
     expectedRevision,
     brokers: splitBrokers(form.brokers),
     name: form.name.trim(),
-    ...(buildServices(form) === undefined ? {} : { services: buildServices(form)! }),
+    ...(buildServices(form, updateProtectedField) === undefined
+      ? {}
+      : { services: buildServices(form, updateProtectedField)! }),
   };
-  const withOAuth = form.oauthEnabled
-    ? {
-        ...base,
-        oauth: {
-          clientId: form.clientId.trim(),
-          clientSecret: updateProtectedValue(
-            form.clientSecret,
-            profile.oauth?.clientSecretPresent === true,
-          ),
-          scope: form.scope.trim(),
-          tokenEndpoint: form.tokenEndpoint.trim(),
-        },
-      }
-    : base;
+  const withOAuth =
+    form.authentication === "oauth"
+      ? {
+          ...base,
+          oauth: {
+            clientId: form.clientId.trim(),
+            clientSecret: updateProtectedValue(
+              form.clientSecret,
+              profile.oauth?.clientSecretPresent === true,
+            ),
+            scope: form.scope.trim(),
+            tokenEndpoint: form.tokenEndpoint.trim(),
+          },
+        }
+      : form.authentication === "none"
+        ? base
+        : {
+            ...base,
+            sasl: {
+              mechanism: form.authentication,
+              username: form.saslUsername,
+              password: updateProtectedField(form.saslPassword),
+            },
+          };
   if (form.transport === "plaintext") {
     return { ...withOAuth, transport: "plaintext" };
   }
   return {
     ...withOAuth,
+    ...(form.clientIdentity.enabled
+      ? { clientIdentity: buildClientIdentity(form.clientIdentity, updateProtectedField)! }
+      : {}),
     ...(form.apiCa === undefined ? {} : { apiCa: form.apiCa }),
     ...(binding === undefined ? {} : { binding }),
     transport: "tls",

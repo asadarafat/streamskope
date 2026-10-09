@@ -6,6 +6,7 @@ import { connect as connectTls, type TLSSocket } from "node:tls";
 import type { KafkaLatencyProbeIssue } from "../contracts";
 
 import type { KafkaClientInput } from "./types";
+import { tlsClientIdentityOptions } from "./tls-client-identity";
 
 export interface KafkaLatencyNetworkResult {
   readonly endpoint: string;
@@ -104,6 +105,7 @@ export async function probeKafkaNetwork(
         () =>
           connectTls({
             ca: [input.caPem],
+            ...tlsClientIdentityOptions(input.clientIdentity),
             host: parsed.host,
             port: parsed.port,
             rejectUnauthorized: true,

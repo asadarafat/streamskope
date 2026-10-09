@@ -22,6 +22,7 @@ import {
   type KafkaStreamTuningSource,
   type ProfileSummary,
   type SecureConnectionInput,
+  type ResolvedClusterServiceEndpoint,
 } from "../contracts";
 import {
   ConnectionAttemptSupersededError,
@@ -250,7 +251,63 @@ export function sensitiveValues(
     return [];
   }
   return [
-    ...(connection.oauth === undefined ? [] : [connection.oauth.clientSecret]),
+    ...(connection.oauth === undefined
+      ? []
+      : [
+          connection.oauth.clientSecret,
+          btoa(
+            String.fromCharCode(
+              ...new TextEncoder().encode(
+                `${connection.oauth.clientId}:${connection.oauth.clientSecret}`,
+              ),
+            ),
+          ),
+        ]),
+    ...(connection.sasl === undefined ? [] : [connection.sasl.password]),
+    ...("clientIdentity" in connection.tls && connection.tls.clientIdentity !== undefined
+      ? [
+          connection.tls.clientIdentity.certificatePem,
+          connection.tls.clientIdentity.privateKeyPem,
+          connection.tls.clientIdentity.passphrase ?? "",
+        ]
+      : []),
+    ...Object.values<ResolvedClusterServiceEndpoint>({ ...connection.services }).flatMap(
+      (service) => [
+        ...(service.basic === undefined
+          ? []
+          : [
+              service.basic.password,
+              btoa(
+                String.fromCharCode(
+                  ...new TextEncoder().encode(
+                    `${service.basic.username}:${service.basic.password}`,
+                  ),
+                ),
+              ),
+            ]),
+        ...(service.bearer === undefined ? [] : [service.bearer]),
+        ...(service.oauth === undefined
+          ? []
+          : [
+              service.oauth.clientSecret,
+              btoa(
+                String.fromCharCode(
+                  ...new TextEncoder().encode(
+                    `${service.oauth.clientId}:${service.oauth.clientSecret}`,
+                  ),
+                ),
+              ),
+            ]),
+        ...(service.tls?.caPem === undefined ? [] : [service.tls.caPem]),
+        ...(service.tls?.clientIdentity === undefined
+          ? []
+          : [
+              service.tls.clientIdentity.certificatePem,
+              service.tls.clientIdentity.privateKeyPem,
+              service.tls.clientIdentity.passphrase ?? "",
+            ]),
+      ],
+    ),
     ...("caPem" in connection.tls && connection.tls.caPem !== undefined
       ? [connection.tls.caPem, "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----"]
       : []),

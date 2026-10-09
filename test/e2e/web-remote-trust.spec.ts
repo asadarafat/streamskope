@@ -80,7 +80,8 @@ test("acquires selected remote JKS trust and connects a profile to aio-kafka", a
     await editor.getByRole("textbox", { name: "Profile name" }).fill("Remote acquired aio");
     await editor.getByRole("textbox", { name: "Bootstrap brokers" }).fill(fixture.kafkaEndpoint);
     await acquireRemoteJksTrust(page, ssh);
-    await editor.getByRole("switch", { name: "Use OAuth OAUTHBEARER" }).click();
+    await editor.getByRole("combobox", { name: "Broker authentication" }).click();
+    await page.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)", exact: true }).click();
     await editor.getByRole("textbox", { name: "OAuth token endpoint" }).fill(fixture.oauthEndpoint);
     await editor.getByRole("textbox", { name: "OAuth client ID" }).fill(config.oauthClientId);
     await editor

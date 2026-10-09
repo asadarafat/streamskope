@@ -1,4 +1,7 @@
 import type {
+  ProfileSaslInput,
+  ProfileClientIdentityInput,
+  ResolvedClusterServiceEndpoints,
   ClusterServiceEndpointsInput,
   HostErrorCode,
   HostErrorStage,
@@ -13,9 +16,16 @@ import type {
   SecureConnectionInput,
 } from "../contracts";
 
+import {
+  connectionIdentity,
+  securityValidationInput,
+  summarizeIdentity,
+  summarizeServices,
+} from "./profile-security";
 import type { KafkaTrustAcquisitionResolver } from "./trust-acquisition-types";
 
 interface KafkaProfileRecordBase {
+  readonly sasl?: ProfileSaslInput<string>;
   readonly revision?: number;
   readonly brokers: readonly string[];
   readonly createdAt: string;
@@ -27,12 +37,13 @@ interface KafkaProfileRecordBase {
     readonly scope: string;
     readonly tokenEndpoint: string;
   };
-  readonly services?: ClusterServiceEndpointsInput;
+  readonly services?: ClusterServiceEndpointsInput<string>;
   readonly source?: ProfileSource;
   readonly updatedAt: string;
 }
 
 export interface KafkaTlsProfileRecord extends KafkaProfileRecordBase {
+  readonly clientIdentity?: ProfileClientIdentityInput<string>;
   readonly apiCaPem?: string;
   readonly binding?: ProfileAcquisitionBinding;
   readonly transport?: Extract<KafkaProfileTransport, "tls">;
@@ -45,6 +56,7 @@ export interface KafkaTlsProfileRecord extends KafkaProfileRecordBase {
 }
 
 export interface KafkaPlaintextProfileRecord extends KafkaProfileRecordBase {
+  readonly clientIdentity?: never;
   readonly apiCaPem?: never;
   readonly binding?: never;
   readonly transport: Extract<KafkaProfileTransport, "plaintext">;
@@ -54,15 +66,18 @@ export interface KafkaPlaintextProfileRecord extends KafkaProfileRecordBase {
 export type KafkaProfileRecord = KafkaPlaintextProfileRecord | KafkaTlsProfileRecord;
 
 interface KafkaResolvedProfileDraftBase {
+  readonly sasl?: ProfileSaslInput<string>;
+  readonly resolvedServices?: ResolvedClusterServiceEndpoints;
   readonly brokers: readonly string[];
   readonly lifetimeSignal?: AbortSignal;
   readonly name: string;
   readonly oauth?: NonNullable<SecureConnectionInput["oauth"]>;
-  readonly services?: ClusterServiceEndpointsInput;
+  readonly services?: ClusterServiceEndpointsInput<string>;
   readonly source?: ProfileSource;
 }
 
 interface KafkaResolvedTlsProfileDraft extends KafkaResolvedProfileDraftBase {
+  readonly clientIdentity?: ProfileClientIdentityInput<string>;
   readonly apiCaPem?: string;
   readonly binding?: ProfileAcquisitionBinding;
   readonly acquisitionId?: string;
@@ -83,10 +98,11 @@ export function kafkaProfileDraftConnection(
   draft: KafkaResolvedProfileDraft,
 ): SecureConnectionInput {
   const base = {
+    ...(draft.sasl === undefined ? {} : { sasl: draft.sasl }),
     brokers: draft.brokers,
     name: draft.name,
     ...(draft.oauth === undefined ? {} : { oauth: draft.oauth }),
-    ...(draft.services === undefined ? {} : { services: draft.services }),
+    ...(draft.resolvedServices === undefined ? {} : { services: draft.resolvedServices }),
   };
   return draft.transport === "plaintext"
     ? { ...base, tls: { enabled: false } }
@@ -94,6 +110,9 @@ export function kafkaProfileDraftConnection(
         ...base,
         tls: {
           caPem: draft.trust.caPem,
+          ...(draft.clientIdentity === undefined
+            ? {}
+            : { clientIdentity: connectionIdentity(draft.clientIdentity) }),
           enabled: true,
         },
       };
@@ -110,6 +129,7 @@ export function kafkaProfileRecordFromDraft(
 ): KafkaProfileRecord {
   const base = {
     revision: identity.revision,
+    ...(draft.sasl === undefined ? {} : { sasl: draft.sasl }),
     brokers: draft.brokers,
     createdAt: identity.createdAt,
     id: identity.id,
@@ -124,6 +144,7 @@ export function kafkaProfileRecordFromDraft(
   }
   return {
     ...base,
+    ...(draft.clientIdentity === undefined ? {} : { clientIdentity: draft.clientIdentity }),
     ...(draft.apiCaPem === undefined ? {} : { apiCaPem: draft.apiCaPem }),
     ...(draft.binding === undefined ? {} : { binding: draft.binding }),
     transport: "tls",
@@ -143,11 +164,20 @@ export function kafkaProfileSummary(
   const base = {
     ...(record.revision === undefined ? {} : { revision: record.revision }),
     active: record.id === activeProfileId,
+    ...(record.sasl === undefined
+      ? {}
+      : {
+          sasl: {
+            mechanism: record.sasl.mechanism,
+            username: record.sasl.username,
+            passwordPresent: record.sasl.password.length > 0,
+          },
+        }),
     brokers: [...record.brokers],
     createdAt: record.createdAt,
     id: record.id,
     name: record.name,
-    ...(record.services === undefined ? {} : { services: record.services }),
+    ...(record.services === undefined ? {} : { services: summarizeServices(record.services) }),
     ...(record.source === undefined ? {} : { source: record.source }),
     transport: record.transport ?? "tls",
     updatedAt: record.updatedAt,
@@ -169,6 +199,9 @@ export function kafkaProfileSummary(
   }
   return {
     ...withOAuth,
+    ...(record.clientIdentity === undefined
+      ? {}
+      : { clientIdentity: summarizeIdentity(record.clientIdentity) }),
     transport: "tls",
     trust: {
       kind: record.trust.kind,
@@ -180,10 +213,12 @@ export function kafkaProfileSummary(
 }
 
 export function kafkaProfileValidationInput(record: KafkaProfileRecord): ProfileCreateInput {
+  const security = securityValidationInput(record);
   const base = {
+    ...(security.sasl === undefined ? {} : { sasl: security.sasl }),
     brokers: record.brokers,
     name: record.name,
-    ...(record.services === undefined ? {} : { services: record.services }),
+    ...(security.services === undefined ? {} : { services: security.services }),
     ...(record.source === undefined ? {} : { source: record.source }),
     ...(record.oauth === undefined
       ? {}
@@ -204,6 +239,7 @@ export function kafkaProfileValidationInput(record: KafkaProfileRecord): Profile
   }
   return {
     ...base,
+    ...(security.clientIdentity === undefined ? {} : { clientIdentity: security.clientIdentity }),
     transport: "tls",
     trust: {
       kind: record.trust.kind,

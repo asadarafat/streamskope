@@ -25,3 +25,16 @@ profile sources. Rollback uses current compatible data; it does not restore an
 older snapshot or rewind remote resources. See the
 [upgrade procedure](../guide/browser-host.md#upgrade-an-installer-managed-host)
 before changing an existing installation.
+
+Kafka connection profiles add SASL PLAIN, SCRAM-SHA-256/512 and PEM mutual TLS
+identities. Schema Registry and Connect gain independent Basic, bearer or OAuth
+client credentials, certificate trust and optional client identities. Profile
+connection tests now check configured Registry/Connect endpoints as well as Kafka.
+
+Existing OAuth and plugin-generated profiles keep their prior behavior. Saving
+expanded security adopts a new protected profile format and preserves the original
+file for recovery. Older hosts cannot read that format; review the
+[rollback snapshot rules](../guide/recovery.md#choose-the-correct-rollback-snapshot).
+The runtime qualification matrix covers an isolated Kafka broker and controlled
+HTTPS endpoints; this does not claim qualification of managed services or native
+OS credential migration.

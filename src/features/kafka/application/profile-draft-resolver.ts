@@ -9,14 +9,15 @@ import {
   type ProtectedValueUpdateInput,
 } from "../contracts";
 
+import {
+  resolveProfileSecurity,
+  resolveProtectedCredential,
+  resolveServiceConnections,
+  securityValidationInput,
+} from "./profile-security";
 import { KafkaProfileValidationError } from "./profile-errors";
 import { resolveCreateProfileTrust, resolveUpdateProfileTrust } from "./profile-trust-resolution";
-import {
-  assertProfileRevision,
-  canonicalServices,
-  createIssues,
-  trustLabel,
-} from "./profile-validation";
+import { assertProfileRevision, createIssues, trustLabel } from "./profile-validation";
 import type {
   KafkaProfileRecord,
   KafkaResolvedProfileDraft,
@@ -33,20 +34,6 @@ function acquiredDraftSignal(
     : signal === undefined
       ? lifetime
       : AbortSignal.any([signal, lifetime]);
-}
-
-function resolveProtectedValue(
-  input: ProtectedValueUpdateInput,
-  existing: string | undefined,
-): string | undefined {
-  switch (input.mode) {
-    case "clear":
-      return undefined;
-    case "replace":
-      return input.value;
-    case "retain":
-      return existing;
-  }
 }
 
 // Resolves draft secrets and acquisition bindings without owning profile persistence.
@@ -166,24 +153,39 @@ export class KafkaProfileDraftResolver {
     if (issues.length > 0) {
       throw new KafkaProfileValidationError(issues);
     }
+    const security = resolveProfileSecurity(input, undefined);
     const oauth =
       input.oauth === undefined || input.oauth.clientSecret.mode !== "replace"
         ? undefined
         : {
             clientId: input.oauth.clientId.trim(),
-            clientSecret: input.oauth.clientSecret.value,
+            clientSecret: resolveProtectedCredential(
+              input.oauth.clientSecret,
+              undefined,
+              "oauth.clientSecret",
+            ),
             scope: input.oauth.scope.trim(),
             tokenEndpoint: input.oauth.tokenEndpoint.trim(),
           };
     const base = {
+      ...(security.sasl === undefined ? {} : { sasl: security.sasl }),
       brokers: input.brokers.map((broker) => broker.trim()),
       name: input.name.normalize("NFKC").trim(),
       ...(oauth === undefined ? {} : { oauth }),
-      ...(input.services === undefined ? {} : { services: canonicalServices(input.services)! }),
+      ...(security.services === undefined ? {} : { services: security.services }),
       ...(input.source === undefined ? {} : { source: input.source }),
     };
     if (input.transport === "plaintext") {
-      return { ...base, transport: "plaintext" };
+      const resolvedServices = await resolveServiceConnections(
+        security.services,
+        this.trustDecoder,
+        signal,
+      );
+      return {
+        ...base,
+        ...(resolvedServices === undefined ? {} : { resolvedServices }),
+        transport: "plaintext",
+      };
     }
     const binding = await this.resolveBinding(input.binding, undefined, signal);
     const apiCaPem = await this.resolveApiCa(input.apiCa, undefined, signal);
@@ -200,7 +202,15 @@ export class KafkaProfileDraftResolver {
       effectiveSignal,
     );
     effectiveSignal?.throwIfAborted();
+    const resolvedServices = await resolveServiceConnections(
+      security.services,
+      this.trustDecoder,
+      effectiveSignal,
+      decoded.caPem,
+    );
     return {
+      ...(security.clientIdentity === undefined ? {} : { clientIdentity: security.clientIdentity }),
+      ...(resolvedServices === undefined ? {} : { resolvedServices }),
       ...base,
       ...(trust.acquisitionId === undefined ? {} : { acquisitionId: trust.acquisitionId }),
       ...(apiCaPem === undefined ? {} : { apiCaPem }),
@@ -238,10 +248,16 @@ export class KafkaProfileDraftResolver {
           message: "Switching a plaintext profile to TLS requires fresh trust values.",
         },
       ]);
+    const security = resolveProfileSecurity(input, existing);
+    const securityInput = securityValidationInput(security);
     const clientSecret =
       input.oauth === undefined
         ? undefined
-        : resolveProtectedValue(input.oauth.clientSecret, existing.oauth?.clientSecret);
+        : resolveProtectedCredential(
+            input.oauth.clientSecret,
+            existing.oauth?.clientSecret,
+            "oauth.clientSecret",
+          );
     const oauth =
       input.oauth === undefined || clientSecret === undefined
         ? undefined
@@ -253,17 +269,19 @@ export class KafkaProfileDraftResolver {
           };
     const source = input.source ?? existing.source;
     const base = {
+      ...(security.sasl === undefined ? {} : { sasl: security.sasl }),
       brokers: input.brokers,
       name: input.name,
-      ...(input.services === undefined ? {} : { services: input.services }),
+      ...(security.services === undefined ? {} : { services: security.services }),
       ...(oauth === undefined ? {} : { oauth }),
       ...(source === undefined ? {} : { source }),
     };
     if (input.transport === "plaintext") {
       const validationInput: ProfileCreateInput = {
+        ...(securityInput.sasl === undefined ? {} : { sasl: securityInput.sasl }),
         brokers: input.brokers,
         name: input.name,
-        ...(input.services === undefined ? {} : { services: input.services }),
+        ...(securityInput.services === undefined ? {} : { services: securityInput.services }),
         ...(source === undefined ? {} : { source }),
         ...(input.oauth === undefined
           ? {}
@@ -284,11 +302,17 @@ export class KafkaProfileDraftResolver {
       if (issues.length > 0) {
         throw new KafkaProfileValidationError(issues);
       }
+      const resolvedServices = await resolveServiceConnections(
+        security.services,
+        this.trustDecoder,
+        signal,
+      );
       return {
         ...base,
+        ...(resolvedServices === undefined ? {} : { resolvedServices }),
         brokers: input.brokers.map((broker) => broker.trim()),
         name: input.name.normalize("NFKC").trim(),
-        ...(input.services === undefined ? {} : { services: canonicalServices(input.services)! }),
+        ...(security.services === undefined ? {} : { services: security.services }),
         transport: "plaintext",
       };
     }
@@ -300,9 +324,13 @@ export class KafkaProfileDraftResolver {
     const material = trust.material;
     const password = trust.password;
     const validationInput: ProfileCreateInput = {
+      ...(securityInput.sasl === undefined ? {} : { sasl: securityInput.sasl }),
+      ...(securityInput.clientIdentity === undefined
+        ? {}
+        : { clientIdentity: securityInput.clientIdentity }),
       brokers: input.brokers,
       name: input.name,
-      ...(input.services === undefined ? {} : { services: input.services }),
+      ...(securityInput.services === undefined ? {} : { services: securityInput.services }),
       ...(source === undefined ? {} : { source }),
       ...(input.oauth === undefined
         ? {}
@@ -339,7 +367,15 @@ export class KafkaProfileDraftResolver {
       effectiveSignal,
     );
     effectiveSignal?.throwIfAborted();
+    const resolvedServices = await resolveServiceConnections(
+      security.services,
+      this.trustDecoder,
+      effectiveSignal,
+      decoded.caPem,
+    );
     return {
+      ...(security.clientIdentity === undefined ? {} : { clientIdentity: security.clientIdentity }),
+      ...(resolvedServices === undefined ? {} : { resolvedServices }),
       ...base,
       ...(trust.acquisitionId === undefined ? {} : { acquisitionId: trust.acquisitionId }),
       ...(apiCaPem === undefined ? {} : { apiCaPem }),
@@ -347,7 +383,7 @@ export class KafkaProfileDraftResolver {
       ...(binding === undefined ? {} : { binding }),
       brokers: input.brokers.map((broker) => broker.trim()),
       name: input.name.normalize("NFKC").trim(),
-      ...(input.services === undefined ? {} : { services: canonicalServices(input.services)! }),
+      ...(security.services === undefined ? {} : { services: security.services }),
       transport: "tls",
       trust: {
         caPem: decoded.caPem,

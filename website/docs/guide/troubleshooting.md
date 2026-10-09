@@ -25,6 +25,24 @@ Start with the failed action and its log entry, then check the matching cause.
 **You should see:** a successful retry or a more specific failing stage to
 investigate. Keep the correlation ID when escalating the problem.
 
+## SASL credentials or client certificate rejected
+
+Check **Broker authentication** against the broker listener's configured mechanism.
+PLAIN, SCRAM-SHA-256 and SCRAM-SHA-512 are different methods; a username that works
+with one is not proof that the others are enabled. Re-enter the SASL password if it
+changed. For OAuth, check the token endpoint, client credentials and scope instead.
+
+If the listener requires mutual TLS, supply the client certificate and matching
+private key, including its passphrase when encrypted. Confirm validity and the
+server's accepted client issuer with the administrator. Do not disable verification
+or switch to plaintext to work around a certificate error.
+
+If Kafka works but a service fails, check that service's own credentials and trust
+selection. A 401 usually requires accepted authentication; a 403 may require extra
+permissions. Neither proves the Kafka credentials are wrong. Correct the failed
+endpoint and run **Test connection** again. Do not paste passwords, bearer tokens,
+private keys or raw server error bodies into issue reports.
+
 ## Broker connection times out after bootstrap succeeds
 
 Kafka returns advertised broker addresses after contacting a bootstrap server.

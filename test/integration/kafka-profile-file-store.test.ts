@@ -806,3 +806,177 @@ describe("Kafka profile file store", () => {
     await expect(stat(path)).resolves.toBeDefined();
   });
 });
+
+describe("production credential persistence", () => {
+  function secured(): KafkaProfileRecord {
+    const { oauth: _oauth, ...base } = profile;
+    void _oauth;
+    return {
+      ...base,
+      transport: "tls",
+      revision: 1,
+      sasl: {
+        mechanism: "SCRAM-SHA-512",
+        username: "operator",
+        password: "broker-password-private",
+      },
+      clientIdentity: {
+        certificatePem: "client-certificate",
+        privateKeyPem: "client-key-private",
+        passphrase: "client-key-passphrase-private",
+      },
+      services: {
+        schemaRegistry: {
+          baseUrl: "https://registry.example.test",
+          authentication: "basic",
+          basic: { username: "registry-user", password: "registry-password-private" },
+          trust: {
+            mode: "custom",
+            kind: "pem",
+            label: "registry.pem",
+            material: "registry-ca",
+            password: "",
+          },
+        },
+        connect: {
+          baseUrl: "https://connect.example.test",
+          authentication: "oauth-client",
+          oauth: {
+            clientId: "connect-client",
+            clientSecret: "connect-secret-private",
+            scope: "",
+            tokenEndpoint: "https://connect-auth.example.test/token",
+          },
+          trust: { mode: "system" },
+        },
+      },
+    };
+  }
+
+  it("preserves a legacy plugin/OAuth profile and exact rollback bytes when adding independent protected credentials", async () => {
+    const path = await temporaryProfilePath();
+    const protector = new ReversibleProtector();
+    const source = {
+      kind: "plugin" as const,
+      pluginId: "streamskope.eda",
+      version: 1 as const,
+      data: { sessionId: "owned-session" },
+    };
+    const legacy = { ...profile, id: "legacy-plugin", source, transport: "tls" as const };
+    const store = new AtomicKafkaProfileFileStore(path, protector, capability);
+    await store.commit([legacy]);
+    const original = await readFile(path);
+    await store.commit([legacy, secured()]);
+    const encoded = await readFile(path, "utf8");
+    const document = JSON.parse(encoded) as { version: number; rollbackGeneration: string };
+    expect(document.version).toBe(4);
+    expect(document.rollbackGeneration).toBe(`${path.split("/").at(-1)}.pre-security-v3`);
+    expect(await readFile(join(path, "..", document.rollbackGeneration))).toEqual(original);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    for (const secret of [
+      "broker-password-private",
+      "client-key-private",
+      "client-key-passphrase-private",
+      "registry-password-private",
+      "connect-secret-private",
+    ])
+      expect(encoded).not.toContain(secret);
+    const restarted = new AtomicKafkaProfileFileStore(path, protector, capability);
+    await expect(restarted.load()).resolves.toEqual([legacy, secured()]);
+    await restarted.commit([legacy]);
+    expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ version: 4 });
+    expect(await readFile(join(path, "..", document.rollbackGeneration))).toEqual(original);
+  });
+
+  it("rejects changed service destinations or secret-presence metadata without rewriting the file", async () => {
+    interface MutableSecuritySummary {
+      services: { schemaRegistry: { baseUrl: string } };
+      sasl: { passwordPresent: boolean };
+      clientIdentity: { privateKeyPresent: boolean };
+    }
+    const path = await temporaryProfilePath();
+    const protector = new ReversibleProtector();
+    await new AtomicKafkaProfileFileStore(path, protector, capability).commit([secured()]);
+    const original = await readFile(path, "utf8");
+    for (const change of [
+      (p: MutableSecuritySummary): void => {
+        p.services.schemaRegistry.baseUrl = "https://other.example.test";
+      },
+      (p: MutableSecuritySummary): void => {
+        p.sasl.passwordPresent = false;
+      },
+      (p: MutableSecuritySummary): void => {
+        p.clientIdentity.privateKeyPresent = false;
+      },
+    ]) {
+      const document = JSON.parse(original) as { profiles: [MutableSecuritySummary] };
+      change(document.profiles[0]);
+      const changed = JSON.stringify(document);
+      await writeFile(path, changed);
+      await expect(
+        new AtomicKafkaProfileFileStore(path, protector, capability).load(),
+      ).rejects.toThrow(KafkaProfileFileCorruptError);
+      expect(await readFile(path, "utf8")).toBe(changed);
+    }
+  });
+
+  it("round trips an explicitly plaintext SASL profile with independently trusted HTTPS services", async () => {
+    const path = await temporaryProfilePath();
+    const protector = new ReversibleProtector();
+    const tls = secured();
+    const record: KafkaProfileRecord = {
+      id: tls.id,
+      name: tls.name,
+      brokers: tls.brokers,
+      createdAt: tls.createdAt,
+      updatedAt: tls.updatedAt,
+      transport: "plaintext",
+      sasl: tls.sasl!,
+      services: tls.services!,
+    };
+    await new AtomicKafkaProfileFileStore(path, protector, capability).commit([record]);
+    await expect(
+      new AtomicKafkaProfileFileStore(path, protector, capability).load(),
+    ).resolves.toEqual([record]);
+  });
+
+  it("does not replace an existing generation when new credential protection fails", async () => {
+    const path = await temporaryProfilePath();
+    const protector = new ReversibleProtector();
+    await new AtomicKafkaProfileFileStore(path, protector, capability).commit([profile]);
+    const before = await readFile(path);
+    const failed: KafkaProfileProtector = {
+      protect: () => Promise.reject(new Error("backend-private-secret")),
+      unprotect: (value) => protector.unprotect(value),
+    };
+    await expect(
+      new AtomicKafkaProfileFileStore(path, failed, capability).commit([secured()]),
+    ).rejects.toThrow(KafkaProfileFileWriteError);
+    expect(await readFile(path)).toEqual(before);
+  });
+});
+
+it("rejects oversized protected envelopes before replacing a readable profile file", async () => {
+  const path = await temporaryProfilePath();
+  const protector = new ReversibleProtector();
+  await new AtomicKafkaProfileFileStore(path, protector, capability).commit([profile]);
+  const before = await readFile(path);
+  const oversized: KafkaProfileProtector = {
+    protect: () => Promise.resolve(Buffer.alloc(32 * 1_048_576 + 1)),
+    unprotect: (value) => protector.unprotect(value),
+  };
+  await expect(
+    new AtomicKafkaProfileFileStore(path, oversized, capability).commit([profile]),
+  ).rejects.toThrow(KafkaProfileFileWriteError);
+  expect(await readFile(path)).toEqual(before);
+});
+
+it("preserves empty OAuth scopes across an unchanged encrypted profile restart", async () => {
+  const path = await temporaryProfilePath();
+  const protector = new ReversibleProtector();
+  const scoped = { ...profile, oauth: { ...profile.oauth!, scope: "" } };
+  await new AtomicKafkaProfileFileStore(path, protector, capability).commit([scoped]);
+  await expect(
+    new AtomicKafkaProfileFileStore(path, protector, capability).load(),
+  ).resolves.toEqual([{ ...scoped, transport: "tls" }]);
+});

@@ -3,54 +3,15 @@ import { parseProfileAcquisitionBinding, type ProfileStoreCapability } from "../
 import type { KafkaProfileRecord, KafkaProfileStore } from "./profile-types";
 
 function cloneRecord(record: KafkaProfileRecord): KafkaProfileRecord {
-  if (record.transport === "plaintext") {
-    return {
-      ...record,
-      brokers: [...record.brokers],
-      ...(record.oauth === undefined ? {} : { oauth: { ...record.oauth } }),
-      ...(record.services === undefined
-        ? {}
-        : {
-            services: {
-              ...(record.services.connect === undefined
-                ? {}
-                : { connect: { ...record.services.connect } }),
-              ...(record.services.redpandaAdmin === undefined
-                ? {}
-                : { redpandaAdmin: { ...record.services.redpandaAdmin } }),
-              ...(record.services.schemaRegistry === undefined
-                ? {}
-                : { schemaRegistry: { ...record.services.schemaRegistry } }),
-            },
-          }),
-      ...(record.source === undefined ? {} : { source: structuredClone(record.source) }),
-      transport: "plaintext",
-    };
-  }
+  // A profile now includes nested service secrets, trust and client identities. Copy the
+  // complete value graph so drafts and loaded snapshots cannot mutate committed state.
+  const cloned = structuredClone(record);
+  if (cloned.transport === "plaintext") return { ...cloned, transport: "plaintext" };
   return {
-    ...record,
-    ...(record.binding === undefined
+    ...cloned,
+    ...(cloned.binding === undefined
       ? {}
-      : { binding: parseProfileAcquisitionBinding(record.binding) }),
-    brokers: [...record.brokers],
-    ...(record.oauth === undefined ? {} : { oauth: { ...record.oauth } }),
-    ...(record.services === undefined
-      ? {}
-      : {
-          services: {
-            ...(record.services.connect === undefined
-              ? {}
-              : { connect: { ...record.services.connect } }),
-            ...(record.services.redpandaAdmin === undefined
-              ? {}
-              : { redpandaAdmin: { ...record.services.redpandaAdmin } }),
-            ...(record.services.schemaRegistry === undefined
-              ? {}
-              : { schemaRegistry: { ...record.services.schemaRegistry } }),
-          },
-        }),
-    ...(record.source === undefined ? {} : { source: structuredClone(record.source) }),
-    trust: { ...record.trust },
+      : { binding: parseProfileAcquisitionBinding(cloned.binding) }),
   };
 }
 

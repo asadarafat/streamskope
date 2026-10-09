@@ -449,7 +449,40 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
     },
   );
 
-  it.each([".pre-upgrade.bak", ".pre-transport-v2"])(
+  it("inspects security profile metadata and its preserved predecessor without unlocking or rewriting", async () => {
+    const root = await seed();
+    const vault = await openPassphraseVault({ dataRoot: root, passphrase: secret, mode: "unlock" });
+    try {
+      const store = new AtomicKafkaProfileFileStore(
+        join(root, "kafka-profiles.json"),
+        vault.protector,
+        vault.capability,
+      );
+      await store.commit(
+        (await store.load()).map((profile) => ({
+          ...profile,
+          sasl: { mechanism: "SCRAM-SHA-256" as const, username: "fixture", password: secret },
+        })),
+      );
+    } finally {
+      await vault.lock();
+    }
+    const report = await check(root);
+    expect(report.outcome, JSON.stringify(report.documents)).toBe("eligible");
+    expect(row(report, "kafka-profiles")).toMatchObject({ state: "verified", formats: [4] });
+    expect(row(report, "profile-backups")).toMatchObject({ state: "verified", formats: [3] });
+    const document = JSON.parse(await readFile(join(root, "kafka-profiles.json"), "utf8")) as {
+      rollbackGeneration: string;
+    };
+    expect(document.rollbackGeneration).toMatch(/^kafka-profiles\.json\.pre-security-v3/u);
+    await rm(join(root, document.rollbackGeneration));
+    expect(row(await check(root), "kafka-profiles")).toMatchObject({
+      state: "blocked",
+      reason: "interrupted-state",
+    });
+  });
+
+  it.each([".pre-upgrade.bak", ".pre-transport-v2", ".pre-security-v3", ".pre-security-v3.99"])(
     "retains unproven managed ownership in a %s backup even when current profiles are plain",
     async (suffix) => {
       const root = await seed({

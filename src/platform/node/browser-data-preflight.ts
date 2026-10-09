@@ -49,7 +49,8 @@ interface VerifiedDocument {
   readonly count: number;
   readonly formats: readonly number[];
 }
-const BACKUP = /^kafka-profiles\.json\.(?:pre-upgrade\.bak|pre-transport-v2(?:\.[1-9]\d?)?)$/u;
+const BACKUP =
+  /^kafka-profiles\.json\.(?:pre-upgrade\.bak|(?:pre-transport-v2|pre-security-v3)(?:\.[1-9]\d?)?)$/u;
 const RECOVERY = /^plugins\/\.recovery\/([a-z][a-z0-9]*(?:[.-][a-z0-9]+)*)\.json$/u;
 const DIRECTORIES = [
   "rules",

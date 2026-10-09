@@ -245,6 +245,9 @@ describe("StreamSkope Kafka engine connection test", () => {
     });
     await activeConnection.close();
     await activeConnection.close();
+    await expect(adminFactory.inputs[0]?.oauthTokenProvider?.()).rejects.toMatchObject({
+      name: "AbortError",
+    });
     expect(admin.closeCalls).toBe(1);
   });
 
@@ -509,9 +512,8 @@ describe("StreamSkope Kafka engine connection test", () => {
       caPem: connection.tls.caPem,
       operationTimeoutMs: 5_000,
     });
-    await expect(adminFactory.inputs[0]?.oauthTokenProvider?.()).resolves.toEqual({
-      expiresAt: 1_800_000_000_000,
-      value: "access-token",
+    await expect(adminFactory.inputs[0]?.oauthTokenProvider?.()).rejects.toMatchObject({
+      name: "AbortError",
     });
     expect(admin.closeCalls).toBe(1);
   });
@@ -747,9 +749,132 @@ describe("StreamSkope Kafka engine connection test", () => {
         },
       }),
     ).resolves.toMatchObject({ topicCount: 1 });
-    await expect(adminFactory.inputs[0]?.oauthTokenProvider?.()).resolves.toMatchObject({
-      value: "dual-stack-token",
+    expect(server.requests()).toBe(1);
+    await expect(adminFactory.inputs[0]?.oauthTokenProvider?.()).rejects.toMatchObject({
+      name: "AbortError",
     });
     expect(admin.closeCalls).toBe(1);
+  });
+
+  it("qualifies independent service credentials with read-only calls and closes the temporary broker", async () => {
+    const admin = new RecordingAdmin(["test"]);
+    const http = new RecordingJsonHttp([
+      { status: 200, body: ["orders-value"] },
+      { status: 200, body: ["orders-sink"] },
+      { status: 200, body: [{ class: "example.Sink" }] },
+    ]);
+    const engine = new StreamSkopeKafkaEngine({
+      adminFactory: new RecordingAdminFactory(admin),
+      serviceHttp: http,
+    });
+    const result = await engine.testConnection({
+      name: "Independent services",
+      brokers: ["broker.example:9092"],
+      tls: { enabled: false },
+      sasl: { mechanism: "SCRAM-SHA-512", username: "broker-user", password: "broker-secret" },
+      services: {
+        schemaRegistry: {
+          baseUrl: "https://registry.example",
+          authentication: "basic",
+          basic: { username: "registry-user", password: "registry-secret" },
+          tls: { caPem: "registry-ca" },
+        },
+        connect: {
+          baseUrl: "https://connect.example",
+          authentication: "bearer",
+          bearer: "connect-secret",
+          tls: {},
+        },
+      },
+    });
+    expect(result.checks).toEqual([
+      "kafka-authentication",
+      "metadata",
+      "schema-registry",
+      "connect",
+    ]);
+    expect(http.requests.map(({ method }) => method)).toEqual(["GET", "GET", "GET"]);
+    expect(http.requests[0]).toMatchObject({
+      caPem: "registry-ca",
+      authorization: `Basic ${Buffer.from("registry-user:registry-secret").toString("base64")}`,
+    });
+    expect(http.requests[1]).toMatchObject({ authorization: "Bearer connect-secret" });
+    expect(http.requests[1]).not.toHaveProperty("caPem");
+    expect(admin.closeCalls).toBe(1);
+  });
+
+  it("reports service credential failures separately from a working Kafka connection without leaking response text", async () => {
+    const admin = new RecordingAdmin(["test"]);
+    const engine = new StreamSkopeKafkaEngine({
+      adminFactory: new RecordingAdminFactory(admin),
+      serviceHttp: new RecordingJsonHttp([
+        { status: 401, body: { message: "server-secret-fixture" } },
+      ]),
+    });
+    const input = {
+      name: "Service failure",
+      brokers: ["broker.example:9092"],
+      tls: { enabled: false },
+      services: {
+        schemaRegistry: {
+          baseUrl: "https://registry.example",
+          authentication: "basic",
+          basic: { username: "user", password: "secret" },
+          tls: {},
+        },
+      },
+    } as const;
+    await expect(engine.testConnection(input)).rejects.toMatchObject({
+      code: "HTTPS_AUTHENTICATION",
+      stage: "authorization",
+      target: "schemaRegistry",
+      message: "Schema Registry authentication was rejected.",
+    });
+    expect(admin.closeCalls).toBe(1);
+    const active = await engine.openConnection(input, new AbortController().signal);
+    await expect(active.listTopics()).resolves.toEqual(["test"]);
+    await active.close();
+  });
+
+  it("owns the admitted connection credentials while asynchronous connection work is pending", async () => {
+    const factory = new RecordingAdminFactory(new RecordingAdmin(["test"]));
+    const engine = new StreamSkopeKafkaEngine({ adminFactory: factory });
+    const input = {
+      name: "Admitted connection",
+      brokers: ["original.example:9093"],
+      sasl: {
+        mechanism: "SCRAM-SHA-256" as const,
+        username: "original-user",
+        password: "original-password",
+      },
+      tls: {
+        enabled: true as const,
+        caPem: "original-ca",
+        clientIdentity: { certificatePem: "original-cert", privateKeyPem: "original-key" },
+      },
+      services: {
+        schemaRegistry: {
+          baseUrl: "https://registry.example",
+          authentication: "basic" as const,
+          basic: { username: "registry-user", password: "original-service-password" },
+          tls: {},
+        },
+      },
+    };
+    const opening = engine.openConnection(input, new AbortController().signal);
+    input.brokers[0] = "changed.example:9093";
+    input.sasl.password = "changed-password";
+    input.tls.clientIdentity.privateKeyPem = "changed-key";
+    input.services.schemaRegistry.basic.password = "changed-service-password";
+    const active = await opening;
+    expect(factory.inputs[0]).toMatchObject({
+      brokers: ["original.example:9093"],
+      sasl: { password: "original-password" },
+      clientIdentity: { privateKeyPem: "original-key" },
+    });
+    await expect(active.clusterServiceContext?.("schemaRegistry")?.authorization()).resolves.toBe(
+      `Basic ${Buffer.from("registry-user:original-service-password").toString("base64")}`,
+    );
+    await active.close();
   });
 });

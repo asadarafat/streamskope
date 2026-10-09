@@ -23,14 +23,20 @@ import type {
   KafkaConsumerGroupInventory,
   KafkaMessageStream,
   KafkaLatencyProbeMeasurement,
+  KafkaClusterServiceContext,
 } from "../application";
+import { classifyConnectionFailure } from "../application/connection-diagnostics";
 
+import { serviceConnectionContext } from "./service-connection-context";
+import { testClusterServices } from "./service-connection-test";
+import { NodeBoundedJsonHttp } from "./bounded-json-http";
 import { PlatformaticOffsetReset } from "./platformatic-offset-reset";
 import { PlatformaticReviewedWrites } from "./platformatic-writes";
 import { translateKafkaRecord } from "./message-record";
 import {
   KafkaEngineFailure,
   mapKafkaAdminFailure,
+  normalizeKafkaError,
   mapKafkaConsumerGroupFailure,
   mapKafkaTopicConfigurationFailure,
 } from "./failure";
@@ -93,6 +99,19 @@ function timeoutFailure(stage: HostErrorStage, target: string): KafkaEngineFailu
 function oauthFailure(error: unknown, target: string): KafkaEngineFailure {
   if (error instanceof KafkaEngineFailure) {
     return error;
+  }
+  const category = classifyConnectionFailure(error);
+  if (category === "tls-trust" || category === "tls-client") {
+    return new KafkaEngineFailure({
+      cause: error,
+      code: "TLS_TRUST",
+      recovery:
+        "Verify the OAuth endpoint hostname, certificate validity and issuing CA in this profile's trust material.",
+      retryable: false,
+      stage: "tls",
+      summary: "OAuth endpoint certificate validation failed.",
+      target,
+    });
   }
   if (error instanceof OAuthEndpointResponseError) {
     return new KafkaEngineFailure({
@@ -221,6 +240,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   }
   private closePromise: Promise<void> | undefined;
   private readonly streams = new Set<TranslatedKafkaMessageStream>();
+  private readonly serviceContexts = new Map<string, KafkaClusterServiceContext>();
 
   constructor(
     private readonly admin: KafkaAdminPort,
@@ -230,6 +250,9 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     private readonly lifecycleController: AbortController,
     private readonly operationTimeoutMs: number,
     private readonly services: SecureConnectionInput["services"],
+    private readonly tokenRequester: NonNullable<
+      StreamSkopeKafkaEngineOptions["requestOAuthToken"]
+    >,
     private readonly target: string,
     private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
   ) {}
@@ -284,25 +307,18 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
 
   clusterServiceContext(
     service: "connect" | "redpandaAdmin" | "schemaRegistry",
-  ): import("../application").KafkaClusterServiceContext | null {
+  ): KafkaClusterServiceContext | null {
     const endpoint = this.services?.[service];
-    if (endpoint === undefined) {
-      return null;
-    }
-    return {
-      baseUrl: endpoint.baseUrl,
-      ...(this.clientInput.tlsEnabled === false ? {} : { caPem: this.clientInput.caPem }),
-      authorization: async (): Promise<string | undefined> => {
-        if (endpoint.authentication === "none") {
-          return undefined;
-        }
-        const token = await this.clientInput.oauthTokenProvider?.();
-        if (token === undefined) {
-          throw new Error("OAuth service authentication has no active token provider.");
-        }
-        return `Bearer ${token.value}`;
-      },
-    };
+    if (endpoint === undefined) return null;
+    const existing = this.serviceContexts.get(service);
+    if (existing !== undefined) return existing;
+    const context = serviceConnectionContext(endpoint, this.clientInput, {
+      lifecycleSignal: this.lifecycleController.signal,
+      operationTimeoutMs: this.operationTimeoutMs,
+      requestOAuthToken: this.tokenRequester,
+    });
+    this.serviceContexts.set(service, context);
+    return context;
   }
 
   describeTopicConfiguration(
@@ -604,6 +620,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
   private readonly latencyProbe;
   private readonly tokenRequester;
   private readonly protectRecord;
+  private readonly serviceHttp;
 
   constructor(options: StreamSkopeKafkaEngineOptions = {}) {
     this.protectRecord =
@@ -613,6 +630,8 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
     this.latencyProbe = options.latencyProbe ?? new PlatformaticLatencyProbe();
     this.operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
     this.tokenRequester = options.requestOAuthToken ?? requestOAuthToken;
+    this.serviceHttp =
+      options.serviceHttp ?? new NodeBoundedJsonHttp({ timeoutMs: this.operationTimeoutMs });
     if (!Number.isSafeInteger(this.operationTimeoutMs) || this.operationTimeoutMs < 1) {
       throw new RangeError("Kafka engine operation timeout must be a positive safe integer.");
     }
@@ -622,6 +641,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
     connection: SecureConnectionInput,
     cancellationSignal: AbortSignal,
   ): Promise<KafkaEngineConnection> {
+    connection = structuredClone(connection);
     return (await this.establishConnection(connection, cancellationSignal)).connection;
   }
 
@@ -629,12 +649,27 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
     connection: SecureConnectionInput,
     cancellationSignal?: AbortSignal,
   ): Promise<KafkaConnectionTestResult> {
+    // Own admitted credentials and diagnostic targets for this entire asynchronous operation.
+    connection = structuredClone(connection);
     const established = await this.establishConnection(connection, cancellationSignal);
+    let serviceChecks: readonly ConnectionCheck[] = [];
+    let failure: unknown;
+    try {
+      serviceChecks = await testClusterServices(
+        established.connection,
+        this.serviceHttp,
+        cancellationSignal ?? new AbortController().signal,
+      );
+    } catch (error) {
+      failure = error;
+    }
     try {
       await established.connection.close();
     } catch (error) {
+      if (failure instanceof KafkaEngineFailure) throw withCleanupFailure(failure, error);
       throw new KafkaEngineFailure({
-        cause: error,
+        cause: failure ?? error,
+        cleanupCause: failure === undefined ? undefined : error,
         code: "INTERNAL",
         recovery: "Retry after verifying that no previous Kafka connection test remains active.",
         retryable: true,
@@ -643,7 +678,8 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
         target: connection.brokers.join(", "),
       });
     }
-    return established.result;
+    if (failure !== undefined) throw normalizeKafkaError(failure);
+    return { ...established.result, checks: [...established.result.checks, ...serviceChecks] };
   }
 
   private async acquireOAuthToken(
@@ -688,6 +724,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
     let refresh: Promise<OAuthToken> | undefined;
 
     return async (): Promise<OAuthToken> => {
+      lifecycleSignal.throwIfAborted();
       if (currentToken.expiresAt === undefined || currentToken.expiresAt > Date.now()) {
         return currentToken;
       }
@@ -703,6 +740,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
       );
       try {
         currentToken = await refresh;
+        lifecycleSignal.throwIfAborted();
         return currentToken;
       } finally {
         clearTimeout(timeout);
@@ -768,13 +806,18 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
           ? {
               brokers: connection.brokers,
               caPem: connection.tls.caPem,
+              ...(connection.tls.clientIdentity === undefined
+                ? {}
+                : { clientIdentity: connection.tls.clientIdentity }),
               ...(oauthTokenProvider === undefined ? {} : { oauthTokenProvider }),
+              ...(connection.sasl === undefined ? {} : { sasl: connection.sasl }),
               operationTimeoutMs: this.operationTimeoutMs,
               tlsEnabled: true,
             }
           : {
               brokers: connection.brokers,
               ...(oauthTokenProvider === undefined ? {} : { oauthTokenProvider }),
+              ...(connection.sasl === undefined ? {} : { sasl: connection.sasl }),
               operationTimeoutMs: this.operationTimeoutMs,
               tlsEnabled: false,
             };
@@ -787,6 +830,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
         lifecycleController,
         this.operationTimeoutMs,
         connection.services,
+        this.tokenRequester,
         target,
         this.protectRecord,
       );

@@ -23,6 +23,7 @@ export const CI_REPORTS: Record<CiLane, readonly ReportDefinition[]> = {
     { path: ".artifacts/website/qualification.json", kind: "docs" },
   ],
   runtime: [
+    { path: ".artifacts/ci/connection-profiles-real.json", kind: "vitest" },
     { path: ".artifacts/ci/observations-real.json", kind: "vitest" },
     { path: ".artifacts/ci/nats-real.json", kind: "vitest" },
     { path: ".artifacts/ci/production-startup.json", kind: "playwright" },

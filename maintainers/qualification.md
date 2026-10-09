@@ -110,6 +110,30 @@ Run the local soak and affected live/native checks when the changed behavior
 requires them; unexecuted checks stay unrecorded or explicitly skipped. Automatic
 dependency merging never creates a local qualification receipt.
 
+## Production connection profile matrix
+
+The runtime lane includes `test/kafka/production-connection-profiles-real.test.ts`
+and retains `.artifacts/ci/connection-profiles-real.json` in its source-bound report.
+It starts an isolated, checksum-pinned Kafka 4.3.1 JVM broker on loopback. Java 17+
+(including `keytool`) and OpenSSL are required; it does not change a running AIO,
+EDA or NSP fixture. Owned process, temporary credentials and broker logs are removed
+on completion or handled failure.
+
+The matrix exercises PLAIN and SCRAM-SHA-256/512 over verified TLS, mutual TLS and
+explicit plaintext; mutual TLS without SASL; and OAuth with or without a broker
+client certificate. Profiles
+connect, reconnect and restore through the actual passphrase vault and file store
+after locking/unlocking and recreating the host. Separate HTTPS protocol fixtures
+exercise Registry/Connect Basic, bearer and OAuth-client authentication, distinct
+CAs, service client identities and safe failures. Their error bodies deliberately
+contain generated test secrets to catch unintended diagnostic reflection.
+
+A passing matrix establishes those protocol and protected-storage paths for the
+executed source. The HTTPS endpoints are controlled protocol fixtures, not full
+Registry/Connect vendor deployments. The existing vendor fixtures qualify their
+own feature scope. Vault restart does not establish native OS keychain migration,
+installed-package upgrade or managed-service certification.
+
 ## Live EDA
 
 Use a test cluster with the matching capture app already installed and a producer

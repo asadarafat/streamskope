@@ -110,13 +110,14 @@ repeatedly resetting it.
 
 ## Choose the correct rollback snapshot
 
-| Situation                                                   | Snapshot to preserve and use                                                                  |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Downgrade from API 4 plugins                                | Complete pre-upgrade backup containing the older desktop-compatible plugin packages           |
-| Routine downgrade                                           | Your complete backup made with the target release before upgrading                            |
-| Downgrade across explicit TLS/plaintext transport migration | The exact profile filename recorded by `rollbackGeneration` in the version-3 profile document |
-| Earlier protected-schema migration                          | `kafka-profiles.json.pre-upgrade.bak`, only when it matches that migration and target build   |
-| Downgrade across plugin-owned EDA profile metadata          | The pre-upgrade backup from before those profiles were saved by the new host                  |
+| Situation                                                                             | Snapshot to preserve and use                                                                                                                                             |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Downgrade from API 4 plugins                                                          | Complete pre-upgrade backup containing the older desktop-compatible plugin packages                                                                                      |
+| Routine downgrade                                                                     | Your complete backup made with the target release before upgrading                                                                                                       |
+| Downgrade across explicit TLS/plaintext transport migration                           | The exact profile filename recorded by `rollbackGeneration` in the version-3 profile document                                                                            |
+| Downgrade after saving password SASL, client identity or independent service security | The exact `.pre-security-v3` generation recorded by `rollbackGeneration` in the version-4 profile document; restore a complete compatible data backup for a browser host |
+| Earlier protected-schema migration                                                    | `kafka-profiles.json.pre-upgrade.bak`, only when it matches that migration and target build                                                                              |
+| Downgrade across plugin-owned EDA profile metadata                                    | The pre-upgrade backup from before those profiles were saved by the new host                                                                                             |
 
 For transport migration, the app preserves the original as
 `kafka-profiles.json.pre-transport-v2`, or an unused numbered generation through
@@ -124,6 +125,20 @@ For transport migration, the app preserves the original as
 keeps that reference on later writes. Read that field without editing the document;
 do not choose a generation by filename order or modification time.
 An existing `.pre-upgrade.bak` is not a substitute for the indicated generation.
+
+Saving expanded security settings adopts profile envelope version 4 and protected
+content version 6. Before converting existing data, the host preserves the exact
+previous file as `kafka-profiles.json.pre-security-v3` (or an unused numbered
+generation through `.99`) and records it in `rollbackGeneration`. Existing
+OAuth/plugin-only profiles keep the older envelope until expanded security is
+saved; a file already using version 4 never silently downgrades when credentials
+are later removed.
+
+An older app refuses the new format. Browser maintenance also blocks rollback to
+the reviewed older image when current profiles or retained profile backups use
+version 4. Keep the current host or restore a complete backup from before the
+migration using the owned recovery procedure. Do not delete security settings,
+backup files or ownership metadata merely to make a compatibility check pass.
 
 Plugin metadata migration is a separate compatibility boundary. Saving a migrated
 EDA profile writes a representation older hosts cannot read, even if both builds

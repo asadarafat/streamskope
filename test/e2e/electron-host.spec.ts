@@ -4,13 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import {
-  _electron as electron,
-  expect,
-  test,
-  type ElectronApplication,
-  type Page,
-} from "@playwright/test";
+import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { parseTrustMaterial } from "../../src/features/kafka/engine";
@@ -28,6 +22,7 @@ import {
   chooseNextElectronSavePath,
   connectElectronToFixture,
   launchProfileApplication,
+  openNewKafkaProfile,
 } from "../support/electron-application";
 import { sampleElectronProcesses } from "../support/electron-runtime";
 import {
@@ -45,11 +40,6 @@ import {
   openTopicTask,
   openWorkbenchResource,
 } from "../support/workbench-browser";
-
-async function openNewKafkaProfile(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Add connection" }).click();
-  await page.getByRole("menuitem", { name: /^(?:Kafka broker|Existing Kafka cluster)$/u }).click();
-}
 
 const repositoryRoot = process.cwd();
 const require = createRequire(join(repositoryRoot, "package.json"));
@@ -205,7 +195,8 @@ test("restores a protected profile without returning secrets and confirms exact 
     await editor.getByRole("combobox", { name: "Trust material format" }).click();
     await page.getByRole("option", { name: "PEM certificate" }).click();
     await editor.getByLabel("Trust material file").setInputFiles(caPath);
-    await editor.getByRole("switch", { name: "Use OAuth OAUTHBEARER" }).click();
+    await editor.getByRole("combobox", { name: "Broker authentication" }).click();
+    await page.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)", exact: true }).click();
     await editor
       .getByRole("textbox", { name: "OAuth token endpoint" })
       .fill("https://identity.example.test/token");
@@ -278,7 +269,8 @@ test("loads and exports real cluster details through a restored protected Electr
     await editor.getByRole("combobox", { name: "Trust material format" }).click();
     await page.getByRole("option", { name: "PEM certificate" }).click();
     await editor.getByLabel("Trust material file").setInputFiles(fixture.caPath);
-    await editor.getByRole("switch", { name: "Use OAuth OAUTHBEARER" }).click();
+    await editor.getByRole("combobox", { name: "Broker authentication" }).click();
+    await page.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)", exact: true }).click();
     await editor.getByRole("textbox", { name: "OAuth token endpoint" }).fill(fixture.oauthEndpoint);
     await editor.getByRole("textbox", { name: "OAuth client ID" }).fill(config.oauthClientId);
     await editor
@@ -874,7 +866,8 @@ test("operates on filtered real messages and exports stale evidence in Electron"
     await editor.getByRole("combobox", { name: "Trust material format" }).click();
     await page.getByRole("option", { name: "PEM certificate" }).click();
     await editor.getByLabel("Trust material file").setInputFiles(fixture.caPath);
-    await editor.getByRole("switch", { name: "Use OAuth OAUTHBEARER" }).click();
+    await editor.getByRole("combobox", { name: "Broker authentication" }).click();
+    await page.getByRole("option", { name: "OAuth 2.0 (OAUTHBEARER)", exact: true }).click();
     await editor.getByRole("textbox", { name: "OAuth token endpoint" }).fill(fixture.oauthEndpoint);
     await editor.getByRole("textbox", { name: "OAuth client ID" }).fill(config.oauthClientId);
     await editor

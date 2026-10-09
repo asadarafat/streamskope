@@ -15,13 +15,17 @@ import type { KafkaOriginalRecord } from "./record-bytes";
 import type { KafkaReadCoverage, KafkaSearchFilter } from "./query-search";
 import type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 import type {
-  ClusterServiceEndpointsInput,
   ProfileCreateInput,
   ProfileStoreCapability,
   ProfileSummary,
   ProfileTestInput,
   ProfileUpdateInput,
 } from "./profile-types";
+import type {
+  ConnectionClientIdentity,
+  ConnectionSasl,
+  ResolvedClusterServiceEndpoints,
+} from "./connection-security";
 import type {
   TrustAcquisitionRecipeInput,
   TrustAcquisitionRecipeSnapshot,
@@ -84,7 +88,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 53 as const;
+export const HOST_PROTOCOL_VERSION = 54 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -314,6 +318,7 @@ export type TlsConnectionInput =
     }
   | {
       readonly caPem: string;
+      readonly clientIdentity?: ConnectionClientIdentity;
       readonly enabled: true;
     };
 
@@ -321,7 +326,8 @@ export interface SecureConnectionInput {
   readonly brokers: readonly string[];
   readonly name: string;
   readonly oauth?: OAuthConnectionInput;
-  readonly services?: ClusterServiceEndpointsInput;
+  readonly sasl?: ConnectionSasl;
+  readonly services?: ResolvedClusterServiceEndpoints;
   readonly tls: TlsConnectionInput;
 }
 
@@ -329,7 +335,8 @@ export interface HostSecureConnectionInput {
   readonly brokers: readonly string[];
   readonly name: string;
   readonly oauth?: OAuthConnectionInput;
-  readonly services?: ClusterServiceEndpointsInput;
+  readonly sasl?: ConnectionSasl;
+  readonly services?: ResolvedClusterServiceEndpoints;
   readonly tls: AcquiredTlsConnectionInput | TlsConnectionInput;
 }
 
@@ -340,6 +347,12 @@ export type SecureConnectionField =
   | "oauth.clientSecret"
   | "oauth.scope"
   | "oauth.tokenEndpoint"
+  | "sasl"
+  | "sasl.mechanism"
+  | "sasl.username"
+  | "sasl.password"
+  | "tls.clientIdentity"
+  | `services.${"connect" | "schemaRegistry" | "redpandaAdmin"}.${"basic" | "bearer" | "oauth" | "tls"}`
   | "services.connect.authentication"
   | "services.connect.baseUrl"
   | "services.redpandaAdmin.authentication"

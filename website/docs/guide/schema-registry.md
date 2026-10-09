@@ -11,9 +11,15 @@ Avro or Protobuf inspection with original bytes preserved. See the
 ## Connect the service
 
 1. Open **Connection Profiles** and edit your Kafka profile.
-2. Enter the **Schema Registry URL** and choose **No HTTP authorization** or **Profile OAuth bearer token** authentication. OAuth reuses the Kafka profile's token; HTTP Basic credentials are not supported.
-3. Save the profile and connect it.
-4. Open **Schema Registry** in the left navigation.
+2. Enter the **Schema Registry URL**. Choose **Schema Registry authentication**:
+   **No HTTP authorization**, **Profile OAuth bearer token**, **HTTP Basic**,
+   **Bearer token** or **Separate OAuth client**. Basic uses its own username/password;
+   separate OAuth uses its own token endpoint, client ID, secret and optional scope.
+3. Choose **Schema Registry certificate trust**: system certificate authorities,
+   broker certificate trust, or a separate CA/truststore. If required, configure
+   the Registry's own mutual TLS certificate and private key.
+4. Test the profile, save and connect it.
+5. Open **Schema Registry** in the left navigation.
 
 **You should see:** the subjects you can access. The included AIO fixture configures
 Karapace, a Confluent-compatible Registry, in its local profile and provides a
@@ -22,9 +28,10 @@ Karapace, a Confluent-compatible Registry, in its local profile and provides a
 Registry access is separate from broker access. If Kafka connects but subjects
 are unavailable, check the Registry URL, authentication and **Raw logs**.
 Only use the profile's OAuth token when the Registry accepts it.
-With a TLS Kafka profile, the Registry uses the same CA bundle as the broker.
-Include its issuing CA in that bundle even if Kafka already connects. See
-[service trust selection](tls-trust.md#which-trust-settings-apply).
+The Registry's selected trust and client identity also apply to its separate OAuth
+token request. It never borrows the broker's client private key. If its token
+endpoint and Registry use different issuing CAs, include both in the selected
+service bundle. See [service trust selection](tls-trust.md#which-trust-settings-apply).
 
 ## Inspect and evolve a schema
 

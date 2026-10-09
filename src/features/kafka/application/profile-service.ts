@@ -12,6 +12,7 @@ import {
   type SecureConnectionInput,
 } from "../contracts";
 
+import { connectionIdentity, resolveServiceConnections } from "./profile-security";
 import {
   ActiveKafkaProfileMutationError,
   DuplicateKafkaProfileError,
@@ -192,10 +193,11 @@ export class KafkaProfileService {
       brokers: [...profile.brokers],
       name: profile.name,
       ...(profile.oauth === undefined ? {} : { oauth: { ...profile.oauth } }),
-      ...(profile.services === undefined ? {} : { services: profile.services }),
+      ...(profile.sasl === undefined ? {} : { sasl: { ...profile.sasl } }),
     };
     if (profile.transport === "plaintext") {
-      return { ...base, tls: { enabled: false } };
+      const services = await resolveServiceConnections(profile.services, this.trustDecoder, signal);
+      return { ...base, ...(services === undefined ? {} : { services }), tls: { enabled: false } };
     }
     const trust = await this.trustDecoder.decode(
       {
@@ -206,9 +208,19 @@ export class KafkaProfileService {
       signal,
     );
     signal?.throwIfAborted();
+    const services = await resolveServiceConnections(
+      profile.services,
+      this.trustDecoder,
+      signal,
+      trust.caPem,
+    );
     return {
       ...base,
+      ...(services === undefined ? {} : { services }),
       tls: {
+        ...(profile.clientIdentity === undefined
+          ? {}
+          : { clientIdentity: connectionIdentity(profile.clientIdentity) }),
         caPem: trust.caPem,
         enabled: true,
       },

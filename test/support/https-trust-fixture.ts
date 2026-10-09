@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 export async function createHttpsTrustFixture(
   handler: (request: IncomingMessage, response: ServerResponse) => void,
   certificate: "valid" | "expired" | "hostname-mismatch" = "valid",
+  clientCaPem?: string,
 ): Promise<{
   readonly origin: string;
   readonly caPem: string;
@@ -117,7 +118,13 @@ export async function createHttpsTrustFixture(
     const sockets = new Set<Duplex>();
     const requests: { url: string; authorization: string | undefined }[] = [];
     const server = createServer(
-      { key: await readFile(keyPath), cert: caPem },
+      {
+        key: await readFile(keyPath),
+        cert: caPem,
+        ...(clientCaPem === undefined
+          ? {}
+          : { ca: [clientCaPem], requestCert: true, rejectUnauthorized: true }),
+      },
       (request, response) => {
         requests.push({ url: request.url ?? "", authorization: request.headers.authorization });
         handler(request, response);

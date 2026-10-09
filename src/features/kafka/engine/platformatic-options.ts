@@ -1,6 +1,7 @@
 import type { BaseOptions } from "@platformatic/kafka";
 
 import type { KafkaClientInput } from "./types";
+import { tlsClientIdentityOptions } from "./tls-client-identity";
 
 export function platformaticClientOptions(input: KafkaClientInput, clientId: string): BaseOptions {
   const oauthTokenProvider = input.oauthTokenProvider;
@@ -15,10 +16,16 @@ export function platformaticClientOptions(input: KafkaClientInput, clientId: str
       : {
           tls: {
             ca: [input.caPem],
+            ...tlsClientIdentityOptions(input.clientIdentity),
             rejectUnauthorized: true,
           },
         }),
   };
+  if (input.sasl !== undefined) {
+    if (oauthTokenProvider !== undefined)
+      throw new Error("Choose one Kafka SASL authentication mechanism.");
+    return { ...base, sasl: { ...input.sasl } };
+  }
   return oauthTokenProvider === undefined
     ? base
     : {

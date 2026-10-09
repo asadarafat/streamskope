@@ -12,11 +12,13 @@ import type {
   KafkaTopicConfigurationChange,
   KafkaTopicConfigurationEntry,
   SecureConnectionInput,
+  ConnectionClientIdentity,
 } from "../contracts";
 
 import type { KafkaLatencyProbeMeasurement } from "./latency-types";
 
-export type ConnectionCheck = "oauth" | "tls" | "kafka-authentication" | "metadata";
+export type ConnectionCheck =
+  "oauth" | "tls" | "kafka-authentication" | "metadata" | "schema-registry" | "connect";
 
 export interface KafkaConnectionTestResult {
   readonly checks: readonly ConnectionCheck[];
@@ -115,7 +117,9 @@ export interface KafkaActiveConnection {
 export interface KafkaClusterServiceContext {
   readonly baseUrl: string;
   readonly caPem?: string;
-  authorization(): Promise<string | undefined>;
+  readonly clientIdentity?: ConnectionClientIdentity;
+  readonly signal?: AbortSignal;
+  authorization(signal?: AbortSignal): Promise<string | undefined>;
 }
 
 export interface KafkaConnectionPort {

@@ -300,11 +300,15 @@ export class SchemaRegistryHttpAdapter {
     path: string,
     body?: unknown,
   ): Promise<BoundedJsonHttpResponse> {
-    const authorization = await context.authorization();
+    signal = context.signal === undefined ? signal : AbortSignal.any([signal, context.signal]);
+    signal.throwIfAborted();
+    const authorization = await context.authorization(signal);
+    signal.throwIfAborted();
     return this.http.request({
       ...(authorization === undefined ? {} : { authorization }),
       ...(body === undefined ? {} : { body }),
       ...(context.caPem === undefined ? {} : { caPem: context.caPem }),
+      ...(context.clientIdentity === undefined ? {} : { clientIdentity: context.clientIdentity }),
       method,
       signal,
       url: serviceUrl(context, path),

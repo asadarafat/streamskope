@@ -5,7 +5,12 @@ import {
   type HostError,
   type ProfileSummary,
   type ProfileTlsCreateInput,
+  type ProfileTlsUpdateInput,
 } from "../../../src/features/kafka/contracts";
+import {
+  retainedClientIdentity,
+  retainedServiceEndpoints,
+} from "../../../src/features/kafka/contracts/profile-retain-input";
 import type { PluginBackendHost } from "../../../src/plugins/api";
 import { fromPluginProfileSource, toPluginProfileSource, type NspConnectInput } from "../contracts";
 
@@ -46,9 +51,26 @@ export function profileDraft(
   input: NspConnectInput,
   trust: NspTrust,
   workflowName: string,
+  existing: undefined,
+  authentication: "tls" | "oauth",
+): ProfileTlsCreateInput;
+export function profileDraft(
+  input: NspConnectInput,
+  trust: NspTrust,
+  workflowName: string,
   existing: ProfileSummary | undefined,
   authentication: "tls" | "oauth",
-): ProfileTlsCreateInput {
+): ProfileTlsUpdateInput;
+export function profileDraft(
+  input: NspConnectInput,
+  trust: NspTrust,
+  workflowName: string,
+  existing: ProfileSummary | undefined,
+  authentication: "tls" | "oauth",
+): ProfileTlsUpdateInput {
+  const preserveSasl =
+    (input.authentication === undefined || input.authentication === "auto") &&
+    existing?.sasl !== undefined;
   const brokers = input.brokers ?? existing?.brokers ?? [`${new URL(input.apiUrl).hostname}:9192`];
   return {
     transport: "tls",
@@ -60,7 +82,7 @@ export function profileDraft(
       material: { mode: "replace", value: trust.truststoreBase64 },
       password: { mode: "replace", value: trust.truststorePassword },
     },
-    ...(authentication === "tls"
+    ...(authentication === "tls" || preserveSasl
       ? {}
       : {
           oauth: {
@@ -71,7 +93,21 @@ export function profileDraft(
           },
         }),
     source: toPluginProfileSource({ apiUrl: input.apiUrl, brokers, workflowName, authentication }),
-    ...(existing?.services === undefined ? {} : { services: existing.services }),
+    ...(existing?.services === undefined
+      ? {}
+      : { services: retainedServiceEndpoints(existing.services) }),
+    ...(existing?.clientIdentity === undefined
+      ? {}
+      : { clientIdentity: retainedClientIdentity(existing.clientIdentity) }),
+    ...(preserveSasl && existing?.sasl !== undefined
+      ? {
+          sasl: {
+            mechanism: existing.sasl.mechanism,
+            username: existing.sasl.username,
+            password: { mode: "retain" as const },
+          },
+        }
+      : {}),
   };
 }
 
@@ -91,7 +127,9 @@ export async function qualifyAndSaveProfile(
     trust,
     workflowName,
     existing,
-    preferred === "oauth" ? "oauth" : "tls",
+    preferred === "oauth" || (preferred === "auto" && existing?.oauth !== undefined)
+      ? "oauth"
+      : "tls",
   );
   const test = async (): Promise<void> => {
     signal.throwIfAborted();
@@ -99,7 +137,26 @@ export async function qualifyAndSaveProfile(
       command: "profiles.test",
       id: randomUUID(),
       version: HOST_PROTOCOL_VERSION,
-      payload: { mode: "create", profile: draft },
+      payload:
+        existing === undefined
+          ? {
+              mode: "create",
+              profile: profileDraft(
+                input,
+                trust,
+                workflowName,
+                undefined,
+                draft.oauth === undefined ? "tls" : "oauth",
+              ),
+            }
+          : {
+              mode: "update",
+              profileId: existing.id,
+              profile: {
+                ...draft,
+                ...(existing.revision === undefined ? {} : { expectedRevision: existing.revision }),
+              },
+            },
     });
     signal.throwIfAborted();
     if (!result.ok) throw new NspProfileError(result.error);
@@ -110,6 +167,7 @@ export async function qualifyAndSaveProfile(
   } catch (error) {
     if (
       preferred !== "auto" ||
+      draft.sasl !== undefined ||
       !(error instanceof NspProfileError) ||
       error.failure.code !== "KAFKA_AUTHENTICATION"
     )
@@ -131,7 +189,15 @@ export async function qualifyAndSaveProfile(
           command: "profiles.create",
           id: randomUUID(),
           version: HOST_PROTOCOL_VERSION,
-          payload: { profile: draft },
+          payload: {
+            profile: profileDraft(
+              input,
+              trust,
+              workflowName,
+              undefined,
+              draft.oauth === undefined ? "tls" : "oauth",
+            ),
+          },
         })
       : await host.execute({
           command: "profiles.update",

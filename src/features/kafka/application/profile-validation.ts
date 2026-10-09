@@ -62,6 +62,7 @@ function canonicalServiceEndpoint(
   url.pathname = url.pathname.replace(/\/+$/u, "") || "/";
   const serialized = url.toString();
   return {
+    ...endpoint,
     authentication: endpoint.authentication,
     baseUrl: url.pathname === "/" ? serialized.slice(0, -1) : serialized,
   };
@@ -112,7 +113,7 @@ export function createIssues(
     }
   });
   if (input.transport === "plaintext") {
-    for (const field of ["apiCa", "binding", "trust"] as const) {
+    for (const field of ["apiCa", "binding", "trust", "clientIdentity"] as const) {
       if (Object.hasOwn(input, field)) {
         issues.push({
           field,
@@ -160,6 +161,8 @@ export function createIssues(
       });
     }
   }
+  if (input.oauth !== undefined && input.sasl !== undefined)
+    issues.push({ field: "sasl", message: "Choose one broker authentication method." });
   if (input.oauth !== undefined) {
     if (
       input.oauth.clientId.trim().length === 0 ||

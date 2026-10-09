@@ -1,9 +1,21 @@
+import { isDeepStrictEqual } from "node:util";
 import { chmod, open, unlink } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
+import {
+  summarizeIdentity,
+  summarizeServices,
+  type StoredProfileSecurity,
+} from "../../features/kafka/application/profile-security";
+import {
+  parseSummaryIdentity,
+  parseSummarySasl,
+  parseServiceSummaries,
+} from "../../features/kafka/contracts/profile-security-validation";
+import { parseProfileSummaryOAuth } from "../../features/kafka/contracts/profile-validation";
+import { boundedText as possiblyEmptyText } from "../../features/kafka/contracts/validation-primitives";
 import { parsePluginJson } from "../../plugins/validation";
 import {
-  CLUSTER_SERVICE_AUTHENTICATION_MODES,
   KAFKA_PROFILE_TRANSPORTS,
   PROFILE_LIMITS,
   PROFILE_TRUST_KINDS,
@@ -15,8 +27,10 @@ import {
   type HostErrorStage,
   type KafkaProfileTransport,
   type ProfileStoreCapability,
-  type ClusterServiceEndpointInput,
-  type ClusterServiceEndpointsInput,
+  type ClusterServiceEndpointSummary,
+  type ClusterServiceEndpointsSummary,
+  type ProfileSummarySasl,
+  type ProfileSummaryClientIdentity,
   type ProfileTrustKind,
 } from "../../features/kafka/contracts";
 import type {
@@ -25,6 +39,11 @@ import type {
   KafkaProfileStructuredError,
 } from "../../features/kafka/application";
 
+import {
+  hasExpandedProfileSecurity,
+  storedProfileSecurity,
+  parseStoredProfileSecurity,
+} from "./kafka-profile-security";
 import {
   createAtomicPrivateFileTempId,
   writeAtomicPrivateTextFile,
@@ -35,12 +54,15 @@ import type { ProfileProtector } from "./profile-protector";
 const LEGACY_PROFILE_FILE_VERSION = 1 as const;
 const SERVICES_PROFILE_FILE_VERSION = 2 as const;
 const PROFILE_FILE_VERSION = 3 as const;
+const SECURITY_PROFILE_FILE_VERSION = 4 as const;
+const SECURITY_PROTECTED_PROFILE_VERSION = 6 as const;
+type ProfileFileVersion = 1 | 2 | 3 | 4;
 const ACQUISITION_PROTECTED_PROFILE_VERSION = 4 as const;
 const TRANSPORT_PROTECTED_PROFILE_VERSION = 5 as const;
 export const KAFKA_PROFILE_FILE_MAX_BYTES = 64 * 1_048_576;
 const DEFAULT_MAXIMUM_FILE_BYTES = KAFKA_PROFILE_FILE_MAX_BYTES;
 const MAXIMUM_PROTECTED_VALUE_BYTES = 32 * 1_048_576;
-const TRANSPORT_ROLLBACK_GENERATIONS = 100;
+const PROFILE_ROLLBACK_GENERATIONS = 100;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -180,7 +202,9 @@ interface SafeStoredProfile {
   };
   readonly protectedValue: string;
   readonly revision?: number;
-  readonly services?: ClusterServiceEndpointsInput;
+  readonly services?: ClusterServiceEndpointsSummary;
+  readonly sasl?: ProfileSummarySasl;
+  readonly clientIdentity?: ProfileSummaryClientIdentity;
   readonly source?: ProfileSource;
   readonly transport: KafkaProfileTransport;
   readonly trust?: {
@@ -204,24 +228,20 @@ function parseStoredProfileSource(value: unknown): ProfileSource {
   return parseProfileSource(input, "profile.source");
 }
 
-function parseServiceEndpoint(value: unknown): ClusterServiceEndpointInput {
+function parseServiceEndpoint(value: unknown): ClusterServiceEndpointSummary {
   const endpoint = valueRecord(value);
   exactKeys(endpoint, ["authentication", "baseUrl"]);
   const authentication = boundedText(endpoint.authentication, 16);
-  if (
-    !CLUSTER_SERVICE_AUTHENTICATION_MODES.includes(
-      authentication as ClusterServiceEndpointInput["authentication"],
-    )
-  ) {
+  if (!["none", "oauth"].includes(authentication)) {
     throw new KafkaProfileFileCorruptError();
   }
   return {
-    authentication: authentication as ClusterServiceEndpointInput["authentication"],
+    authentication: authentication as ClusterServiceEndpointSummary["authentication"],
     baseUrl: boundedText(endpoint.baseUrl, PROFILE_LIMITS.tokenEndpointCharacters),
   };
 }
 
-function parseServices(value: unknown): ClusterServiceEndpointsInput {
+function parseServices(value: unknown): ClusterServiceEndpointsSummary {
   const services = valueRecord(value);
   exactKeys(services, ["connect", "redpandaAdmin", "schemaRegistry"]);
   return {
@@ -237,10 +257,10 @@ function parseServices(value: unknown): ClusterServiceEndpointsInput {
   };
 }
 
-function parseSafeProfile(value: unknown, version: 1 | 2 | 3): SafeStoredProfile {
+function parseSafeProfile(value: unknown, version: ProfileFileVersion): SafeStoredProfile {
   const profile = valueRecord(value);
   const transport =
-    version === PROFILE_FILE_VERSION ? profileTransport(profile.transport) : ("tls" as const);
+    version >= PROFILE_FILE_VERSION ? profileTransport(profile.transport) : ("tls" as const);
   exactKeys(profile, [
     "brokers",
     "createdAt",
@@ -248,7 +268,8 @@ function parseSafeProfile(value: unknown, version: 1 | 2 | 3): SafeStoredProfile
     "name",
     "oauth",
     "protectedValue",
-    ...(version === PROFILE_FILE_VERSION ? ["revision", "transport", "source"] : []),
+    ...(version === SECURITY_PROFILE_FILE_VERSION ? ["sasl", "clientIdentity"] : []),
+    ...(version >= PROFILE_FILE_VERSION ? ["revision", "transport", "source"] : []),
     ...(version === LEGACY_PROFILE_FILE_VERSION ? [] : ["services"]),
     ...(transport === "tls" ? ["trust"] : []),
     "updatedAt",
@@ -260,7 +281,22 @@ function parseSafeProfile(value: unknown, version: 1 | 2 | 3): SafeStoredProfile
     name: boundedText(profile.name, PROFILE_LIMITS.nameCharacters),
     protectedValue: boundedText(profile.protectedValue, MAXIMUM_PROTECTED_VALUE_BYTES * 2),
     ...(Object.hasOwn(profile, "revision") ? { revision: positiveRevision(profile.revision) } : {}),
-    ...(Object.hasOwn(profile, "services") ? { services: parseServices(profile.services) } : {}),
+    ...(Object.hasOwn(profile, "services")
+      ? {
+          services:
+            version === SECURITY_PROFILE_FILE_VERSION
+              ? parseServiceSummaries(
+                  profile.services,
+                  "profile.services",
+                  parseProfileSummaryOAuth,
+                )
+              : parseServices(profile.services),
+        }
+      : {}),
+    ...(profile.sasl === undefined ? {} : { sasl: parseSummarySasl(profile.sasl, "profile.sasl") }),
+    ...(profile.clientIdentity === undefined
+      ? {}
+      : { clientIdentity: parseSummaryIdentity(profile.clientIdentity, "profile.clientIdentity") }),
     ...(Object.hasOwn(profile, "source")
       ? { source: parseStoredProfileSource(profile.source) }
       : {}),
@@ -274,7 +310,7 @@ function parseSafeProfile(value: unknown, version: 1 | 2 | 3): SafeStoredProfile
     parsedOAuth = {
       clientId: boundedText(oauth.clientId, PROFILE_LIMITS.clientIdCharacters),
       clientSecretPresent: booleanValue(oauth.clientSecretPresent),
-      scope: boundedText(oauth.scope, PROFILE_LIMITS.scopeCharacters),
+      scope: possiblyEmptyText(oauth.scope, "oauth.scope", PROFILE_LIMITS.scopeCharacters),
       tokenEndpoint: boundedText(oauth.tokenEndpoint, PROFILE_LIMITS.tokenEndpointCharacters),
     };
   }
@@ -298,10 +334,10 @@ function parseSafeProfile(value: unknown, version: 1 | 2 | 3): SafeStoredProfile
 interface StoredProfileDocument {
   readonly profiles: readonly SafeStoredProfile[];
   readonly rollbackGeneration?: string;
-  readonly version: 1 | 2 | 3;
+  readonly version: ProfileFileVersion;
 }
 
-interface TransportRollback {
+interface ProfileRollback {
   readonly created: boolean;
   readonly generation: string;
 }
@@ -311,13 +347,14 @@ function parseDocument(value: unknown): StoredProfileDocument {
   if (
     document.version !== LEGACY_PROFILE_FILE_VERSION &&
     document.version !== SERVICES_PROFILE_FILE_VERSION &&
-    document.version !== PROFILE_FILE_VERSION
+    document.version !== PROFILE_FILE_VERSION &&
+    document.version !== SECURITY_PROFILE_FILE_VERSION
   ) {
     throw new KafkaProfileFileCorruptError();
   }
   exactKeys(document, [
     "profiles",
-    ...(document.version === PROFILE_FILE_VERSION ? ["rollbackGeneration"] : []),
+    ...(document.version >= PROFILE_FILE_VERSION ? ["rollbackGeneration"] : []),
     "version",
   ]);
   if (!Array.isArray(document.profiles) || document.profiles.length > PROFILE_LIMITS.profiles) {
@@ -330,7 +367,7 @@ function parseDocument(value: unknown): StoredProfileDocument {
     if (
       rollbackGeneration.includes("/") ||
       rollbackGeneration.includes("\\") ||
-      !/\.pre-transport-v2(?:\.[1-9]\d?)?$/u.test(rollbackGeneration)
+      !/\.pre-(?:transport-v2|security-v3)(?:\.[1-9]\d?)?$/u.test(rollbackGeneration)
     ) {
       throw new KafkaProfileFileCorruptError();
     }
@@ -365,6 +402,7 @@ export function inspectKafkaProfileEnvelope(
 }
 
 interface ProtectedProfileValues {
+  readonly security?: StoredProfileSecurity;
   readonly apiCaPem?: string;
   readonly binding?: ProfileAcquisitionBinding;
   readonly revision?: number;
@@ -382,7 +420,7 @@ interface ProtectedProfileValues {
 function parseProtectedValues(
   value: string,
   expectedProfileId: string,
-  documentVersion: 1 | 2 | 3,
+  documentVersion: ProfileFileVersion,
 ): ProtectedProfileValues {
   let parsed: unknown;
   try {
@@ -397,37 +435,40 @@ function parseProtectedValues(
     version !== 2 &&
     version !== 3 &&
     version !== ACQUISITION_PROTECTED_PROFILE_VERSION &&
-    version !== TRANSPORT_PROTECTED_PROFILE_VERSION
+    version !== TRANSPORT_PROTECTED_PROFILE_VERSION &&
+    version !== SECURITY_PROTECTED_PROFILE_VERSION
   ) {
     throw new KafkaProfileFileCorruptError();
   }
   if (
-    (documentVersion === PROFILE_FILE_VERSION) !==
-    (version === TRANSPORT_PROTECTED_PROFILE_VERSION)
+    documentVersion >= PROFILE_FILE_VERSION !== version >= TRANSPORT_PROTECTED_PROFILE_VERSION ||
+    (documentVersion === SECURITY_PROFILE_FILE_VERSION) !==
+      (version === SECURITY_PROTECTED_PROFILE_VERSION)
   ) {
     throw new KafkaProfileFileCorruptError();
   }
   const transport =
-    version === TRANSPORT_PROTECTED_PROFILE_VERSION
+    version >= TRANSPORT_PROTECTED_PROFILE_VERSION
       ? profileTransport(protectedValues.transport)
       : ("tls" as const);
   exactKeys(protectedValues, [
     ...(transport === "tls" &&
     (version === ACQUISITION_PROTECTED_PROFILE_VERSION ||
-      version === TRANSPORT_PROTECTED_PROFILE_VERSION)
+      version >= TRANSPORT_PROTECTED_PROFILE_VERSION)
       ? ["apiCaPem"]
       : []),
     ...(transport === "tls" && version >= 3 ? ["binding"] : []),
     "oauth",
     "profileId",
+    ...(version === SECURITY_PROTECTED_PROFILE_VERSION ? ["security"] : []),
     ...(version === 1 ? [] : ["revision"]),
     ...(transport === "tls" ? ["trust"] : []),
-    ...(version === TRANSPORT_PROTECTED_PROFILE_VERSION ? ["transport"] : []),
+    ...(version >= TRANSPORT_PROTECTED_PROFILE_VERSION ? ["transport"] : []),
     "version",
   ]);
   const revision =
     version === 1 ||
-    (version === TRANSPORT_PROTECTED_PROFILE_VERSION && protectedValues.revision === undefined)
+    (version >= TRANSPORT_PROTECTED_PROFILE_VERSION && protectedValues.revision === undefined)
       ? undefined
       : positiveRevision(protectedValues.revision);
   const profileId = boundedText(protectedValues.profileId, PROFILE_LIMITS.idCharacters);
@@ -435,6 +476,11 @@ function parseProtectedValues(
     throw new KafkaProfileFileCorruptError();
   }
   const base: ProtectedProfileValues = {
+    ...(version === SECURITY_PROTECTED_PROFILE_VERSION
+      ? {
+          security: parseStoredProfileSecurity(protectedValues.security, transport === "plaintext"),
+        }
+      : {}),
     ...(Object.hasOwn(protectedValues, "binding")
       ? { binding: parseProfileAcquisitionBinding(protectedValues.binding) }
       : {}),
@@ -469,7 +515,11 @@ function parseProtectedValues(
   };
 }
 
-function safeProfile(record: KafkaProfileRecord, protectedValue: Buffer): SafeStoredProfile {
+function safeProfile(
+  record: KafkaProfileRecord,
+  protectedValue: Buffer,
+  version: ProfileFileVersion,
+): SafeStoredProfile {
   const transport = record.transport ?? "tls";
   const base = {
     brokers: [...record.brokers],
@@ -478,7 +528,19 @@ function safeProfile(record: KafkaProfileRecord, protectedValue: Buffer): SafeSt
     name: record.name,
     protectedValue: protectedValue.toString("base64"),
     ...(record.revision === undefined ? {} : { revision: record.revision }),
-    ...(record.services === undefined ? {} : { services: record.services }),
+    ...(record.services === undefined ? {} : { services: summarizeServices(record.services) }),
+    ...(version !== SECURITY_PROFILE_FILE_VERSION || record.sasl === undefined
+      ? {}
+      : {
+          sasl: {
+            mechanism: record.sasl.mechanism,
+            username: record.sasl.username,
+            passwordPresent: record.sasl.password.length > 0,
+          },
+        }),
+    ...(version !== SECURITY_PROFILE_FILE_VERSION || record.clientIdentity === undefined
+      ? {}
+      : { clientIdentity: summarizeIdentity(record.clientIdentity) }),
     ...(record.source === undefined ? {} : { source: record.source }),
     transport,
     updatedAt: record.updatedAt,
@@ -512,7 +574,7 @@ function safeProfile(record: KafkaProfileRecord, protectedValue: Buffer): SafeSt
   };
 }
 
-function protectedProfile(record: KafkaProfileRecord): string {
+function protectedProfile(record: KafkaProfileRecord, documentVersion: ProfileFileVersion): string {
   if (
     record.revision !== undefined &&
     (!Number.isSafeInteger(record.revision) || record.revision < 1)
@@ -525,13 +587,20 @@ function protectedProfile(record: KafkaProfileRecord): string {
     ...(record.oauth === undefined ? {} : { oauth: { clientSecret: record.oauth.clientSecret } }),
     profileId: record.id,
     transport,
-    version: TRANSPORT_PROTECTED_PROFILE_VERSION,
+    version:
+      documentVersion === SECURITY_PROFILE_FILE_VERSION
+        ? SECURITY_PROTECTED_PROFILE_VERSION
+        : TRANSPORT_PROTECTED_PROFILE_VERSION,
+    ...(documentVersion === SECURITY_PROFILE_FILE_VERSION
+      ? { security: storedProfileSecurity(record) }
+      : {}),
   };
   if (transport === "plaintext") {
     if (
       Object.hasOwn(record, "apiCaPem") ||
       Object.hasOwn(record, "binding") ||
-      Object.hasOwn(record, "trust")
+      Object.hasOwn(record, "trust") ||
+      Object.hasOwn(record, "clientIdentity")
     ) {
       throw new KafkaProfileFileWriteError();
     }
@@ -558,18 +627,56 @@ function protectedProfile(record: KafkaProfileRecord): string {
 function restoredRecord(
   safe: SafeStoredProfile,
   values: ProtectedProfileValues,
-  documentVersion: 1 | 2 | 3,
+  documentVersion: ProfileFileVersion,
 ): KafkaProfileRecord {
   if (
     safe.transport !== values.transport ||
-    (documentVersion === PROFILE_FILE_VERSION && safe.revision !== values.revision) ||
+    (documentVersion >= PROFILE_FILE_VERSION && safe.revision !== values.revision) ||
     (safe.oauth === undefined) !== (values.oauth === undefined) ||
     (safe.oauth !== undefined &&
       safe.oauth.clientSecretPresent !== (values.oauth?.clientSecret.length ?? 0) > 0)
   ) {
     throw new KafkaProfileFileCorruptError();
   }
+  const security = values.security;
+  if (
+    documentVersion === SECURITY_PROFILE_FILE_VERSION &&
+    (security === undefined ||
+      !isDeepStrictEqual(
+        safe.services,
+        security.services === undefined ? undefined : summarizeServices(security.services),
+      ) ||
+      !isDeepStrictEqual(
+        safe.clientIdentity,
+        security.clientIdentity === undefined
+          ? undefined
+          : summarizeIdentity(security.clientIdentity),
+      ) ||
+      !isDeepStrictEqual(
+        safe.sasl,
+        security.sasl === undefined
+          ? undefined
+          : {
+              mechanism: security.sasl.mechanism,
+              username: security.sasl.username,
+              passwordPresent: security.sasl.password.length > 0,
+            },
+      ))
+  )
+    throw new KafkaProfileFileCorruptError();
+  const legacyServices =
+    safe.services === undefined
+      ? undefined
+      : Object.fromEntries(
+          Object.entries<ClusterServiceEndpointSummary>({ ...safe.services }).map(([key, v]) => [
+            key,
+            { authentication: v.authentication, baseUrl: v.baseUrl },
+          ]),
+        );
+  const services =
+    documentVersion === SECURITY_PROFILE_FILE_VERSION ? security?.services : legacyServices;
   const base = {
+    ...(security?.sasl === undefined ? {} : { sasl: security.sasl }),
     brokers: safe.brokers,
     ...(values.revision === undefined ? {} : { revision: values.revision }),
     createdAt: safe.createdAt,
@@ -585,7 +692,7 @@ function restoredRecord(
             tokenEndpoint: safe.oauth.tokenEndpoint,
           },
         }),
-    ...(safe.services === undefined ? {} : { services: safe.services }),
+    ...(services === undefined ? {} : { services }),
     ...(safe.source === undefined ? {} : { source: safe.source }),
     transport: safe.transport,
     updatedAt: safe.updatedAt,
@@ -595,7 +702,9 @@ function restoredRecord(
       safe.trust !== undefined ||
       values.trust !== undefined ||
       values.binding !== undefined ||
-      values.apiCaPem !== undefined
+      values.apiCaPem !== undefined ||
+      security?.clientIdentity !== undefined ||
+      safe.clientIdentity !== undefined
     ) {
       throw new KafkaProfileFileCorruptError();
     }
@@ -611,6 +720,7 @@ function restoredRecord(
   }
   return {
     ...base,
+    ...(security?.clientIdentity === undefined ? {} : { clientIdentity: security.clientIdentity }),
     ...(values.apiCaPem === undefined ? {} : { apiCaPem: values.apiCaPem }),
     ...(values.binding === undefined ? {} : { binding: values.binding }),
     transport: "tls",
@@ -652,24 +762,31 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
   }
 
   async commit(records: readonly KafkaProfileRecord[], signal?: AbortSignal): Promise<void> {
-    let rollback: TransportRollback | undefined;
+    let rollback: ProfileRollback | undefined;
     try {
       signal?.throwIfAborted();
       if (records.length > PROFILE_LIMITS.profiles) {
         throw new KafkaProfileFileWriteError();
       }
+      const version = await this.writeVersion(records, signal);
       const profiles = await Promise.all(
-        records.map(async (record) =>
-          safeProfile(record, await this.protector.protect(protectedProfile(record))),
-        ),
+        records.map(async (record) => {
+          const plaintext = protectedProfile(record, version);
+          if (Buffer.byteLength(plaintext, "utf8") > MAXIMUM_PROTECTED_VALUE_BYTES)
+            throw new KafkaProfileFileWriteError();
+          const protectedValue = await this.protector.protect(plaintext);
+          if (protectedValue.length === 0 || protectedValue.length > MAXIMUM_PROTECTED_VALUE_BYTES)
+            throw new KafkaProfileFileWriteError();
+          return safeProfile(record, protectedValue, version);
+        }),
       );
       signal?.throwIfAborted();
-      rollback = await this.preserveTransportRollback(signal);
+      rollback = await this.preserveProfileRollback(signal, version);
       const rollbackGeneration = rollback?.generation;
       const serialized = `${JSON.stringify({
         profiles,
         ...(rollbackGeneration === undefined ? {} : { rollbackGeneration }),
-        version: PROFILE_FILE_VERSION,
+        version,
       })}\n`;
       if (Buffer.byteLength(serialized, "utf8") > this.maximumFileBytes) {
         throw new KafkaProfileFileWriteError();
@@ -729,7 +846,7 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
           ),
         );
       }
-      if (shouldReEncrypt && document.version === PROFILE_FILE_VERSION) {
+      if (shouldReEncrypt && document.version >= PROFILE_FILE_VERSION) {
         await this.commit(restored, signal);
       }
       return restored;
@@ -744,9 +861,30 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
     }
   }
 
-  private async preserveTransportRollback(
+  private async writeVersion(
+    records: readonly KafkaProfileRecord[],
     signal?: AbortSignal,
-  ): Promise<TransportRollback | undefined> {
+  ): Promise<3 | 4> {
+    if (records.some(hasExpandedProfileSecurity)) return SECURITY_PROFILE_FILE_VERSION;
+    try {
+      const original = await readBoundedFile(this.path, this.maximumFileBytes, {
+        rejectSymlinks: true,
+        signal,
+      });
+      const version = parseDocument(JSON.parse(original.toString("utf8")) as unknown).version;
+      return version === SECURITY_PROFILE_FILE_VERSION
+        ? SECURITY_PROFILE_FILE_VERSION
+        : PROFILE_FILE_VERSION;
+    } catch (error) {
+      if (isMissingFile(error)) return PROFILE_FILE_VERSION;
+      throw error;
+    }
+  }
+
+  private async preserveProfileRollback(
+    signal: AbortSignal | undefined,
+    targetVersion: ProfileFileVersion,
+  ): Promise<ProfileRollback | undefined> {
     let original: Buffer;
     try {
       original = await readBoundedFile(this.path, this.maximumFileBytes, {
@@ -760,7 +898,7 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
     await chmod(dirname(this.path), 0o700);
     if (original.length > this.maximumFileBytes) throw new KafkaProfileFileWriteError();
     const document = parseDocument(JSON.parse(original.toString("utf8")) as unknown);
-    if (document.version === PROFILE_FILE_VERSION)
+    if (document.version >= targetVersion)
       return document.rollbackGeneration === undefined
         ? undefined
         : { created: false, generation: document.rollbackGeneration };
@@ -770,8 +908,8 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
       parseProtectedValues(protectedValues.plaintext, profile.id, document.version);
     }
 
-    const rollbackBase = `${this.path}.pre-transport-v2`;
-    for (let generation = 0; generation < TRANSPORT_ROLLBACK_GENERATIONS; generation += 1) {
+    const rollbackBase = `${this.path}.${targetVersion === SECURITY_PROFILE_FILE_VERSION ? "pre-security-v3" : "pre-transport-v2"}`;
+    for (let generation = 0; generation < PROFILE_ROLLBACK_GENERATIONS; generation += 1) {
       const rollbackPath =
         generation === 0 ? rollbackBase : `${rollbackBase}.${String(generation)}`;
       let handle: Awaited<ReturnType<typeof open>> | undefined;
@@ -796,7 +934,7 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
     }
     throw new KafkaProfileFileWriteError(
       undefined,
-      "All 100 transport rollback generations already exist. Preserve them, remove or relocate only generations no longer required for recovery, then retry.",
+      "All 100 profile rollback generations already exist. Preserve them, remove or relocate only generations no longer required for recovery, then retry.",
     );
   }
 
