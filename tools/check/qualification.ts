@@ -10,6 +10,15 @@ import type { QualificationSource } from "./ci-evidence";
 
 export const LOCAL_STAGES = ["shared", "soak", "docs", "eda-live", "nsp-live"] as const;
 export type LocalStage = (typeof LOCAL_STAGES)[number];
+export const LOCAL_SCOPES = ["core", "full", "eda", "nsp", "live"] as const;
+export type LocalQualificationScope = (typeof LOCAL_SCOPES)[number];
+export const LOCAL_SCOPE_STAGES: Record<LocalQualificationScope, readonly LocalStage[]> = {
+  core: ["shared", "soak", "docs"],
+  full: LOCAL_STAGES,
+  eda: ["eda-live"],
+  nsp: ["nsp-live"],
+  live: ["eda-live", "nsp-live"],
+};
 type Summary = Record<string, string | number | boolean | null | readonly string[]>;
 type Source = QualificationSource & { fingerprint: string };
 type Outcome = "not-run" | "running" | "passed" | "failed" | "skipped";
@@ -24,11 +33,10 @@ export interface LocalStageReceipt {
   outcome: Outcome;
   startedAt: string | null;
   completedAt: string | null;
-  reason: "not-configured" | "stage-failed" | null;
+  reason: "not-selected" | "not-configured" | "stage-failed" | null;
   reports: LocalReport[];
 }
-export interface LocalQualificationReceipt {
-  schemaVersion: 1;
+interface LocalQualificationState {
   execution: {
     id: string;
     kind: "local";
@@ -41,6 +49,23 @@ export interface LocalQualificationReceipt {
   outcome: "running" | "passed" | "failed";
   stages: LocalStageReceipt[];
   notQualified: readonly string[];
+}
+export type LocalQualificationReceipt = LocalQualificationState &
+  ({ schemaVersion: 1 } | { schemaVersion: 2; scope: LocalQualificationScope });
+
+function isLocalScope(value: unknown): value is LocalQualificationScope {
+  return typeof value === "string" && LOCAL_SCOPES.includes(value as LocalQualificationScope);
+}
+
+function receiptScope(receipt: LocalQualificationReceipt): LocalQualificationScope {
+  assert(receipt.schemaVersion === 1 || receipt.schemaVersion === 2, "Unknown receipt schema.");
+  if (receipt.schemaVersion === 1) return "full";
+  assert(isLocalScope(receipt.scope), "Unknown local qualification scope.");
+  return receipt.scope;
+}
+
+function qualifiedStage(scope: LocalQualificationScope, outcome: Outcome): boolean {
+  return outcome === "passed" || (scope === "full" && outcome === "skipped");
 }
 
 const OUTPUTS: Record<LocalStage, string> = {
@@ -238,9 +263,15 @@ async function save(root: string, receipt: LocalQualificationReceipt): Promise<v
   );
 }
 
-export async function beginLocalQualification(root: string): Promise<LocalQualificationReceipt> {
+export async function beginLocalQualification(
+  root: string,
+  scope: LocalQualificationScope = "full",
+): Promise<LocalQualificationReceipt> {
+  assert(isLocalScope(scope), "Unknown local qualification scope.");
+  const selected = LOCAL_SCOPE_STAGES[scope];
   const receipt: LocalQualificationReceipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    scope,
     execution: {
       id: randomUUID(),
       kind: "local",
@@ -256,7 +287,7 @@ export async function beginLocalQualification(root: string): Promise<LocalQualif
       outcome: "not-run",
       startedAt: null,
       completedAt: null,
-      reason: null,
+      reason: selected.includes(stage) ? null : "not-selected",
       reports: [],
     })),
     notQualified: LIMITATIONS,
@@ -268,8 +299,10 @@ export async function beginLocalQualification(root: string): Promise<LocalQualif
 export async function beginLocalStage(root: string, id: string, stage: LocalStage): Promise<void> {
   const receipt = await receiptAt(root, id);
   assert.equal(receipt.outcome, "running");
+  const stages = LOCAL_SCOPE_STAGES[receiptScope(receipt)];
   const selected = receipt.stages.find(
-    (item) => item.outcome !== "passed" && item.outcome !== "skipped",
+    (item) =>
+      stages.includes(item.stage) && item.outcome !== "passed" && item.outcome !== "skipped",
   );
   assert(
     selected?.stage === stage && selected.outcome === "not-run",
@@ -418,12 +451,14 @@ export async function completeLocalStage(
   const receipt = await receiptAt(root, id);
   const stage = receipt.stages.find((item) => item.stage === name);
   assert(
-    receipt.outcome === "running" && stage?.outcome === "running",
+    receipt.outcome === "running" &&
+      LOCAL_SCOPE_STAGES[receiptScope(receipt)].includes(name) &&
+      stage?.outcome === "running",
     "No matching running stage.",
   );
   stage.completedAt = now();
   await collect(root, receipt, stage, stage.completedAt);
-  assert(["passed", "skipped"].includes(stage.outcome), "The stage did not qualify.");
+  assert(qualifiedStage(receiptScope(receipt), stage.outcome), "The stage did not qualify.");
   await save(root, receipt);
 }
 
@@ -436,6 +471,7 @@ export async function finishLocalQualification(
   assert(exitCode <= 255);
   const receipt = await receiptAt(root, id);
   assert.equal(receipt.outcome, "running");
+  const selected = LOCAL_SCOPE_STAGES[receiptScope(receipt)];
   const completedAt = now();
   for (const stage of receipt.stages.filter((item) => item.outcome === "running")) {
     // Retain safe completed checks when a producer wrote a failed report; missing reports stay explicit.
@@ -452,7 +488,9 @@ export async function finishLocalQualification(
   receipt.outcome =
     exitCode === 0 &&
     receipt.source.unchanged &&
-    receipt.stages.every((item) => item.outcome === "passed" || item.outcome === "skipped")
+    receipt.stages
+      .filter((item) => selected.includes(item.stage))
+      .every((item) => qualifiedStage(receiptScope(receipt), item.outcome))
       ? "passed"
       : "failed";
   await save(root, receipt);
@@ -567,8 +605,11 @@ export async function validateLocalQualificationBundle(
   const receipt = JSON.parse(
     (await bytesAt(bundle, "qualification.json")).toString("utf8"),
   ) as LocalQualificationReceipt;
+  const scope = receiptScope(receipt);
+  const selected = LOCAL_SCOPE_STAGES[scope];
   exactKeys(receipt, [
     "schemaVersion",
+    ...(receipt.schemaVersion === 2 ? ["scope"] : []),
     "execution",
     "source",
     "environment",
@@ -576,7 +617,7 @@ export async function validateLocalQualificationBundle(
     "stages",
     "notQualified",
   ]);
-  assert(receipt.schemaVersion === 1 && ["passed", "failed"].includes(receipt.outcome));
+  assert(["passed", "failed"].includes(receipt.outcome));
   exactKeys(receipt.execution, ["id", "kind", "startedAt", "completedAt", "exitCode"]);
   directory("/", receipt.execution.id);
   assert(receipt.execution.kind === "local" && count(receipt.execution.exitCode) <= 255);
@@ -615,6 +656,21 @@ export async function validateLocalQualificationBundle(
         ["passed", "failed", "skipped", "not-run"].includes(stage.outcome),
     );
     assert(Array.isArray(stage.reports) && stage.reports.length <= 1);
+    if (!selected.includes(stage.stage)) {
+      assert(
+        stage.outcome === "not-run" &&
+          stage.reason === "not-selected" &&
+          stage.startedAt === null &&
+          stage.completedAt === null &&
+          stage.reports.length === 0,
+        "Unselected stages cannot claim execution or evidence.",
+      );
+      continue;
+    }
+    assert(
+      scope === "full" || stage.outcome !== "skipped",
+      "Explicit scopes cannot skip selected checks.",
+    );
     if (stage.outcome === "not-run") {
       assert(
         stage.startedAt === null &&
@@ -666,16 +722,19 @@ export async function validateLocalQualificationBundle(
     receipt.outcome === "passed",
     receipt.execution.exitCode === 0 &&
       receipt.source.unchanged &&
-      receipt.stages.every((stage) => stage.outcome === "passed" || stage.outcome === "skipped"),
+      receipt.stages
+        .filter((stage) => selected.includes(stage.stage))
+        .every((stage) => qualifiedStage(scope, stage.outcome)),
   );
   return receipt;
 }
 
 async function main(): Promise<void> {
-  const [command, id, stage] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const [command, id, stage] = args;
   const root = process.cwd();
-  if (command === "begin" && id === undefined)
-    process.stdout.write(`${(await beginLocalQualification(root)).execution.id}\n`);
+  if (command === "begin" && args.length <= 2 && (id === undefined || isLocalScope(id)))
+    process.stdout.write(`${(await beginLocalQualification(root, id)).execution.id}\n`);
   else if (command === "stage" && id && LOCAL_STAGES.includes(stage as LocalStage))
     await beginLocalStage(root, id, stage as LocalStage);
   else if (command === "complete" && id && LOCAL_STAGES.includes(stage as LocalStage))
@@ -683,7 +742,7 @@ async function main(): Promise<void> {
   else if (command === "finish" && id && /^\d+$/u.test(stage ?? "")) {
     const receipt = await finishLocalQualification(root, id, Number(stage));
     process.stdout.write(
-      `Local qualification: ${receipt.outcome}. Receipt: .artifacts/qualification/${id}/qualification.json\n`,
+      `Local qualification (${receiptScope(receipt)}): ${receipt.outcome}. Receipt: .artifacts/qualification/${id}/qualification.json\n`,
     );
     if (receipt.outcome !== "passed") process.exitCode = 1;
   } else throw new Error("Invalid local qualification command.");

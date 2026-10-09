@@ -27,6 +27,7 @@ import {
   localQualificationSource,
   validateLocalQualificationBundle,
   type LocalQualificationReceipt,
+  type LocalQualificationScope,
   type LocalStage,
 } from "../../tools/check/qualification";
 
@@ -131,9 +132,14 @@ async function report(root: string, stage: LocalStage, live = false): Promise<vo
         : { outcome: "skipped", checkedAt: timestamp, checks: [], reasonCode: "not-configured" },
     );
 }
-async function successful(root: string, live = false): Promise<LocalQualificationReceipt> {
-  const receipt = await beginLocalQualification(root);
-  for (const stage of LOCAL_STAGES) {
+async function successful(
+  root: string,
+  live = false,
+  scope: LocalQualificationScope = "full",
+  stages: readonly LocalStage[] = LOCAL_STAGES,
+): Promise<LocalQualificationReceipt> {
+  const receipt = await beginLocalQualification(root, scope);
+  for (const stage of stages) {
     await beginLocalStage(root, receipt.execution.id, stage);
     await report(root, stage, live);
     await completeLocalStage(root, receipt.execution.id, stage);
@@ -148,6 +154,7 @@ it("retains successful source-bound checks and explicit unavailable live tests i
   expect(first.execution.id).not.toBe(second.execution.id);
   expect(await validateLocalQualificationBundle(bundle(root, first))).toEqual(first);
   expect(first.outcome).toBe("passed");
+  expect(first).toMatchObject({ schemaVersion: 2, scope: "full" });
   expect(first.source.unchanged).toBe(true);
   expect(first.source.start.dirty).toBe(false);
   expect(first.stages.map(({ outcome }) => outcome)).toEqual([
@@ -183,6 +190,233 @@ it("preserves the API v-prefixed EDA release in validated live evidence without 
   expect(eda).toMatchObject({ summary: { targetVersion: "v26.8.2" } });
   const shared = await readFile(join(bundle(root, receipt), "evidence/shared.json"), "utf8");
   expect(shared).not.toContain("never-export-this");
+});
+
+it.each<{ scope: LocalQualificationScope; stages: readonly LocalStage[] }>([
+  { scope: "core", stages: ["shared", "soak", "docs"] },
+  { scope: "full", stages: ["shared", "soak", "docs", "eda-live", "nsp-live"] },
+  { scope: "eda", stages: ["eda-live"] },
+  { scope: "nsp", stages: ["nsp-live"] },
+  { scope: "live", stages: ["eda-live", "nsp-live"] },
+])(
+  "qualifies only the selected $scope scope with no invented evidence",
+  async ({ scope, stages }) => {
+    const root = await fixture();
+    const receipt = await successful(root, true, scope, stages);
+    expect(await validateLocalQualificationBundle(bundle(root, receipt))).toEqual(receipt);
+    expect(receipt).toMatchObject({ schemaVersion: 2, scope, outcome: "passed" });
+    expect(
+      receipt.stages.filter((stage) => stage.outcome === "passed").map((stage) => stage.stage),
+    ).toEqual(stages);
+    for (const stage of receipt.stages.filter((stage) => !stages.includes(stage.stage)))
+      expect(stage).toEqual({
+        stage: stage.stage,
+        outcome: "not-run",
+        reason: "not-selected",
+        startedAt: null,
+        completedAt: null,
+        reports: [],
+      });
+  },
+);
+
+it.each<{ scope: LocalQualificationScope; stage: LocalStage }>([
+  { scope: "eda", stage: "eda-live" },
+  { scope: "nsp", stage: "nsp-live" },
+  { scope: "live", stage: "eda-live" },
+])("requires actual live checks for explicit $scope scope", async ({ scope, stage }) => {
+  const root = await fixture();
+  const started = await beginLocalQualification(root, scope);
+  await beginLocalStage(root, started.execution.id, stage);
+  await report(root, stage);
+  await expect(completeLocalStage(root, started.execution.id, stage)).rejects.toThrow(
+    /did not qualify/u,
+  );
+  const receipt = await finishLocalQualification(root, started.execution.id, 1);
+  expect(await validateLocalQualificationBundle(bundle(root, receipt))).toEqual(receipt);
+  expect(receipt.outcome).toBe("failed");
+  const selected = receipt.stages.find((item) => item.stage === stage)!;
+  expect(selected).toMatchObject({ outcome: "failed", reason: "stage-failed" });
+  expect(selected.reports[0]!.summary).toEqual({
+    outcome: "skipped",
+    checks: 0,
+    checkIds: [],
+    reason: "not-configured",
+  });
+  expect(receipt.stages[0]).toMatchObject({ outcome: "not-run", reason: "not-selected" });
+  selected.outcome = "skipped";
+  selected.reason = "not-configured";
+  await json(bundle(root, receipt), "qualification.json", receipt);
+  await expect(validateLocalQualificationBundle(bundle(root, receipt))).rejects.toThrow(
+    /cannot skip selected/u,
+  );
+});
+
+it("rejects out-of-scope and out-of-order work without deleting another stage's report", async () => {
+  const root = await fixture();
+  const receipt = await beginLocalQualification(root, "nsp");
+  await report(root, "shared");
+  const original = await readFile(join(root, ".artifacts/ci/vitest.json"));
+  await expect(beginLocalStage(root, receipt.execution.id, "shared")).rejects.toThrow(
+    /once, in order/u,
+  );
+  await expect(completeLocalStage(root, receipt.execution.id, "shared")).rejects.toThrow(
+    /running stage/u,
+  );
+  expect(await readFile(join(root, ".artifacts/ci/vitest.json"))).toEqual(original);
+  const live = await beginLocalQualification(root, "live");
+  await expect(beginLocalStage(root, live.execution.id, "nsp-live")).rejects.toThrow(
+    /once, in order/u,
+  );
+});
+
+it("retains a selected preflight failure without claiming any stage ran", async () => {
+  const root = await fixture();
+  const started = await beginLocalQualification(root, "nsp");
+  const receipt = await finishLocalQualification(root, started.execution.id, 2);
+  expect(await validateLocalQualificationBundle(bundle(root, receipt))).toEqual(receipt);
+  expect(receipt.outcome).toBe("failed");
+  expect(receipt.stages[4]).toEqual({
+    stage: "nsp-live",
+    outcome: "not-run",
+    reason: null,
+    startedAt: null,
+    completedAt: null,
+    reports: [],
+  });
+  expect(receipt.stages.slice(0, 4).every((stage) => stage.reason === "not-selected")).toBe(true);
+});
+
+it("requires every selected stage and preserves the live-stage stop order", async () => {
+  const root = await fixture();
+  const incomplete = await beginLocalQualification(root, "core");
+  await beginLocalStage(root, incomplete.execution.id, "shared");
+  await report(root, "shared");
+  await completeLocalStage(root, incomplete.execution.id, "shared");
+  const missing = await finishLocalQualification(root, incomplete.execution.id, 0);
+  expect(missing.outcome).toBe("failed");
+  await validateLocalQualificationBundle(bundle(root, missing));
+
+  const live = await beginLocalQualification(root, "live");
+  await beginLocalStage(root, live.execution.id, "eda-live");
+  const failed = await finishLocalQualification(root, live.execution.id, 143);
+  expect(failed.stages.slice(0, 3).every((stage) => stage.reason === "not-selected")).toBe(true);
+  expect(failed.stages[3]).toMatchObject({ outcome: "failed", reason: "stage-failed" });
+  expect(failed.stages[4]).toMatchObject({ outcome: "not-run", reason: null });
+  await validateLocalQualificationBundle(bundle(root, failed));
+});
+
+it.each(["passed", "failed"] as const)(
+  "still validates historical schema1 %s receipts",
+  async (outcome) => {
+    const root = await fixture();
+    let completed: LocalQualificationReceipt;
+    if (outcome === "passed") completed = await successful(root);
+    else {
+      const started = await beginLocalQualification(root);
+      await beginLocalStage(root, started.execution.id, "shared");
+      completed = await finishLocalQualification(root, started.execution.id, 37);
+    }
+    const historical = {
+      schemaVersion: 1,
+      execution: completed.execution,
+      source: completed.source,
+      environment: completed.environment,
+      outcome: completed.outcome,
+      stages: completed.stages,
+      notQualified: completed.notQualified,
+    };
+    await json(bundle(root, completed), "qualification.json", historical);
+    expect(await validateLocalQualificationBundle(bundle(root, completed))).toEqual(historical);
+    await json(bundle(root, completed), "qualification.json", { ...historical, scope: "full" });
+    await expect(validateLocalQualificationBundle(bundle(root, completed))).rejects.toThrow(
+      /Unexpected evidence fields/u,
+    );
+  },
+);
+
+it.each(["unknown", "full", "core"])(
+  "rejects relabeling standalone NSP evidence as %s",
+  async (scope) => {
+    const root = await fixture();
+    const receipt = await successful(root, true, "nsp", ["nsp-live"]);
+    await json(bundle(root, receipt), "qualification.json", { ...receipt, scope });
+    await expect(validateLocalQualificationBundle(bundle(root, receipt))).rejects.toThrow();
+  },
+);
+
+it.each(["reason", "outcome", "timestamps", "reports"])(
+  "rejects forged unselected-stage %s",
+  async (field) => {
+    const root = await fixture();
+    const receipt = await successful(root, true, "nsp", ["nsp-live"]);
+    const unselected = receipt.stages[0]!;
+    if (field === "reason") unselected.reason = null;
+    if (field === "outcome") unselected.outcome = "passed";
+    if (field === "timestamps") unselected.startedAt = receipt.execution.startedAt;
+    if (field === "reports") unselected.reports = receipt.stages[4]!.reports;
+    await json(bundle(root, receipt), "qualification.json", receipt);
+    await expect(validateLocalQualificationBundle(bundle(root, receipt))).rejects.toThrow(
+      /Unselected stages/u,
+    );
+  },
+);
+
+it("rejects disguising a selected live failure as unselected", async () => {
+  const root = await fixture();
+  const started = await beginLocalQualification(root, "nsp");
+  const receipt = await finishLocalQualification(root, started.execution.id, 2);
+  receipt.stages[4]!.reason = "not-selected";
+  await json(bundle(root, receipt), "qualification.json", receipt);
+  await expect(validateLocalQualificationBundle(bundle(root, receipt))).rejects.toThrow();
+});
+
+it.each([{ args: ["shared"] }, { args: ["nsp", "shared"] }])(
+  "rejects invalid CLI begin arguments $args",
+  async ({ args }) => {
+    const root = await fixture();
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        createRequire(import.meta.url).resolve("tsx"),
+        fileURLToPath(new URL("../../tools/check/qualification.ts", import.meta.url)),
+        "begin",
+        ...args,
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    await expect(readdir(join(root, ".artifacts/qualification"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  },
+);
+
+it("prints the completed CLI scope without claiming full acceptance", async () => {
+  const root = await fixture();
+  const args = [
+    "--import",
+    createRequire(import.meta.url).resolve("tsx"),
+    fileURLToPath(new URL("../../tools/check/qualification.ts", import.meta.url)),
+  ];
+  const begin = spawnSync(process.execPath, [...args, "begin", "nsp"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  expect(begin.status, begin.stderr).toBe(0);
+  const id = begin.stdout.trim();
+  await beginLocalStage(root, id, "nsp-live");
+  await report(root, "nsp-live", true);
+  await completeLocalStage(root, id, "nsp-live");
+  const finish = spawnSync(process.execPath, [...args, "finish", id, "0"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  expect(finish.status, finish.stderr).toBe(0);
+  expect(finish.stdout).toContain("Local qualification (nsp): passed.");
+  expect(finish.stdout).not.toContain("(full)");
 });
 
 it("clears only the known report and rejects missing, stale and replaced evidence", async () => {

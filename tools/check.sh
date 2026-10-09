@@ -4,13 +4,26 @@ set -euo pipefail
 
 mode=local
 lane=all
+scope=core
+local_stages=(shared soak docs)
 if [[ $# -eq 1 && "$1" == --ci ]]; then
   mode=ci
 elif [[ $# -eq 3 && "$1" == --ci && "$2" == --lane && "$3" =~ ^(shared|docs|runtime)$ ]]; then
   mode=ci
   lane="$3"
+elif [[ $# -eq 1 && "$1" == --full ]]; then
+  scope=full
+  local_stages+=(eda-live nsp-live)
+elif [[ $# -eq 2 && "$1" == --live && "$2" =~ ^(eda|nsp|all)$ ]]; then
+  scope="$2"
+  if [[ "$scope" == all ]]; then
+    scope=live
+    local_stages=(eda-live nsp-live)
+  else
+    local_stages=("$scope-live")
+  fi
 elif [[ $# -ne 0 ]]; then
-  echo "Usage: npm run check [-- --ci [--lane shared|docs|runtime]]" >&2
+  echo "Usage: npm run check [-- --full | --live eda|nsp|all | --ci [--lane shared|docs|runtime]]" >&2
   exit 2
 fi
 
@@ -75,7 +88,7 @@ if [[ "$mode" == ci ]]; then
     ci_lane "$lane"
   fi
 else
-  qualification=$(node --import tsx tools/check/qualification.ts begin)
+  qualification=$(node --import tsx tools/check/qualification.ts begin "$scope")
   finish_local() {
     local status=$? evidence_status
     trap - EXIT INT TERM
@@ -88,19 +101,34 @@ else
   trap finish_local EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  node --import tsx tools/check/qualification.ts stage "$qualification" shared
-  shared
-  node --import tsx tools/check/qualification.ts complete "$qualification" shared
-  node --import tsx tools/check/qualification.ts stage "$qualification" soak
-  node --import tsx test/performance/stream-pipeline-replay.ts --seconds=60 --rate=1000 --bytes=256 --mixed --clone
-  node --import tsx tools/check/qualification.ts complete "$qualification" soak
-  node --import tsx tools/check/qualification.ts stage "$qualification" docs
-  docs
-  node --import tsx tools/check/qualification.ts complete "$qualification" docs
-  node --import tsx tools/check/qualification.ts stage "$qualification" eda-live
-  node --import tsx tools/check/eda-live.ts
-  node --import tsx tools/check/qualification.ts complete "$qualification" eda-live
-  node --import tsx tools/check/qualification.ts stage "$qualification" nsp-live
-  node --import tsx tools/check/nsp-live.ts
-  node --import tsx tools/check/qualification.ts complete "$qualification" nsp-live
+  # Explicit live runs require every selected target before either harness can mutate it.
+  # Full qualification preserves each harness's existing configured-or-skipped behavior.
+  if [[ "$scope" == eda || "$scope" == live ]]; then
+    if [[ -z "${STREAMSKOPE_EDA_API_URL:-}" || -z "${STREAMSKOPE_EDA_API_USERNAME:-}" || -z "${STREAMSKOPE_EDA_API_PASSWORD:-}" ]]; then
+      echo "Live EDA requires STREAMSKOPE_EDA_API_URL, STREAMSKOPE_EDA_API_USERNAME and STREAMSKOPE_EDA_API_PASSWORD together." >&2
+      exit 1
+    fi
+    if [[ -n "${STREAMSKOPE_EDA_API_CA:-}" && ( ! -f "$STREAMSKOPE_EDA_API_CA" || ! -r "$STREAMSKOPE_EDA_API_CA" || ! -s "$STREAMSKOPE_EDA_API_CA" ) ]]; then
+      echo "Live EDA requires STREAMSKOPE_EDA_API_CA to name a readable, nonempty certificate file when provided." >&2
+      exit 1
+    fi
+  fi
+  if [[ "$scope" == nsp || "$scope" == live ]]; then
+    if [[ -z "${STREAMSKOPE_NSP_CONFIG:-}" || ! -f "$STREAMSKOPE_NSP_CONFIG" || ! -r "$STREAMSKOPE_NSP_CONFIG" || ! -s "$STREAMSKOPE_NSP_CONFIG" ]]; then
+      echo "Live NSP requires STREAMSKOPE_NSP_CONFIG to name a readable, nonempty configuration file." >&2
+      exit 1
+    fi
+  fi
+  if [[ "$scope" == eda || "$scope" == nsp || "$scope" == live ]]; then
+    patch_dependencies
+  fi
+  for selected in "${local_stages[@]}"; do
+    node --import tsx tools/check/qualification.ts stage "$qualification" "$selected"
+    case "$selected" in
+      shared|docs) "$selected" ;;
+      soak) node --import tsx test/performance/stream-pipeline-replay.ts --seconds=60 --rate=1000 --bytes=256 --mixed --clone ;;
+      eda-live|nsp-live) node --import tsx "tools/check/$selected.ts" ;;
+    esac
+    node --import tsx tools/check/qualification.ts complete "$qualification" "$selected"
+  done
 fi

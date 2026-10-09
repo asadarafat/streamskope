@@ -112,7 +112,30 @@ node tools/package/e2e.mjs web test/e2e/web-plugin-installation.spec.ts
 This example exercises the browser plugin installation surface. It does not prove
 live platform behavior or installed desktop recovery. The [qualification
 matrix](qualification.md) determines the additional checks required by a change;
-focused tests do not replace the normal PR gate.
+focused tests do not replace the normal PR gate. Every PR requires shared, docs,
+runtime and final **CI** checks, but need not duplicate that complete run locally.
+
+Choose a broader local scope when needed:
+
+```sh
+npm run check
+npm run check -- --full
+npm run check -- --live eda
+```
+
+The default runs shared checks, the 60-second soak and docs without vendor tests.
+`--full` adds configured EDA/NSP checks and records unconfigured skips. Explicit
+`--live eda`, `--live nsp` or `--live all` runs only the requested vendors and
+fails if any selected configuration is missing. Run live checks for affected
+integration, authentication, trust, generated-profile or connection/lock/cleanup
+behavior and for milestone/release integration claims. A prose edit or unrelated
+core change does not require vendor access. Use `npm run check -- --ci` to
+reproduce GitHub's three lanes locally; its scope is unchanged.
+
+Each local scope produces its own receipt. Preserve failed receipts when retrying
+and never relabel earlier evidence as a new source or a broader scope. See
+[reading a local result](qualification.md#read-a-local-result) and
+[release attachment](qualification.md#attach-local-acceptance-to-a-draft).
 
 The source CLI and owned consumer sandbox use the existing `dev` entry:
 

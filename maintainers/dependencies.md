@@ -15,11 +15,11 @@ below permits automatic merging after the ordinary GitHub CI gate passes.
    parent was upgraded. Do not edit hashes or reviewed versions merely to make
    the check pass.
 3. For manually reviewed changes, install the selected dependency graph with
-   `npm ci`, then run the relevant focused regressions and `npm run check`.
-   Record configured live checks and explicit skips using the
-   [qualification procedure](qualification.md). Accepted routine tooling PRs
-   use the same complete GitHub CI as their acceptance evidence without a
-   duplicate local run.
+   `npm ci`, then run its focused regressions and the additional checks selected
+   by the [impact matrix](qualification.md#choose-evidence-by-impact). A duplicate
+   full local run is not mandatory for every PR. Security, performance, native
+   and live behavior still need evidence when the dependency change affects them.
+   Routine tooling PRs use the same complete GitHub CI and the classifier below.
 4. Require the ordinary PR CI gate before merging. Changes affecting packaged
    dependencies also need the relevant native/package evidence before
    [release draft review](releases.md#review-and-publish-the-draft).
@@ -114,13 +114,14 @@ classification remain required for the accepted entries. Being a `devDependency`
 is insufficient: several UI, packaging and bundled application libraries use
 that field too.
 
-For an accepted **Dependabot-authored PR**, all three ordinary GitHub lanes and
-the final **CI** evidence gate replace duplicate local `npm run check` acceptance.
-Local tests remain useful for diagnosing failures. The exception does not apply
-to changes to this policy, tests, workflows, product code or other dependencies.
-It does not claim a local soak, live EDA/NSP, native package or release result.
-Manually reviewed changes and release preparation retain their existing evidence
-requirements, including affected live, performance and native behavior.
+For an accepted **Dependabot-authored PR**, the classifier permits automatic
+review and protected merge after all three ordinary GitHub lanes and the final
+**CI** gate pass. The general policy already avoids mandatory duplicate full
+local runs; this allowlist governs automation, not a separate qualification gate.
+Policy, test, workflow, product-code and other dependency changes require manual
+review. CI success does not claim a local soak, live EDA/NSP, native package or
+release result. Manually reviewed changes and release preparation still require
+the affected live, performance, security and native evidence.
 
 The [maintenance workflow](../.github/workflows/dependabot.yml) runs after a
 successful PR CI run. It uses trusted `main`, the built-in GitHub token and Node

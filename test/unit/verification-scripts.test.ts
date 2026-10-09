@@ -25,7 +25,8 @@ describe("development commands", () => {
     expect(manifest.scripts.docs).toBe("python3 tools/docs.py");
   });
 
-  it("keeps all local qualification gates and fails on the first error", () => {
+  it("keeps core gate commands and documentation qualification wired", () => {
+    // Vendor selection, ordering and fail-fast behavior execute in check-command.test.ts.
     expect(check).toContain("set -euo pipefail");
     for (const required of [
       "tools/check/workflows.sh",
@@ -41,7 +42,6 @@ describe("development commands", () => {
       "stream-pipeline-replay.ts --seconds=60",
       "--mixed --clone",
       "npm run docs -- qualify",
-      "tools/check/eda-live.ts",
     ])
       expect(check, `missing local gate: ${required}`).toContain(required);
     expect(check).not.toContain("passWithNoTests");

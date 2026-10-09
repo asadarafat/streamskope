@@ -16,8 +16,11 @@ Use [development](development.md) for local builds and
    publication's archive is present on `main`; release preparation rejects an
    incomplete archive, baseline or component index.
 3. Review relevant [local and native acceptance](qualification.md), including
-   skips and limitations. Packaging alone does not establish live EDA or NSP
-   support. Widen compatibility declarations only after qualifying those targets.
+   unselected scopes, skips and limitations. PRs need not repeat complete local
+   qualification, but milestone/release integration claims still require core
+   and the relevant live/native evidence. Packaging alone does not establish
+   live EDA or NSP support. Widen compatibility declarations only after
+   qualifying those targets.
 4. Open **Actions → Release → Run workflow**, select **main**, choose **desktop**,
    **eda** or **nsp**, and enter its next bare SemVer, such as `0.2.0` or
    `0.2.0-rc.1`. These are examples, not reserved versions.
@@ -97,7 +100,10 @@ Before publishing a desktop draft, verify:
 - The qualification report contains the actual release-run CI and package
   evidence. Local checks remain explicitly unrecorded until a compatible receipt
   is attached. Follow [draft enrichment](qualification.md#attach-local-acceptance-to-a-draft)
-  before publication; review executed checks, skips and scope limits.
+  before publication; review executed checks, skips and scope limits. Attachment
+  accepts one passing source-bound bundle containing core stages, plus the
+  selected plugin's live stage for a plugin draft. Standalone live retries do not
+  combine with a failed or separate core bundle into release acceptance.
 - Generated changes, reviewed highlights, upgrade instructions and limitations
   describe the actual artifacts. Inspect the retained `release-changelog` and
   `desktop-release-notes` artifacts as well as the draft body.
