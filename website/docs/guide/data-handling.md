@@ -147,6 +147,36 @@ does not expand the original end offsets to include later arrivals. Reconnect,
 another read, changed record settings or host restart invalidates it; it is not
 a durable job or a saved query.
 
+## Analysis limits
+
+**Analyze range…** shares the finite-read bounds: up to 100,000 matching records,
+1,000,000 scanned records, 1 GiB scanned, five minutes and 1,000 passes. Each
+read still follows the per-pass bounds above. Its own result bounds also apply:
+
+| Boundary                 | Limit                                  | What happens                                                                                                                         |
+| ------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Analysis selected fields | 12 / 256 path characters / 16 segments | Scalar key/value paths only; unsupported selectors are rejected                                                                      |
+| Analysis groups          | 256 / 1 KiB per group key              | An oversized or new over-limit group stops before that record is counted; no Other bucket                                            |
+| Analysis scalar value    | 1 KiB                                  | Oversized preview values are explicitly unavailable; whole-count field totals remain separate and grouping never uses shortened keys |
+| Analysis preview         | 200 rows / 256 KiB                     | Preview retention stops; counting continues and reports omitted preview rows                                                         |
+| Analysis result          | 384 KiB                                | Combined result bytes are bounded; exhaustion produces a partial count                                                               |
+| Analysis evaluation work | 50,000,000 units                       | Total expression work budget across the analysis; exhaustion stops with an explicit partial reason                                   |
+| Analysis work per record | 250,000 units                          | Shared across selected fields in one record; exhaustion stops before that record is counted                                          |
+
+Counts, groups and field availability cover the confirmed matching records,
+including records omitted from the preview. Unknown filter results make the match
+count partial. Known missing fields, null keys, tombstones and JSON nulls remain
+distinct from unavailable or masked values. Grouping excludes protected or
+unavailable values and reports the exclusion counts separately; complete total
+count does not imply complete grouping.
+
+Analysis retains only a bounded protected projection and grouped values in host
+memory. These can still contain sensitive message data. Disconnect, browser lock
+or host shutdown clears them; there is no durable analysis file, implicit report
+export or restart resume. Encoding or protection changes cannot reinterpret an
+existing result. [Count and inspect a range](messages.md#count-and-inspect-a-range)
+explains the controls and coverage labels.
+
 ## Understand an export
 
 ### Current-page JSON

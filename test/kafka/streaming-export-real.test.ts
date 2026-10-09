@@ -20,6 +20,12 @@ import {
   parseRecordExportReceipt,
   parseRecordExportSnapshot,
 } from "../../src/features/kafka/contracts/record-export-validation";
+import type {
+  RecordAnalysisInput,
+  RecordAnalysisOperation,
+  RecordAnalysisSnapshot,
+} from "../../src/features/kafka/contracts/record-analysis";
+import { parseRecordAnalysisSnapshot } from "../../src/features/kafka/contracts/record-analysis-validation";
 import { createKafkaBackend, type NodeKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { fetchFixtureToken, loadFixtureConfig } from "../support/kafka-fixture";
 import { kafkaFixtureFailure, waitForKafkaTopicOffsets } from "../support/kafka-topic-readiness";
@@ -232,6 +238,52 @@ async function readArtifact(
   return { bytes, sha256: hash.digest("hex") };
 }
 
+async function startAnalysis(
+  context: TopicContext,
+  overrides: Partial<RecordAnalysisInput> = {},
+): Promise<string> {
+  const input: RecordAnalysisInput = {
+    requestId: randomUUID(),
+    topic: context.topic,
+    range: { mode: "earliest" },
+    maxRecords: 100_000,
+    search: { key: "", value: "", offset: "", timestamp: "", partition: null },
+    columns: [{ id: "kind", label: "Kind", source: "value", path: "$.kind" }],
+    groupBy: "kind",
+    ...overrides,
+  };
+  const response = await context.execute("records.analysis.start", input);
+  expect(response, JSON.stringify(response)).toMatchObject({ ok: true });
+  if (!response.ok || response.command !== "records.analysis.start")
+    throw new Error("Analysis admission failed.");
+  return parseRecordAnalysisSnapshot(response.result.snapshot).operation!.jobId;
+}
+
+async function analysisStatus(context: TopicContext): Promise<RecordAnalysisSnapshot> {
+  const response = await context.execute("records.analysis.status", {});
+  expect(response, JSON.stringify(response)).toMatchObject({ ok: true });
+  if (!response.ok || response.command !== "records.analysis.status")
+    throw new Error("Analysis status failed.");
+  return parseRecordAnalysisSnapshot(response.result.snapshot);
+}
+
+async function finishedAnalysis(
+  context: TopicContext,
+  jobId: string,
+): Promise<RecordAnalysisOperation> {
+  let operation: RecordAnalysisOperation | undefined;
+  await vi.waitFor(
+    async () => {
+      operation = (await analysisStatus(context)).operation ?? undefined;
+      expect(operation?.jobId).toBe(jobId);
+      expect(["completed", "partial", "failed", "revoked"]).toContain(operation?.state);
+    },
+    { timeout: 120_000, interval: 20 },
+  );
+  expect(operation, JSON.stringify(operation)).not.toMatchObject({ state: "failed" });
+  return operation!;
+}
+
 it("streams a three-partition canonical JSONL artifact larger than the renderer memory budget and excludes later appends", async () => {
   await withTopic(async (context) => {
     const count = 3_003;
@@ -433,5 +485,281 @@ it("exports protected mixed schemas, malformed records, tombstones and duplicate
         part: "data",
       }),
     ).toThrow();
+  });
+}, 90_000);
+
+it("analyzes an exact three-partition captured range beyond the preview window and excludes later appends", async () => {
+  await withTopic(async (context) => {
+    const count = 12_003;
+    await context.seed(
+      Array.from({ length: count }, (_, index) => ({
+        partition: index % 3,
+        key: Buffer.from(`key-${String(index)}`),
+        value: Buffer.from(JSON.stringify({ kind: index % 5 })),
+      })),
+    );
+    await context.connect();
+    const jobId = await startAnalysis(context, {
+      columns: [
+        { id: "kind", label: "Kind", source: "value", path: "$.kind" },
+        { id: "key", label: "Key", source: "key", path: "$" },
+      ],
+    });
+    await vi.waitFor(
+      async () => {
+        const operation = (await analysisStatus(context)).operation!;
+        expect(operation.state, "Append while the captured read remains active").toBe("reading");
+        expect(operation.coverage).not.toBeNull();
+        expect(operation.counts.countedRecords).toBeGreaterThan(0);
+      },
+      { timeout: 30_000, interval: 5 },
+    );
+    await context.seed(
+      [0, 1, 2].map((partition) => ({
+        partition,
+        key: Buffer.from("late"),
+        value: Buffer.from('{"kind":99}'),
+      })),
+    );
+    const operation = await finishedAnalysis(context, jobId);
+    expect(operation).toMatchObject({
+      state: "completed",
+      reason: "range-complete",
+      counts: { countedRecords: count, scannedRecords: count, unavailableRecords: 0 },
+    });
+    expect(operation.counts.passes).toBeGreaterThan(1);
+    expect(
+      operation.coverage?.partitions.map((part) => ({
+        partition: part.partition,
+        start: part.startOffset,
+        end: part.endOffset,
+        next: part.nextOffset,
+      })),
+    ).toEqual([0, 1, 2].map((partition) => ({ partition, start: "0", end: "4001", next: "4001" })));
+    const result = operation.result!;
+    expect(result.preview).toHaveLength(200);
+    expect(result.previewOmittedRecords).toBe(11_803);
+    expect(result.previewBytes).toBe(Buffer.byteLength(JSON.stringify(result.preview), "utf8"));
+    expect(
+      new Set(result.preview.map((row) => `${String(row.partition)}:${row.offset}`)).size,
+    ).toBe(200);
+    expect(
+      result.columns.map((column) => ({
+        id: column.columnId,
+        scalar: column.scalar,
+        unavailable: column.unavailable,
+      })),
+    ).toEqual([
+      { id: "kind", scalar: count, unavailable: 0 },
+      { id: "key", scalar: count, unavailable: 0 },
+    ]);
+    expect(result.grouping).toMatchObject({
+      groupedRecords: count,
+      excluded: { masked: 0, unavailable: 0 },
+    });
+    expect(
+      result
+        .grouping!.groups.map((group) => ({ key: group.key, count: group.count }))
+        .sort((left, right) => JSON.stringify(left.key).localeCompare(JSON.stringify(right.key))),
+    ).toEqual([
+      { key: { state: "scalar", value: 0 }, count: 2_401 },
+      { key: { state: "scalar", value: 1 }, count: 2_401 },
+      { key: { state: "scalar", value: 2 }, count: 2_401 },
+      { key: { state: "scalar", value: 3 }, count: 2_400 },
+      { key: { state: "scalar", value: 4 }, count: 2_400 },
+    ]);
+  });
+}, 180_000);
+
+it("analyzes protected mixed schemas with exact typed groups, tombstones, malformed records and duplicate headers", async () => {
+  await withTopic(async (context) => {
+    await context.seed([
+      {
+        partition: 0,
+        key: Buffer.from("private-analysis-key"),
+        value: Buffer.from('{"id":1,"name":"private-analysis-name","marker":"[MASKED]"}'),
+        headers: new Map([
+          [Buffer.from("cid"), Buffer.from("one")],
+          [Buffer.from("cid"), Buffer.from("two")],
+        ]),
+      },
+      { partition: 1, key: null, value: Buffer.from("000000000702046f6b", "hex") },
+      { partition: 2, key: null, value: Buffer.from("000000000800080112026f6b", "hex") },
+      { partition: 0, key: null, value: Buffer.from("0000000007ff", "hex") },
+      { partition: 1, key: null, value: null },
+      { partition: 2, key: null, value: Buffer.from('{"id":null,"name":"private-analysis-name"}') },
+      {
+        partition: 0,
+        key: null,
+        value: Buffer.from('{"name":"private-analysis-name","marker":"[MASKED]"}'),
+      },
+    ]);
+    expect(
+      await context.execute("preferences.update", {
+        patch: {
+          protection: {
+            ...KAFKA_RECORD_PROTECTION_DEFAULTS,
+            maskKey: true,
+            maskHeaders: ["cid"],
+            valuePaths: ["/name"],
+          },
+        },
+      }),
+    ).toMatchObject({ ok: true });
+    await context.connect();
+    const jobId = await startAnalysis(context, {
+      columns: [
+        { id: "id", label: "ID", source: "value", path: "$.id" },
+        { id: "name", label: "Name", source: "value", path: "$.name" },
+        { id: "marker", label: "Marker", source: "value", path: "$.marker" },
+        { id: "key", label: "Key", source: "key", path: "$" },
+      ],
+      groupBy: "id",
+    });
+    const operation = await finishedAnalysis(context, jobId);
+    expect(operation).toMatchObject({
+      state: "completed",
+      reason: "range-complete",
+      counts: { countedRecords: 7, scannedRecords: 7, unavailableRecords: 0 },
+    });
+    const result = operation.result!;
+    expect(result.columns).toEqual([
+      {
+        columnId: "id",
+        scalar: 4,
+        missing: 1,
+        nullKey: 0,
+        tombstone: 1,
+        masked: 1,
+        unavailable: 0,
+      },
+      {
+        columnId: "name",
+        scalar: 0,
+        missing: 0,
+        nullKey: 0,
+        tombstone: 1,
+        masked: 6,
+        unavailable: 0,
+      },
+      {
+        columnId: "marker",
+        scalar: 2,
+        missing: 3,
+        nullKey: 0,
+        tombstone: 1,
+        masked: 1,
+        unavailable: 0,
+      },
+      {
+        columnId: "key",
+        scalar: 0,
+        missing: 0,
+        nullKey: 6,
+        tombstone: 0,
+        masked: 1,
+        unavailable: 0,
+      },
+    ]);
+    expect(result.grouping).toMatchObject({
+      groupedRecords: 6,
+      excluded: { masked: 1, unavailable: 0 },
+    });
+    const groups = result.grouping!.groups.map((group) => JSON.stringify(group)).sort();
+    expect(groups).toEqual(
+      [
+        { key: { state: "scalar", value: 1 }, count: 1 },
+        { key: { state: "scalar", value: "1" }, count: 2 },
+        { key: { state: "scalar", value: null }, count: 1 },
+        { key: { state: "missing" }, count: 1 },
+        { key: { state: "tombstone" }, count: 1 },
+      ]
+        .map((group) => JSON.stringify(group))
+        .sort(),
+    );
+    expect(result.preview.map((row) => `${String(row.partition)}:${row.offset}`).sort()).toEqual([
+      "0:0",
+      "0:1",
+      "0:2",
+      "1:0",
+      "1:1",
+      "2:0",
+      "2:1",
+    ]);
+    expect(JSON.stringify(result)).not.toContain("private-analysis");
+    expect(result.preview.filter((row) => row.cells[2]?.state === "scalar")).toHaveLength(2);
+    expect(await context.execute("connection.disconnect", {})).toMatchObject({ ok: true });
+    expect((await analysisStatus(context)).operation).toMatchObject({
+      state: "revoked",
+      reason: "revoked",
+      result: null,
+    });
+  });
+}, 90_000);
+
+it("keeps real analysis limits atomic, confirms cancellation and rejects invalid selectors without replacing the prior result", async () => {
+  await withTopic(async (context) => {
+    await context.seed(
+      Array.from({ length: 600 }, (_, index) => ({
+        partition: 0,
+        key: null,
+        value: Buffer.from(JSON.stringify({ kind: index })),
+      })),
+    );
+    await context.connect();
+    const grouped = await finishedAnalysis(context, await startAnalysis(context));
+    expect(grouped).toMatchObject({
+      state: "partial",
+      reason: "group-limit",
+      counts: { countedRecords: 256 },
+    });
+    expect(grouped.result?.grouping?.groups).toEqual(
+      Array.from({ length: 256 }, (_, index) => ({
+        key: { state: "scalar", value: index },
+        count: 1,
+      })),
+    );
+    expect(grouped.coverage?.partitions[0]).toMatchObject({
+      partition: 0,
+      startOffset: "0",
+      endOffset: "600",
+      nextOffset: "256",
+    });
+    expect(grouped.result?.previewOmittedRecords).toBe(56);
+    const limited = await finishedAnalysis(
+      context,
+      await startAnalysis(context, { columns: [], groupBy: null, maxRecords: 7 }),
+    );
+    expect(limited).toMatchObject({
+      state: "partial",
+      reason: "record-limit",
+      counts: { countedRecords: 7 },
+    });
+    expect(limited.result?.preview).toHaveLength(7);
+    expect(limited.coverage?.partitions[0]?.nextOffset).toBe("7");
+    const jobId = await startAnalysis(context, { columns: [], groupBy: null });
+    const cancelled = await context.execute("records.analysis.cancel", { jobId });
+    expect(cancelled, JSON.stringify(cancelled)).toMatchObject({ ok: true });
+    const operation = (await analysisStatus(context)).operation!;
+    expect(operation).toMatchObject({ jobId, state: "partial", reason: "cancelled" });
+    expect(operation.counts.countedRecords).toBeLessThan(600);
+    expect(operation.result!.preview.length + operation.result!.previewOmittedRecords).toBe(
+      operation.counts.countedRecords,
+    );
+    const invalid = await context.execute("records.analysis.start", {
+      requestId: randomUUID(),
+      topic: context.topic,
+      range: { mode: "earliest" },
+      maxRecords: 100,
+      search: { key: "", value: "", offset: "", timestamp: "", partition: null },
+      columns: [{ id: "invalid", label: "Invalid", source: "value", path: "$..kind" }],
+      groupBy: "invalid",
+    });
+    expect(invalid).toMatchObject({ ok: false, error: { code: "VALIDATION" } });
+    expect((await analysisStatus(context)).operation).toEqual(operation);
+    expect(await context.execute("records.analysis.discard", { jobId })).toMatchObject({
+      ok: true,
+    });
+    expect((await analysisStatus(context)).operation).toBeNull();
   });
 }, 90_000);

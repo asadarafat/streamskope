@@ -29,7 +29,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
-import { RecordExportFacade, recordExportEvent } from "./record-export-facade";
+import { isRecordRangeCommand, RecordRangeFacade } from "./record-range-facade";
 import { RelationshipFacade } from "./relationship-facade";
 import { ObservationFacade } from "./observation-facade";
 import { ConnectFacade } from "./connect-facade";
@@ -123,7 +123,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly correlationTrace: CorrelationTraceFacade;
   private readonly schemaInspection: SchemaInspectionFacade;
   private readonly recordCodecs: RecordCodecFacade;
-  private readonly recordExport: RecordExportFacade;
+  private readonly recordRanges: RecordRangeFacade;
   private readonly queries: KafkaQueryLibrary;
   private readonly preferences: KafkaOperationalPreferenceService;
   private readonly protection: KafkaCommandProtection;
@@ -206,11 +206,12 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     });
     const publish = this.publish.bind(this);
     const nextSequence = this.nextSequence.bind(this);
-    this.recordExport = new RecordExportFacade(
+    this.recordRanges = new RecordRangeFacade(
       session,
       this.preferences,
       options.recordExportArtifacts,
-      (snapshot) => publish(recordExportEvent(snapshot, nextSequence())),
+      nextSequence,
+      publish,
       this.recordActivity.bind(this),
     );
     this.relationships = new RelationshipFacade(session, options.connect, options.schemaRegistry);
@@ -277,9 +278,9 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.trustAcquisitions = options.trustAcquisitions;
     this.lifecycle = new FeatureLifecycle([
       {
-        owner: "Record export",
-        invalidate: (): void => this.recordExport.invalidate(),
-        drain: (): Promise<void> => this.recordExport.idle(),
+        owner: "Record ranges",
+        invalidate: (): void => this.recordRanges.invalidate(),
+        drain: (): Promise<void> => this.recordRanges.idle(),
       },
       {
         owner: "Consumption",
@@ -383,6 +384,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     if (!this.available) {
       return this.unavailableResponse(command, correlationId);
     }
+    if (isRecordRangeCommand(command)) return this.recordRanges.execute(command, correlationId);
     if (isPluginHostCommand(command)) return this.plugins.execute(command, correlationId);
     if (isAclReviewCommand(command)) return this.aclReviews.execute(command, correlationId);
 
@@ -408,11 +410,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
-      case "records.export.start":
-      case "records.export.status":
-      case "records.export.cancel":
-      case "records.export.discard":
-        return this.recordExport.execute(command, correlationId);
       case "relationships.capture":
       case "relationships.cancel":
         return this.relationships.execute(command, correlationId);
@@ -496,7 +493,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "preferences.get":
       case "preferences.reset":
       case "preferences.update":
-        await this.recordExport.preparePreferences(command);
+        await this.recordRanges.preparePreferences(command);
         return executeOperationalPreferenceCommand(command, correlationId, {
           nextSequence: this.nextSequence.bind(this),
           preferences: this.preferences,
@@ -748,7 +745,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
           ? lifetime
           : AbortSignal.any([lifetime, resolved.lifetimeSignal]);
       this.lifecycle.invalidate();
-      await this.recordExport.idle();
+      await this.recordRanges.idle();
       this.clearActiveProfile();
       this.assertConnectionIntent(intent);
       signal.throwIfAborted();
@@ -812,7 +809,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         this.assertConnectionIntent(intent);
         const lifetime = this.beginConnectionLifetime(profile?.source?.pluginId);
         this.lifecycle.invalidate();
-        await this.recordExport.idle();
+        await this.recordRanges.idle();
         this.clearActiveProfile();
         this.assertConnectionIntent(intent);
         lifetime.throwIfAborted();
@@ -874,12 +871,12 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.lifecycle.invalidate();
     const connectionName = this.session.snapshot().connectionName ?? "No active connection";
     const operation = this.session.disconnect();
-    const exportCleanup = this.recordExport.idle();
+    const rangeCleanup = this.recordRanges.idle();
     this.publishConnection(this.session.snapshot());
     try {
-      const cleanup = await Promise.allSettled([operation, exportCleanup]);
+      const cleanup = await Promise.allSettled([operation, rangeCleanup]);
       if (cleanup.some((result) => result.status === "rejected"))
-        throw new Error("Connection or record export cleanup could not be confirmed.");
+        throw new Error("Connection or record range cleanup could not be confirmed.");
       lifetime.throwIfAborted();
       this.publishConnection(this.session.snapshot());
       this.clearActiveProfile();

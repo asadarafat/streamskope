@@ -1,4 +1,5 @@
 import { KAFKA_RULE_LIMITS } from "./rule-types";
+import type { KafkaProjectionPath } from "./rule-expression-parser";
 import type {
   CompiledKafkaRuleExpression,
   RuleCondition,
@@ -16,6 +17,9 @@ export class KafkaRuleWorkBudget {
   }
   get exhausted(): boolean {
     return this.remaining < 0;
+  }
+  get spent(): number {
+    return this.maximum - this.remaining;
   }
   spend(units = 1): void {
     this.shared?.spend(units);
@@ -53,7 +57,8 @@ function resolvePath(
             append(object[segment.name]);
           break;
         case "index":
-          if (Array.isArray(value) && segment.index < value.length) append(value[segment.index]);
+          if (Array.isArray(value) && Object.hasOwn(value, segment.index))
+            append(value[segment.index]);
           break;
         case "wildcard":
           if (object !== undefined) for (const child of Object.values(object)) append(child);
@@ -85,6 +90,17 @@ function resolvePath(
     if (values.length === 0) break;
   }
   return values;
+}
+
+/** Reuses rule traversal while retaining the distinction between JSON null and a missing path. */
+export function readKafkaProjectionPath(
+  path: KafkaProjectionPath,
+  root: unknown,
+  budget: KafkaRuleWorkBudget,
+): { readonly found: false } | { readonly found: true; readonly value: unknown } {
+  budget.spend();
+  const values = resolvePath(path, root, root, budget);
+  return values.length === 0 ? { found: false } : { found: true, value: values[0] };
 }
 
 function scalar(operand: RuleOperand | undefined): unknown {

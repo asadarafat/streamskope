@@ -10,6 +10,7 @@ import type {
   PluginChangePrompt,
 } from "../../../plugins/contracts";
 
+import type { RecordAnalysisResults } from "./record-analysis-protocol";
 import type { RecordExportResults } from "./record-export-protocol";
 import {
   isAclReviewCommandName,
@@ -30,7 +31,8 @@ interface SpecificCommandResults
     TrustAcquisitionCommandResults,
     TrustRecipeCommandResults,
     AclReviewResults,
-    RecordExportResults {
+    RecordExportResults,
+    RecordAnalysisResults {
   readonly "relationships.capture": {
     readonly correlationId: string;
     readonly graph: import("./relationships").RelationshipGraph;
@@ -188,6 +190,10 @@ interface SpecificCommandResults
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "records.analysis.start": true,
+  "records.analysis.status": true,
+  "records.analysis.cancel": true,
+  "records.analysis.discard": true,
   "records.export.start": true,
   "records.export.status": true,
   "records.export.cancel": true,

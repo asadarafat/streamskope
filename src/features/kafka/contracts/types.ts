@@ -88,7 +88,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 57 as const;
+export const HOST_PROTOCOL_VERSION = 58 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -109,6 +109,10 @@ export const HOST_COMMANDS = [
   "records.replay.review",
   "records.replay.apply",
   "records.replay.cancel",
+  "records.analysis.start",
+  "records.analysis.status",
+  "records.analysis.cancel",
+  "records.analysis.discard",
   "records.export.start",
   "records.export.status",
   "records.export.cancel",
@@ -218,6 +222,7 @@ export const HOST_COMMANDS = [
 ] as const;
 
 export const HOST_EVENTS = [
+  "records.analysis.changed",
   "records.export.changed",
   "backend.availability",
   "plugin.event",
@@ -380,6 +385,7 @@ export interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | import("./record-analysis-protocol").RecordAnalysisCommand
   | import("./record-export-protocol").RecordExportCommand
   | import("./connect").ConnectHostCommand
   | import("./environment-protocol").EnvironmentHostCommand
@@ -859,16 +865,14 @@ export interface ActivityEntry {
   readonly timestamp: string;
 }
 
-interface HostEventBase {
+export interface HostEventBase {
   readonly sequence: number;
   readonly version: typeof HOST_PROTOCOL_VERSION;
 }
 
 export type HostEvent =
-  | (HostEventBase & {
-      readonly event: "records.export.changed";
-      readonly payload: import("./record-export").RecordExportSnapshot;
-    })
+  | import("./record-analysis-protocol").RecordAnalysisEvent
+  | import("./record-export-protocol").RecordExportEvent
   | (HostEventBase & {
       readonly event: "plugins.network.progress";
       readonly payload: PluginAcquisitionProgress;

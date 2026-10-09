@@ -235,6 +235,53 @@ Review [Data, exports and limits](data-handling.md) for plaintext contents, boun
 coverage, per-record decoding errors, and the differences between page JSON, range
 JSONL and CSV. A range export is not a complete Kafka backup.
 
+## Count and inspect a range
+
+**Analyze range…** counts matching records directly from Kafka. It does not count
+only the rows left in the message grid.
+
+1. Open the topic's **Messages** tab and set any filters. Turn off **Rule matches
+   only**, which depends on live annotations rather than the new range read.
+2. Choose **Analyze range… → Setup**. Select **From beginning** or **Time interval**
+   and a maximum matching-record count. Leaving the field list empty performs a
+   count only; Tail and Newest settings do not silently become analysis bounds.
+3. Optionally choose **Add field**, select Value or Key, and enter a scalar path.
+   Use `$` for the whole field, `$.status` for a property, or `$.items[0].name` for an
+   array element. Give the column a label if useful. Wildcards, recursive paths,
+   predicates, objects and arrays are not scalar projections.
+4. Optionally choose one selected field under **Count by**. Number `1`, string
+   `"1"`, JSON null, null key, tombstone and missing path remain distinct groups.
+5. Click **Start analysis**, then read **Results**. Closing the dialog lets the
+   host continue; use **View analysis** from its compact status row to return.
+   Changing topics or draft controls does not relabel the captured operation.
+6. Choose **Cancel analysis** to stop and retain the confirmed count prefix.
+   Wait for its final state. An unresolved reader cleanup keeps its operation
+   visible; follow the recovery message before starting again.
+
+Read each part independently:
+
+- **Count for captured range complete** means the captured offset ranges were
+  scanned and no filter evaluations were unknown. **Partial count** names the
+  limit or cancellation that stopped it. Newly arriving records are excluded.
+- **Count by** gives its grouped denominator and excluded records. A complete
+  match count can still have incomplete grouping when protected or unavailable
+  values are excluded. Masked values are never combined into a fabricated group.
+- **Projection preview** contains at most 200 rows and 256 KiB. Counting continues
+  after the preview fills. Its rows follow the captured read order; they are not
+  a representative sample or a globally timestamp-sorted history.
+
+Selected fields use the same saved encodings and masking as message inspection.
+A missing path, null key, Kafka tombstone and decoded JSON null have distinct
+labels. Unsupported or unavailable fields do not invalidate a known total count.
+A literal unmasked string `"[MASKED]"` remains a string; only protection evidence
+marks a cell as masked. Inspect **Field availability across all counted records**
+for whole-range field counts, not just the bounded preview.
+
+One analysis result is retained per host session. Starting another requires
+confirmation to replace it; it does not replace a prepared export file. Disconnect,
+lock or host shutdown clears its projected and grouped data. Saved analysis jobs and report downloads are unavailable. See [analysis bounds](data-handling.md#analysis-limits)
+for group, work and memory limits.
+
 ## Next: check a consumer
 
 [Check consumer lag and offsets →](operations.md)

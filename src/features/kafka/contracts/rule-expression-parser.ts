@@ -1,4 +1,5 @@
 import { KAFKA_RULE_LIMITS } from "./rule-types";
+import { RECORD_ANALYSIS_LIMITS } from "./record-analysis";
 import type {
   CompiledKafkaRuleExpression,
   RuleCondition,
@@ -41,6 +42,13 @@ class RuleExpressionParser {
       this.fail(`Unexpected token ${JSON.stringify(this.source[this.index])}.`);
     }
     return expression;
+  }
+
+  parseProjection(): RulePath {
+    const path = this.parsePath("root");
+    this.skipWhitespace();
+    if (!this.atEnd()) this.fail("A projection must contain only a field path.");
+    return path;
   }
 
   private parseOr(depth: number): CompiledKafkaRuleExpression {
@@ -487,6 +495,29 @@ class RuleExpressionParser {
 
 export function compileKafkaRuleExpression(expression: string): CompiledKafkaRuleExpression {
   return new RuleExpressionParser(expression).parse();
+}
+
+export interface KafkaProjectionPath {
+  readonly origin: "root";
+  readonly segments: readonly Extract<RulePathSegment, { kind: "property" | "index" }>[];
+}
+
+/** One bare-path entry into the existing grammar; fan-out and predicates are not projections. */
+export function compileKafkaProjectionPath(source: string): KafkaProjectionPath {
+  if (source.length > RECORD_ANALYSIS_LIMITS.pathCharacters)
+    throw new KafkaRuleExpressionError(0, "Projection path exceeds its character limit.");
+  const path = new RuleExpressionParser(source).parseProjection();
+  if (path.segments.length > RECORD_ANALYSIS_LIMITS.pathSegments)
+    throw new KafkaRuleExpressionError(0, "Projection path exceeds its segment limit.");
+  const segments = path.segments.map((segment) => {
+    if (segment.kind !== "property" && segment.kind !== "index")
+      throw new KafkaRuleExpressionError(
+        0,
+        "Projection paths support only properties and array indices.",
+      );
+    return segment;
+  });
+  return { origin: "root", segments };
 }
 
 export function validateKafkaRuleExpression(expression: string): {

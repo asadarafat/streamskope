@@ -1,4 +1,4 @@
-import type { HostCommand, HostCommandBase, HostCommandResponse } from "./types";
+import type { HostCommand, HostCommandBase, HostCommandResponse, HostEventBase } from "./types";
 import { emptyRecord, exactKeys, record, text } from "./validation-primitives";
 import {
   parseRecordExportId,
@@ -81,4 +81,9 @@ export function parseRecordExportResponse(
     default:
       return undefined;
   }
+}
+
+export interface RecordExportEvent extends HostEventBase {
+  readonly event: "records.export.changed";
+  readonly payload: RecordExportSnapshot;
 }

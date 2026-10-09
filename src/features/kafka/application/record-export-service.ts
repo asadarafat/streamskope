@@ -1,6 +1,4 @@
-import { KAFKA_FETCH_LIMITS, type KafkaFetchRequest } from "../contracts";
 import type { HostError } from "../contracts/host-errors";
-import { KAFKA_QUERY_LIMITS, type KafkaReadCoverage } from "../contracts/query-search";
 import {
   RECORD_EXPORT_LIMITS,
   type RecordExportInput,
@@ -13,25 +11,21 @@ import {
 import { parseRecordExportInput } from "../contracts/record-export-validation";
 
 import type { RecordReadScope } from "./connection-scope";
-import type { KafkaReadCheckpoint } from "./read-checkpoint";
+import { FiniteRecordRead, FiniteReadFailure, type FiniteReadProgress } from "./finite-record-read";
 import type { RecordExportArtifacts, RecordExportSink } from "./record-export-artifacts";
 import { encodeRecordExportRow, recordExportHeader } from "./record-export-encoding";
-import type { KafkaMessageStream } from "./types";
-import { ownedCleanupFailure } from "./session-lifecycle";
 
 interface ExportJob {
   operation: RecordExportOperation;
   readonly scope: RecordReadScope;
   readonly fingerprint: string;
-  readonly readController: AbortController;
   readonly authority: AbortController;
   readonly started: number;
   previous: ExportJob | undefined;
   task: Promise<void>;
   settled: boolean;
   sink: RecordExportSink | undefined;
-  reader: KafkaMessageStream | undefined;
-  closing: Promise<void> | undefined;
+  reader: FiniteRecordRead | undefined;
   cleanupFailed: boolean;
   unconfirmedOpenCleanup: boolean;
   stop: RecordExportReason | undefined;
@@ -84,6 +78,15 @@ export class RecordExportService {
   }
 
   snapshot(): RecordExportSnapshot {
+    // Explicit status can refresh coverage between throttled events. Its delivery must
+    // be newer even when no notification was published in the meantime.
+    this.revision += 1;
+    return this.cloneSnapshot();
+  }
+
+  private cloneSnapshot(): RecordExportSnapshot {
+    const job = this.current;
+    if (job?.reader !== undefined) this.updateReadProgress(job, job.reader.snapshot());
     return structuredClone({
       scopeId: this.scopeId,
       revision: this.revision,
@@ -146,7 +149,6 @@ export class RecordExportService {
       },
       scope,
       fingerprint,
-      readController: new AbortController(),
       authority: new AbortController(),
       started,
       previous,
@@ -154,7 +156,6 @@ export class RecordExportService {
       settled: false,
       sink: undefined,
       reader: undefined,
-      closing: undefined,
       cleanupFailed: false,
       unconfirmedOpenCleanup: false,
       stop: undefined,
@@ -335,203 +336,79 @@ export class RecordExportService {
   }
 
   private async read(job: ExportJob): Promise<RecordExportReason> {
-    let checkpoint: KafkaReadCheckpoint | undefined;
-    let initial: KafkaReadCoverage | undefined;
-    while (true) {
-      this.assertCurrent(job);
-      if (job.stop !== undefined) return job.stop;
-      if (this.now() - job.started >= this.limits.durationMs) return "deadline";
-      const counts = job.operation.counts;
-      if (counts.writtenRecords >= job.operation.input.maxRecords) return "record-limit";
-      if (counts.passes >= this.limits.passes) return "pass-limit";
-      // Reserve a complete bounded pass before opening: the reader's own caps are unchanged.
-      if (
-        counts.scannedRecords + KAFKA_QUERY_LIMITS.scanRecords > this.limits.scanRecords ||
-        counts.scannedBytes + KAFKA_QUERY_LIMITS.scanBytes > this.limits.scanBytes
-      )
-        return "scan-limit";
-      const input = job.operation.input;
-      const request: KafkaFetchRequest = {
-        ...input.range,
-        topic: input.topic,
-        search: input.search,
-        maxMessages: Math.min(
-          KAFKA_FETCH_LIMITS.maxMessages,
-          input.maxRecords - counts.writtenRecords,
-        ),
-      };
-      job.operation = {
-        ...job.operation,
-        state: "reading",
-        counts: { ...counts, passes: counts.passes + 1 },
-      };
-      this.publish(job, true);
-      let reader: KafkaMessageStream | undefined;
-      let unsubscribe: (() => void) | undefined;
-      let unacknowledged: { partition: number; offset: string } | undefined;
-      const updateCoverage = (coverage: KafkaReadCoverage): void => {
-        initial ??= coverage;
-        const safe = reader?.checkpoint?.()?.coverage ?? coverage;
+    const update = (progress: FiniteReadProgress): void => {
+      this.updateReadProgress(job, progress);
+      this.publish(job);
+    };
+    const reader = new FiniteRecordRead({
+      scope: job.scope,
+      input: job.operation.input,
+      limits: this.limits,
+      deadlineAt: job.started + this.limits.durationMs,
+      authority: job.authority.signal,
+      assertCurrent: (): void => this.assertCurrent(job),
+      changed: update,
+      now: this.now,
+    });
+    job.reader = reader;
+    job.operation = { ...job.operation, state: job.stop === undefined ? "reading" : "stopping" };
+    if (job.stop === "cancelled" || job.stop === "deadline" || job.stop === "revoked")
+      reader.stop(job.stop);
+    this.publish(job, true);
+    try {
+      const result = await reader.run(async (message) => {
+        const row = encodeRecordExportRow(message, job.operation.input.format);
+        if (job.operation.counts.writtenBytes + row.byteLength > this.limits.bytes) {
+          job.stop = "byte-limit";
+          return "limit";
+        }
+        try {
+          await job.sink!.write(row);
+        } catch {
+          throw this.failure(job, "storage-failed");
+        }
+        this.assertCurrent(job);
         job.operation = {
           ...job.operation,
           counts: {
             ...job.operation.counts,
-            scannedRecords: counts.scannedRecords + coverage.scannedRecords,
-            scannedBytes: counts.scannedBytes + coverage.scannedBytes,
-            unavailableRecords: counts.unavailableRecords + coverage.unavailableRecords,
-          },
-          coverage: {
-            ...safe,
-            scannedRecords: counts.scannedRecords + coverage.scannedRecords,
-            scannedBytes: counts.scannedBytes + coverage.scannedBytes,
-            matchedRecords: job.operation.counts.writtenRecords,
-            unavailableRecords: counts.unavailableRecords + coverage.unavailableRecords,
-            partitions: safe.partitions.map((partition) => ({
-              ...partition,
-              startOffset:
-                initial!.partitions.find((first) => first.partition === partition.partition)
-                  ?.startOffset ?? partition.startOffset,
-              nextOffset:
-                unacknowledged?.partition === partition.partition &&
-                BigInt(unacknowledged.offset) < BigInt(partition.nextOffset)
-                  ? unacknowledged.offset
-                  : partition.nextOffset,
-            })),
+            writtenBytes: job.operation.counts.writtenBytes + row.byteLength,
           },
         };
-        if (
-          job.operation.coverage?.reason === "range-complete" &&
-          job.operation.coverage.partitions.some((part) => part.nextOffset !== part.endOffset)
-        )
-          job.operation = {
-            ...job.operation,
-            coverage: { ...job.operation.coverage, reason: "cancelled" },
-          };
-      };
-      let problem: unknown;
-      try {
-        reader = await job.scope.openMessageStream(request, job.readController.signal, checkpoint);
-        job.reader = reader;
-        this.assertCurrent(job);
-        const identity = reader.checkpoint?.();
-        if (identity !== undefined)
-          job.operation = {
-            ...job.operation,
-            source: {
-              connectionName: job.scope.connectionName,
-              clusterId: identity.clusterId,
-              topicId: identity.topicId,
-            },
-          };
-        const first = reader.coverage?.();
-        if (first !== undefined) updateCoverage(first);
-        unsubscribe = reader.subscribeCoverage?.((coverage) => {
-          if (job.reader !== reader || job.authority.signal.aborted) return;
-          updateCoverage(coverage);
-          this.publish(job);
-        });
-        if (job.stop === undefined) {
-          for await (const message of reader) {
-            this.assertCurrent(job);
-            if (job.stop !== undefined) break;
-            unacknowledged = message;
-            const row = encodeRecordExportRow(message, input.format);
-            if (job.operation.counts.writtenBytes + row.byteLength > this.limits.bytes) {
-              job.stop = "byte-limit";
-              break;
-            }
-            try {
-              await job.sink!.write(row);
-            } catch {
-              throw this.failure(job, "storage-failed");
-            }
-            this.assertCurrent(job);
-            job.operation = {
-              ...job.operation,
-              counts: {
-                ...job.operation.counts,
-                writtenRecords: job.operation.counts.writtenRecords + 1,
-                writtenBytes: job.operation.counts.writtenBytes + row.byteLength,
-                decodeErrorRecords:
-                  job.operation.counts.decodeErrorRecords +
-                  (message.structured?.key.state === "error" ||
-                  message.structured?.value.state === "error" ||
-                  message.structured?.headers.some((header) => header.error !== null)
-                    ? 1
-                    : 0),
-                originalUnavailableRecords:
-                  job.operation.counts.originalUnavailableRecords +
-                  (message.original?.state === "complete" ? 0 : 1),
-              },
-            };
-            reader.acknowledge?.(message);
-            unacknowledged = undefined;
-            this.publish(job);
-            if (job.stop !== undefined) break;
-            if (job.operation.counts.writtenRecords >= input.maxRecords) {
-              job.stop = "record-limit";
-              break;
-            }
-          }
-        }
-      } catch (error) {
-        if (ownedCleanupFailure(error) !== undefined) {
-          job.unconfirmedOpenCleanup = true;
-          job.cleanupFailed = true;
-        }
-        problem = error;
-      } finally {
-        try {
-          unsubscribe?.();
-        } catch (error) {
-          problem ??= error;
-        }
-        await this.closeReader(job);
-        const coverage = reader?.coverage?.();
-        if (coverage !== undefined) updateCoverage(coverage);
+        return "committed";
+      });
+      update(result);
+      return result.reason === "consumer-limit" ? "byte-limit" : result.reason;
+    } catch (error) {
+      if (error instanceof FiniteReadFailure) {
+        update(error.progress);
+        job.cleanupFailed = error.cleanupDebt !== null;
+        job.unconfirmedOpenCleanup = error.cleanupDebt === "late-open-no-handle";
+        if (error.kind === "cleanup") throw this.failure(job, "cleanup-failed");
+        if (error.kind === "revoked") throw this.failure(job, "revoked");
+        if (error.kind === "consumer" && error.cause instanceof RecordExportOperationError)
+          throw error.cause;
       }
-      this.assertCurrent(job);
-      if (job.unconfirmedOpenCleanup) throw this.failure(job, "cleanup-failed");
-      if (
-        problem !== undefined &&
-        (problem instanceof RecordExportOperationError ||
-          !(job.readController.signal.aborted && job.stop !== undefined))
-      )
-        throw problem instanceof Error ? problem : this.failure(job, "read-failed");
-      const coverage = job.operation.coverage;
-      if (coverage?.reason === "failed") throw this.failure(job, "read-failed");
-      if (
-        coverage?.reason === "range-complete" &&
-        coverage.partitions.every((part) => part.nextOffset === part.endOffset)
-      )
-        return job.operation.counts.unavailableRecords > 0
-          ? "records-unavailable"
-          : "range-complete";
-      if (job.stop !== undefined) return job.stop;
-      const next = reader?.checkpoint?.();
-      if (next === undefined) return "checkpoint-unavailable";
-      const previousPositions = checkpoint?.coverage.partitions ?? initial?.partitions;
-      if (
-        previousPositions !== undefined &&
-        next.coverage.partitions.every(
-          (part) =>
-            part.nextOffset ===
-            previousPositions.find((previous) => previous.partition === part.partition)?.nextOffset,
-        )
-      )
-        return "checkpoint-unavailable";
-      checkpoint = next;
+      throw error;
     }
+  }
+
+  private updateReadProgress(job: ExportJob, progress: FiniteReadProgress): void {
+    const { acceptedRecords, ...counts } = progress.counts;
+    job.operation = {
+      ...job.operation,
+      source: progress.source,
+      coverage: progress.coverage,
+      counts: { ...job.operation.counts, ...counts, writtenRecords: acceptedRecords },
+    };
   }
 
   private stop(job: ExportJob, reason: RecordExportReason): void {
     if (job.settled || job.stop !== undefined) return;
     job.stop = reason;
-    job.readController.abort();
     job.operation = { ...job.operation, state: "stopping" };
-    void this.closeReader(job).catch(() => {
-      /* The owning task joins and records this debt. */
-    });
+    if (reason === "cancelled" || reason === "deadline" || reason === "revoked")
+      job.reader?.stop(reason);
     this.publish(job, true);
   }
 
@@ -540,7 +417,6 @@ export class RecordExportService {
     job.expiry = undefined;
     job.authority.abort();
     job.stop = "revoked";
-    job.readController.abort();
     this.options.artifacts?.revoke();
     job.operation = {
       ...job.operation,
@@ -548,24 +424,7 @@ export class RecordExportService {
       state: job.settled ? "failed" : "stopping",
       reason: "revoked",
     };
-    void this.closeReader(job).catch(() => {
-      /* Retained and joined by cleanup. */
-    });
-  }
-
-  private async closeReader(job: ExportJob, retry = false): Promise<void> {
-    const reader = job.reader;
-    if (reader === undefined) return;
-    if (retry) job.closing = undefined;
-    job.closing ??= Promise.resolve().then(() => reader.close());
-    try {
-      await job.closing;
-      if (job.reader === reader) job.reader = undefined;
-      job.closing = undefined;
-    } catch {
-      job.cleanupFailed = true;
-      throw this.failure(job, "cleanup-failed");
-    }
+    job.reader?.stop("revoked");
   }
 
   private async cleanup(job: ExportJob, retry = false): Promise<void> {
@@ -579,7 +438,8 @@ export class RecordExportService {
       }
     }
     try {
-      await this.closeReader(job, retry);
+      if (retry) await job.reader?.retryCleanup();
+      else await job.reader?.idle();
     } catch {
       failed = true;
     }
@@ -634,7 +494,7 @@ export class RecordExportService {
 
   private notify(): void {
     try {
-      this.options.changed(this.snapshot());
+      this.options.changed(this.cloneSnapshot());
     } catch {
       // Notifications carry no resource authority. A broken transport must not strand the
       // owned reader or turn a successful write into a retry; snapshot() remains authoritative.

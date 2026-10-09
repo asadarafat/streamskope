@@ -1,6 +1,12 @@
 import { parseHostError } from "./host-error-validation";
-import { parseKafkaRecordProtection } from "./operational-preference-validation";
-import { parseKafkaReadCoverage, parseKafkaSearchFilter } from "./query-search";
+import { parseKafkaReadCoverage } from "./query-search";
+import {
+  parseRecordReadId as parseRecordExportId,
+  parseFiniteRecordFields,
+  parseRecordReadSettings as parseSettings,
+  parseRecordReadSource as parseSource,
+} from "./finite-record-validation";
+export { parseRecordReadId as parseRecordExportId } from "./finite-record-validation";
 import {
   RECORD_EXPORT_LIMITS,
   RECORD_EXPORT_REASONS,
@@ -11,65 +17,28 @@ import {
   type RecordExportLimits,
   type RecordExportOperation,
   type RecordExportOutput,
-  type RecordExportRange,
   type RecordExportReceipt,
-  type RecordExportSettings,
   type RecordExportSnapshot,
-  type RecordExportSource,
 } from "./record-export";
-import { parseRecordCodecPreferences } from "./structured-record";
 import { HostContractValidationError } from "./validation-error";
 import {
   canonicalIsoTimestamp,
   declaredValue,
   exactKeys,
   nonNegativeInteger,
-  nullableText,
   positiveBoundedInteger,
   record,
   text,
   truth,
 } from "./validation-primitives";
 
-export function parseRecordExportId(value: unknown, path: string): string {
-  const id = text(value, path, 36);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id))
-    throw new HostContractValidationError(path, "must be a UUID");
-  return id;
-}
-
-function parseRange(value: unknown, path: string): RecordExportRange {
-  const range = record(value, path);
-  const mode = declaredValue(range.mode, ["earliest", "time-window"], `${path}.mode`);
-  if (mode === "earliest") {
-    exactKeys(range, ["mode"], path);
-    return { mode };
-  }
-  exactKeys(range, ["mode", "startTimeMs", "endTimeMs"], path);
-  const startTimeMs = nonNegativeInteger(range.startTimeMs, `${path}.startTimeMs`);
-  const endTimeMs = nonNegativeInteger(range.endTimeMs, `${path}.endTimeMs`);
-  if (endTimeMs <= startTimeMs || endTimeMs > 8_640_000_000_000_000)
-    throw new HostContractValidationError(path, "must have a valid end time after its start");
-  return { mode, startTimeMs, endTimeMs };
-}
-
 export function parseRecordExportInput(value: unknown, path = "recordExport"): RecordExportInput {
   const input = record(value, path);
   exactKeys(input, ["requestId", "topic", "range", "search", "format", "maxRecords"], path);
-  const topic = text(input.topic, `${path}.topic`, 512);
-  if (topic.trim().length === 0)
-    throw new HostContractValidationError(`${path}.topic`, "must not be blank");
   return {
     requestId: parseRecordExportId(input.requestId, `${path}.requestId`),
-    topic,
-    range: parseRange(input.range, `${path}.range`),
-    search: parseKafkaSearchFilter(input.search, `${path}.search`),
+    ...parseFiniteRecordFields(input, path),
     format: declaredValue(input.format, ["csv", "jsonl"], `${path}.format`),
-    maxRecords: positiveBoundedInteger(
-      input.maxRecords,
-      `${path}.maxRecords`,
-      RECORD_EXPORT_LIMITS.records,
-    ),
   };
 }
 
@@ -82,25 +51,6 @@ function parseLimits(value: unknown, path: string): RecordExportLimits {
       positiveBoundedInteger(limits[key], `${path}.${key}`, maximum),
     ]),
   ) as unknown as RecordExportLimits;
-}
-
-function parseSettings(value: unknown, path: string): RecordExportSettings {
-  const settings = record(value, path);
-  exactKeys(settings, ["codecs", "protection"], path);
-  return {
-    codecs: parseRecordCodecPreferences(settings.codecs, `${path}.codecs`),
-    protection: parseKafkaRecordProtection(settings.protection, `${path}.protection`),
-  };
-}
-
-function parseSource(value: unknown, path: string): RecordExportSource {
-  const source = record(value, path);
-  exactKeys(source, ["connectionName", "clusterId", "topicId"], path);
-  return {
-    connectionName: text(source.connectionName, `${path}.connectionName`, 256),
-    clusterId: nullableText(source.clusterId, `${path}.clusterId`, 256),
-    topicId: nullableText(source.topicId, `${path}.topicId`, 256),
-  };
 }
 
 function parseCounts(value: unknown, path: string): RecordExportCounts {
