@@ -1,5 +1,6 @@
 import type { KafkaFetchRequest, KafkaReadCoverage, KafkaSearchProgress } from "../contracts";
 import { KAFKA_CONTINUATION_LIMITS, parseKafkaReadCoverage } from "../contracts/query-search";
+
 import type { KafkaReadCheckpoint } from "./read-checkpoint";
 
 export class KafkaContinuationError extends Error {

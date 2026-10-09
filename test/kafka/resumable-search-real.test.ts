@@ -83,7 +83,7 @@ async function withTopic(
       command: HostCommand["command"],
       payload: unknown,
     ) => ReturnType<ReturnType<typeof createKafkaBackend>["execute"]>;
-    seed: (records: readonly RecordInput[]) => Promise<void>;
+    seed: (records: readonly RecordInput[], expectedTopicId?: string) => Promise<void>;
     pass: (command: "messages.start" | "messages.continue", payload: unknown) => Promise<Finished>;
     onBatch: (callback: (() => void) | undefined) => void;
   }) => Promise<void>,
@@ -165,8 +165,10 @@ async function withTopic(
       tls: { enabled: true, caPem },
       services: { schemaRegistry: { baseUrl: registryUrl, authentication: "none" } },
     };
-    await admin.createTopics({ topics: [topic], partitions, replicas: 1 });
+    const createdTopics = await admin.createTopics({ topics: [topic], partitions, replicas: 1 });
     created = true;
+    const createdTopicId = createdTopics.find((item) => item.name === topic)?.id;
+    if (createdTopicId === undefined) throw new Error("Owned fixture topic identity is missing.");
     await work({
       topic,
       admin,
@@ -176,7 +178,26 @@ async function withTopic(
       connect: async (): Promise<void> => {
         expect(await execute("connection.connect", input)).toMatchObject({ ok: true });
       },
-      seed: async (records): Promise<void> => {
+      seed: async (records, expectedTopicId = createdTopicId): Promise<void> => {
+        // CreateTopics acknowledges the controller before the broker necessarily
+        // exposes the new UUID and leader. Poll read-only metadata, never writes.
+        await vi.waitFor(
+          async () => {
+            const metadata = await producer.metadata({
+              topics: [topic],
+              forceUpdate: true,
+              autocreateTopics: false,
+            });
+            const current = metadata.topics.get(topic);
+            expect(current?.id).toBe(expectedTopicId);
+            expect(current?.partitions).toHaveLength(partitions);
+            for (const partition of current?.partitions ?? []) {
+              expect(partition.leader).toBeGreaterThanOrEqual(0);
+              expect(partition.isr).toContain(partition.leader);
+            }
+          },
+          { timeout: 15_000, interval: 100 },
+        );
         for (let index = 0; index < records.length; index += 500) {
           await producer.send({
             messages: records.slice(index, index + 500).map((record) => ({ topic, ...record })),
@@ -366,10 +387,35 @@ it.each(["retention", "replacement", "partitions"] as const)(
         await vi.waitFor(async () => expect(await admin.listTopics()).not.toContain(topic), {
           timeout: 10_000,
         });
-        await admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
-        await seed(records);
+        const replacement = await admin.createTopics({
+          topics: [topic],
+          partitions: 1,
+          replicas: 1,
+        });
+        const replacementId = replacement.find((item) => item.name === topic)?.id;
+        if (replacementId === undefined)
+          throw new Error("Replacement fixture topic identity is missing.");
+        await seed(records, replacementId);
       } else {
+        const originalId = (
+          await admin.metadata({ topics: [topic], forceUpdate: true, autocreateTopics: false })
+        ).topics.get(topic)?.id;
+        expect(originalId).toBeDefined();
         await admin.createPartitions({ topics: [{ name: topic, count: 2, assignments: null }] });
+        await vi.waitFor(
+          async () => {
+            const current = (
+              await admin.metadata({ topics: [topic], forceUpdate: true, autocreateTopics: false })
+            ).topics.get(topic);
+            expect(current?.id).toBe(originalId);
+            expect(current?.partitions).toHaveLength(2);
+            for (const partition of current?.partitions ?? []) {
+              expect(partition.leader).toBeGreaterThanOrEqual(0);
+              expect(partition.isr).toContain(partition.leader);
+            }
+          },
+          { timeout: 15_000, interval: 100 },
+        );
       }
       const continuationId = token(initial);
       const response = await execute("messages.continue", { continuationId });
@@ -385,9 +431,9 @@ it.each(["retention", "replacement", "partitions"] as const)(
               : change === "replacement"
                 ? "The Kafka cluster or topic identity changed since this read began."
                 : "The topic partition inventory changed since this read began.",
-          recovery: expect.stringContaining("Start a new read"),
         },
       });
+      if (!response.ok) expect(response.error.recovery).toContain("Start a new read");
       expect(messages).toHaveLength(1);
       expect(await execute("messages.continue", { continuationId })).toMatchObject({ ok: false });
     });

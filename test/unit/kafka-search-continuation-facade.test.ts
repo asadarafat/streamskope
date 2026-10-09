@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type MockInstance } from "vitest";
+
 import {
   InMemoryKafkaOperationalPreferenceStore,
   KafkaOperationalPreferenceService,
 } from "../../src/features/kafka/application";
 import {
   HOST_PROTOCOL_VERSION,
+  type HostCommandResponse,
   type HostEvent,
   type KafkaReadCoverage,
 } from "../../src/features/kafka/contracts";
@@ -62,7 +64,18 @@ class CheckpointStream extends ControlledMessageStream {
   }
 }
 
-function setup(streams: CheckpointStream[], preferences?: KafkaOperationalPreferenceService) {
+type ConsumptionPayload = Extract<HostEvent, { event: "consumption.state" }>["payload"];
+
+function setup(
+  streams: CheckpointStream[],
+  preferences?: KafkaOperationalPreferenceService,
+): {
+  facade: ReturnType<typeof createFacade>;
+  open: MockInstance<RecordingActiveConnection["openMessageStream"]>;
+  events: HostEvent[];
+  last: () => ConsumptionPayload | undefined;
+  resume: (id: string) => Promise<HostCommandResponse>;
+} {
   const connection = new RecordingActiveConnection();
   for (const stream of streams)
     connection.messageStreamOperations.push(() => Promise.resolve(stream));
@@ -72,8 +85,9 @@ function setup(streams: CheckpointStream[], preferences?: KafkaOperationalPrefer
   const facade = createFacade(port, undefined, undefined, undefined, preferences);
   const events: HostEvent[] = [];
   facade.subscribe((event) => events.push(event));
-  const last = () => events.filter((event) => event.event === "consumption.state").at(-1)?.payload;
-  const resume = (id: string) =>
+  const last = (): ConsumptionPayload | undefined =>
+    events.filter((event) => event.event === "consumption.state").at(-1)?.payload;
+  const resume = (id: string): Promise<HostCommandResponse> =>
     facade.execute({
       version: HOST_PROTOCOL_VERSION,
       id: crypto.randomUUID(),
@@ -246,8 +260,9 @@ describe("search continuation through composed host", () => {
       expect(await facade.execute(command("messages.stop", "stop"))).toMatchObject({ ok: true });
       expect(last()).toMatchObject({
         state: "stopped",
-        searchProgress: { matchedRecords: 1, continuation: { id: expect.any(String) } },
+        searchProgress: { matchedRecords: 1 },
       });
+      expect(last()?.searchProgress?.continuation?.id).toEqual(expect.any(String));
     } finally {
       await facade.shutdown();
     }

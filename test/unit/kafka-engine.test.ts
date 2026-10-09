@@ -349,7 +349,8 @@ describe("StreamSkope Kafka engine connection test", () => {
     const engine = new StreamSkopeKafkaEngine({
       adminFactory: new RecordingAdminFactory(new RecordingAdmin(["test"])),
       consumerFactory: {
-        open: () => Promise.reject(new KafkaReadCheckpointError("retention-changed")),
+        open: (): Promise<never> =>
+          Promise.reject(new KafkaReadCheckpointError("retention-changed")),
       },
       requestOAuthToken: (): Promise<OAuthToken> => Promise.resolve({ value: "active-token" }),
     });

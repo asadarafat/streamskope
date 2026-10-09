@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { KafkaReadContinuations } from "../../src/features/kafka/application/read-continuation";
 import type { KafkaReadCheckpoint } from "../../src/features/kafka/application/read-checkpoint";
 import {
