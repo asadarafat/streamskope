@@ -1,14 +1,17 @@
 import { expect, it, vi } from "vitest";
 
 import { NATS_SERVER_IMAGES } from "../../tools/dev/nats-fixture/definition";
-import { ensureNatsImage, NatsImageAvailabilityError } from "../../tools/dev/nats-fixture/image";
+import {
+  ensureContainerImage,
+  ContainerImageAvailabilityError,
+} from "../../tools/dev/container-image";
 
 const image = NATS_SERVER_IMAGES.x64;
-type ImageCommand = Parameters<typeof ensureNatsImage>[2];
+type ImageCommand = Parameters<typeof ensureContainerImage>[2];
 
 it("uses a cached pinned image without pulling or creating resources", async () => {
   const run = vi.fn<ImageCommand>().mockResolvedValue({ stdout: "cached", stderr: "" });
-  await ensureNatsImage(image, "linux/amd64", run);
+  await ensureContainerImage(image, "linux/amd64", run);
   expect(run.mock.calls).toEqual([[["image", "inspect", image], 10_000]]);
 });
 
@@ -17,7 +20,7 @@ it("pulls the same architecture and immutable reference exactly once when uncach
     .fn<ImageCommand>()
     .mockRejectedValueOnce(new Error("not cached"))
     .mockResolvedValue({});
-  await ensureNatsImage(image, "linux/amd64", run);
+  await ensureContainerImage(image, "linux/amd64", run);
   expect(run.mock.calls).toEqual([
     [["image", "inspect", image], 10_000],
     [["pull", "--platform", "linux/amd64", image], 120_000],
@@ -46,6 +49,10 @@ it.each([
     detail: { stderr: "manifest unknown: manifest unknown" },
   },
   {
+    reason: "registry-server-unavailable",
+    detail: { stderr: "received unexpected HTTP status: 503 Service Unavailable" },
+  },
+  {
     reason: "certificate-validation",
     detail: { stderr: "x509: certificate signed by unknown authority" },
   },
@@ -66,11 +73,13 @@ it.each([
       .fn<ImageCommand>()
       .mockRejectedValueOnce(new Error("not cached"))
       .mockRejectedValue(failure);
-    const caught: unknown = await ensureNatsImage(image, "linux/amd64", run).catch(
+    const caught: unknown = await ensureContainerImage(image, "linux/amd64", run).catch(
       (error: unknown) => error,
     );
-    expect(caught).toBeInstanceOf(NatsImageAvailabilityError);
-    expect((caught as Error).message).toBe(`Pinned NATS image availability failed (${reason}).`);
+    expect(caught).toBeInstanceOf(ContainerImageAvailabilityError);
+    expect((caught as Error).message).toBe(
+      `Pinned container image availability failed (${reason}).`,
+    );
     expect(JSON.stringify(caught)).not.toMatch(/private-|user:|registry\.invalid|raw private/);
     expect(caught).not.toHaveProperty("cause");
     expect(run).toHaveBeenCalledTimes(2);

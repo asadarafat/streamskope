@@ -8,8 +8,24 @@ import { promisify } from "node:util";
 import { Admin } from "@platformatic/kafka";
 
 import type { SecureConnectionInput } from "../../src/features/kafka/contracts";
+import {
+  ContainerImageAvailabilityError,
+  containerCommandFailureReason,
+  ensureContainerImage,
+} from "../../tools/dev/container-image";
 
 const execute = promisify(execFile);
+class KafkaAuthorizationFixtureFailure extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "KafkaAuthorizationFixtureFailure";
+  }
+}
+interface AuthorizationFixtureRuntime {
+  readonly docker: (arguments_: readonly string[], timeoutMs: number) => Promise<unknown>;
+  readonly createAdmin: (options: ConstructorParameters<typeof Admin>[0]) => Admin;
+  readonly pause: () => Promise<void>;
+}
 async function availablePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => {
@@ -26,7 +42,13 @@ async function availablePort(): Promise<number> {
 }
 
 /** An isolated Linux-only real broker; never changes the developer's running Kafka. */
-export async function startAuthorizationFixture(): Promise<{
+export async function startAuthorizationFixture(
+  runtime: AuthorizationFixtureRuntime = {
+    docker: (arguments_, timeout) => execute("docker", [...arguments_], { timeout }),
+    createAdmin: (options) => new Admin(options),
+    pause: () => delay(1_000),
+  },
+): Promise<{
   readonly admin: Admin;
   readonly connection: SecureConnectionInput;
   dispose(): Promise<void>;
@@ -70,7 +92,7 @@ export async function startAuthorizationFixture(): Promise<{
     KAFKA_NUM_NETWORK_THREADS: "2",
     KAFKA_NUM_IO_THREADS: "2",
   };
-  const admin = new Admin({
+  const admin = runtime.createAdmin({
     bootstrapBrokers: [`127.0.0.1:${adminPort}`],
     clientId: "streamskope-permission-qualification",
     sasl: { mechanism: "PLAIN", username: "fixtureadmin", password },
@@ -78,16 +100,32 @@ export async function startAuthorizationFixture(): Promise<{
     connectTimeout: 1_000,
     requestTimeout: 2_000,
   });
+  let creationStarted = false;
   const dispose = async (): Promise<void> => {
+    const failures: string[] = [];
     try {
       await admin.close();
-    } finally {
-      await execute("docker", ["rm", "--force", name], { timeout: 30_000 });
+    } catch {
+      failures.push("admin close");
     }
+    if (creationStarted) {
+      try {
+        await runtime.docker(["rm", "--force", name], 30_000);
+      } catch (error) {
+        failures.push(`container removal: ${containerCommandFailureReason(error)}`);
+      }
+    }
+    if (failures.length > 0)
+      throw new KafkaAuthorizationFixtureFailure(
+        `Kafka authorization fixture cleanup could not be confirmed (${failures.join(", ")}).`,
+      );
   };
+  let phase = "pinned image availability";
   try {
-    await execute(
-      "docker",
+    await ensureContainerImage(image, undefined, runtime.docker);
+    phase = "owned container creation";
+    creationStarted = true;
+    await runtime.docker(
       [
         "run",
         "--detach",
@@ -99,8 +137,9 @@ export async function startAuthorizationFixture(): Promise<{
         ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
         image,
       ],
-      { timeout: 30_000 },
+      30_000,
     );
+    phase = "broker readiness";
     let ready = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
       try {
@@ -108,7 +147,7 @@ export async function startAuthorizationFixture(): Promise<{
         ready = true;
         break;
       } catch {
-        await delay(1_000);
+        await runtime.pause();
       }
     }
     if (!ready) throw new Error("The authorization fixture did not become ready.");
@@ -121,11 +160,23 @@ export async function startAuthorizationFixture(): Promise<{
       },
       dispose,
     };
-  } catch {
-    await dispose();
+  } catch (error) {
+    const reason =
+      error instanceof ContainerImageAvailabilityError
+        ? error.reason
+        : phase === "broker readiness"
+          ? "broker-not-ready"
+          : containerCommandFailureReason(error);
+    try {
+      await dispose();
+    } catch {
+      throw new KafkaAuthorizationFixtureFailure(
+        `The isolated Kafka authorization fixture failed during ${phase} (${reason}); owned cleanup could not be confirmed.`,
+      );
+    }
     // Docker command errors can include environment arguments, so never expose them.
-    throw new Error(
-      "Could not start the isolated Kafka authorization fixture; no existing fixture was modified.",
+    throw new KafkaAuthorizationFixtureFailure(
+      `The isolated Kafka authorization fixture failed during ${phase} (${reason}); owned cleanup was confirmed.`,
     );
   }
 }

@@ -10,10 +10,10 @@ import { promisify } from "node:util";
 import { connect, type NatsConnection } from "@nats-io/transport-node";
 
 import type { NatsConnectionInput } from "../../../src/features/nats/application/profile-types";
+import { ensureContainerImage, ContainerImageAvailabilityError } from "../container-image";
 
 import { NATS_SERVER_IMAGES } from "./definition";
 import { boundedNatsOperation } from "./client";
-import { ensureNatsImage, NatsImageAvailabilityError } from "./image";
 import { prepareNatsMaterial, writeNatsMaterialConfig } from "./materials";
 
 const execute = promisify(execFile);
@@ -231,7 +231,7 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
       authentication: options.authentication,
     });
     phase = "pinned image availability";
-    await ensureNatsImage(image, platform, (arguments_, timeout) =>
+    await ensureContainerImage(image, platform, (arguments_, timeout) =>
       run("docker", arguments_, { timeout }),
     );
     phase = "owned container creation";
@@ -394,7 +394,7 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
       dispose,
     };
   } catch (error) {
-    if (error instanceof NatsImageAvailabilityError) phase += ` (${error.reason})`;
+    if (error instanceof ContainerImageAvailabilityError) phase += ` (${error.reason})`;
     if (container !== undefined) {
       try {
         const { stdout } = await execute(
