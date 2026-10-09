@@ -186,9 +186,9 @@ describe("Kafka application consumption lifecycle", () => {
       await vi.advanceTimersByTimeAsync(500);
       expect(observer.onFailure).toHaveBeenCalledExactlyOnceWith(progressFailure);
       expect(observer.onComplete).not.toHaveBeenCalled();
-      const expected = notificationFails
+      const expected: unknown = notificationFails
         ? expect.objectContaining({
-            errors: expect.arrayContaining([progressFailure, cleanupFailure, notificationFailure]),
+            errors: [progressFailure, cleanupFailure, notificationFailure],
           })
         : cleanupFailure;
       await expect(session.stopConsumption()).rejects.toEqual(expected);
