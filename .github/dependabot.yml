@@ -3,8 +3,14 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    cooldown:
+      default-days: 7
+    # Restrict routine version proposals; security updates retain major-version fixes.
+    allow:
+      - dependency-name: "*"
+        update-types: [version-update:semver-minor, version-update:semver-patch]
+    open-pull-requests-limit: 3
     commit-message:
       prefix: chore
       include: scope
@@ -12,11 +18,16 @@ updates:
       - dependency-name: "@types/node"
         update-types: [version-update:semver-major]
     groups:
+      routine-tooling:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: ["@types/node", typescript-eslint, prettier]
+        update-types: [minor, patch]
       vitest-family:
         applies-to: version-updates
         dependency-type: development
         patterns: [vitest, "@vitest/*"]
-        update-types: [major, minor, patch]
+        update-types: [minor, patch]
       ui-framework:
         applies-to: version-updates
         dependency-type: development
@@ -56,34 +67,85 @@ updates:
   - package-ecosystem: npm
     directory: /website/promo
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 2
+      interval: monthly
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-name: "*"
+        update-types: [version-update:semver-minor, version-update:semver-patch]
+    open-pull-requests-limit: 1
     commit-message:
       prefix: chore
       include: scope
+    groups:
+      promotional-tooling:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 2
+      interval: monthly
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-name: "*"
+        update-types: [version-update:semver-minor, version-update:semver-patch]
+    open-pull-requests-limit: 1
     commit-message:
       prefix: chore
       include: scope
+    groups:
+      workflow-actions:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: pip
-    directories:
-      - /website
-      - /aio-kafka/images/oauth-service
+    directory: /website
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 2
+      interval: monthly
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-name: "*"
+        update-types: [version-update:semver-minor, version-update:semver-patch]
+    open-pull-requests-limit: 1
     commit-message:
       prefix: chore
       include: scope
+    groups:
+      docs-toolchain:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+  - package-ecosystem: pip
+    directory: /aio-kafka/images/oauth-service
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-name: "*"
+        update-types: [version-update:semver-minor, version-update:semver-patch]
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      oauth-fixture:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: gomod
     directory: /vendors/streamskope/apps/capture/agent
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 2
+      interval: monthly
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-name: "*"
+        update-types: [version-update:semver-minor, version-update:semver-patch]
+    open-pull-requests-limit: 1
     commit-message:
       prefix: chore
       include: scope
