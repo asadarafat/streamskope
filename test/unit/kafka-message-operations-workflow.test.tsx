@@ -309,7 +309,12 @@ describe("Kafka message operation Material UI workflow", () => {
     expect(
       screen.queryByRole("complementary", { name: "Message inspector" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export filtered JSON" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Export records" }));
+    expect(screen.getByRole("menuitem", { name: "Current page JSON" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.keyboard("{Escape}");
 
     await user.click(screen.getByRole("button", { name: "Clear message filters" }));
     grid = await screen.findByRole("grid", { name: "Kafka messages" });
@@ -329,7 +334,8 @@ describe("Kafka message operation Material UI workflow", () => {
 
     await user.click(screen.getByRole("button", { name: "Show message filters" }));
     await user.type(screen.getByRole("textbox", { name: "Key contains" }), "alpha");
-    await user.click(screen.getByRole("button", { name: "Export filtered JSON" }));
+    await user.click(screen.getByRole("button", { name: "Export records" }));
+    await user.click(screen.getByRole("menuitem", { name: "Current page JSON" }));
 
     await waitFor(() => {
       expect(download).toHaveBeenCalledOnce();
@@ -359,7 +365,8 @@ describe("Kafka message operation Material UI workflow", () => {
 
     await user.click(screen.getByRole("button", { name: "Show message filters" }));
     await user.type(screen.getByRole("textbox", { name: "Key contains" }), "alpha");
-    await user.click(screen.getByRole("button", { name: "Export filtered JSON" }));
+    await user.click(screen.getByRole("button", { name: "Export records" }));
+    await user.click(screen.getByRole("menuitem", { name: "Current page JSON" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The filtered JSON export failed. No file was saved. Retry the export.",
@@ -389,6 +396,6 @@ describe("Kafka message operation Material UI workflow", () => {
     await user.keyboard("10:41");
     expect(timestamp).toHaveValue("10:41");
     expect(screen.getByRole("button", { name: "Clear message filters" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Export filtered JSON" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Export records" })).toBeEnabled();
   });
 });

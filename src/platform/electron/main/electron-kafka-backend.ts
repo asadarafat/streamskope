@@ -3,12 +3,11 @@ import { join } from "node:path";
 import { AtomicObservationFileStore } from "../../node/kafka-observation-file-store";
 import { AtomicKafkaQueryFileStore } from "../../node/kafka-query-file-store";
 import { UnavailableKafkaProfileStore } from "../../../features/kafka/application";
-import type { KafkaBackendFacade } from "../../../features/kafka/facade";
 import { PluginRuntime } from "../../node/plugins/runtime";
 import { PluginStore } from "../../node/plugins/store";
 import { LegacyKafkaConnectionTemplateFile } from "../../node/legacy-connection-template-file";
 import { AtomicKafkaTrustRecipeFileStore } from "../../node/kafka-trust-recipe-file-store";
-import { createKafkaBackend } from "../../node/kafka-backend";
+import { createKafkaBackend, type NodeKafkaBackend } from "../../node/kafka-backend";
 import { AtomicKafkaProfileFileStore } from "../../node/kafka-profile-file-store";
 import { DesktopOperationalPreferenceStore } from "../../node/desktop-operational-preference-store";
 import { AtomicKafkaRuleFileStore } from "../../node/kafka-rule-file-store";
@@ -34,7 +33,7 @@ export interface ElectronKafkaBackendOptions {
 
 export async function createElectronKafkaBackend(
   options: ElectronKafkaBackendOptions,
-): Promise<KafkaBackendFacade> {
+): Promise<NodeKafkaBackend> {
   const protection =
     options.profileProtection ??
     (await initializeElectronProfileProtection(options.safeStorage, options.platform));

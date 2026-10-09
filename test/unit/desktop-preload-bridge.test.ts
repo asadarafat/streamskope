@@ -12,6 +12,7 @@ import {
 import {
   DESKTOP_ACTION_CHANNEL,
   DESKTOP_DOCUMENT_SAVE_CHANNEL,
+  DESKTOP_ARTIFACT_SAVE_CHANNEL,
 } from "../../src/platform/electron/preload/channels";
 
 type Listener = (event: unknown, value: unknown) => void;
@@ -47,6 +48,20 @@ class FakeDesktopIpc implements DesktopPreloadIpcRenderer {
 }
 
 describe("desktop preload bridge", () => {
+  it("validates artifact references and invokes only the narrow native artifact channel", async () => {
+    const ipc = new FakeDesktopIpc();
+    const desktop = createStreamSkopeDesktop(ipc);
+    const reference = {
+      artifactId: "823b690d-2cd2-42b8-a3d0-d2e07b1330ec",
+      part: "receipt",
+    } as const;
+    await expect(desktop.saveArtifact(reference)).resolves.toEqual(ipc.response);
+    expect(ipc.invocations).toEqual([{ channel: DESKTOP_ARTIFACT_SAVE_CHANNEL, value: reference }]);
+    await expect(desktop.saveArtifact({ ...reference, artifactId: "../private" })).rejects.toThrow(
+      DesktopPlatformContractError,
+    );
+    expect(ipc.invocations).toHaveLength(1);
+  });
   const document = {
     byteSize: 17,
     content: '{\n  "ok": true\n}\n',

@@ -60,7 +60,7 @@ const rendererDocument = `<!doctype html>
           ? "narrow"
           : "invalid";
       document.body.dataset.desktop =
-        desktop && Object.keys(desktop).sort().join(",") === "saveTextDocument,subscribeActions"
+        desktop && Object.keys(desktop).sort().join(",") === "saveArtifact,saveTextDocument,subscribeActions"
           ? "narrow"
           : "invalid";
       host.subscribe((event) => {
@@ -1009,7 +1009,8 @@ test("operates on filtered real messages and exports stale evidence in Electron"
 
     const messageExportPath = join(outputDirectory, "filtered-messages.json");
     await chooseNextElectronSavePath(application, messageExportPath);
-    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await page.getByRole("menuitem", { name: "Current page JSON" }).click();
     await expect(page.getByRole("status").filter({ hasText: "saved" })).toContainText(
       "Filtered message JSON saved.",
     );

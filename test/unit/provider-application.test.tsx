@@ -536,6 +536,8 @@ describe("provider activation ownership", () => {
     const pending = deferred<ProviderDeactivationResult>(),
       desktopListeners = new Set<DesktopActionListener>();
     const desktop: StreamSkopeDesktop = {
+      saveArtifact: () =>
+        Promise.resolve({ state: "cancelled", version: DESKTOP_PLATFORM_VERSION }),
       saveTextDocument: () =>
         Promise.resolve({ state: "cancelled", version: DESKTOP_PLATFORM_VERSION }),
       subscribeActions: (listener) => {

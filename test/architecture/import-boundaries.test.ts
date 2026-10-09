@@ -195,6 +195,22 @@ describe("renderer dependency boundary", () => {
 });
 
 describe("shared Node host boundary", () => {
+  it("shares pure artifact references across browser/native hosts without exposing host code to the renderer", async () => {
+    const eslint = new ESLint({
+      cwd: repositoryRoot,
+      overrideConfig: [tseslint.configs.disableTypeChecked],
+    });
+    const [allowed] = await eslint.lintText(
+      'import { parseArtifactReference } from "../desktop"; export const access = parseArtifactReference;',
+      { filePath: "src/platform/node/record-export-artifacts.ts" },
+    );
+    expect(allowed?.messages).toEqual([]);
+    const [blocked] = await eslint.lintText(
+      'import { NodeRecordExportArtifacts } from "../../../platform/node/record-export-artifacts"; export const access = NodeRecordExportArtifacts;',
+      { filePath: "src/features/kafka/ui/artifact-transfer.ts" },
+    );
+    expect(blocked?.messages.map(({ ruleId }) => ruleId)).toContain("no-restricted-imports");
+  }, 60_000);
   it("accepts Node services and rejects Electron dependencies", async () => {
     const eslint = new ESLint({
       cwd: repositoryRoot,

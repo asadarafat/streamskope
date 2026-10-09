@@ -5,6 +5,7 @@ import { KAFKA_MESSAGE_LIMITS, type StreamSkopeBackend } from "../../features/ka
 
 import type { PluginRendererAsset } from "./plugins/runtime";
 import { createKafkaProviderEndpoint } from "./kafka-provider";
+import type { RecordExportDelivery } from "./record-export-artifacts";
 import {
   ProviderHostRegistry,
   ProviderWireValidationError,
@@ -23,6 +24,7 @@ const DEFAULT_MAX_QUEUED_EVENTS = 32;
 const DEFAULT_MAX_QUEUED_SERIALIZED_BYTES = 8 * 1_024 * 1_024;
 const DEFAULT_EVENT_WRITE_TIMEOUT_MS = 30_000;
 export interface DevelopmentBackend extends StreamSkopeBackend {
+  readonly exportFiles?: RecordExportDelivery;
   shutdown(): Promise<void>;
   stopStream?(): Promise<void>;
   pluginAsset?(pathname: string): Promise<PluginRendererAsset | undefined>;

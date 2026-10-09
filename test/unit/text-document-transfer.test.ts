@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HostTextDocument } from "../../src/features/kafka/contracts";
-import type { StreamSkopeDesktop } from "../../src/platform/desktop";
+import { DESKTOP_PLATFORM_VERSION, type StreamSkopeDesktop } from "../../src/platform/desktop";
 import {
   browserTextDocumentTransfer,
   createTextDocumentTransfer,
@@ -55,9 +55,11 @@ describe("browser text document transfer", () => {
 
   it("uses the native Save dialog when the Electron desktop port is present", async () => {
     const saveTextDocument = vi.fn<StreamSkopeDesktop["saveTextDocument"]>(() =>
-      Promise.resolve({ state: "cancelled", version: 1 }),
+      Promise.resolve({ state: "cancelled", version: DESKTOP_PLATFORM_VERSION }),
     );
     const transfer = createTextDocumentTransfer({
+      saveArtifact: () =>
+        Promise.resolve({ state: "cancelled", version: DESKTOP_PLATFORM_VERSION }),
       saveTextDocument,
       subscribeActions: (): (() => void) => () => undefined,
     });

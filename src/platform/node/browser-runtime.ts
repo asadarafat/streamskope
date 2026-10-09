@@ -8,6 +8,7 @@ import {
 } from "../diagnostics";
 
 import { BrowserPluginFiles } from "./browser-plugin-files";
+import { handleRecordExportRequest } from "./record-export-http";
 import { createKafkaBackend } from "./kafka-backend";
 import { createKafkaProviderEndpoint } from "./kafka-provider";
 import { AtomicObservationFileStore } from "./kafka-observation-file-store";
@@ -103,7 +104,9 @@ export async function openBrowserRuntime(
     return {
       providers,
       pluginAsset: (pathname) => plugins.rendererAsset(pathname),
-      handleAuthorizedRequest: (request, response) => files.handleRequest(request, response),
+      handleAuthorizedRequest: async (request, response, authority) =>
+        (await handleRecordExportRequest(kafka.exportFiles, request, response, authority)) ||
+        (await files.handleRequest(request, response)),
       discardPluginFile: (commandId) => files.discard(commandId),
       lock: async (): Promise<void> => {
         files.close();

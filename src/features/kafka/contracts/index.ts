@@ -586,3 +586,10 @@ export type {
   AclReviewCommand,
   AclReviewSuccess,
 } from "./acl-review-commands";
+
+export * from "./record-export";
+export {
+  parseRecordExportInput,
+  parseRecordExportSnapshot,
+  parseRecordExportReceipt,
+} from "./record-export-validation";

@@ -24,5 +24,6 @@ export function launchProductWebFixture(
       createNatsProviderEndpoint(createNatsBackend()),
     ]),
     ...(pluginAsset === undefined ? {} : { pluginAsset }),
+    ...(backend.exportFiles === undefined ? {} : { exportFiles: backend.exportFiles }),
   });
 }

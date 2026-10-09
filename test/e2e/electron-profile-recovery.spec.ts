@@ -309,7 +309,8 @@ test("restores a full backup with native credential protection and reconnects", 
     );
     const exportPath = join(root, "incident.json");
     await chooseNextElectronSavePath(application, exportPath);
-    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await page.getByRole("menuitem", { name: "Current page JSON" }).click();
     await expect.poll(() => readFile(exportPath, "utf8").catch(() => null)).not.toBeNull();
     const exported: unknown = JSON.parse(await readFile(exportPath, "utf8"));
     expect(exported).toMatchObject({

@@ -93,6 +93,7 @@ async function start(): Promise<void> {
             createNatsProviderEndpoint(nats),
           ]),
           pluginAsset: plugins.rendererAsset.bind(plugins),
+          exportFiles: backend.exportFiles,
         };
       } catch (error) {
         const results = await Promise.allSettled(

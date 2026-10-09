@@ -29,6 +29,7 @@ import {
 } from "../application";
 import { ActivityHistory } from "../../../platform/activity";
 
+import { RecordExportFacade, recordExportEvent } from "./record-export-facade";
 import { RelationshipFacade } from "./relationship-facade";
 import { ObservationFacade } from "./observation-facade";
 import { ConnectFacade } from "./connect-facade";
@@ -101,7 +102,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private connectionIntent = 0;
   private connectionPluginId: string | undefined;
   private readonly consumption: ConsumptionFacadeController;
-  private consumptionCommandIntent = 0;
   private readonly consumerGroups;
   private readonly createCorrelationId;
   private readonly clusterDiagnostics;
@@ -123,10 +123,10 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly correlationTrace: CorrelationTraceFacade;
   private readonly schemaInspection: SchemaInspectionFacade;
   private readonly recordCodecs: RecordCodecFacade;
+  private readonly recordExport: RecordExportFacade;
   private readonly queries: KafkaQueryLibrary;
   private readonly preferences: KafkaOperationalPreferenceService;
   private readonly protection: KafkaCommandProtection;
-  private authorizationIntent = 0;
   private sequence = 0;
   private shutdownPromise: Promise<void> | undefined;
   private readonly trustAcquisitions: KafkaTrustAcquisitionServicePort | undefined;
@@ -206,6 +206,13 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     });
     const publish = this.publish.bind(this);
     const nextSequence = this.nextSequence.bind(this);
+    this.recordExport = new RecordExportFacade(
+      session,
+      this.preferences,
+      options.recordExportArtifacts,
+      (snapshot) => publish(recordExportEvent(snapshot, nextSequence())),
+      this.recordActivity.bind(this),
+    );
     this.relationships = new RelationshipFacade(session, options.connect, options.schemaRegistry);
     this.observations = new ObservationFacade(
       session,
@@ -270,6 +277,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.trustAcquisitions = options.trustAcquisitions;
     this.lifecycle = new FeatureLifecycle([
       {
+        owner: "Record export",
+        invalidate: (): void => this.recordExport.invalidate(),
+        drain: (): Promise<void> => this.recordExport.idle(),
+      },
+      {
         owner: "Consumption",
         invalidate: (reason): void => {
           if (reason !== "shutdown") this.consumption.invalidate();
@@ -329,43 +341,23 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     return this.commandAdmission.track(() => this.executeCommand(command, true));
   }
 
-  private async executeCommand(
-    command: HostCommand,
-    internal: boolean,
-  ): Promise<HostCommandResponse> {
+  private executeCommand(command: HostCommand, internal: boolean): Promise<HostCommandResponse> {
     const correlationId = this.createCorrelationId();
-    if (!this.commandAdmission.accepts(internal))
-      return this.unavailableResponse(command, correlationId);
-    if (
-      ["connection.connect", "profiles.connect", "connection.disconnect"].includes(command.command)
-    )
-      this.authorizationIntent += 1;
-    const intent = this.authorizationIntent;
-    if (
-      command.command === "messages.start" ||
-      command.command === "messages.continue" ||
-      command.command === "messages.stop"
-    ) {
-      this.consumptionCommandIntent += 1;
-    }
-    const consumptionIntent = this.consumptionCommandIntent;
-    return this.protection.execute(command, correlationId, () => {
-      if (!this.commandAdmission.accepts(internal))
-        return Promise.resolve(this.unavailableResponse(command, correlationId));
-      return intent === this.authorizationIntent &&
-        ((command.command !== "messages.start" && command.command !== "messages.continue") ||
-          consumptionIntent === this.consumptionCommandIntent)
-        ? this.dispatch(command, correlationId)
-        : Promise.resolve(
-            failureResponse(
-              command,
-              this.translateFailure(new ConnectionAttemptSupersededError(), {
-                activeStateChanged: false,
-                connection: undefined,
-                correlationId,
-              }).error,
-            ),
-          );
+    return this.commandAdmission.dispatch(command, {
+      correlationId,
+      internal,
+      protection: this.protection,
+      unavailable: () => this.unavailableResponse(command, correlationId),
+      superseded: () =>
+        failureResponse(
+          command,
+          this.translateFailure(new ConnectionAttemptSupersededError(), {
+            activeStateChanged: false,
+            connection: undefined,
+            correlationId,
+          }).error,
+        ),
+      dispatch: () => this.dispatch(command, correlationId),
     });
   }
 
@@ -416,6 +408,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       });
     }
     switch (command.command) {
+      case "records.export.start":
+      case "records.export.status":
+      case "records.export.cancel":
+      case "records.export.discard":
+        return this.recordExport.execute(command, correlationId);
       case "relationships.capture":
       case "relationships.cancel":
         return this.relationships.execute(command, correlationId);
@@ -499,6 +496,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "preferences.get":
       case "preferences.reset":
       case "preferences.update":
+        await this.recordExport.preparePreferences(command);
         return executeOperationalPreferenceCommand(command, correlationId, {
           nextSequence: this.nextSequence.bind(this),
           preferences: this.preferences,
@@ -579,7 +577,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     // Joining before tracking avoids shutdown -> admission.idle -> stop -> shutdown.
     // It also preserves the terminal queue already owned by prepareShutdown.
     if (this.shutdownPromise !== undefined) return this.shutdownPromise;
-    this.consumptionCommandIntent += 1;
+    this.commandAdmission.interruptConsumption();
     return this.commandAdmission.track(() =>
       this.consumption.stopStream(this.createCorrelationId()),
     );
@@ -750,6 +748,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
           ? lifetime
           : AbortSignal.any([lifetime, resolved.lifetimeSignal]);
       this.lifecycle.invalidate();
+      await this.recordExport.idle();
       this.clearActiveProfile();
       this.assertConnectionIntent(intent);
       signal.throwIfAborted();
@@ -813,6 +812,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
         this.assertConnectionIntent(intent);
         const lifetime = this.beginConnectionLifetime(profile?.source?.pluginId);
         this.lifecycle.invalidate();
+        await this.recordExport.idle();
         this.clearActiveProfile();
         this.assertConnectionIntent(intent);
         lifetime.throwIfAborted();
@@ -874,9 +874,12 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     this.lifecycle.invalidate();
     const connectionName = this.session.snapshot().connectionName ?? "No active connection";
     const operation = this.session.disconnect();
+    const exportCleanup = this.recordExport.idle();
     this.publishConnection(this.session.snapshot());
     try {
-      await operation;
+      const cleanup = await Promise.allSettled([operation, exportCleanup]);
+      if (cleanup.some((result) => result.status === "rejected"))
+        throw new Error("Connection or record export cleanup could not be confirmed.");
       lifetime.throwIfAborted();
       this.publishConnection(this.session.snapshot());
       this.clearActiveProfile();

@@ -41,6 +41,7 @@ import {
   type AclReviewScope,
   type ObservationScope,
   type OffsetResetScope,
+  type RecordReadScope,
   type ReviewedWriteScope,
 } from "./connection-scope";
 
@@ -142,6 +143,10 @@ export class KafkaApplicationSession {
 
   observationScope(): ObservationScope | null {
     return this.scopes.observation();
+  }
+
+  recordReadScope(): RecordReadScope | null {
+    return this.scopes.recordRead();
   }
 
   activeConnectionContext(): {

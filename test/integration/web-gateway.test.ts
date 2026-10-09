@@ -3,9 +3,12 @@ import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProviderHostRegistry } from "../../src/platform/node/provider-host";
+import { NodeRecordExportArtifacts } from "../../src/platform/node/record-export-artifacts";
+import { handleRecordExportRequest } from "../../src/platform/node/record-export-http";
+import { sealedArtifact } from "../support/record-export-artifact";
 import {
   startWebGateway,
   type RunningWebGateway,
@@ -35,6 +38,7 @@ async function fixture(
     openDelay?: Promise<void>;
     openError?: Error;
     diagnosticSinkFails?: boolean;
+    authorizedRequest?: WebGatewayRuntime["handleAuthorizedRequest"];
   } = {},
 ): Promise<{
   gateway: RunningWebGateway;
@@ -88,6 +92,9 @@ async function fixture(
         provider.subscribeFailure = new Error("private subscription secret");
       providers.push(provider);
       return {
+        ...(options.authorizedRequest === undefined
+          ? {}
+          : { handleAuthorizedRequest: options.authorizedRequest }),
         providers: new ProviderHostRegistry([provider.endpoint]),
         pluginAsset: (path): Promise<PluginRendererAsset | undefined> =>
           Promise.resolve(
@@ -180,6 +187,87 @@ async function readChunk(
 }
 
 describe("production browser gateway", () => {
+  it("delivers host artifacts only behind session/origin authorization with HEAD and bounded exact routes", async () => {
+    const store = new NodeRecordExportArtifacts();
+    cleanups.push(async () => {
+      store.revoke();
+      await store.drain();
+    });
+    const { artifact, text } = await sealedArtifact(store);
+    const f = await fixture({
+      authorizedRequest: (request, response, authority) =>
+        handleRecordExportRequest(store.delivery, request, response, authority),
+    });
+    const path = `/__streamskope_host/exports/${artifact.artifactId}/data`;
+    expect((await fetch(f.gateway.origin + path, { redirect: "manual" })).status).toBe(401);
+    const cookie = session(await f.create());
+    expect(
+      (
+        await fetch(f.gateway.origin + path, {
+          headers: { cookie, origin: "https://foreign.example" },
+        })
+      ).status,
+    ).toBe(403);
+    const head = await fetch(f.gateway.origin + path, { method: "HEAD", headers: { cookie } });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("content-length")).toBe(String(Buffer.byteLength(text)));
+    expect(head.headers.get("cache-control")).toBe("no-store");
+    const data = await fetch(f.gateway.origin + path, { headers: { cookie } });
+    expect(data.status).toBe(200);
+    expect(await data.text()).toBe(text);
+    expect(data.headers.get("content-disposition")).toContain("attachment;");
+    expect(
+      (await fetch(f.gateway.origin + path, { headers: { cookie, range: "bytes=0-1" } })).status,
+    ).toBe(404);
+    expect((await fetch(f.gateway.origin + path + "/extra", { headers: { cookie } })).status).toBe(
+      404,
+    );
+    await post(f.gateway, "/__streamskope_session/lock", {}, cookie);
+    expect(
+      (await fetch(f.gateway.origin + path, { headers: { cookie }, redirect: "manual" })).status,
+    ).toBe(401);
+  });
+
+  it("revokes an authorized streaming hook before waiting for provider cleanup", async () => {
+    let received = false;
+    let aborted = false;
+    const f = await fixture({
+      authorizedRequest: async (request, response, authority) => {
+        if (request.url !== "/__streamskope_host/exports/blocked") return false;
+        received = true;
+        await new Promise<void>((resolve) =>
+          authority.signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              response.destroy();
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+        expect(() => authority.assertCurrent()).toThrow();
+        return true;
+      },
+    });
+    const cookie = session(await f.create());
+    let release = (): void => undefined;
+    f.providers[0]!.shutdownOperation = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const download = fetch(f.gateway.origin + "/__streamskope_host/exports/blocked", {
+      headers: { cookie },
+    }).catch(() => undefined);
+    await vi.waitFor(() => expect(received).toBe(true));
+    const locked = post(f.gateway, "/__streamskope_session/lock", {}, cookie);
+    await vi.waitFor(() => expect(aborted).toBe(true));
+    expect(aborted).toBe(true);
+    release();
+    expect((await locked).status).toBe(200);
+    await download;
+  });
   it("keeps setup authority private and refuses providers, plugins and the built app before create", async () => {
     const f = await fixture();
     const code = (await readFile(f.gateway.setupCodePath!, "utf8")).trim();

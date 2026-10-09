@@ -3,7 +3,7 @@ import { isAbsolute, join } from "node:path";
 
 import { app, shell } from "electron";
 
-import type { KafkaBackendFacade } from "../../src/features/kafka/facade";
+import type { NodeKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { createElectronKafkaBackend } from "../../src/platform/electron/main/electron-kafka-backend";
 import type { ElectronSafeStoragePort } from "../../src/platform/electron/main/electron-profile-protection";
 import {
@@ -41,7 +41,7 @@ class DeterministicSafeStorage implements ElectronSafeStoragePort {
   }
 }
 
-let backend: KafkaBackendFacade | undefined;
+let backend: NodeKafkaBackend | undefined;
 let runningShell: RunningElectronShell | undefined;
 let shuttingDown = false;
 
@@ -97,6 +97,7 @@ async function start(): Promise<void> {
     userDataPath,
   });
   runningShell = await createElectronShell({
+    exportFiles: backend.exportFiles,
     backend,
     preloadPath: join(__dirname, "preload.cjs"),
     rendererUrl,

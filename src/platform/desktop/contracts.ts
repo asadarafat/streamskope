@@ -1,4 +1,9 @@
-export const DESKTOP_PLATFORM_VERSION = 1 as const;
+export const DESKTOP_PLATFORM_VERSION = 2 as const;
+
+export interface ArtifactReference {
+  readonly artifactId: string;
+  readonly part: "data" | "receipt";
+}
 
 export const DESKTOP_TEXT_DOCUMENT_LIMITS = Object.freeze({
   bytes: 16 * 1_048_576,
@@ -28,6 +33,7 @@ export interface DesktopSaveResult {
 export type DesktopActionListener = (action: DesktopAction) => void;
 
 export interface StreamSkopeDesktop {
+  saveArtifact(reference: ArtifactReference): Promise<DesktopSaveResult>;
   saveTextDocument(document: DesktopTextDocument): Promise<DesktopSaveResult>;
   subscribeActions(listener: DesktopActionListener): () => void;
 }
@@ -59,6 +65,20 @@ function exactKeys(
   if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index])) {
     throw new DesktopPlatformContractError(path, "contains undeclared fields.");
   }
+}
+
+export function parseArtifactReference(value: unknown): ArtifactReference {
+  const reference = record(value, "artifact reference");
+  exactKeys(reference, ["artifactId", "part"], "artifact reference");
+  if (
+    typeof reference.artifactId !== "string" ||
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
+      reference.artifactId,
+    ) ||
+    (reference.part !== "data" && reference.part !== "receipt")
+  )
+    throw new DesktopPlatformContractError("artifact reference", "is invalid.");
+  return { artifactId: reference.artifactId, part: reference.part };
 }
 
 export function parseDesktopTextDocument(

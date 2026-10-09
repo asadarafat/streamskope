@@ -35,6 +35,7 @@ import {
 } from "../../features/kafka/engine";
 import type { PluginRuntimePort } from "../../plugins/api";
 
+import { NodeRecordExportArtifacts, type RecordExportDelivery } from "./record-export-artifacts";
 import { NodeHttpsTrustAcquisition } from "./https-trust-acquisition";
 import { createHostTrustMaterialDecoder } from "./trust-material-decoder";
 import { createHostRecordCodec } from "./record-codec";
@@ -86,7 +87,11 @@ export interface KafkaBackendOptions {
   readonly observationStore?: ObservationStore;
 }
 
-export function createKafkaBackend(options: KafkaBackendOptions = {}): KafkaBackendFacade {
+export interface NodeKafkaBackend extends KafkaBackendFacade {
+  readonly exportFiles: RecordExportDelivery;
+}
+
+export function createKafkaBackend(options: KafkaBackendOptions = {}): NodeKafkaBackend {
   const {
     profileStore = createBrowserKafkaProfileStore(),
     legacySource,
@@ -138,7 +143,8 @@ export function createKafkaBackend(options: KafkaBackendOptions = {}): KafkaBack
     trustAcquisitions,
     resolveRecipe: recipes.resolve.bind(recipes),
   });
-  return new KafkaBackendFacade(
+  const recordExportArtifacts = new NodeRecordExportArtifacts();
+  const backend = new KafkaBackendFacade(
     session,
     profiles,
     recipes,
@@ -147,6 +153,7 @@ export function createKafkaBackend(options: KafkaBackendOptions = {}): KafkaBack
     new KafkaTopicConfigurationService(session, topicConfigurationHistoryStore),
     {
       ...(observationStore ? { observationStore } : {}),
+      recordExportArtifacts,
       replayConnections: new StreamSkopeKafkaEngine(),
       ...(plugins === undefined ? {} : { plugins }),
       preferences,
@@ -160,4 +167,5 @@ export function createKafkaBackend(options: KafkaBackendOptions = {}): KafkaBack
       trustAcquisitions,
     },
   );
+  return Object.assign(backend, { exportFiles: recordExportArtifacts.delivery });
 }

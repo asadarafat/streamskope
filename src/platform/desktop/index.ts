@@ -4,10 +4,12 @@ export {
   DESKTOP_TEXT_DOCUMENT_LIMITS,
   DesktopPlatformContractError,
   parseDesktopAction,
+  parseArtifactReference,
   parseDesktopSaveResult,
   parseDesktopTextDocument,
 } from "./contracts";
 export type {
+  ArtifactReference,
   DesktopAction,
   DesktopActionListener,
   DesktopActionName,

@@ -325,9 +325,7 @@ test.describe("StreamSkope browser message operations", () => {
     await expect(
       messageControls.getByRole("button", { name: "Hide message filters" }),
     ).toBeVisible();
-    await expect(
-      messageControls.getByRole("button", { name: "Export filtered JSON" }),
-    ).toBeVisible();
+    await expect(messageControls.getByRole("button", { name: "Export records" })).toBeVisible();
     await expect(messageControls.getByLabel("Consumption status")).toBeVisible();
     await expect(messageControls.getByRole("combobox", { name: "Read mode" })).toHaveCount(0);
     await expect(messageControls.getByRole("combobox", { name: "Record limit" })).toHaveCount(0);
@@ -352,7 +350,8 @@ test.describe("StreamSkope browser message operations", () => {
 
     const commandCountBeforeLocalOperations = backend.commands.length;
     const downloadStarted = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await page.getByRole("menuitem", { name: "Current page JSON" }).click();
     const download = await downloadStarted;
     expect(download.suggestedFilename()).toBe("streamskope-orders-messages.json");
     const downloadPath = await download.path();
@@ -391,7 +390,8 @@ test.describe("StreamSkope browser message operations", () => {
         throw new Error("blocked: private-payload");
       };
     });
-    await page.getByRole("button", { name: "Export filtered JSON" }).click();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await page.getByRole("menuitem", { name: "Current page JSON" }).click();
     const transferError = page.getByRole("alert").filter({
       hasText: "The filtered JSON export failed. No file was saved. Retry the export.",
     });
@@ -415,7 +415,9 @@ test.describe("StreamSkope browser message operations", () => {
       page.getByText("The selected message is hidden by the current filters.", { exact: true }),
     ).toBeVisible();
     await expect(inspector).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Export filtered JSON" })).toBeDisabled();
+    await page.getByRole("button", { name: "Export records" }).click();
+    await expect(page.getByRole("menuitem", { name: "Current page JSON" })).toBeDisabled();
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Clear message filters" }).click();
     await expect(page.getByLabel("Showing 4 of 4 retained messages")).toHaveText("4 / 4");
     const restoredInspector = page.getByRole("complementary", { name: "Message inspector" });

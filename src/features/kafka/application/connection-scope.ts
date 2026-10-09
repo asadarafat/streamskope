@@ -17,6 +17,7 @@ import type {
 import type { KafkaWriteDestination } from "../contracts/reviewed-writes";
 
 import { ObservationOperationError, observationAborted } from "./observation-errors";
+import type { KafkaReadCheckpoint } from "./read-checkpoint";
 import type { KafkaActiveConnection, KafkaClusterMetadata, KafkaMessageStream } from "./types";
 
 export interface ConnectionScopeContext {
@@ -67,6 +68,15 @@ export interface ObservationRecordReader {
   openMessageStream(request: KafkaFetchRequest, signal: AbortSignal): Promise<KafkaMessageStream>;
 }
 
+/** One captured connection authorizes finite reads; the caller owns every opened reader. */
+export interface RecordReadScope extends ReviewAuthority {
+  openMessageStream(
+    request: KafkaFetchRequest,
+    signal: AbortSignal,
+    checkpoint?: KafkaReadCheckpoint,
+  ): Promise<KafkaMessageStream>;
+}
+
 /** Read authority is fenced against connection changes; the sampler owns its reader. */
 export interface ObservationScope {
   readonly connectionIdentity: object;
@@ -93,6 +103,22 @@ export class KafkaConnectionScopes {
   private readonly identities = new WeakMap<KafkaActiveConnection, object>();
 
   constructor(private readonly context: () => ConnectionScopeContext | null) {}
+
+  recordRead(): RecordReadScope | null {
+    const active = this.context();
+    if (active === null) return null;
+    const context = { ...active };
+    return {
+      connectionName: context.connectionName,
+      isCurrent: (): boolean => this.current(context),
+      openMessageStream: async (request, signal, checkpoint): Promise<KafkaMessageStream> => {
+        signal.throwIfAborted();
+        this.assertReviewedCurrent(context);
+        // Do not reject a late-opened reader here: its owner must receive and close it.
+        return context.connection.openMessageStream(request, signal, checkpoint);
+      },
+    };
+  }
 
   reviewedWrite(): ReviewedWriteScope | null {
     const active = this.context();

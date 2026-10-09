@@ -448,6 +448,8 @@ export default [
                         "kafka-engine",
                         "kafka-facade",
                         "platform-activity",
+                        // Pure cross-host file/action contracts; no Electron runtime imports.
+                        "platform-desktop",
                         "platform-node",
                         "platform-providers",
                       ],

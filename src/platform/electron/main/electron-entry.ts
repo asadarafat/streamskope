@@ -193,6 +193,7 @@ async function start(): Promise<void> {
   ]);
   startupFailure = "DESKTOP_SHELL_START_FAILED";
   runningShell = await createElectronShell({
+    exportFiles: backend.exportFiles,
     registry: providers,
     deliveryBindings: [
       createKafkaElectronDeliveryBinding(backend),

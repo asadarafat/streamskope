@@ -9,6 +9,8 @@ import {
   browserDevelopmentSessionCookie,
 } from "../providers/browser-development";
 import type { PluginRendererAsset } from "../node/plugins/runtime";
+import type { RecordExportDelivery } from "../node/record-export-artifacts";
+import { handleRecordExportRequest, RECORD_EXPORT_HTTP_PATH } from "../node/record-export-http";
 
 import {
   developmentOrigin,
@@ -23,6 +25,7 @@ export interface ViteRendererOptions extends DevelopmentNetworkOptions {
   readonly port: number;
   readonly root: string;
   readonly pluginAsset?: (pathname: string) => Promise<PluginRendererAsset | undefined>;
+  readonly exportFiles?: RecordExportDelivery;
 }
 
 export interface RunningViteRenderer {
@@ -216,6 +219,7 @@ export async function startViteRenderer(
   const network = resolveDevelopmentNetwork(options);
   validatePort(options.port);
   const origin = developmentOrigin(network.publicHostname, options.port);
+  const authorization = new AbortController();
   const server = await createServer({
     appType: "spa",
     clearScreen: false,
@@ -223,6 +227,34 @@ export async function startViteRenderer(
     logLevel: "silent",
     plugins: [
       developmentGateway({ gatewayToken: options.gatewayToken, rendererOrigin: origin }),
+      {
+        name: "streamskope-development-export-files",
+        configureServer(server): void {
+          server.middlewares.use((request, response, next) => {
+            if (
+              !request.url?.startsWith(RECORD_EXPORT_HTTP_PATH) ||
+              options.exportFiles === undefined
+            ) {
+              next();
+              return;
+            }
+            void handleRecordExportRequest(options.exportFiles, request, response, {
+              signal: authorization.signal,
+              assertCurrent: () => {
+                authorization.signal.throwIfAborted();
+                if (
+                  !tokensMatch(
+                    cookieValue(request, browserDevelopmentSessionCookie(origin)),
+                    options.gatewayToken,
+                  ) ||
+                  !browserRequestMatchesRenderer(request, origin)
+                )
+                  throw new Error("Development export is not authorized.");
+              },
+            }).catch(() => response.destroy());
+          });
+        },
+      },
       configuredHostCsp(network.publicHostname),
       installedPluginAssets(options, origin),
     ],
@@ -272,6 +304,7 @@ export async function startViteRenderer(
   let closePromise: Promise<void> | undefined;
   return {
     close: (): Promise<void> => {
+      authorization.abort();
       closePromise ??= server.close();
       return closePromise;
     },

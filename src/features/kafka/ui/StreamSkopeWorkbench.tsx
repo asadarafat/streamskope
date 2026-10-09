@@ -49,6 +49,8 @@ import {
   type RendererStreamMonitorObserver,
 } from "./stream-monitor-observer";
 import { initialKafkaUiState, reduceKafkaUiState, selectKafkaMessageById } from "./state";
+import { createArtifactTransfer } from "./artifact-transfer";
+import { useRecordExport } from "./use-record-export";
 import { createTextDocumentTransfer } from "./text-document-transfer";
 import {
   consumerGroupStatusLabel,
@@ -123,6 +125,13 @@ export function StreamSkopeWorkbench({
   const textDocumentTransfer = useMemo(() => createTextDocumentTransfer(desktop), [desktop]);
 
   const connected = state.connectionState === "connected";
+  const artifactTransfer = useMemo(() => createArtifactTransfer(desktop), [desktop]);
+  const recordExport = useRecordExport({
+    host,
+    connected,
+    backendAvailable: state.backend === "ready",
+    transfer: artifactTransfer,
+  });
   const {
     activityOpen,
     activityHeight,
@@ -569,6 +578,7 @@ export function StreamSkopeWorkbench({
         }}
       >
         <MessageWorkspace
+          recordExport={recordExport}
           profiles={state.profiles}
           canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
           host={host}
