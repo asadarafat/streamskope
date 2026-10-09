@@ -58,6 +58,7 @@ export interface KafkaUiState {
   readonly aclSnapshot: KafkaAclSnapshot;
   readonly activities: readonly ActivityEntry[];
   readonly backend: "checking" | BackendAvailability;
+  readonly backendSequence: number;
   readonly connectionName: string | null;
   readonly connectionState: ConnectionState;
   readonly clusterDiagnostics: KafkaClusterDiagnosticsSnapshot;
@@ -222,6 +223,7 @@ export const initialKafkaUiState: KafkaUiState = {
   aclSnapshot: unavailableAclSnapshot,
   activities: [],
   backend: "checking",
+  backendSequence: -1,
   connectionName: null,
   connectionState: "disconnected",
   clusterDiagnostics: unavailableClusterDiagnostics,
@@ -529,12 +531,16 @@ function mergeKafkaMessages(
 }
 
 export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): KafkaUiState {
-  if (event.sequence <= state.lastSequence) {
+  // A workspace can mount after connection establishment. Its preload replays
+  // the latest availability snapshot, whose sequence may predate that connection.
+  const availability = event.event === "backend.availability";
+  if (event.sequence <= (availability ? state.backendSequence : state.lastSequence)) {
     return state;
   }
   const sequencedState = {
     ...state,
-    lastSequence: event.sequence,
+    backendSequence: availability ? event.sequence : state.backendSequence,
+    lastSequence: Math.max(state.lastSequence, event.sequence),
     ruleState: reduceKafkaRuleUiState(state.ruleState, {
       event,
       type: "host.event",

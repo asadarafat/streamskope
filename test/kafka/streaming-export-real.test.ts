@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { Admin, Producer } from "@platformatic/kafka";
+import { Admin, Consumer, Producer } from "@platformatic/kafka";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import {
@@ -22,6 +22,7 @@ import {
 } from "../../src/features/kafka/contracts/record-export-validation";
 import { createKafkaBackend, type NodeKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { fetchFixtureToken, loadFixtureConfig } from "../support/kafka-fixture";
+import { kafkaFixtureFailure, waitForKafkaTopicOffsets } from "../support/kafka-topic-readiness";
 import {
   disposeNativeFixtureResources,
   startNativeKafkaFixture,
@@ -76,7 +77,9 @@ async function withTopic(work: (context: TopicContext) => Promise<void>): Promis
   const producer = new Producer<Buffer | null, Buffer | null, Buffer, Buffer>({
     ...options,
     autocreateTopics: false,
+    repeatOnStaleMetadata: false,
   });
+  const readiness = new Consumer({ ...options, groupId: randomUUID(), autocreateTopics: false });
   const backend = createKafkaBackend();
   const snapshots: RecordExportSnapshot[] = [];
   backend.subscribe((wire) => {
@@ -128,21 +131,9 @@ async function withTopic(work: (context: TopicContext) => Promise<void>): Promis
     const topics = await admin.createTopics({ topics: [topic], partitions: 3, replicas: 1 });
     created = true;
     const topicId = topics.find((item) => item.name === topic)?.id;
-    await vi.waitFor(
-      async () => {
-        const metadata = await producer.metadata({
-          topics: [topic],
-          forceUpdate: true,
-          autocreateTopics: false,
-        });
-        const item = metadata.topics.get(topic);
-        expect(item?.id).toBe(topicId);
-        expect(item?.partitions).toHaveLength(3);
-        for (const partition of item?.partitions ?? [])
-          expect(partition.isr).toContain(partition.leader);
-      },
-      { timeout: 15_000, interval: 100 },
-    );
+    if (topicId === undefined) throw new Error("Owned fixture topic identity is missing.");
+    const seededOffsets = [0n, 0n, 0n];
+    expect(await waitForKafkaTopicOffsets(readiness, topic, topicId, 3)).toEqual(seededOffsets);
     await work({
       topic,
       backend,
@@ -153,10 +144,20 @@ async function withTopic(work: (context: TopicContext) => Promise<void>): Promis
         expect(response, JSON.stringify(response)).toMatchObject({ ok: true });
       },
       seed: async (records): Promise<void> => {
-        for (let offset = 0; offset < records.length; offset += 250)
-          await producer.send({
-            messages: records.slice(offset, offset + 250).map((record) => ({ topic, ...record })),
-          });
+        producer.clearMetadata();
+        for (let offset = 0; offset < records.length; offset += 250) {
+          const batch = records.slice(offset, offset + 250);
+          try {
+            await producer.send({ messages: batch.map((record) => ({ topic, ...record })) });
+          } catch (error) {
+            throw kafkaFixtureFailure("Fixture seed failed without replaying writes", error);
+          }
+          for (const record of batch) seededOffsets[record.partition]! += 1n;
+        }
+        expect(
+          await waitForKafkaTopicOffsets(readiness, topic, topicId, 3),
+          "Fixture broker offsets must match exactly the records seeded, before export",
+        ).toEqual(seededOffsets);
       },
       start: async (overrides = {}): Promise<string> => {
         const request: RecordExportInput = {
@@ -199,6 +200,7 @@ async function withTopic(work: (context: TopicContext) => Promise<void>): Promis
     await disposeNativeFixtureResources([
       (): Promise<void> => backend.shutdown(),
       (): Promise<void> => producer.close(),
+      (): Promise<void> => readiness.close(),
       async (): Promise<void> => {
         if (created) await admin.deleteTopics({ topics: [topic] });
       },
@@ -372,7 +374,7 @@ it("exports protected mixed schemas, malformed records, tombstones and duplicate
     ).toMatchObject({ ok: true });
     await context.connect();
     const operation = await context.finished(await context.start());
-    expect(operation).toMatchObject({
+    expect(operation, JSON.stringify(operation)).toMatchObject({
       state: "completed",
       counts: { writtenRecords: 5, originalUnavailableRecords: 5 },
     });
@@ -389,6 +391,8 @@ it("exports protected mixed schemas, malformed records, tombstones and duplicate
       .map(
         (line) =>
           JSON.parse(line) as {
+            partition: number;
+            offset: string;
             structured: {
               protection: string;
               value: { state: string; text?: string; writerSchema?: { id: number } };
@@ -397,6 +401,13 @@ it("exports protected mixed schemas, malformed records, tombstones and duplicate
             original: { state: string; reason: string };
           },
       );
+    expect(rows.map((row) => `${String(row.partition)}:${row.offset}`).sort()).toEqual([
+      "0:0",
+      "0:1",
+      "1:0",
+      "1:1",
+      "2:0",
+    ]);
     expect(
       rows.every(
         (row) => row.structured.protection === "masked" && row.original.reason === "masked",
