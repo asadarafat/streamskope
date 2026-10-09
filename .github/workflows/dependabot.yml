@@ -3,6 +3,7 @@ name: Dependabot maintenance
 on:
   workflow_run:
     workflows: [CI]
+    branches: ["dependabot/**"]
     types: [completed]
 
 permissions:
