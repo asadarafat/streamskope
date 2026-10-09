@@ -368,6 +368,17 @@ describe("protected Dependabot maintenance", () => {
     expect(fixture.writes).toEqual([]);
   });
 
+  it("accepts a maintainer-triggered CI run on an eligible Dependabot-authored PR", async () => {
+    const fixture = githubFixture();
+    const path = `${PREFIX}/actions/runs/101`;
+    fixture.responses.set(path, {
+      ...(fixture.responses.get(path) as Record<string, unknown>),
+      actor: { login: "maintainer" },
+    });
+    expect((await maintainDependabot(fixture.api, 101)).outcome).toBe("eligible");
+    expect(fixture.writes).toEqual([]);
+  });
+
   it("requests only a protected squash merge bound to the qualified head", async () => {
     const fixture = githubFixture();
     expect(await maintainDependabot(fixture.api, 101, true)).toMatchObject({
