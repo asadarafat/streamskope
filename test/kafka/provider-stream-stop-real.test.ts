@@ -1,8 +1,11 @@
-import { Producer } from "@platformatic/kafka";
+import { setTimeout as delay } from "node:timers/promises";
+
+import { Consumer, findErrorBy, Producer } from "@platformatic/kafka";
 import { expect, it } from "vitest";
 
 import {
   HOST_PROTOCOL_VERSION,
+  parseHostCommandResponse,
   parseHostEvent,
   type HostCommand,
   type HostEvent,
@@ -21,6 +24,15 @@ it("stops a real Kafka reader after the final HTTP client leaves and retains the
   const producer = new Producer({
     bootstrapBrokers: [...fixture.connection.brokers],
     clientId: "streamskope-provider-stop-proof",
+    autocreateTopics: false,
+    retries: 0,
+  });
+  const readiness = new Consumer({
+    bootstrapBrokers: [...fixture.connection.brokers],
+    clientId: "streamskope-provider-stop-readiness",
+    groupId: "streamskope-provider-stop-readiness",
+    connectTimeout: 1_000,
+    requestTimeout: 2_000,
     autocreateTopics: false,
     retries: 0,
   });
@@ -43,6 +55,26 @@ it("stops a real Kafka reader after the final HTTP client leaves and retains the
   try {
     host = await startDevelopmentHost({ backend, port: 0, rendererOrigin, token });
     await fixture.admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
+    // CreateTopics acknowledges metadata creation before every listener can serve offsets.
+    // Readiness is a fixture precondition; messages.start itself remains a single attempt.
+    const readyBy = Date.now() + 10_000;
+    for (;;) {
+      try {
+        const offsets = await readiness.listOffsets({ topics: [topic], timestamp: -1n });
+        if (offsets.get(topic)?.[0] === 0n) break;
+      } catch (error) {
+        const transient =
+          error instanceof Error &&
+          ["UNKNOWN_TOPIC_OR_PARTITION", "LEADER_NOT_AVAILABLE", "NOT_LEADER_OR_FOLLOWER"].some(
+            (code) => findErrorBy(error, "apiId", code) !== null,
+          );
+        if (!transient) throw error;
+      }
+      if (Date.now() >= readyBy)
+        throw new Error("The owned Kafka topic did not expose its empty partition offsets.");
+      readiness.clearMetadata();
+      await delay(100);
+    }
     const response = await fetch(`${host.origin}/events`, {
       headers: { ...headers, accept: "text/event-stream" },
       signal: eventController.signal,
@@ -65,7 +97,10 @@ it("stops a real Kafka reader after the final HTTP client leaves and retains the
       version: HOST_PROTOCOL_VERSION,
     });
     expect(started.status).toBe(200);
-    await expect(started.json()).resolves.toMatchObject({ ok: true });
+    const startResult = parseHostCommandResponse(await started.json());
+    expect(startResult.ok, startResult.ok ? undefined : JSON.stringify(startResult.error)).toBe(
+      true,
+    );
     await producer.send({
       messages: [{ topic, key: Buffer.from("proof"), value: Buffer.from("owned-stop-record") }],
     });
@@ -125,6 +160,7 @@ it("stops a real Kafka reader after the final HTTP client leaves and retains the
     const cleanup = await Promise.allSettled([
       host?.close() ?? backend.shutdown(),
       producer.close(),
+      readiness.close(true),
     ]);
     const fixtureCleanup = await Promise.allSettled([fixture.dispose()]);
     failures.push(
