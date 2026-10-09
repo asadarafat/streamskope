@@ -13,6 +13,7 @@ import type { NatsConnectionInput } from "../../../src/features/nats/application
 
 import { NATS_SERVER_IMAGES } from "./definition";
 import { boundedNatsOperation } from "./client";
+import { ensureNatsImage, NatsImageAvailabilityError } from "./image";
 import { prepareNatsMaterial, writeNatsMaterialConfig } from "./materials";
 
 const execute = promisify(execFile);
@@ -230,12 +231,9 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
       authentication: options.authentication,
     });
     phase = "pinned image availability";
-    try {
-      await run("docker", ["image", "inspect", image], { timeout: 10_000 });
-    } catch {
-      // Separate network/pull work from creating an owned resource.
-      await run("docker", ["pull", "--platform", platform, image], { timeout: 120_000 });
-    }
+    await ensureNatsImage(image, platform, (arguments_, timeout) =>
+      run("docker", arguments_, { timeout }),
+    );
     phase = "owned container creation";
     options.signal?.throwIfAborted();
     await options.onCreating?.();
@@ -395,7 +393,8 @@ export async function startNatsServer(options: NatsServerOptions = {}): Promise<
       publisher,
       dispose,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof NatsImageAvailabilityError) phase += ` (${error.reason})`;
     if (container !== undefined) {
       try {
         const { stdout } = await execute(
