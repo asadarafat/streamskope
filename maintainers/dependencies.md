@@ -1,9 +1,10 @@
 # Dependency maintenance
 
-Dependency changes follow the normal reviewed PR and qualification path. Keep
+Dependency changes follow a protected PR and qualification path. Keep
 exact versions and lockfiles together, inspect the upstream change, and retain
 independent regressions for behavior StreamSkope relies on. Dependency updates
-do not assign a product release version or merge automatically.
+do not assign a product release version. Only the narrow routine tooling policy
+below permits automatic merging after the ordinary GitHub CI gate passes.
 
 ## Review an update
 
@@ -13,9 +14,12 @@ do not assign a product release version or merge automatically.
    A changed mitigated dependency needs deliberate review even when only its
    parent was upgraded. Do not edit hashes or reviewed versions merely to make
    the check pass.
-3. Install the selected dependency graph with `npm ci`, then run the relevant
-   focused regressions and `npm run check`. Record configured live checks and
-   explicit skips using the [qualification procedure](qualification.md).
+3. For manually reviewed changes, install the selected dependency graph with
+   `npm ci`, then run the relevant focused regressions and `npm run check`.
+   Record configured live checks and explicit skips using the
+   [qualification procedure](qualification.md). Accepted routine tooling PRs
+   use the same complete GitHub CI as their acceptance evidence without a
+   duplicate local run.
 4. Require the ordinary PR CI gate before merging. Changes affecting packaged
    dependencies also need the relevant native/package evidence before
    [release draft review](releases.md#review-and-publish-the-draft).
@@ -52,36 +56,100 @@ approved documentation assets.
 
 ## Automated proposals
 
-[Dependabot configuration](../.github/dependabot.yml) checks weekly for updates:
+[Dependabot configuration](../.github/dependabot.yml) checks **monthly** for routine
+minor/patch updates and waits at least **seven days** after an upstream version
+is published. Major upgrades are planned migrations; review them during release
+planning and qualify coupled packages together. The version-update `allow` filter
+does not suppress security updates that require a major version. Node typings
+retain their explicit major-version ignore until the Node runtime is migrated.
 
-| Dependency graph    | Proposal scope                                                                                                             |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Root npm            | Production minor/patch updates; separate UI, browser-testing, native-packaging, build/lint and coordinated Vitest families |
-| `website/promo` npm | Promotional-media tooling, separate from the root npm graph                                                                |
-| GitHub Actions      | Repository workflows                                                                                                       |
-| Python              | Documentation toolchain and the Kafka fixture's OAuth service                                                              |
-| Go                  | EDA capture agent; currently no third-party module requirements                                                            |
+| Dependency graph     | Routine proposal grouping                                                                                                      | Open version PR limit |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| Root npm             | Routine tooling, UI, browser tests, native packaging, production, coordinated Vitest, remaining build/development dependencies | 3                     |
+| `website/promo` npm  | Promotional tooling together, separate from root npm                                                                           | 1                     |
+| GitHub Actions       | Minor/patch workflow actions together                                                                                          | 1                     |
+| `website` Python     | Documentation toolchain together                                                                                               | 1                     |
+| OAuth fixture Python | Click, cffi and the image's other requirements together                                                                        | 1                     |
+| EDA agent Go         | Agent modules; currently no third-party requirements                                                                           | 1                     |
 
-Each entry limits open version-update PRs. Specific development families precede
-the build/lint catchall: a dependency belongs to its first matching group. Vitest
-and its coverage packages share one proposal, including major migrations; verify
-their peer requirements together rather than upgrading coverage independently.
-Other families group minor/patch changes; other majors remain individual proposals.
+Limits cap the number open simultaneously, not the number created per month.
+Specific root families precede the build/lint catchall; a dependency belongs to
+its first matching group. Vitest and coverage remain paired. Python graphs have
+separate entries so a docs change does not pull in an OAuth image migration.
+Grouping reduces proposals; it does not make a group safe to merge automatically.
 
-Node typings stay on the supported Node 24 major. Dependabot ignores only their
-major updates; a maintainer must deliberately migrate the runtime and typings
-together. Minor/patch typings updates remain eligible. The four source mitigations
-and the Handlebars override below are excluded from routine groups, not ignored.
-A parent update can still change a mitigated nested package, so the offline
-validator remains necessary. Group rules apply only to version updates; they do
-not group security updates. These behaviors use the
-[standard Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
+The four source mitigations and the Handlebars override below remain excluded
+from routine groups, not ignored. A parent update can still change a mitigated
+nested package, so the offline validator remains necessary. Groups apply only
+to version updates; security proposals remain separate and prompt, outside the
+monthly schedule and cooldown. See the
+[Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
 
-Repository dependency alerts and automatic security-update proposals are separate
-GitHub settings. The configuration file does not establish that either is enabled;
-maintainers must verify them in the repository's security settings. Security
-proposals still require review and the normal CI gate. See
+Security-update proposals were verified enabled on 2026-10-09. That is a GitHub
+repository setting, not a guarantee supplied by this file. Keep alerts and
+security updates enabled; prioritize affected runtime code and active mitigations.
+Security PRs use the same normal CI gate and only qualify for automatic merging
+if their entire diff satisfies the routine policy. See
 [GitHub's security-update configuration](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/configure-security-updates).
+
+## Routine tooling acceptance
+
+The [classifier](../tools/check/dependabot.ts) is the executable allowlist:
+
+| Direct development dependency | Accepted update                            |
+| ----------------------------- | ------------------------------------------ |
+| `@types/node`                 | Minor/patch within Node 24                 |
+| `typescript-eslint`           | Patch within the currently installed minor |
+| `prettier`                    | Patch within the currently installed minor |
+
+Only root `package.json` and `package-lock.json` may change. Scripts, overrides,
+runtime dependencies, other direct dependencies and manifest metadata must remain
+identical. The complete lockfile is compared: existing TypeScript ESLint internal
+packages may move by patch alongside their owner; existing `undici-types` may
+move within its major alongside Node typings. All other locked packages remain
+identical. New, removed or relocated packages, changed licenses/engines/install
+scripts, registry changes, prereleases and unexpected transitive changes require
+manual review. Exact registry URLs, SHA-512 integrity and development-only
+classification remain required for the accepted entries. Being a `devDependency`
+is insufficient: several UI, packaging and bundled application libraries use
+that field too.
+
+For an accepted **Dependabot-authored PR**, all three ordinary GitHub lanes and
+the final **CI** evidence gate replace duplicate local `npm run check` acceptance.
+Local tests remain useful for diagnosing failures. The exception does not apply
+to changes to this policy, tests, workflows, product code or other dependencies.
+It does not claim a local soak, live EDA/NSP, native package or release result.
+Manually reviewed changes and release preparation retain their existing evidence
+requirements, including affected live, performance and native behavior.
+
+The [maintenance workflow](../.github/workflows/dependabot.yml) runs after a
+successful PR CI run. It uses trusted `main`, the built-in GitHub token and Node
+built-ins; it never installs PR dependencies, executes PR code, or downloads PR
+artifacts with write permission. It rechecks the PR author, repository, head,
+current base, all three jobs plus the aggregate gate, and the active rules
+requiring an up-to-date PR and the GitHub Actions **CI** check. It then classifies
+the manifest and full lockfile and requests a normal squash merge tied to the
+qualified head SHA. GitHub still enforces protection and unresolved reviews.
+
+The automation merges only a ready, qualified head; it does not leave a pending
+auto-merge approval on a PR whose contents could later change. Failures, stale
+heads, behind branches and broader updates stay open. Refresh the next ready PR
+and let its normal CI complete; do not repeatedly refresh the whole backlog.
+The workflow log records its decision, and an automatic merge commit links its
+CI run. API failures do not relax the policy. No additional npm commands, CI
+lanes, personal token or GitHub App are needed.
+
+Maintainers can inspect an existing CI run without merging (using an authenticated
+`GH_TOKEN` supplied privately):
+
+```sh
+GITHUB_REPOSITORY=asadarafat/streamskope node tools/check/dependabot.ts --check CI_RUN_ID
+```
+
+The `--apply` mode is reserved for the trusted workflow. A manual/declined result
+means normal review is required, not that the dependency is necessarily unsafe.
+Existing PRs are evaluated on their next completed CI run; changing the schedule
+does not itself qualify or merge them.
 
 ## Temporary upstream override
 
