@@ -69,7 +69,8 @@ async function approvePlugin(
   await expect(review).toBeVisible();
   if (screenshot !== undefined) await page.screenshot({ path: screenshot, animations: "disabled" });
   await review.getByRole("button", { name: action, exact: true }).click();
-  await expect(review).toHaveCount(0);
+  // Real installation activates the package and refreshes host state before the exit transition.
+  await expect(review).toHaveCount(0, { timeout: 15_000 });
 }
 
 async function expectDialogControlOwnership(dialog: Locator): Promise<void> {
