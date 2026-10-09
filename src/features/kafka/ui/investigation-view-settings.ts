@@ -2,6 +2,7 @@ import { parseKafkaSavedView, type KafkaSavedView } from "../contracts/query-lib
 import { createDefaultKafkaInvestigationView } from "../contracts/investigation-view";
 import { createEmptyKafkaSavedRecordContext } from "../contracts/record-locator";
 import type { KafkaInvestigationQuery } from "../contracts";
+import { parseKafkaPortableView, type KafkaPortableView } from "../contracts/view-transfer";
 
 /** Reviewed settings only; connection and record authority are never carried here. */
 export type KafkaViewSettings = Pick<KafkaSavedView, "configuration" | "view" | "records">;
@@ -16,5 +17,22 @@ export function queryViewSettings(configuration: KafkaInvestigationQuery): Kafka
     configuration,
     view: createDefaultKafkaInvestigationView(),
     records: createEmptyKafkaSavedRecordContext(),
+  });
+}
+
+/** Allocate receiver-local UI keys only when an operator explicitly opens a reviewed view. */
+export function portableViewSettings(
+  input: KafkaPortableView,
+  createId: () => string = () => globalThis.crypto.randomUUID(),
+): KafkaViewSettings {
+  const view = parseKafkaPortableView(input);
+  return parseViewSettings({
+    configuration: view.configuration,
+    view: view.view,
+    records: {
+      selected: view.records.selected,
+      comparison: view.records.comparison,
+      bookmarks: view.records.bookmarks.map((bookmark) => ({ ...bookmark, id: createId() })),
+    },
   });
 }

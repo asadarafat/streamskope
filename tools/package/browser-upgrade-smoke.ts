@@ -208,7 +208,7 @@ interface LocalPredecessorAssets {
 interface TransitionFixture {
   readonly predecessor: BrowserInstallerTarget;
   readonly localAssets?: LocalPredecessorAssets;
-  readonly queryFormat: 1 | 2;
+  readonly queryFormat: 1 | 2 | 3;
 }
 type TransitionEvidence = Omit<BrowserUpgradeEvidence, "checks"> & {
   readonly checks: readonly string[];
@@ -223,6 +223,14 @@ const LOCAL_VIEW_PREDECESSOR: BrowserInstallerTarget = {
   platform: "linux/arm64",
   image: "streamskope:0.10.4-qa.d9a7c7b365eb",
   imageId: "sha256:ac286c6049e3886ff2c025ab2be853cb8cc5ade189767b35cacc4baa07d79e0e",
+};
+
+const LOCAL_RECORD_PREDECESSOR: BrowserInstallerTarget = {
+  version: "0.10.5-qa.9ea327168426",
+  sourceRevision: "9ea327168426188d6df7103f3e42528ca6896e73",
+  platform: "linux/arm64",
+  image: "streamskope:0.10.5-qa.9ea327168426",
+  imageId: "sha256:fe6b85aaa7ed9dc7ebdd702405368b1e3eb3f41f9253b792b368f05406457284",
 };
 
 /** Shared transaction mechanics; public predecessor authority stays in its closed caller. */
@@ -401,10 +409,33 @@ async function verifyTransition(
         filtersOpen: true,
       },
     };
-    const legacyQuery = queryFormat === 1 ? baseQuery : { ...baseQuery, view: expectedView };
+    // Strict locator metadata tests persistence only. Real broker tests establish
+    // provenance and protected reload; no record contents are synthesized here.
+    const locator = {
+      schemaVersion: 1,
+      clusterId: "native-recovery-cluster",
+      topicId: "27c1c482-b9e0-43f2-abd0-ae257fd6a6df",
+      topic: "recovery-orders",
+      partition: 0,
+      offset: "17",
+      leaderEpoch: 4,
+    };
+    const savedRecords = {
+      selected: locator,
+      comparison: { ...locator, offset: "18" },
+      bookmarks: [{ id: "native-position", name: "Native saved position", locator }],
+    };
+    const legacyQuery =
+      queryFormat === 1
+        ? baseQuery
+        : queryFormat === 2
+          ? { ...baseQuery, view: expectedView }
+          : { ...baseQuery, view: expectedView, records: savedRecords };
+
     await fixture.kafkaCommand("queries.put", { query: legacyQuery });
     const queryPath = join(data, "queries", "kafka-queries.json");
     const legacyQueryBytes = await readFile(queryPath);
+    const legacyQueryMetadata = await lstat(queryPath);
     assert.deepEqual(JSON.parse(legacyQueryBytes.toString("utf8")), {
       schemaVersion: queryFormat,
       queries: [legacyQuery],
@@ -443,38 +474,31 @@ async function verifyTransition(
     stage = "view-migration";
     const listed = object((await fixture.kafkaCommand("queries.list", {})).snapshot).queries;
     assert.ok(Array.isArray(listed) && listed.length === 1);
+    const catalog = object((await fixture.kafkaCommand("catalog.list", {})).snapshot);
+    assert.deepEqual(catalog, { durability: "durable", topics: [] });
+    const listedMetadata = await lstat(queryPath);
+    assert.equal(listedMetadata.ino, legacyQueryMetadata.ino);
+    assert.equal(listedMetadata.mtimeMs, legacyQueryMetadata.mtimeMs);
     assert.deepEqual(
       await readFile(queryPath),
       legacyQueryBytes,
-      "Pure candidate listing cannot migrate legacy storage.",
+      "Pure candidate view and catalog listing cannot migrate legacy storage.",
     );
-    // Strict locator metadata tests persistence only. Real broker tests establish
-    // provenance and protected reload; no record contents are synthesized here.
-    const locator = {
-      schemaVersion: 1,
-      clusterId: "native-recovery-cluster",
-      topicId: "27c1c482-b9e0-43f2-abd0-ae257fd6a6df",
-      topic: "recovery-orders",
-      partition: 0,
-      offset: "17",
-      leaderEpoch: 4,
-    };
     const changedView = {
       ...legacyQuery,
+      name: "Native changed recovery view",
       view: expectedView,
-      records: {
-        selected: locator,
-        comparison: { ...locator, offset: "18" },
-        bookmarks: [{ id: "native-position", name: "Native saved position", locator }],
-      },
+      records: savedRecords,
     };
     await fixture.kafkaCommand("queries.put", { query: changedView });
     assert.deepEqual(
-      await readFile(`${queryPath}.${queryFormat === 1 ? "pre-views-v1" : "pre-records-v2"}`),
+      await readFile(
+        `${queryPath}.${queryFormat === 1 ? "pre-views-v1" : queryFormat === 2 ? "pre-records-v2" : "pre-catalog-v3"}`,
+      ),
       legacyQueryBytes,
     );
     assert.deepEqual(JSON.parse((await readFile(queryPath)).toString("utf8")), {
-      schemaVersion: 3,
+      schemaVersion: 4,
       queries: [changedView],
     });
     await fixture.lock();
@@ -661,13 +685,15 @@ async function verifyTransition(
           : [
               ...BROWSER_UPGRADE_CHECKS.map((check) =>
                 check === "exact published predecessor"
-                  ? "exact previously qualified local-staged version-2 predecessor"
+                  ? `exact previously qualified local-staged version-${String(queryFormat)} predecessor`
                   : check === "no-argument resume preserves rolled-back release"
                     ? "exact local-staged rolled-back owner restarts with preserved installation"
                     : check,
               ),
-              "published installation upgraded to actual local version-2 predecessor with complete backup",
-              "locator metadata persistence only; real record reload qualified separately",
+              `published installation upgraded to actual local version-${String(queryFormat)} predecessor with complete backup`,
+              queryFormat === 3
+                ? "view-only format3-to-format4 migration; real broker catalog writes qualified separately"
+                : "locator metadata persistence only; real record reload qualified separately",
             ],
     };
   } catch {
@@ -721,6 +747,35 @@ export async function verifyLocalSavedRecordUpgrade(
       predecessor: LOCAL_VIEW_PREDECESSOR,
       localAssets: options.predecessorAssets,
       queryFormat: 2,
+    }),
+  };
+}
+
+/** Actual retained v3 predecessor; view mutation tests migration without fabricating broker identity. */
+export async function verifyLocalTopicCatalogUpgrade(
+  options: TransitionOptions & { readonly predecessorAssets: LocalPredecessorAssets },
+): Promise<{
+  readonly schemaVersion: 1;
+  readonly deliveryScope: "local-staged";
+  readonly predecessorScope: "previously-qualified-local-v3";
+  readonly outcome: "passed";
+  readonly transition: TransitionEvidence;
+}> {
+  assert.equal(options.target.platform, "linux/arm64");
+  for (const digest of [
+    options.predecessorAssets.topologySha256,
+    options.predecessorAssets.manifestSha256,
+  ])
+    assert.match(digest, /^[a-f0-9]{64}$/u);
+  return {
+    schemaVersion: 1,
+    deliveryScope: "local-staged",
+    predecessorScope: "previously-qualified-local-v3",
+    outcome: "passed",
+    transition: await verifyTransition(options, {
+      predecessor: LOCAL_RECORD_PREDECESSOR,
+      localAssets: options.predecessorAssets,
+      queryFormat: 3,
     }),
   };
 }

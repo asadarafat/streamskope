@@ -92,7 +92,7 @@ it("loads exact legacy bytes without migration, including a no-change save and a
   ]);
 });
 
-it("preserves the exact private predecessor once, then reconstructs topic and standalone-group views from format 3", async () => {
+it("preserves the exact private predecessor once, then reconstructs topic and standalone-group views from format 4", async () => {
   const file = await location();
   await seed(file);
   const library = new KafkaQueryLibrary(new AtomicKafkaQueryFileStore(file));
@@ -120,7 +120,7 @@ it("preserves the exact private predecessor once, then reconstructs topic and st
   };
   await library.put(group);
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-    schemaVersion: 3,
+    schemaVersion: 4,
     queries: [
       { ...legacyEntry, view: changed.view },
       { id: group.id, name: group.name, configuration: null, view: group.view },
@@ -141,13 +141,13 @@ it("preserves the exact private predecessor once, then reconstructs topic and st
   }
 });
 
-it("does not create missing storage on reads and writes fresh format 3 without a fabricated backup", async () => {
+it("does not create missing storage on reads and writes fresh format 4 without a fabricated backup", async () => {
   const file = await location();
   const library = new KafkaQueryLibrary(new AtomicKafkaQueryFileStore(file));
   expect((await library.list()).queries).toEqual([]);
   expect(await readdir(dirname(file))).toEqual([]);
   await library.put(canonical);
-  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ schemaVersion: 3 });
+  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ schemaVersion: 4 });
   expect(await readdir(dirname(file))).toEqual([basename(file)]);
 });
 
@@ -203,7 +203,7 @@ it("reports uncertainty after a real replacement when directory sync fails and p
   expect(String(failure)).toMatch(/replacement occurred.*could not be confirmed/u);
   expect(String(failure)).not.toContain("sentinel-password");
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-    schemaVersion: 3,
+    schemaVersion: 4,
     queries: [{ ...legacyEntry, name: changed.name }],
   });
   expect(await readFile(`${file}.pre-views-v1`, "utf8")).toBe(legacyBytes);
@@ -219,7 +219,9 @@ it("rejects a changed loaded predecessor before creating backups or replacing th
   await store.load();
   const replacement = JSON.stringify({ schemaVersion: 1, queries: [] });
   await writeFile(file, replacement);
-  await expect(store.commit([{ ...canonical, name: "Stale" }])).rejects.toThrow("not replaced");
+  await expect(
+    store.commit({ queries: [{ ...canonical, name: "Stale" }], topics: [] }),
+  ).rejects.toThrow("not replaced");
   expect(await readFile(file, "utf8")).toBe(replacement);
   expect(await readdir(dirname(file))).toEqual([basename(file)]);
 });
@@ -245,9 +247,9 @@ it("rechecks the predecessor after preparing the replacement and preserves exter
 it("does not overwrite a library created after an initially absent load", async () => {
   const file = await location();
   const store = new AtomicKafkaQueryFileStore(file);
-  expect(await store.load()).toEqual([]);
+  expect(await store.load()).toEqual({ queries: [], topics: [] });
   await seed(file);
-  await expect(store.commit([])).rejects.toThrow("not replaced");
+  await expect(store.commit({ queries: [], topics: [] })).rejects.toThrow("not replaced");
   expect(await readFile(file, "utf8")).toBe(legacyBytes);
   expect(await readdir(dirname(file))).toEqual([basename(file)]);
 });
@@ -301,7 +303,7 @@ it.each(["corrupt", "future", "canonical-in-legacy", "oversized"] as const)(
       kind === "corrupt"
         ? "{"
         : kind === "future"
-          ? JSON.stringify({ schemaVersion: 4, queries: [] })
+          ? JSON.stringify({ schemaVersion: 5, queries: [] })
           : kind === "canonical-in-legacy"
             ? JSON.stringify({ schemaVersion: 1, queries: [canonical] })
             : "x".repeat(1_048_577);
@@ -323,9 +325,9 @@ it.skipIf(process.platform === "win32").each(["symlink", "hardlink", "directory"
     else if (kind === "hardlink") await link(target, file);
     else await mkdir(file);
     await expect(new AtomicKafkaQueryFileStore(file).load()).rejects.toThrow("unreadable");
-    await expect(new AtomicKafkaQueryFileStore(file).commit([canonical])).rejects.toThrow(
-      "not replaced",
-    );
+    await expect(
+      new AtomicKafkaQueryFileStore(file).commit({ queries: [canonical], topics: [] }),
+    ).rejects.toThrow("not replaced");
     expect(await readFile(target, "utf8")).toBe(legacyBytes);
   },
 );
@@ -397,12 +399,13 @@ it("keeps near-capacity legacy libraries readable and mutable using compact defa
   ).toBeGreaterThan(1_048_576);
   await library.put(loaded.queries[0]!);
   await expect(
-    store.commit(
-      loaded.queries.map((view) => ({
+    store.commit({
+      queries: loaded.queries.map((view) => ({
         ...view,
         view: { ...view.view, messages: { ...view.view.messages, filtersOpen: true } },
       })),
-    ),
+      topics: [],
+    }),
   ).rejects.toThrow("1 MiB");
   expect(await readFile(file, "utf8")).toBe(source);
   expect(await readdir(dirname(file))).toEqual([basename(file)]);
@@ -411,7 +414,7 @@ it("keeps near-capacity legacy libraries readable and mutable using compact defa
   const migrated = await readFile(file, "utf8");
   expect(Buffer.byteLength(migrated)).toBeLessThanOrEqual(1_048_576);
   expect(migrated).not.toContain('"view":');
-  expect(JSON.parse(migrated)).toMatchObject({ schemaVersion: 3 });
+  expect(JSON.parse(migrated)).toMatchObject({ schemaVersion: 4 });
   expect(await readFile(`${file}.pre-views-v1`, "utf8")).toBe(source);
   expect((await library.list()).queries[0]).toEqual(changed);
   await library.delete(changed.id);
@@ -454,7 +457,7 @@ it("leaves real format-2 views unchanged on inspection and no-op mutation, then 
   };
   await library.put(saved, canonical);
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-    schemaVersion: 3,
+    schemaVersion: 4,
     queries: [{ ...legacyEntry, records: saved.records }],
   });
   expect(await readFile(`${file}.pre-records-v2`, "utf8")).toBe(versionTwoBytes);

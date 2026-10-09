@@ -73,6 +73,8 @@ def inspect_message_limits(page=None):
         "const {KAFKA_QUERY_LIBRARY_LIMITS:l}=require('./src/features/kafka/contracts/query-library.ts');"
         "const {KAFKA_RECORD_LOCATOR_LIMITS:b}=require('./src/features/kafka/contracts/record-locator.ts');"
         "const {KAFKA_QUERY_TRANSFER_LIMITS:t}=require('./src/features/kafka/contracts/query-transfer.ts');"
+        "const {KAFKA_VIEW_TRANSFER_LIMITS:v}=require('./src/features/kafka/contracts/view-transfer.ts');"
+        "const {KAFKA_TOPIC_CATALOG_LIMITS:n}=require('./src/features/kafka/contracts/topic-catalog.ts');"
         "const {KAFKA_ORIGINAL_RECORD_LIMITS:o}=require('./src/features/kafka/contracts/record-bytes.ts');"
         "const {RECORD_EXPORT_LIMITS:r}=require('./src/features/kafka/contracts/record-export.ts');"
         "const {RECORD_ANALYSIS_LIMITS:a}=require('./src/features/kafka/contracts/record-analysis.ts');"
@@ -86,6 +88,7 @@ def inspect_message_limits(page=None):
         "rangeMs:r.durationMs,rangeDownloadMs:r.downloadDurationMs,rangePasses:r.passes,rangeTtl:r.artifactLifetimeMs,rangeDownloads:r.downloads,rangeReceipt:r.receiptBytes,"
         "analysisColumns:a.columns,analysisPath:a.pathCharacters,analysisSegments:a.pathSegments,analysisGroups:a.groups,"
         "analysisKey:a.groupKeyBytes,analysisCell:a.cellBytes,analysisRows:a.previewRows,analysisPreview:a.previewBytes,analysisResult:a.resultBytes,analysisWork:a.work,analysisRecordWork:a.recordWork,"
+        "viewBytes:v.documentBytes,noteTopics:n.topics,noteDescription:n.descriptionBytes,noteOwner:n.ownerCharacters,noteLabels:n.labels,noteLinks:n.links,"
         "queries:l.queries,libraryBytes:l.fileBytes,queryBytes:t.documentBytes,bookmarksPerView:b.bookmarksPerView,bookmarksPerLibrary:b.bookmarksPerLibrary}));",
     ], cwd=ROOT, text=True))
     expected = {
@@ -114,7 +117,9 @@ def inspect_message_limits(page=None):
         "Analysis result": f"{limits['analysisResult'] / 1024:g} KiB",
         "Analysis evaluation work": f"{limits['analysisWork']:,} units",
         "Analysis work per record": f"{limits['analysisRecordWork']:,} units",
-        "Saved view library": f"{limits['queries']} views / {limits['libraryBytes'] / 1_048_576:g} MiB",
+        "Saved view and topic-note library": f"{limits['queries']} views / {limits['noteTopics']} annotated topics / {limits['libraryBytes'] / 1_048_576:g} MiB",
+        "Portable view document": f"{limits['viewBytes'] / 1024:g} KiB",
+        "Local topic notes": f"{limits['noteDescription']:,} UTF-8 description bytes / {limits['noteOwner']} owner characters / {limits['noteLabels']} labels / {limits['noteLinks']} links",
         "Saved bookmarks": f"{limits['bookmarksPerView']} per view / {limits['bookmarksPerLibrary']} per library",
         "Portable query document": f"{limits['queryBytes'] / 1024:g} KiB",
     }

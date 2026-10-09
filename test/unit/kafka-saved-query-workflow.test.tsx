@@ -257,7 +257,9 @@ it("opens a group-only saved view and clearly disables query-only export", async
   );
   await user.click(await screen.findByRole("combobox", { name: "Saved view" }));
   await user.click(await screen.findByRole("option", { name: "Payments group" }));
-  await user.click(screen.getByText("Import/share query settings"));
+  await user.click(screen.getByText("Import/share investigations"));
+  await user.click(screen.getByText("Query settings only"));
+  expect(screen.getByRole("button", { name: "Export view JSON" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Export query JSON" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Copy query link" })).toBeDisabled();
   expect(screen.getByText(/This view has no query settings to export/)).toBeVisible();

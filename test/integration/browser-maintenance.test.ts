@@ -384,7 +384,7 @@ describe.skipIf(process.platform !== "linux")(
       assertPrivate(rolledBack);
     }, 30_000);
 
-    it("retains all three view generations and protected siblings in the complete ownership-held backup", async () => {
+    it("retains all four investigation-library generations and protected siblings in the complete ownership-held backup", async () => {
       const { host, next } = await initialized();
       const queries = join(host.data, "queries");
       await mkdir(queries, { mode: 0o700 });
@@ -409,37 +409,48 @@ describe.skipIf(process.platform !== "linux")(
       await writeFile(`${path}.pre-views-v1`, source, { mode: 0o600 });
       // A genuine v2 disk document may compact the exact default presentation.
       const versionTwo = source.replace('"schemaVersion": 1,', '"schemaVersion": 2,');
-      await writeFile(path, versionTwo, { mode: 0o600 });
+      await writeFile(`${path}.pre-records-v2`, versionTwo, { mode: 0o600 });
+      const versionThree = source.replace('"schemaVersion": 1,', '"schemaVersion": 3,');
+      await writeFile(path, versionThree, { mode: 0o600 });
       const store = new AtomicKafkaQueryFileStore(path);
-      const [legacy] = await store.load();
+      const {
+        queries: [legacy],
+      } = await store.load();
       expect(legacy).toBeDefined();
-      await store.commit([
-        {
-          ...legacy!,
-          name: "Updated investigation",
-          view: {
-            schemaVersion: 1,
-            destination: { kind: "topic", workspace: "monitor" },
-            messages: {
-              visibleColumns: ["key", "preview"],
-              columnWidths: [],
-              inspectorWidth: 400,
-              filtersOpen: true,
+      await store.commit({
+        queries: [
+          {
+            ...legacy!,
+            name: "Updated investigation",
+            view: {
+              schemaVersion: 1,
+              destination: { kind: "topic", workspace: "monitor" },
+              messages: {
+                visibleColumns: ["key", "preview"],
+                columnWidths: [],
+                inspectorWidth: 400,
+                filtersOpen: true,
+              },
             },
           },
-        },
-      ]);
+        ],
+        topics: [],
+      });
       const lease = await stat(join(host.data, "vault.lock"));
       const expected = await dataBytes(host);
       for (const file of [
         "queries/kafka-queries.json",
         "queries/kafka-queries.json.pre-views-v1",
         "queries/kafka-queries.json.pre-records-v2",
+        "queries/kafka-queries.json.pre-catalog-v3",
       ])
         (expected as Map<string, Buffer>).set(file, await readFile(join(host.data, file)));
       expect(expected.get("queries/kafka-queries.json.pre-views-v1")?.toString()).toBe(source);
       expect(expected.get("queries/kafka-queries.json.pre-records-v2")?.toString()).toBe(
         versionTwo,
+      );
+      expect(expected.get("queries/kafka-queries.json.pre-catalog-v3")?.toString()).toBe(
+        versionThree,
       );
       await host.control({ verifyLeaseDuringDeploy: true });
       const result = await host.run(next.file, ["upgrade"]);

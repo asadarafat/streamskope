@@ -22,10 +22,11 @@ import { RelationshipsPage } from "./RelationshipsPage";
 import { ObservedHealthPage } from "./ObservedHealthPage";
 import { ConnectPage } from "./ConnectPage";
 import { EnvironmentPage } from "./EnvironmentPage";
-import { ReviewedWriteAction } from "./ReviewedWriteAction";
 import { useInvestigationRecords, workbenchRecordScope } from "./use-investigation-records";
 import { SavedRecordPositions } from "./SavedRecordPositions";
 import { SavedViewsDialog } from "./SavedViewsDialog";
+import { ReviewedWriteAction } from "./ReviewedWriteAction";
+import { useLocalTopicNotesDialog } from "./use-local-topic-notes-dialog";
 import { useInvestigationViews } from "./use-investigation-views";
 import type { KafkaViewSettings } from "./investigation-view-settings";
 import { ActivityLogDrawer } from "./ActivityLogDrawer";
@@ -201,6 +202,7 @@ export function StreamSkopeWorkbench({
 
   const gridSelection = selectKafkaMessageById(visibleMessages, selectedMessageId);
   const recordScope = workbenchRecordScope(state, consumptionStopping || continuationBusy);
+  const topicNotes = useLocalTopicNotesDialog(host, recordScope, selectedTopic);
   const records = useInvestigationRecords({ host, ...recordScope });
 
   useRendererStreamMonitorLifecycle({
@@ -845,16 +847,11 @@ export function StreamSkopeWorkbench({
     ) : (
       <TopicDetailPage
         key={views.revision}
-        action={
-          <ReviewedWriteAction
-            key={selectedTopic}
-            host={host}
-            topic={selectedTopic}
-            disabled={
-              !connected || state.preferenceSnapshot?.preferences.protection.readOnly !== false
-            }
-          />
+        host={host}
+        canProduce={
+          connected && state.preferenceSnapshot?.preferences.protection.readOnly === false
         }
+        onOpenTopicNotes={topicNotes.openCurrent}
         onWorkspaceChange={changeTopicWorkspace}
         selectedTopic={selectedTopic}
         workspace={topicWorkspace}
@@ -942,8 +939,14 @@ export function StreamSkopeWorkbench({
                 views.restore(settings, profileId);
               }}
               restoreError={views.error}
+              onOpenTopicNotes={() => {
+                setBookmarkCandidate(undefined);
+                views.close();
+                topicNotes.openLibrary();
+              }}
             />
           ) : null}
+          {topicNotes.dialog}
           <WorkbenchCommandPalette
             actions={investigationCommands({
               connected,

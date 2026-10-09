@@ -178,7 +178,7 @@ test("saves record positions through the UI and reloads current protected eviden
     const file = join(dataRoot, "queries", "kafka-queries.json");
     const beforeRestart = await readFile(file, "utf8");
     const stored = inspectKafkaQueryLibraryDocument(JSON.parse(beforeRestart));
-    expect(stored.schemaVersion).toBe(3);
+    expect(stored.schemaVersion).toBe(4);
     expect(stored.queries).toHaveLength(2);
     const records = stored.queries.find((entry) => entry.name === "Record investigation")!.records;
     expect(records.selected).not.toBeNull();
@@ -291,7 +291,7 @@ test("saves record positions through the UI and reloads current protected eviden
     await info.attach("record-bookmark-evidence", {
       body: Buffer.from(
         JSON.stringify({
-          schemaVersion: 3,
+          schemaVersion: 4,
           restart: true,
           selectedAndBaselineRestored: true,
           bookmarkedGroupNavigation: true,

@@ -311,7 +311,10 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
     await new AtomicKafkaTopicConfigurationHistoryFileStore(
       join(root, "history/kafka-topic-configuration-history.json"),
     ).commit({ entries: [] });
-    await new AtomicKafkaQueryFileStore(join(root, "queries/kafka-queries.json")).commit([]);
+    await new AtomicKafkaQueryFileStore(join(root, "queries/kafka-queries.json")).commit({
+      queries: [],
+      topics: [],
+    });
     await new AtomicKafkaTrustRecipeFileStore(
       join(root, "templates/trust-acquisition-recipes.json"),
     ).commit({ version: 1, recipes: [] });
@@ -337,13 +340,13 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
     });
     for (const kind of ["rules", "topic-history", "trust-recipes", "observations"])
       expect(row(report, kind)).toMatchObject({ state: "verified", formats: [1] });
-    expect(row(report, "queries")).toMatchObject({ state: "verified", formats: [3] });
+    expect(row(report, "queries")).toMatchObject({ state: "verified", formats: [4] });
     expect(row(report, "preferences")).toMatchObject({ state: "verified", formats: [2] });
     for (const method of [kafkaLoad, natsLoad, network, fetch])
       expect(method).not.toHaveBeenCalled();
   });
 
-  it("inspects actual v1, v2 and v3 libraries and both bounded predecessor families without migration", async () => {
+  it("inspects actual v1–v4 libraries and all bounded predecessor families without migration", async () => {
     const root = await seed();
     const legacy = `${JSON.stringify({ schemaVersion: 1, queries: [legacyQuery] }, null, 2)}\n`;
     await write(root, "queries/kafka-queries.json", legacy);
@@ -390,6 +393,38 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
       state: "verified",
       count: 1,
       formats: [1, 2, 3],
+    });
+    for (const suffix of ["", ".1", ".99"])
+      await write(
+        root,
+        `queries/kafka-queries.json.pre-catalog-v3${suffix}`,
+        JSON.stringify({ schemaVersion: 3, queries: [currentView] }),
+      );
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({
+        schemaVersion: 4,
+        queries: [currentView],
+        topics: [
+          {
+            identity: {
+              clusterId: "test-cluster",
+              topicId: "27c18089-9994-426f-8d24-0b92e63157bf",
+              topic: "orders",
+            },
+            description: "Investigate delivery",
+            owner: "Operations",
+            labels: ["review"],
+            links: [],
+          },
+        ],
+      }),
+    );
+    expect(row(await check(root), "queries")).toMatchObject({
+      state: "verified",
+      count: 1,
+      formats: [1, 2, 3, 4],
     });
     expect(load).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
@@ -494,6 +529,44 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
       });
     },
   );
+
+  it.each([".0", ".01", ".100", ".tmp"])(
+    "refuses unrecognized catalog predecessor suffix %s",
+    async (suffix) => {
+      const root = await seed();
+      await write(
+        root,
+        `queries/kafka-queries.json.pre-catalog-v3${suffix}`,
+        JSON.stringify({ schemaVersion: 3, queries: [currentView] }),
+      );
+      expect(row(await check(root), "filesystem")).toMatchObject({
+        state: "blocked",
+        reason: "unrecognized-path",
+      });
+    },
+  );
+
+  it.each([
+    JSON.stringify({ schemaVersion: 2, queries: [currentView] }),
+    JSON.stringify({ schemaVersion: 4, queries: [] }),
+    JSON.stringify({ schemaVersion: 3, queries: [{ ...currentView, payload: secret }] }),
+    `{${secret}`,
+  ])("refuses invalid v3 predecessor bytes without changing siblings", async (contents) => {
+    const root = await seed();
+    await write(
+      root,
+      "queries/kafka-queries.json",
+      JSON.stringify({ schemaVersion: 4, queries: [] }),
+    );
+    await write(root, "queries/kafka-queries.json.pre-catalog-v3", contents);
+    expect(row(await check(root), "queries")).toMatchObject({
+      state: "blocked",
+      reason: "unsupported-format",
+    });
+    expect(await readFile(join(root, "queries/kafka-queries.json.pre-catalog-v3"), "utf8")).toBe(
+      contents,
+    );
+  });
 
   it.each([
     JSON.stringify({ schemaVersion: 1, queries: [legacyQuery] }),

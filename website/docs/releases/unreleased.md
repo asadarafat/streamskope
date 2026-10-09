@@ -69,3 +69,16 @@ limits or cancellation produce an explicit partial result. Analysis uses the sam
 finite reader as range export; results are temporary and cleared on reconnect,
 lock or changed record settings. See
 [range analysis](../guide/messages.md#count-and-inspect-a-range).
+
+Saved investigation views can now travel as reviewed JSON files containing layout,
+query settings and unloaded record positions. Imports exclude local IDs,
+credentials and record bodies; connecting, reloading and saving remain explicit.
+Local topic notes add descriptions, owners, labels and HTTPS links associated with
+verified Kafka cluster/topic identities. Recreated topics do not inherit old notes,
+and disconnected users can review or remove orphaned entries. See
+[portable investigations and local notes](../guide/messages.md#share-an-investigation).
+
+The first view or note mutation adopts investigation-library format 4 and preserves
+the exact earlier file. Older hosts require a complete compatible backup before
+rollback; reading old libraries alone does not migrate them. See
+[library recovery](../guide/recovery.md#saved-view-library-recovery).

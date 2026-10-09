@@ -42,6 +42,7 @@ import {
   type ObservationScope,
   type OffsetResetScope,
   type RecordReadScope,
+  type TopicCatalogScope,
   type ReviewedWriteScope,
 } from "./connection-scope";
 
@@ -143,6 +144,10 @@ export class KafkaApplicationSession {
 
   observationScope(): ObservationScope | null {
     return this.scopes.observation();
+  }
+
+  topicCatalogScope(): TopicCatalogScope | null {
+    return this.scopes.topicCatalog();
   }
 
   recordReadScope(): RecordReadScope | null {

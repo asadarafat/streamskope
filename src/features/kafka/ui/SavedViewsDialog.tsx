@@ -22,8 +22,8 @@ import type { KafkaRecordLocator } from "../contracts/record-locator";
 
 import { SavedViewBookmarks } from "./SavedViewBookmarks";
 import { useInvestigationLibrary } from "./use-investigation-library";
-import { queryViewSettings, type KafkaViewSettings } from "./investigation-view-settings";
-import { QueryTransferControls } from "./QueryTransferControls";
+import { type KafkaViewSettings } from "./investigation-view-settings";
+import { InvestigationTransferControls } from "./InvestigationTransferControls";
 import {
   browserTextDocumentTransfer,
   type TextDocumentTransferPort,
@@ -42,6 +42,7 @@ export function SavedViewsDialog({
   transfer = browserTextDocumentTransfer,
   initialImport,
   bookmarkCandidate,
+  onOpenTopicNotes,
 }: {
   readonly host: StreamSkopeHost;
   readonly profiles: readonly ProfileSummary[];
@@ -55,6 +56,7 @@ export function SavedViewsDialog({
   readonly transfer?: TextDocumentTransferPort | undefined;
   readonly initialImport?: string | undefined;
   readonly bookmarkCandidate?: KafkaRecordLocator | undefined;
+  readonly onOpenTopicNotes?: (() => void) | undefined;
 }): React.JSX.Element {
   const { snapshot, busy, error: hostError, execute, refresh } = useInvestigationLibrary(host);
   const [selectedId, setSelectedId] = useState("");
@@ -313,23 +315,39 @@ export function SavedViewsDialog({
           ) : null}
           <details open={initialImport !== undefined}>
             <Typography component="summary" variant="body2">
-              Import/share query settings
+              Import/share investigations
             </Typography>
-            <QueryTransferControls
+            <InvestigationTransferControls
               transfer={transfer}
-              captureExport={() =>
-                selected ? selected.configuration : captureCurrent().configuration
+              captureExport={() => ({
+                settings:
+                  selected === undefined
+                    ? captureCurrent()
+                    : {
+                        configuration: selected.configuration,
+                        view: selected.view,
+                        records: selected.records,
+                      },
+                suggestedName: selected?.name ?? null,
+              })}
+              viewExportAvailable={selected !== undefined || currentResource !== null}
+              queryExportAvailable={
+                selected ? selected.configuration !== null : currentQueryAvailable
               }
-              exportAvailable={selected ? selected.configuration !== null : currentQueryAvailable}
               profiles={profiles}
               readActive={readActive}
-              onRestore={(query, id) => onRestore(queryViewSettings(query), id)}
+              onRestore={onRestore}
               initialImport={initialImport}
             />
           </details>
         </Stack>
       </DialogContent>
       <DialogActions>
+        {onOpenTopicNotes === undefined ? null : (
+          <Button disabled={busy} onClick={onOpenTopicNotes}>
+            Local topic notes
+          </Button>
+        )}
         <Button disabled={busy} onClick={() => void refresh()}>
           Refresh views
         </Button>

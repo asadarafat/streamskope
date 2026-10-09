@@ -65,6 +65,11 @@ export interface OffsetResetScope extends ReviewAuthority {
   ) => MutationDispatch<OffsetResetResult>;
 }
 
+/** Metadata-only authority for associating local notes with a real broker resource. */
+export interface TopicCatalogScope extends ReviewAuthority {
+  readonly describeTopicIdentity?: (topic: string) => Promise<KafkaWriteDestination>;
+}
+
 export interface ObservationRecordReader {
   openMessageStream(request: KafkaFetchRequest, signal: AbortSignal): Promise<KafkaMessageStream>;
 }
@@ -105,6 +110,23 @@ export class KafkaConnectionScopes {
   private readonly identities = new WeakMap<KafkaActiveConnection, object>();
 
   constructor(private readonly context: () => ConnectionScopeContext | null) {}
+
+  topicCatalog(): TopicCatalogScope | null {
+    const active = this.context();
+    if (active === null) return null;
+    const context = { ...active };
+    const { connection } = context;
+    return {
+      connectionName: context.connectionName,
+      isCurrent: (): boolean => this.current(context),
+      ...(connection.describeTopicIdentity === undefined
+        ? {}
+        : {
+            describeTopicIdentity: (topic: string): Promise<KafkaWriteDestination> =>
+              this.readReviewed(context, () => connection.describeTopicIdentity!(topic)),
+          }),
+    };
+  }
 
   recordRead(): RecordReadScope | null {
     const active = this.context();

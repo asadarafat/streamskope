@@ -42,21 +42,24 @@ describe("versioned investigation view contracts", () => {
     expect(inspectKafkaQueryLibraryDocument(document)).toEqual({
       schemaVersion: 1,
       queries: [saved],
+      topics: [],
     });
     expect(parseKafkaQueryLibraryDocument(document)).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       queries: [saved],
+      topics: [],
     });
     expect(JSON.stringify(document)).toBe(original);
     expect(createDefaultKafkaInvestigationView()).toEqual(defaultView);
   });
 
   it("compacts only default disk descriptors without weakening wire entries or snapshots", () => {
-    const stored = serializeKafkaQueryLibraryDocument([saved]);
-    expect(JSON.parse(stored)).toEqual({ schemaVersion: 3, queries: [legacy] });
+    const stored = serializeKafkaQueryLibraryDocument({ queries: [saved], topics: [] });
+    expect(JSON.parse(stored)).toEqual({ schemaVersion: 4, queries: [legacy] });
     expect(inspectKafkaQueryLibraryDocument(JSON.parse(stored))).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       queries: [saved],
+      topics: [],
     });
     expect(() => parseKafkaSavedView(legacy)).toThrow();
     expect(() =>
@@ -88,8 +91,9 @@ describe("versioned investigation view contracts", () => {
       expect(entry.configuration?.request.topic).toBe("orders");
       expect(entry.view.destination).toEqual({ kind: "topic", workspace });
       expect(
-        parseKafkaQueryLibraryDocument(JSON.parse(serializeKafkaQueryLibraryDocument([entry])))
-          .queries,
+        parseKafkaQueryLibraryDocument(
+          JSON.parse(serializeKafkaQueryLibraryDocument({ queries: [entry], topics: [] })),
+        ).queries,
       ).toEqual([entry]);
     },
   );
@@ -106,7 +110,9 @@ describe("versioned investigation view contracts", () => {
       };
       const entry = parseKafkaSavedView(group);
       expect(entry).toEqual(group);
-      const serialized: unknown = JSON.parse(serializeKafkaQueryLibraryDocument([entry]));
+      const serialized: unknown = JSON.parse(
+        serializeKafkaQueryLibraryDocument({ queries: [entry], topics: [] }),
+      );
       expect(serialized).toMatchObject({
         queries: [{ view: { destination: { groupId: "orders-workers" } } }],
       });
@@ -193,7 +199,7 @@ describe("versioned investigation view contracts", () => {
   });
 
   it.each([
-    { schemaVersion: 4, queries: [saved] },
+    { schemaVersion: 5, queries: [saved] },
     { schemaVersion: 1, queries: [saved] },
     { schemaVersion: 1, queries: [{ ...legacy, configuration: null }] },
     { schemaVersion: 3, queries: [saved, { ...saved, name: "Other" }] },

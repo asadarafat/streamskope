@@ -220,6 +220,32 @@ follow the actual strict parsers instead of assuming an optional field is compat
 with an older exact-key parser. Plugin manifests declare their own API and desktop
 interval. See [release/version rules](releases.md) before changing either boundary.
 
+## Investigation library ownership
+
+Saved views and local topic annotations share one bounded document and one
+[serialized application owner](../src/features/kafka/application/query-library.ts).
+A mutation reads the entire current state, compares expected annotations, validates
+capacity and commits atomically without dropping the other feature's data.
+Legacy reads are pure; a real mutation preserves the actual predecessor before
+writing format 4. Browser preflight and maintenance inspect the same format and
+backup families.
+
+[Topic catalog scope](../src/features/kafka/application/connection-scope.ts) exposes
+metadata-only identity lookup from one captured connection. The
+[catalog service](../src/features/kafka/application/topic-catalog-service.ts)
+rechecks the broker's cluster/topic UUID and connection generation before local
+commit admission. A later disconnect cannot erase an admitted disk-write receipt.
+Listing and removing orphaned notes need no broker connection; names alone never
+establish identity.
+
+[Portable-view contracts](../src/features/kafka/contracts/view-transfer.ts) strip
+local identities and contain no record bodies, credentials or catalog notes.
+Parsing and review do not create IDs or dispatch host operations. Explicit opening
+creates new transient bookmark IDs and uses the existing passive restore/confirmed
+stop path; only Save changes durable storage. Host protocol 61 adds the catalog
+commands; older paired hosts/renderers are rejected by the strict protocol parser.
+Plugin API compatibility is unchanged.
+
 ## Choose a safe first change
 
 | Change                                          | Review focus and evidence                                                                                                                                                                        |

@@ -117,7 +117,7 @@ describe("durable record positions", () => {
       }),
     ).toThrow();
   });
-  it("converts actual v1/v2 files purely but writes compact v3 only", () => {
+  it("converts actual v1/v2 files purely but writes compact v4 only", () => {
     const view = createDefaultKafkaInvestigationView();
     for (const doc of [
       { schemaVersion: 1, queries: [legacy] },
@@ -127,13 +127,19 @@ describe("durable record positions", () => {
       expect(inspectKafkaQueryLibraryDocument(doc)).toEqual({
         schemaVersion: doc.schemaVersion,
         queries: [{ ...legacy, view, records: empty }],
+        topics: [],
       });
       expect(JSON.stringify(doc)).toBe(before);
     }
     expect(
-      JSON.parse(serializeKafkaQueryLibraryDocument([{ ...legacy, view, records: empty }])),
+      JSON.parse(
+        serializeKafkaQueryLibraryDocument({
+          queries: [{ ...legacy, view, records: empty }],
+          topics: [],
+        }),
+      ),
     ).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       queries: [legacy],
     });
     expect(() =>

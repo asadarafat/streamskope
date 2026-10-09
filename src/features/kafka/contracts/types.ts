@@ -85,7 +85,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 60 as const;
+export const HOST_PROTOCOL_VERSION = 61 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -182,6 +182,10 @@ export const HOST_COMMANDS = [
   "latency.start",
   "latency.stop",
   "latency.export",
+  "catalog.list",
+  "catalog.load",
+  "catalog.put",
+  "catalog.delete",
   "queries.list",
   "queries.put",
   "queries.delete",
@@ -384,6 +388,7 @@ export interface HostCommandBase {
 }
 
 type HostCommandDefinition =
+  | import("./topic-catalog-protocol").TopicCatalogCommand
   | import("./record-locator-protocol").RecordLocatorCommand
   | import("./record-analysis-protocol").RecordAnalysisCommand
   | import("./record-export-protocol").RecordExportCommand

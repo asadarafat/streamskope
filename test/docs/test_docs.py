@@ -69,7 +69,8 @@ class DocumentationLimitTests(unittest.TestCase):
     def test_rejects_a_stale_operator_limit(self):
         source = (docs.WEBSITE / "docs/guide/data-handling.md").read_text()
         for boundary in ("Retained message bytes", "Broker search pass", "Read continuation",
-                         "Saved view library", "Portable query document"):
+                         "Saved view and topic-note library", "Portable query document",
+                         "Portable view document", "Local topic notes"):
             with self.subTest(boundary=boundary):
                 changed, count = re.subn(
                     r"(\|\s*" + re.escape(boundary) + r"\s*\|)[^|]+",

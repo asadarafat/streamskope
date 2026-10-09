@@ -10,6 +10,7 @@ import type {
   PluginChangePrompt,
 } from "../../../plugins/contracts";
 
+import type { TopicCatalogResults } from "./topic-catalog-protocol";
 import type { RecordAnalysisResults } from "./record-analysis-protocol";
 import type { RecordLocatorResults } from "./record-locator-protocol";
 import type { RecordExportResults } from "./record-export-protocol";
@@ -34,7 +35,8 @@ interface SpecificCommandResults
     AclReviewResults,
     RecordExportResults,
     RecordAnalysisResults,
-    RecordLocatorResults {
+    RecordLocatorResults,
+    TopicCatalogResults {
   readonly "relationships.capture": {
     readonly correlationId: string;
     readonly graph: import("./relationships").RelationshipGraph;
@@ -228,6 +230,10 @@ const structuredResults = {
   "records.batch.apply": true,
   "writes.review": true,
   "writes.apply": true,
+  "catalog.list": true,
+  "catalog.load": true,
+  "catalog.put": true,
+  "catalog.delete": true,
   "queries.list": true,
   "queries.put": true,
   "queries.delete": true,

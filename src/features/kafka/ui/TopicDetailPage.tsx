@@ -1,19 +1,28 @@
 import Box from "@mui/material/Box";
+import Stack from "@mui/material/Stack";
+
+import { StudioButton } from "../../../platform/ui/controls";
+import type { StreamSkopeHost } from "../contracts";
 
 import { ResourcePageHeader, TopicSectionTabs } from "./ResourcePageHeader";
+import { ReviewedWriteAction } from "./ReviewedWriteAction";
 import type { TopicWorkspaceView } from "./WorkbenchContextBar";
 
 interface TopicDetailPageProperties {
-  readonly action?: React.ReactNode;
+  readonly host: StreamSkopeHost;
+  readonly canProduce: boolean;
   readonly children: React.ReactNode;
+  readonly onOpenTopicNotes: () => void;
   readonly onWorkspaceChange: (workspace: TopicWorkspaceView) => void;
   readonly selectedTopic: string;
   readonly workspace: TopicWorkspaceView;
 }
 
 export function TopicDetailPage({
-  action,
+  host,
+  canProduce,
   children,
+  onOpenTopicNotes,
   onWorkspaceChange,
   selectedTopic,
   workspace,
@@ -32,7 +41,21 @@ export function TopicDetailPage({
         overflow: "hidden",
       }}
     >
-      <ResourcePageHeader action={action} compact title={selectedTopic} />
+      <ResourcePageHeader
+        action={
+          <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
+            <StudioButton onClick={onOpenTopicNotes}>Local topic notes</StudioButton>
+            <ReviewedWriteAction
+              key={selectedTopic}
+              host={host}
+              topic={selectedTopic}
+              disabled={!canProduce}
+            />
+          </Stack>
+        }
+        compact
+        title={selectedTopic}
+      />
       <TopicSectionTabs onChange={onWorkspaceChange} value={workspace} />
       <Box
         id="streamskope-task-workspace"

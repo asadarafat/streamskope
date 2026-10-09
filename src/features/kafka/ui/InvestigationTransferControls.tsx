@@ -3,11 +3,8 @@ import { Stack, Typography } from "@mui/material";
 
 import {
   createKafkaQueryLink,
-  parseKafkaQueryTransfer,
   serializeKafkaQuery,
-  KAFKA_QUERY_TRANSFER_LIMITS,
   HostContractValidationError,
-  type KafkaInvestigationQuery,
   type ProfileSummary,
 } from "../contracts";
 import {
@@ -16,32 +13,50 @@ import {
   StudioMenuItem as MenuItem,
   StudioTextField as TextField,
 } from "../../../platform/ui/controls";
+import {
+  createKafkaPortableView,
+  parseKafkaInvestigationTransfer,
+  serializeKafkaPortableView,
+  KAFKA_VIEW_TRANSFER_LIMITS,
+  type KafkaInvestigationTransfer,
+} from "../contracts/view-transfer";
 
+import {
+  portableViewSettings,
+  queryViewSettings,
+  type KafkaViewSettings,
+} from "./investigation-view-settings";
 import type { TextDocumentTransferPort } from "./text-document-transfer";
 
-export function QueryTransferControls({
+export function InvestigationTransferControls({
   transfer,
   captureExport,
-  exportAvailable = true,
+  viewExportAvailable,
+  queryExportAvailable,
   profiles,
   readActive,
   onRestore,
   initialImport,
 }: {
   readonly transfer: TextDocumentTransferPort;
-  readonly captureExport: () => KafkaInvestigationQuery | null;
-  readonly exportAvailable?: boolean;
+  readonly captureExport: () => {
+    readonly settings: KafkaViewSettings;
+    readonly suggestedName: string | null;
+  };
+  readonly viewExportAvailable: boolean;
+  readonly queryExportAvailable: boolean;
   readonly profiles: readonly ProfileSummary[];
   readonly readActive: boolean;
-  readonly onRestore: (query: KafkaInvestigationQuery, profileId: string | undefined) => void;
+  readonly onRestore: (settings: KafkaViewSettings, profileId: string | undefined) => void;
   readonly initialImport?: string | undefined;
 }): React.JSX.Element {
   const [input, setInput] = useState(initialImport ?? "");
-  const [preview, setPreview] = useState<KafkaInvestigationQuery>();
+  const [preview, setPreview] = useState<KafkaInvestigationTransfer>();
   const [profileId, setProfileId] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const profileMissing = profileId !== "" && !profiles.some((profile) => profile.id === profileId);
   const fileInput = useRef<HTMLInputElement>(null);
   const reader = useRef<FileReader | undefined>(undefined);
   const alive = useRef(true);
@@ -65,26 +80,27 @@ export function QueryTransferControls({
     setPreview(undefined);
     setProfileId("");
     try {
-      setPreview(parseKafkaQueryTransfer(text));
+      setPreview(parseKafkaInvestigationTransfer(text));
     } catch (failure) {
       setError(
         failure instanceof HostContractValidationError
           ? failure.message
-          : "The query could not be imported.",
+          : "The document could not be imported.",
       );
     }
   }
-  async function exportQuery(link: boolean): Promise<void> {
+  async function exportDocument(kind: "view" | "query" | "link"): Promise<void> {
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const query = captureExport();
-      if (query === null) {
+      const { settings, suggestedName } = captureExport();
+      const query = settings.configuration;
+      if (kind !== "view" && query === null) {
         setError("This group-only view has no query settings to export.");
         return;
       }
-      if (link) {
+      if (kind === "link" && query !== null) {
         const location = globalThis.location;
         const base =
           location !== undefined && ["http:", "https:"].includes(location.protocol)
@@ -96,9 +112,13 @@ export function QueryTransferControls({
             "Query link copied. Recipients can paste it below; browser links also open a review step.",
           );
       } else {
-        const content = serializeKafkaQuery(query);
+        const content =
+          kind === "view"
+            ? serializeKafkaPortableView(createKafkaPortableView(settings, suggestedName))
+            : serializeKafkaQuery(query!);
+        const label = kind === "view" ? "View" : "Query";
         const outcome = await transfer.download({
-          fileName: "streamskope-query.json",
+          fileName: kind === "view" ? "streamskope-view.json" : "streamskope-query.json",
           mediaType: "application/json",
           content,
           byteSize: new TextEncoder().encode(content).length,
@@ -106,16 +126,18 @@ export function QueryTransferControls({
         if (alive.current)
           setNotice(
             outcome === "cancelled"
-              ? "Query export cancelled."
+              ? `${label} export cancelled.`
               : outcome === "saved"
-                ? "Query file saved."
-                : "Query download started.",
+                ? `${label} file saved.`
+                : `${label} download started.`,
           );
       }
-    } catch {
+    } catch (failure) {
       if (alive.current)
         setError(
-          "Query sharing failed. Choose valid query settings and check the save or clipboard permission, then retry.",
+          failure instanceof HostContractValidationError && failure.message.includes("128 KiB")
+            ? "This view exceeds the 128 KiB sharing limit. Reduce its query or saved positions and retry."
+            : "Sharing failed. Choose valid view or query settings and check the save or clipboard permission, then retry.",
         );
     } finally {
       if (alive.current) setBusy(false);
@@ -123,25 +145,45 @@ export function QueryTransferControls({
   }
 
   return (
-    <Stack spacing={1.5} component="section" aria-label="Portable query">
-      <Typography variant="subtitle1">Query settings only</Typography>
+    <Stack spacing={1.5} component="section" aria-label="Portable investigation">
+      <Typography variant="subtitle1">Share an investigation view</Typography>
       <Typography variant="body2">
-        Export the selected view's query, or the current query if none is selected. Layout and
-        resource selections are not included. Review filter text before sharing: it can contain
-        sensitive values. Files and links omit local profiles, credentials and message records.
+        Export the selected saved view, or the current workspace. View files include its query,
+        layout and unloaded record positions. They omit local profile and bookmark IDs, credentials,
+        record contents and local topic notes. Review names, filters and cluster/topic identities
+        before sharing: they can reveal sensitive incident details.
       </Typography>
       <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
-        <Button disabled={busy || !exportAvailable} onClick={() => void exportQuery(false)}>
-          Export query JSON
-        </Button>
-        <Button disabled={busy || !exportAvailable} onClick={() => void exportQuery(true)}>
-          Copy query link
+        <Button disabled={busy || !viewExportAvailable} onClick={() => void exportDocument("view")}>
+          Export view JSON
         </Button>
         <Button disabled={busy} onClick={() => fileInput.current?.click()}>
-          Import query file
+          Import file
         </Button>
       </Stack>
-      {!exportAvailable && (
+      <details>
+        <Typography component="summary" variant="body2">
+          Query settings only
+        </Typography>
+        <Typography variant="caption">
+          Query files and links omit layout and saved record positions.
+        </Typography>
+        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
+          <Button
+            disabled={busy || !queryExportAvailable}
+            onClick={() => void exportDocument("query")}
+          >
+            Export query JSON
+          </Button>
+          <Button
+            disabled={busy || !queryExportAvailable}
+            onClick={() => void exportDocument("link")}
+          >
+            Copy query link
+          </Button>
+        </Stack>
+      </details>
+      {!queryExportAvailable && (
         <Typography variant="caption">
           This view has no query settings to export. Query files can still be imported below.
         </Typography>
@@ -151,17 +193,19 @@ export function QueryTransferControls({
         type="file"
         accept=".json,application/json"
         hidden
-        aria-label="Query file"
+        aria-label="View or query file"
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
           if (file === undefined) return;
           cancelFileRead();
           setPreview(undefined);
+          setProfileId("");
+          setInput("");
           setError("");
           setNotice("");
-          if (file.size > KAFKA_QUERY_TRANSFER_LIMITS.documentBytes) {
-            setError("Query files are limited to 32 KiB.");
+          if (file.size > KAFKA_VIEW_TRANSFER_LIMITS.documentBytes) {
+            setError("View files are limited to 128 KiB; query files remain limited to 32 KiB.");
             return;
           }
           const pending = new FileReader();
@@ -176,22 +220,24 @@ export function QueryTransferControls({
           };
           pending.onerror = (): void => {
             if (alive.current && reader.current === pending)
-              setError("The query file could not be read. Select a readable JSON file and retry.");
+              setError("The file could not be read. Select a readable JSON file and retry.");
           };
           pending.readAsText(file);
         }}
       />
       <TextField
-        label="Query JSON or link"
+        label="View or query JSON/link"
         multiline
         minRows={2}
         maxRows={5}
         value={input}
-        slotProps={{ htmlInput: { maxLength: KAFKA_QUERY_TRANSFER_LIMITS.linkCharacters } }}
+        slotProps={{ htmlInput: { maxLength: KAFKA_VIEW_TRANSFER_LIMITS.documentBytes } }}
         onChange={(event) => {
           cancelFileRead();
           setInput(event.target.value);
           setPreview(undefined);
+          setProfileId("");
+          setNotice("");
           setError("");
         }}
       />
@@ -209,14 +255,16 @@ export function QueryTransferControls({
       {preview === undefined ? null : (
         <>
           <Alert severity="info">
-            Review topic, bounds and filters below. Opening clears old results and restores controls
-            only; connect and run explicitly. To keep this query, open it and save it in the
-            library.
+            Review the destination, query, layout and record positions below. Opening clears old
+            results and restores unloaded settings only; connect and read explicitly. To keep the
+            investigation, open it and save a view in the library.
           </Alert>
           <Typography
             component="pre"
             variant="body2"
-            aria-label="Imported query preview"
+            aria-label={
+              preview.kind === "view" ? "Imported view preview" : "Imported query preview"
+            }
             sx={{
               whiteSpace: "pre-wrap",
               overflowWrap: "anywhere",
@@ -224,29 +272,43 @@ export function QueryTransferControls({
               overflow: "auto",
             }}
           >
-            {serializeKafkaQuery(preview)}
+            {JSON.stringify(preview.kind === "view" ? preview.view : preview.query, null, 2)}
           </Typography>
           <TextField
             select
-            label="Connection for imported query"
+            label="Connection for imported investigation"
             value={profileId}
             onChange={(event) => setProfileId(event.target.value)}
           >
             <MenuItem value="">Choose a connection after opening</MenuItem>
+            {profileMissing ? <MenuItem value={profileId}>Profile unavailable</MenuItem> : null}
             {profiles.map((profile) => (
               <MenuItem value={profile.id} key={profile.id}>
                 {profile.name}
               </MenuItem>
             ))}
           </TextField>
+          {profileMissing ? (
+            <Typography variant="caption">
+              The selected local profile is unavailable. Choose another profile or choose a
+              connection after opening.
+            </Typography>
+          ) : null}
           <Button
-            disabled={
-              readActive ||
-              (profileId !== "" && !profiles.some((profile) => profile.id === profileId))
-            }
-            onClick={() => onRestore(preview, profileId || undefined)}
+            disabled={readActive || profileMissing}
+            onClick={() => {
+              try {
+                const settings =
+                  preview.kind === "view"
+                    ? portableViewSettings(preview.view)
+                    : queryViewSettings(preview.query);
+                onRestore(settings, profileId || undefined);
+              } catch {
+                setError("The investigation could not be opened. Review its settings and retry.");
+              }
+            }}
           >
-            Open imported query
+            {preview.kind === "view" ? "Open imported view" : "Open imported query"}
           </Button>
         </>
       )}

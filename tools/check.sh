@@ -64,7 +64,7 @@ runtime() {
     test/e2e/web-responsive-workbench.spec.ts \
     --grep 'keyboard-operable|investigates real lag|persistent resource hierarchy|expanded dock in both themes|main resource page primary'
   STREAMSKOPE_TEST_SUITE=nats-workspace node tools/package/e2e.mjs web test/e2e/web-nats-workspace.spec.ts
-  STREAMSKOPE_TEST_SUITE=structured-records node tools/package/e2e.mjs web test/e2e/web-structured-events.spec.ts test/e2e/web-streaming-export.spec.ts test/e2e/web-record-analysis.spec.ts test/e2e/web-investigation-views.spec.ts test/e2e/web-record-bookmarks.spec.ts
+  STREAMSKOPE_TEST_SUITE=structured-records node tools/package/e2e.mjs web test/e2e/web-structured-events.spec.ts test/e2e/web-streaming-export.spec.ts test/e2e/web-record-analysis.spec.ts test/e2e/web-investigation-views.spec.ts test/e2e/web-record-bookmarks.spec.ts test/e2e/web-portable-views.spec.ts test/e2e/web-topic-notes.spec.ts
   STREAMSKOPE_TEST_SUITE=plugin-lifecycle node tools/package/e2e.mjs web test/e2e/web-plugin-installation.spec.ts
 }
 

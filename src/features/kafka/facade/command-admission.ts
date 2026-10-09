@@ -39,7 +39,9 @@ export class KafkaCommandAdmission extends ProviderCommandAdmission {
     if (
       (command.command === "records.export.start" ||
         command.command === "records.analysis.start" ||
-        command.command === "records.locator.load") &&
+        command.command === "records.locator.load" ||
+        command.command === "catalog.load" ||
+        command.command === "catalog.put") &&
       this.connectionChanges > 0
     ) {
       if (command.command === "records.locator.load")
@@ -49,14 +51,16 @@ export class KafkaCommandAdmission extends ProviderCommandAdmission {
           ? "export"
           : command.command === "records.analysis.start"
             ? "analysis"
-            : "record reload";
+            : command.command === "catalog.load" || command.command === "catalog.put"
+              ? "local topic notes operation"
+              : "record reload";
       return failureResponse(command, {
         code: "VALIDATION",
         stage: "validation",
         correlationId: bindings.correlationId,
         retryable: false,
         activeStateChanged: false,
-        summary: `Wait for the connection change before starting ${feature === "record reload" ? "a" : "an"} ${feature}.`,
+        summary: `Wait for the connection change before starting ${feature === "record reload" || feature === "local topic notes operation" ? "a" : "an"} ${feature}.`,
         recovery: `Confirm the connected profile, then start a new ${feature} from that connection.`,
       });
     }

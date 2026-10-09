@@ -388,7 +388,7 @@ def inspection(value, policy, version, target=None):
     legacy_target = target is not None and not target["inspector"]
     kafka_maximum = 3 if legacy_target else 4
     preference_maximum = 1 if legacy_target else 2
-    query_maximum = 1 if legacy_target else 3
+    query_maximum = 1 if legacy_target else 4
     exact(
         value,
         {"schemaVersion", "dataContract", "hostRelease", "outcome", "documents", "unverified"},
@@ -1048,7 +1048,7 @@ class Maintenance:
             require(
                 not any(
                     os.path.lexists(path / "queries" / ("kafka-queries.json." + family + suffix))
-                    for family in ("pre-views-v1", "pre-records-v2")
+                    for family in ("pre-views-v1", "pre-records-v2", "pre-catalog-v3")
                     for suffix in [""] + ["." + str(number) for number in range(1, 100)]
                 ),
                 "preflight-blocked",
