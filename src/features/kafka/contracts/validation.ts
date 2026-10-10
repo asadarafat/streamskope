@@ -18,6 +18,7 @@ import {
 } from "./profile-security-validation";
 import { parseHostError } from "./host-error-validation";
 import { parseRelationshipCommand, parseRelationshipResponse } from "./relationship-protocol";
+import { parseObservationWatch } from "./observation-watch";
 import { parseObservationCommand, parseObservationResponse } from "./observation-protocol";
 import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
 import { parseEnvironmentCommand, parseEnvironmentResponse } from "./environment-protocol";
@@ -718,6 +719,8 @@ export function parseHostEvent(value: unknown): HostEvent {
   }
 
   switch (event) {
+    case "observations.watch.changed":
+      return { event, payload: parseObservationWatch(payload), sequence, version };
     case "records.analysis.changed":
       return { event, payload: parseRecordAnalysisSnapshot(payload), sequence, version };
     case "records.export.changed":

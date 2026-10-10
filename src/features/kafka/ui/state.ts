@@ -548,6 +548,7 @@ export function reduceKafkaHostEvent(state: KafkaUiState, event: HostEvent): Kaf
   };
 
   switch (event.event) {
+    case "observations.watch.changed":
     case "records.analysis.changed":
     case "records.export.changed":
     case "plugin.event":

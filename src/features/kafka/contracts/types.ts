@@ -85,13 +85,14 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 73 as const;
+export const HOST_PROTOCOL_VERSION = 74 as const;
 
 export { HOST_COMMANDS } from "./host-command-vocabulary";
 
 export const HOST_EVENTS = [
   "records.analysis.changed",
   "records.export.changed",
+  "observations.watch.changed",
   "backend.availability",
   "plugin.event",
   "plugins.changed",
@@ -728,6 +729,10 @@ export interface HostEventBase {
 }
 
 export type HostEvent =
+  | (HostEventBase & {
+      readonly event: "observations.watch.changed";
+      readonly payload: import("./observation-watch").ObservationWatchSnapshot;
+    })
   | import("./record-analysis-protocol").RecordAnalysisEvent
   | import("./record-export-protocol").RecordExportEvent
   | (HostEventBase & {

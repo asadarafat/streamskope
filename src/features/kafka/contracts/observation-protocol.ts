@@ -5,14 +5,19 @@ import {
   parseObservationInput,
   parseObservationSeries,
 } from "./observation-validation";
+import { parseObservationWatch } from "./observation-watch";
 import type { ObservationInput } from "./observations";
 export type ObservationCommand =
   | (HostCommandBase & {
-      readonly command: "observations.capture";
+      readonly command: "observations.capture" | "observations.watch.start";
       readonly payload: ObservationInput;
     })
   | (HostCommandBase & {
-      readonly command: "observations.history" | "observations.cancel";
+      readonly command:
+        | "observations.history"
+        | "observations.cancel"
+        | "observations.watch.status"
+        | "observations.watch.stop";
       readonly payload: Readonly<Record<string, never>>;
     })
   | (HostCommandBase & {
@@ -25,9 +30,14 @@ export function parseObservationCommand(
   value: unknown,
   version: HostCommand["version"],
 ): HostCommand | undefined {
-  if (command === "observations.capture")
+  if (command === "observations.capture" || command === "observations.watch.start")
     return { command, id, version, payload: parseObservationInput(value) };
-  if (command === "observations.history" || command === "observations.cancel")
+  if (
+    command === "observations.history" ||
+    command === "observations.cancel" ||
+    command === "observations.watch.status" ||
+    command === "observations.watch.stop"
+  )
     return { command, id, version, payload: emptyRecord(value, "payload") };
   if (command === "observations.clear") {
     const p = record(value, "payload");
@@ -49,6 +59,23 @@ export function parseObservationResponse(
   result: Record<string, unknown>,
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
+  if (
+    command === "observations.watch.start" ||
+    command === "observations.watch.status" ||
+    command === "observations.watch.stop"
+  ) {
+    exactKeys(result, ["correlationId", "watch"], "result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "correlationId", 128),
+        watch: parseObservationWatch(result.watch),
+      },
+    };
+  }
   if (command === "observations.capture") {
     exactKeys(result, ["correlationId", "capture"], "result");
     const c = record(result.capture, "capture");

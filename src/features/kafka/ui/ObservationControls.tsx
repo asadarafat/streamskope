@@ -13,6 +13,8 @@ export interface ObservationControlsProperties {
   readonly groups: readonly string[];
   readonly busy: boolean;
   readonly running: boolean;
+  readonly canStop: boolean;
+  readonly stopping: boolean;
   readonly connected: boolean;
   readonly backendAvailable: boolean;
   readonly historyReady: boolean;
@@ -82,7 +84,7 @@ export function ObservationControls(p: ObservationControlsProperties): React.JSX
         <Button disabled={!canCapture} onClick={p.onStart}>
           Start observing
         </Button>
-        <Button disabled={!p.running && p.operation !== "capture"} onClick={p.onStop}>
+        <Button disabled={!p.canStop} onClick={p.onStop}>
           Stop observing
         </Button>
         <Button disabled={disabled || !p.connected || !p.backendAvailable} onClick={p.onRefresh}>
@@ -100,22 +102,25 @@ export function ObservationControls(p: ObservationControlsProperties): React.JSX
           ? "Host unavailable — restore the application host before collecting new evidence."
           : !p.connected
             ? "Disconnected — connect a profile to collect new evidence."
-            : p.operation === "capture"
-              ? "Collecting observation… One request at a time; stops after 15 seconds."
-              : p.operation === "history"
-                ? "Loading retained observations…"
-                : p.operation === "clear"
-                  ? "Clearing retained history…"
-                  : !p.historyReady
-                    ? "Retained history is unavailable. Reload it or explicitly clear it before collecting."
-                    : p.cooldownSeconds > 0
-                      ? `${p.running ? "Observing" : "Stopped"} · Next capture available in ${p.cooldownSeconds} seconds.`
-                      : p.running
-                        ? "Observing · Waiting for the next capture."
-                        : "Stopped · Capture once or observe every 10 seconds after collection completes."}
+            : p.stopping
+              ? "Stopping observation… Waiting for the original read and cleanup to finish."
+              : p.operation === "capture"
+                ? "Collecting observation… One request at a time; a 15-second deadline cancels reads and Stop waits for cleanup."
+                : p.operation === "history"
+                  ? "Loading retained observations…"
+                  : p.operation === "clear"
+                    ? "Clearing retained history…"
+                    : !p.historyReady
+                      ? "Retained history is unavailable. Reload it or explicitly clear it before collecting."
+                      : p.cooldownSeconds > 0
+                        ? `${p.running ? "Observing" : "Stopped"} · Next capture available in ${p.cooldownSeconds} seconds.`
+                        : p.running
+                          ? "Observing · Waiting for the next capture."
+                          : "Stopped · Capture once or observe every 10 seconds after collection completes."}
       </Typography>
       <Typography variant="caption" color="text.secondary">
-        {p.inventoryStatus}
+        Collection continues across page navigation while the original connection and unlocked host
+        remain active. Stop observing ends the watch. {p.inventoryStatus}
       </Typography>
       {p.selectionError && (
         <Typography role="alert" color="error">

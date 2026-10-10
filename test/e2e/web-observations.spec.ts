@@ -29,7 +29,7 @@ async function port(): Promise<number> {
 }
 
 test.use({ actionTimeout: 10_000, trace: "off", viewport: { width: 1600, height: 1100 } });
-test("observes a real rising-lag fixture, backtests its forecast, stops polling and discovers bounded lineage", async ({
+test("observes a real rising-lag fixture, backtests its forecast, continues across navigation, stops host collection and discovers bounded lineage", async ({
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
@@ -162,6 +162,20 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
     await expect(health).toContainText("1 samples in the recent continuous segment", {
       timeout: 20000,
     });
+    const initialWatch = await backend.execute({
+      command: "observations.watch.status",
+      id: "started-watch",
+      version: HOST_PROTOCOL_VERSION,
+      payload: {},
+    });
+    if (!initialWatch.ok) throw new Error("No watch status");
+    const watchId = initialWatch.result.watch.id;
+    expect(initialWatch.result.watch).toMatchObject({
+      phase: "waiting",
+      repeated: true,
+      current: true,
+      input: { topic, groupId, sampleRecords: true, thresholds: { lag: 15 } },
+    });
     for (let i = 1; i < 9; i++) {
       await producer.send({
         messages: Array.from({ length: 20 }, () => ({
@@ -174,6 +188,41 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
           timestamp: BigInt(Date.now() + 1_000),
         })),
       });
+      if (i === 1) {
+        await navigation.getByRole("button", { name: "Connection Profiles", exact: true }).click();
+        await expect(health).toHaveCount(0);
+        // Independently inspect the host while no observation page is mounted.
+        await expect
+          .poll(
+            async (): Promise<number> => {
+              const history = await backend.execute({
+                command: "observations.history",
+                id: "navigation-evidence",
+                version: HOST_PROTOCOL_VERSION,
+                payload: {},
+              });
+              if (!history.ok) throw new Error("No navigation history");
+              return history.result.snapshot.series[0]?.samples.length ?? 0;
+            },
+            { timeout: 20_000 },
+          )
+          .toBe(2);
+        await navigation.getByRole("button", { name: "Observed health", exact: true }).click();
+        await expect(health.getByLabel("Observed topic", { exact: true })).toHaveValue(topic);
+        await expect(health.getByLabel("Observed consumer group (optional)")).toHaveValue(groupId);
+        await expect(
+          health.getByRole("checkbox", { name: "Sample records for size and key distribution" }),
+        ).toBeChecked();
+        await expect(health.getByRole("button", { name: "Stop observing" })).toBeEnabled();
+        const attached = await backend.execute({
+          command: "observations.watch.status",
+          id: "attached-watch",
+          version: HOST_PROTOCOL_VERSION,
+          payload: {},
+        });
+        expect(attached.ok && attached.result.watch.id).toBe(watchId);
+        expect(attached.ok && attached.result.watch.input?.thresholds.lag).toBe(15);
+      }
       await expect(health).toContainText(`${i + 1} samples in the recent continuous segment`, {
         timeout: 20000,
       });
