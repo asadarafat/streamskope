@@ -112,7 +112,8 @@ export async function startSchemaRegistryServerFixture(
           ready: health?.status?.schema_registry_ready === true,
           primary: health?.status?.schema_registry_is_primary === true,
           coordinator: health?.status?.schema_registry_coordinator_running === true,
-          generation: generation !== undefined && Number.isSafeInteger(generation) ? generation : -1,
+          generation:
+            generation !== undefined && Number.isSafeInteger(generation) ? generation : -1,
         };
         if (
           health?.status?.schema_registry_ready === true &&
