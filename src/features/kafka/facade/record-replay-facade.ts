@@ -8,6 +8,7 @@ import { RecordReplayService } from "../application/record-replay-service";
 import { SavedReplayDestinations } from "../application/replay-destination";
 import { RepairRecoveryService } from "../application/repair-recovery-service";
 import { RepairReconciliationReader } from "../application/repair-reconciliation-reader";
+import { StructuredReplayService } from "../application/structured-replay-service";
 import type {
   KafkaApplicationSession,
   KafkaProfileService,
@@ -15,6 +16,7 @@ import type {
   KafkaOperationalPreferenceService,
 } from "../application";
 
+import type { KafkaBackendFacadeOptions } from "./types";
 import { failureResponse, successResponse, type ActivityInput } from "./facade-support";
 
 type ReplayCommand = Extract<
@@ -38,26 +40,46 @@ export class RecordReplayFacade {
     private readonly activity: (input: ActivityInput) => void,
     repairStore?: RepairJobStore,
     preferences?: KafkaOperationalPreferenceService,
+    encoding?: Pick<KafkaBackendFacadeOptions, "recordCodec" | "schemaLookup" | "sampleGenerator">,
   ) {
     this.journal = repairStore ? new RepairJournal(repairStore) : undefined;
+    const destinations = connections
+      ? new SavedReplayDestinations(profiles, connections)
+      : undefined;
+    const activeDestination = ():
+      import("../application/replay-destination").ReviewedReplayDestination | null => {
+      const scope = session.reviewedWriteScope(),
+        readScope = session.recordReadScope(),
+        registryScope = session.schemaRegistryReviewScope();
+      return scope
+        ? {
+            scope,
+            ...(readScope ? { readScope } : {}),
+            ...(registryScope ? { registryScope } : {}),
+            close: (): Promise<void> => Promise.resolve(),
+          }
+        : null;
+    };
+    const generator = encoding?.sampleGenerator;
     this.service = new RecordReplayService(
       () => session.reviewedWriteScope(),
-      connections ? new SavedReplayDestinations(profiles, connections) : undefined,
+      destinations,
       undefined,
       this.journal,
+      new StructuredReplayService(
+        () => session.schemaRegistryReviewScope(),
+        encoding?.recordCodec,
+        encoding?.schemaLookup,
+        generator?.author ? { author: generator.author.bind(generator) } : undefined,
+      ),
+      activeDestination,
     );
     if (this.journal && preferences)
       this.recovery = new RepairRecoveryService(
         this.journal,
         this.service,
         new RepairReconciliationReader(
-          () => {
-            const scope = session.reviewedWriteScope(),
-              readScope = session.recordReadScope();
-            return scope && readScope
-              ? { scope, readScope, close: (): Promise<void> => Promise.resolve() }
-              : null;
-          },
+          activeDestination,
           () => {
             const snapshot = preferences.currentSnapshot();
             if (snapshot.store.state !== "ready")
@@ -67,7 +89,7 @@ export class RecordReplayFacade {
               protection: snapshot.preferences.protection,
             };
           },
-          connections ? new SavedReplayDestinations(profiles, connections) : undefined,
+          destinations,
         ),
       );
   }
@@ -196,7 +218,7 @@ export class RecordReplayFacade {
         activeStateChanged: false,
         summary: "The replay request could not be accepted.",
         recovery:
-          "Select complete records within the bounds, check destination permissions and UTF-8 transformations, and review the current profile/topic again. Confirm the exact destination. Inspect any previous uncertain result before creating another plan.",
+          "Select complete records within the bounds. For structured replay, check every source writer mapping, JSON Pointer edit and destination subject/version. Register missing writers through the destination profile's reviewed Schema Registry workflow first. Framed cross-profile records require explicit translation. Review the current profile/topic again and inspect any previous uncertain result before another plan.",
       });
     }
   }

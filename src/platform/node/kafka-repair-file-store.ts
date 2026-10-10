@@ -17,13 +17,13 @@ import type { ProfileProtector } from "./profile-protector";
 import { preservePrivatePredecessor } from "./private-predecessor-file";
 
 export const REPAIR_ENVELOPE_MAX_BYTES = REPAIR_JOB_LIMITS.fileBytes * 2;
-export function repairEnvelopeFormat(value: unknown): 1 | 2 {
+export function repairEnvelopeFormat(value: unknown): 1 | 2 | 3 {
   if (value === null || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid protected repair envelope.");
   const v = value as Record<string, unknown>;
   if (
     Object.keys(v).length !== 2 ||
-    (v.schemaVersion !== 1 && v.schemaVersion !== 2) ||
+    (v.schemaVersion !== 1 && v.schemaVersion !== 2 && v.schemaVersion !== 3) ||
     typeof v.protected !== "string" ||
     v.protected.length === 0 ||
     v.protected.length > REPAIR_ENVELOPE_MAX_BYTES ||
@@ -40,7 +40,7 @@ export function inspectRepairEnvelope(value: unknown): Buffer {
 export class AtomicRepairFileStore implements RepairJobStore {
   readonly durability = "durable" as const;
   private loaded: Buffer | null | undefined;
-  private loadedFormat: 1 | 2 | undefined;
+  private loadedFormat: 1 | 2 | 3 | undefined;
   constructor(
     private readonly path: string,
     private readonly protector: ProfileProtector,
@@ -69,7 +69,7 @@ export class AtomicRepairFileStore implements RepairJobStore {
       if (stat === null) {
         this.loaded = null;
         this.loadedFormat = undefined;
-        return { schemaVersion: 2, jobs: [] };
+        return { schemaVersion: 3, jobs: [] };
       }
       if (!stat.isFile() || stat.nlink !== 1) throw new Error("Unsafe repair journal.");
       if (!(await lstat(dirname(this.path))).isDirectory())
@@ -106,7 +106,7 @@ export class AtomicRepairFileStore implements RepairJobStore {
     const parsed = parseRepairJournalDocument(document);
     const protectedValue = await this.protector.protect(JSON.stringify(parsed));
     const contents =
-      JSON.stringify({ schemaVersion: 2, protected: protectedValue.toString("base64") }) + "\n";
+      JSON.stringify({ schemaVersion: 3, protected: protectedValue.toString("base64") }) + "\n";
     if (Buffer.byteLength(contents) > REPAIR_ENVELOPE_MAX_BYTES)
       throw new Error("Protected repair history exceeds its file bound.");
     await writeAtomicPrivateTextFile({
@@ -138,9 +138,14 @@ export class AtomicRepairFileStore implements RepairJobStore {
             : previous === undefined || current === null || !previous.equals(current)
         )
           throw new Error("Repair journal changed after loading; no replacement was made.");
-        if (this.loadedFormat === 1 && previous !== null && previous !== undefined) {
+        if (
+          this.loadedFormat !== undefined &&
+          this.loadedFormat < 3 &&
+          previous !== null &&
+          previous !== undefined
+        ) {
           await preservePrivatePredecessor({
-            path: `${this.path}.pre-repair-v1`,
+            path: `${this.path}.pre-repair-v${this.loadedFormat}`,
             bytes: previous,
             maximumBytes: REPAIR_ENVELOPE_MAX_BYTES,
             syncDirectory: this.syncDirectory,
@@ -166,6 +171,6 @@ export class AtomicRepairFileStore implements RepairJobStore {
     if (!current.equals(Buffer.from(contents)))
       throw new Error("Repair commit readback differs; durable completion is uncertain.");
     this.loaded = current;
-    this.loadedFormat = 2;
+    this.loadedFormat = 3;
   }
 }

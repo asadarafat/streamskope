@@ -131,13 +131,19 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     await page.getByRole("button", { name: "Replay…" }).click();
     const replay = page.getByRole("dialog", { name: "Copy or replay selected records" });
     await replay.getByRole("textbox", { name: "Destination topic" }).fill(target);
-    await replay.getByRole("textbox", { name: "Find literal UTF-8 value text" }).fill("fixture");
-    await replay.getByRole("textbox", { name: "Replace value text with" }).fill("replayed");
+    await replay.getByRole("checkbox", { name: "Transform structured value" }).check();
+    await replay
+      .getByRole("textbox", { name: "Value JSON Pointer edits" })
+      .fill(JSON.stringify([{ op: "set", path: "/event", json: '"replayed"' }]));
     await replay.getByRole("button", { name: "Preview replay" }).click();
     const replayConfirmation = `Owned recovery / ${target} / 0`;
     await expect(
       replay.getByRole("textbox", { name: `Type ${replayConfirmation} to confirm` }),
     ).toBeVisible();
+    await expect(replay.getByText("Verified writer mappings", { exact: true })).toBeVisible();
+    await expect(
+      replay.getByRole("textbox", { name: "Find literal UTF-8 value text" }),
+    ).toBeDisabled();
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
@@ -173,7 +179,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     const protectedRecovery = await readFile(repairFile, "utf8");
     expect(protectedRecovery).not.toContain("replayed");
     const protectedEnvelope: unknown = JSON.parse(protectedRecovery);
-    expect(protectedEnvelope).toMatchObject({ schemaVersion: 2 });
+    expect(protectedEnvelope).toMatchObject({ schemaVersion: 3 });
     await expect(
       history.getByRole("button", { name: "Review definitely unsent records" }),
     ).toBeDisabled();

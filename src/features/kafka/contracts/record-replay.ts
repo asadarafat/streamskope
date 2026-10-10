@@ -13,6 +13,13 @@ import type { KafkaWriteDestination } from "./reviewed-writes";
 import { offsetPosition } from "./offset-reset";
 import { HostContractValidationError } from "./validation-error";
 import {
+  parseStructuredReplayTransform,
+  parseReplayRecordEncoding,
+  validateReplayEncoding,
+  type StructuredReplayTransform,
+  type ReplayRecordEncoding,
+} from "./structured-replay";
+import {
   record,
   exactKeys,
   text,
@@ -35,6 +42,7 @@ export interface ReplayTransform {
   readonly removeHeaders: readonly string[];
   readonly appendHeaders: KafkaCompleteRecord["headers"];
   readonly valueText: { readonly search: string; readonly replacement: string } | null;
+  readonly structured?: StructuredReplayTransform;
 }
 export interface RecordReplayInput {
   readonly targetProfile: { readonly id: string; readonly revision: number } | null;
@@ -52,6 +60,7 @@ export interface RecordReplayReview {
   readonly input: RecordReplayInput;
   readonly batch: RecordBatchInput;
   readonly destination: KafkaWriteDestination;
+  readonly encoding?: readonly ReplayRecordEncoding[];
 }
 export interface RecordReplayOutcome extends RecordBatchOutcome {
   readonly cleanup: "complete" | "unavailable";
@@ -71,7 +80,7 @@ export const UNCHANGED_REPLAY_TRANSFORM: ReplayTransform = {
 
 export function parseReplayTransform(value: unknown): ReplayTransform {
   const v = record(value, "transform");
-  exactKeys(v, ["key", "removeHeaders", "appendHeaders", "valueText"], "transform");
+  exactKeys(v, ["key", "removeHeaders", "appendHeaders", "valueText", "structured"], "transform");
   let key: ReplayTransform["key"] = null;
   if (v.key !== null) {
     const k = record(v.key, "transform.key");
@@ -104,11 +113,19 @@ export function parseReplayTransform(value: unknown): ReplayTransform {
       replacement: boundedText(t.replacement, "replacement", 1024),
     };
   }
+  const structured =
+    v.structured === undefined ? undefined : parseStructuredReplayTransform(v.structured);
+  if ((structured?.key && key !== null) || (structured?.value && valueText !== null))
+    throw new HostContractValidationError(
+      "transform",
+      "structured and byte/text replacement cannot edit the same field",
+    );
   return {
     key,
     valueText,
     removeHeaders: v.removeHeaders.map((k: unknown) => parseRecordBase64(k, "removeHeaders", 512)),
     appendHeaders: envelope.headers,
+    ...(structured === undefined ? {} : { structured }),
   };
 }
 function encode(text: string): string {
@@ -119,6 +136,8 @@ export function transformReplayRecord(
   original: KafkaCompleteRecord,
   transform: ReplayTransform,
 ): KafkaCompleteRecord {
+  if (transform.structured)
+    throw new Error("Structured transformation requires the host authoring path.");
   let value = original.value;
   if (transform.valueText && value !== null) {
     const bytes = Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
@@ -196,6 +215,8 @@ export function parseRecordReplayInput(value: unknown): RecordReplayInput {
   };
 }
 export function replayBatch(input: RecordReplayInput): RecordBatchInput {
+  if (input.transform.structured)
+    throw new Error("Structured replay requires host encoding and destination writer review.");
   return parseRecordBatchInput({
     topic: input.topic,
     partition: input.partition,
@@ -208,23 +229,74 @@ export function parseRecordReplayReview(value: unknown): RecordReplayReview {
   const v = record(value, "replayReview");
   exactKeys(
     v,
-    ["planId", "sourceName", "targetName", "expiresAt", "input", "batch", "destination"],
+    [
+      "planId",
+      "sourceName",
+      "targetName",
+      "expiresAt",
+      "input",
+      "batch",
+      "destination",
+      "encoding",
+    ],
     "replayReview",
   );
   const d = record(v.destination, "destination");
   exactKeys(d, ["clusterId", "topicId", "partitions"], "destination");
+  const input = parseRecordReplayInput(v.input);
+  let encoding: readonly ReplayRecordEncoding[] | undefined;
+  if (v.encoding !== undefined) {
+    if (!Array.isArray(v.encoding) || v.encoding.length !== input.records.length)
+      throw new Error("Writer evidence must match every reviewed record.");
+    encoding = v.encoding.map(parseReplayRecordEncoding);
+  }
+  if ((input.transform.structured !== undefined) !== (encoding !== undefined))
+    throw new Error("Structured reviews require explicit writer evidence.");
+  const batch = parseRecordBatchInput(v.batch);
+  if (input.transform.structured && encoding) {
+    if (
+      batch.records.length !== input.records.length ||
+      batch.topic !== input.topic ||
+      batch.partition !== input.partition ||
+      batch.ratePerSecond !== input.ratePerSecond ||
+      JSON.stringify(batch.timestamps) !== JSON.stringify(input.records.map((r) => r.timestampMs))
+    )
+      throw new Error("Structured batch differs from its reviewed input.");
+    for (const [index, source] of input.records.entries()) {
+      validateReplayEncoding(
+        source.original,
+        batch.records[index]!,
+        input.transform.structured,
+        encoding[index]!,
+      );
+      const ordinary = transformReplayRecord(source.original, {
+        key: input.transform.key,
+        valueText: input.transform.valueText,
+        removeHeaders: input.transform.removeHeaders,
+        appendHeaders: input.transform.appendHeaders,
+      });
+      const output = batch.records[index]!;
+      if (
+        (!input.transform.structured.key && ordinary.key !== output.key) ||
+        (!input.transform.structured.value && ordinary.value !== output.value) ||
+        JSON.stringify(ordinary.headers) !== JSON.stringify(output.headers)
+      )
+        throw new Error("Unmapped bytes differ from reviewed transformations.");
+    }
+  }
   return {
     planId: text(v.planId, "planId", 128),
     sourceName: text(v.sourceName, "sourceName", 256),
     targetName: text(v.targetName, "targetName", 256),
     expiresAt: text(v.expiresAt, "expiresAt", 64),
-    input: parseRecordReplayInput(v.input),
-    batch: parseRecordBatchInput(v.batch),
+    input,
+    batch,
     destination: {
       clusterId: text(d.clusterId, "clusterId", 256),
       topicId: text(d.topicId, "topicId", 256),
       partitions: positiveBoundedInteger(d.partitions, "partitions", 100_000),
     },
+    ...(encoding === undefined ? {} : { encoding }),
   };
 }
 export function parseRecordReplayOutcome(value: unknown): RecordReplayOutcome {

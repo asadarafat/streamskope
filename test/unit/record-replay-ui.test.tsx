@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 
@@ -60,7 +60,26 @@ class Host implements StreamSkopeHost {
             targetName: "Target",
             expiresAt: new Date(Date.now() + 120_000).toISOString(),
             input: command.payload,
-            batch: replayBatch(command.payload),
+            batch: command.payload.transform.structured
+              ? {
+                  topic: command.payload.topic,
+                  partition: command.payload.partition,
+                  ratePerSecond: command.payload.ratePerSecond,
+                  records: command.payload.records.map((r) => ({
+                    ...r.original,
+                    value: btoa('{"event":"after"}'),
+                  })),
+                  timestamps: command.payload.records.map((r) => r.timestampMs),
+                }
+              : replayBatch(command.payload),
+            ...(command.payload.transform.structured
+              ? {
+                  encoding: command.payload.records.map(() => ({
+                    key: null,
+                    value: { source: { format: "json" as const, id: null }, target: null },
+                  })),
+                }
+              : {}),
             destination: { clusterId: "target-cluster", topicId: "target-topic", partitions: 1 },
           },
         },
@@ -156,4 +175,63 @@ it("disables incomplete records rather than replaying a displayed preview", asyn
   expect(screen.getByRole("checkbox", { name: "Replay source/0@2" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Preview replay" })).toBeDisabled();
   expect(host.commands).toEqual([]);
+});
+
+it("sends closed structured edits, keeps byte replacements disabled and cancels the writer review on an edit", async () => {
+  const host = new Host(),
+    user = userEvent.setup();
+  const original = {
+    ...message,
+    payload: '{"event":"before"}',
+    preview: '{"event":"before"}',
+    original: {
+      state: "complete" as const,
+      encoding: "base64" as const,
+      key: null,
+      value: btoa('{"event":"before"}'),
+      headers: [],
+    },
+  };
+  render(
+    <ReplayRecordsAction
+      host={host}
+      messages={[original]}
+      selected={original}
+      profiles={[]}
+      enabled
+      canWrite
+    />,
+  );
+  await user.click(screen.getByRole("button", { name: "Replay…" }));
+  await user.click(screen.getByRole("checkbox", { name: "Transform structured value" }));
+  expect(screen.getByRole("textbox", { name: "Find literal UTF-8 value text" })).toBeDisabled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Value JSON Pointer edits" }), {
+    target: { value: JSON.stringify([{ op: "set", path: "/event", json: '"after"' }]) },
+  });
+  await user.click(screen.getByRole("button", { name: "Preview replay" }));
+  expect(await screen.findByText("Verified writer mappings", { exact: true })).toBeVisible();
+  expect(host.commands[0]).toMatchObject({
+    command: "records.replay.review",
+    payload: {
+      transform: {
+        valueText: null,
+        structured: {
+          key: null,
+          value: {
+            codec: "auto",
+            patches: [{ op: "set", path: "/event", json: '"after"' }],
+            mappings: [{ format: "json", sourceId: null, target: null }],
+          },
+        },
+      },
+    },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "Value JSON Pointer edits" }), {
+    target: { value: "[]" },
+  });
+  expect(screen.queryByText("Verified writer mappings", { exact: true })).not.toBeInTheDocument();
+  expect(host.commands.at(-1)).toMatchObject({
+    command: "records.replay.cancel",
+    payload: { planId: "r" },
+  });
 });

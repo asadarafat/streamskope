@@ -200,7 +200,7 @@ export interface TransitionOptions {
   readonly installerSource: string;
   readonly environment?: NodeJS.ProcessEnv;
   readonly repairHistory?: boolean;
-  readonly repairRecovery?: boolean;
+  readonly repairRecovery?: { readonly from: 1 | 2; readonly to: 2 | 3 };
 }
 export interface LocalPredecessorAssets {
   readonly installerSource: string;
@@ -451,7 +451,7 @@ export async function verifyTransition(
       stage = "predecessor-repair-fixture";
       await fixture.lock();
       const predecessorContainer = await docker(["inspect", container], environment);
-      fixture.seedRepairHistory(String(predecessorContainer.Id), true);
+      fixture.seedRepairHistory(String(predecessorContainer.Id), true, options.repairRecovery.from);
       legacyRepairBytes = await readFile(join(data, "history", "kafka-repair-jobs.json"));
       await fixture.unlockAfterReplacement();
       const history = await fixture.kafkaCommand("records.repair.list", {});
@@ -516,8 +516,14 @@ export async function verifyTransition(
         chain: [{ id: "native-completed-repair", revision: 1 }],
       });
       repairBytes = await readFile(repairPath);
-      assert.equal(object(JSON.parse(repairBytes.toString("utf8"))).schemaVersion, 2);
-      assert.deepEqual(await readFile(`${repairPath}.pre-repair-v1`), legacyRepairBytes);
+      assert.equal(
+        object(JSON.parse(repairBytes.toString("utf8"))).schemaVersion,
+        options.repairRecovery.to,
+      );
+      assert.deepEqual(
+        await readFile(`${repairPath}.pre-repair-v${String(options.repairRecovery.from)}`),
+        legacyRepairBytes,
+      );
       await fixture.lock();
       await fixture.unlockAfterReplacement();
       const recovered = await fixture.kafkaCommand("records.repair.list", {});
@@ -601,7 +607,7 @@ export async function verifyTransition(
       incompatible.code,
       0,
       options.repairRecovery
-        ? "The exact old repair host must refuse format2 before stopping the installed owner."
+        ? `The exact old repair host must refuse format${String(options.repairRecovery.to)} before stopping the installed owner.`
         : "An old target must not accept the migrated view library.",
     );
     assert.ok((incompatible.stdout + incompatible.stderr).includes("compatibility inspection"));
@@ -659,7 +665,7 @@ export async function verifyTransition(
               state,
               "preserved-after-view-migration",
               "history",
-              "kafka-repair-jobs.json.pre-repair-v1",
+              `kafka-repair-jobs.json.pre-repair-v${String(options.repairRecovery.from)}`,
             ),
           ),
           legacyRepairBytes,
@@ -832,13 +838,13 @@ export async function verifyTransition(
                   : "locator metadata persistence only; real record reload qualified separately",
               ...(options.repairRecovery
                 ? [
-                    "actual old repair host reads independently encrypted format1 jobs before upgrade",
+                    `actual old repair host reads independently encrypted format${String(options.repairRecovery.from)} jobs before upgrade`,
                     "new host legacy listing preserves exact encrypted bytes, inode and modification time",
-                    "explicit archive migrates to format2 and retains exact private encrypted predecessor",
+                    `explicit archive migrates to format${String(options.repairRecovery.to)} and retains exact private encrypted predecessor`,
                     "uncertain repair remains protected across native vault restart without retry or archive",
-                    "old format1 target refuses format2 before stopping the installed owner",
-                    "complete backup restoration retains changed format2 and predecessor in recovery",
-                    "actual old repair host lists original format1 jobs after complete restore and rollback",
+                    `old format${String(options.repairRecovery.from)} target refuses format${String(options.repairRecovery.to)} before stopping the installed owner`,
+                    `complete backup restoration retains changed format${String(options.repairRecovery.to)} and predecessor in recovery`,
+                    `actual old repair host lists original format${String(options.repairRecovery.from)} jobs after complete restore and rollback`,
                   ]
                 : []),
               ...(options.repairHistory

@@ -98,6 +98,14 @@ describe("closed browser data evidence", () => {
     documents(report)[7]!.formats = [5];
     expect(() => parseBrowserDataInspection(report)).toThrow();
   });
+  it("recognizes both encrypted repair predecessors and current writer evidence while refusing a future format", () => {
+    const report = evidence(),
+      entry = documents(report).find((row) => row.kind === "repair-jobs")!;
+    Object.assign(entry, { state: "verified", count: 3, formats: [1, 2, 3] });
+    expect(parseBrowserDataInspection(report).outcome).toBe("eligible");
+    entry.formats = [4];
+    expect(() => parseBrowserDataInspection(report)).toThrow();
+  });
   it("accepts current security envelopes but rejects later unknown formats", () => {
     const report = evidence();
     Object.assign(documents(report)[2]!, { state: "verified", count: 1, formats: [4] });

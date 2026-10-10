@@ -3,6 +3,7 @@ import {
   KafkaConnectionScopes,
   type ReviewedWriteScope,
   type RecordReadScope,
+  type SchemaRegistryReviewScope,
 } from "./connection-scope";
 import type { KafkaActiveConnection, KafkaConnectionPort } from "./types";
 
@@ -18,6 +19,7 @@ export interface ReplayDestinationPort {
 export interface ReviewedReplayDestination {
   readonly scope: ReviewedWriteScope;
   readonly readScope?: RecordReadScope;
+  readonly registryScope?: SchemaRegistryReviewScope;
   close(): Promise<void>;
 }
 export interface ReviewedReplayDestinationPort {
@@ -50,7 +52,8 @@ export class SavedReplayDestinations
         : null,
     );
     const scope = scopes.reviewedWrite(),
-      readScope = scopes.recordRead();
+      readScope = scopes.recordRead(),
+      registryScope = scopes.schemaRegistry();
     if (scope === null) {
       try {
         await target.close();
@@ -67,6 +70,7 @@ export class SavedReplayDestinations
     return {
       scope,
       ...(readScope === null ? {} : { readScope }),
+      ...(registryScope === null ? {} : { registryScope }),
       close(): Promise<void> {
         closed = true;
         closing ??= Promise.resolve().then(() => target.close());

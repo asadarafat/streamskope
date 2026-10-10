@@ -29,7 +29,7 @@ export interface RepairJob {
   readonly findings: readonly RepairFinding[];
 }
 export interface RepairJournalDocument {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly jobs: readonly RepairJob[];
 }
 /** Public metadata deliberately excludes exact reviewed payloads and credentials. */
@@ -58,7 +58,7 @@ export function parseRepairJournalDocument(value: unknown): RepairJournalDocumen
   const d = record(value, "repairJournal");
   exactKeys(d, ["schemaVersion", "jobs"], "repairJournal");
   if (
-    (d.schemaVersion !== 1 && d.schemaVersion !== 2) ||
+    (d.schemaVersion !== 1 && d.schemaVersion !== 2 && d.schemaVersion !== 3) ||
     !Array.isArray(d.jobs) ||
     d.jobs.length > REPAIR_JOB_LIMITS.jobs
   )
@@ -76,11 +76,16 @@ export function parseRepairJournalDocument(value: unknown): RepairJournalDocumen
         "pendingIndex",
         "status",
         "cleanup",
-        ...(d.schemaVersion === 2 ? ["revision", "parentJobId", "continuationId", "findings"] : []),
+        ...(d.schemaVersion !== 1 ? ["revision", "parentJobId", "continuationId", "findings"] : []),
       ],
       "repairJob",
     );
     const review = parseRecordReplayReview(j.review);
+    if (
+      d.schemaVersion !== 3 &&
+      (review.encoding !== undefined || review.input.transform.structured !== undefined)
+    )
+      throw new Error("Structured writers require repair journal format3.");
     if (!Array.isArray(j.outcomes) || j.outcomes.length > review.batch.records.length)
       throw new Error("Invalid repair receipts.");
     const outcomes = j.outcomes.map(parseKafkaWriteOutcome);
@@ -137,7 +142,7 @@ export function parseRepairJournalDocument(value: unknown): RepairJournalDocumen
   });
   if (new Set(jobs.map((j) => j.id)).size !== jobs.length) throw new Error("Duplicate repair job.");
   validateRepairLinks(jobs);
-  const document = { schemaVersion: 2 as const, jobs };
+  const document = { schemaVersion: 3 as const, jobs };
   if (new TextEncoder().encode(JSON.stringify(document)).length > REPAIR_JOB_LIMITS.fileBytes)
     throw new Error("Repair journal exceeds its protected storage bound.");
   return document;

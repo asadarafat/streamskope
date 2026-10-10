@@ -390,7 +390,7 @@ def inspection(value, policy, version, target=None):
     kafka_maximum = 3 if legacy_target else 4
     preference_maximum = 1 if legacy_target else 2
     query_maximum = 1 if legacy_target else 4
-    repair_maximum = 1 if legacy_target else 2
+    repair_maximum = 1 if legacy_target else 3
     exact(
         value,
         {"schemaVersion", "dataContract", "hostRelease", "outcome", "documents", "unverified"},

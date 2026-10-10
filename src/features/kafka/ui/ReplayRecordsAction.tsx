@@ -27,6 +27,8 @@ import {
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
 
 import { RepairJobHistory } from "./RepairJobHistory";
+import { StructuredReplayEditor } from "./StructuredReplayEditor";
+import { structuredReplayField, type StructuredReplayDraft } from "./structured-replay-draft";
 
 function encode(value: string): string {
   return btoa(Array.from(new TextEncoder().encode(value), (b) => String.fromCharCode(b)).join(""));
@@ -62,6 +64,8 @@ export function ReplayRecordsAction({
   const [review, setReview] = useState<RecordReplayReview>(),
     [outcome, setOutcome] = useState<RecordReplayOutcome>(),
     [error, setError] = useState<string>();
+  const [structuredKey, setStructuredKey] = useState<StructuredReplayDraft | null>(null),
+    [structuredValue, setStructuredValue] = useState<StructuredReplayDraft | null>(null);
   const [confirmation, setConfirmation] = useState(""),
     [previewIndex, setPreviewIndex] = useState("0"),
     [busy, setBusy] = useState<"review" | "apply">(),
@@ -150,14 +154,25 @@ export function ReplayRecordsAction({
             original: r.original,
           })),
         transform: {
-          key: keyMode === "keep" ? null : { value: keyMode === "null" ? null : encode(key) },
-          valueText: find ? { search: find, replacement } : null,
+          key:
+            structuredKey || keyMode === "keep"
+              ? null
+              : { value: keyMode === "null" ? null : encode(key) },
+          valueText: !structuredValue && find ? { search: find, replacement } : null,
           removeHeaders: removeHeaders
             .split(",")
             .map((h) => h.trim())
             .filter(Boolean)
             .map(encode),
           appendHeaders: appended,
+          ...(structuredKey || structuredValue
+            ? {
+                structured: {
+                  key: structuredReplayField(structuredKey),
+                  value: structuredReplayField(structuredValue),
+                },
+              }
+            : {}),
         },
       });
       const response = await host.execute({
@@ -177,7 +192,7 @@ export function ReplayRecordsAction({
     } catch {
       if (current === generation.current)
         setError(
-          "Check complete source bytes, destination, integer partition/rate and transformation fields. Replay is limited to 50 records, 16 KiB per record and 512 KiB total.",
+          "Check complete source bytes, destination, partition/rate and transformation fields. Structured edits need valid JSON Pointers and one mapping per source writer; registered outputs need a destination subject and explicit version. Replay is limited to 50 records, 16 KiB per record and 512 KiB total.",
         );
     } finally {
       if (current === generation.current) setBusy(undefined);
@@ -241,6 +256,8 @@ export function ReplayRecordsAction({
           setRecords(snapshot);
           setIds(snapshot[0]?.original?.state === "complete" ? [snapshot[0].id] : []);
           setTopic(snapshot[0]?.topic ?? "");
+          setStructuredKey(null);
+          setStructuredValue(null);
           setOpen(true);
         }}
       >
@@ -344,12 +361,31 @@ export function ReplayRecordsAction({
             <Typography component="h3" variant="subtitle2">
               Optional transformations
             </Typography>
+            {(["key", "value"] as const).map((field) => (
+              <StructuredReplayEditor
+                key={field}
+                field={field}
+                draft={field === "key" ? structuredKey : structuredValue}
+                messages={records.filter((r) => ids.includes(r.id))}
+                disabled={!!busy}
+                onChange={(draft) => {
+                  clearReview();
+                  (field === "key" ? setStructuredKey : setStructuredValue)(draft);
+                }}
+              />
+            ))}
+            <Typography variant="body2">
+              Need a destination writer? Connect to that profile, create or evolve it through Schema
+              Registry's reviewed registration workflow, then return here. Preview never registers
+              schemas. Framed records sent to another profile require structured translation for
+              each framed field.
+            </Typography>
             <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
               <TextField
                 select
                 label="Key transformation"
                 value={keyMode}
-                disabled={!!busy}
+                disabled={!!busy || structuredKey !== null}
                 onChange={edit(setKeyMode)}
                 sx={{ minWidth: 180 }}
               >
@@ -360,7 +396,7 @@ export function ReplayRecordsAction({
               <TextField
                 label="Replacement key"
                 value={key}
-                disabled={!!busy || keyMode !== "text"}
+                disabled={!!busy || structuredKey !== null || keyMode !== "text"}
                 onChange={edit(setKey)}
               />
             </Stack>
@@ -368,20 +404,20 @@ export function ReplayRecordsAction({
               <TextField
                 label="Find literal UTF-8 value text"
                 value={find}
-                disabled={!!busy}
+                disabled={!!busy || structuredValue !== null}
                 onChange={edit(setFind)}
               />
               <TextField
                 label="Replace value text with"
                 value={replacement}
-                disabled={!!busy || !find}
+                disabled={!!busy || structuredValue !== null || !find}
                 onChange={edit(setReplacement)}
               />
             </Stack>
             <Typography variant="body2">
               Literal replacement affects all matches in UTF-8 values; binary values reject this
-              transformation. It does not validate schemas or translate Schema Registry IDs between
-              clusters. Verify the exact output below.
+              transformation. Use structured replay to validate destination writers and translate
+              Schema Registry IDs. Verify the exact output below.
             </Typography>
             <TextField
               label="Remove header names (comma-separated)"
@@ -433,6 +469,21 @@ export function ReplayRecordsAction({
                 <StudioCodeBlock sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                   {JSON.stringify(review.batch.records[Number(previewIndex)], null, 2)}
                 </StudioCodeBlock>
+                {review.encoding && (
+                  <>
+                    <Typography component="h3" variant="subtitle2">
+                      Verified writer mappings
+                    </Typography>
+                    <StudioCodeBlock sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                      {JSON.stringify(review.encoding[Number(previewIndex)], null, 2)}
+                    </StudioCodeBlock>
+                    <Typography variant="body2">
+                      The host validated these exact bytes against the destination reference graph.
+                      Each send rechecks the pinned writer. Continuation uses the frozen output and
+                      skips every previously attempted position.
+                    </Typography>
+                  </>
+                )}
                 <TextField
                   label={`Type ${replayConfirmation(review)} to confirm`}
                   value={confirmation}

@@ -6,13 +6,13 @@ import {
   type LocalPredecessorAssets,
 } from "./browser-upgrade-smoke";
 
-/** Exact retained repair-v1 host; independent migration proof cannot replace public delivery. */
+/** Exact retained repair-v2 host; independent migration proof cannot replace public delivery. */
 export async function verifyLocalRepairRecoveryUpgrade(
   options: TransitionOptions & { readonly predecessorAssets: LocalPredecessorAssets },
 ): Promise<{
   readonly schemaVersion: 1;
   readonly deliveryScope: "local-staged";
-  readonly predecessorScope: "previously-qualified-repair-v1";
+  readonly predecessorScope: "previously-qualified-repair-v2";
   readonly outcome: "passed";
   readonly transition: Awaited<ReturnType<typeof verifyTransition>>;
 }> {
@@ -25,17 +25,17 @@ export async function verifyLocalRepairRecoveryUpgrade(
   return {
     schemaVersion: 1,
     deliveryScope: "local-staged",
-    predecessorScope: "previously-qualified-repair-v1",
+    predecessorScope: "previously-qualified-repair-v2",
     outcome: "passed",
     transition: await verifyTransition(
-      { ...options, repairHistory: false, repairRecovery: true },
+      { ...options, repairHistory: false, repairRecovery: { from: 2, to: 3 } },
       {
         predecessor: {
-          version: "0.10.7-qa.d019d1158623",
-          sourceRevision: "d019d1158623b85917bf59225582e63f8736d987",
+          version: "0.10.8-qa.0aa0d8addfbe",
+          sourceRevision: "0aa0d8addfbe8b16ceaf20a322dabfb3d9062ae8",
           platform: "linux/arm64",
-          image: "streamskope:0.10.7-qa.d019d1158623",
-          imageId: "sha256:f11d1c6463b310cb44e8cf65b23f9222024281052b6d1226dc6a7da66c6a2b1d",
+          image: "streamskope:0.10.8-qa.0aa0d8addfbe",
+          imageId: "sha256:bd2cb21f22ffa3f3cddc6797c056e7218cf753f2bbbe7bbdbb95e248a44583fc",
         },
         localAssets: options.predecessorAssets,
         queryFormat: 4,

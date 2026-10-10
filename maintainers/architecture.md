@@ -266,3 +266,26 @@ Read one complete feature trace, identify its state owner and failure/cleanup
 boundary, then make a small reviewed change. Use [qualification](qualification.md)
 to choose additional acceptance evidence. A passing synthetic pipeline soak does
 not establish network, renderer or installed-upgrade endurance.
+
+## Structured repair ownership
+
+The [structured replay service](../src/features/kafka/application/structured-replay-service.ts)
+decodes immutable original bytes with the same canonical decoder as inspection,
+applies bounded declarative JSON Pointer edits and encodes with the shared schema
+authoring worker. Saved destinations capture Registry, read and reviewed-write
+authority from the same isolated connection. ID equality across Registries is
+never writer identity. Each record's dispatch rechecks the pinned destination
+subject/version, ID and complete bounded reference graph fingerprint.
+
+Missing writers use the existing reviewed schema-change owner through an explicit
+destination-profile registration journey; replay review never registers schemas.
+Continuation uses frozen output bytes and writer evidence, without decoding or
+re-encoding source records. It retains prior uncertainty and original cleanup
+ownership. See [repair operation](../website/docs/guide/record-replay.md).
+
+Host protocol 67 pairs the new closed transform/evidence contracts; protocol 66
+peers are refused. Protected journal format 3 accepts read-only legacy formats
+1/2, preserves the exact encrypted predecessor on the first explicit mutation,
+and refuses structured evidence mislabeled as a legacy document. Browser
+inspection and maintenance recognize both encrypted predecessor generations;
+old installed format2 hosts refuse format3 before stopping their current owner.

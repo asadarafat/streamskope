@@ -187,6 +187,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       this.recordActivity.bind(this),
       options.repairStore,
       this.preferences,
+      options,
     );
     this.protection = new KafkaCommandProtection({
       preferences: this.preferences,

@@ -176,3 +176,51 @@ it("revokes a reviewed destination when its saved profile disappears", async () 
   expect(target.scope.isCurrent()).toBe(false);
   await target.close();
 });
+
+it("captures destination Registry authority alongside write/read authority and fences a late read when the profile is removed", async () => {
+  const profiles = new KafkaProfileService(
+    new InMemoryKafkaProfileStore({ durability: "session", protection: "memory", state: "ready" }),
+    { decode: (): Promise<never> => Promise.reject(new Error("No trust decoding expected.")) },
+    { createId: (): string => "destination" },
+  );
+  await profiles.create({
+    name: "Destination",
+    brokers: ["localhost:9092"],
+    transport: "plaintext",
+  });
+  const service = {
+    baseUrl: "https://destination.test",
+    authorization: (): Promise<string> => Promise.resolve("Bearer private-fixture-sentinel"),
+  };
+  const connection = Object.assign(new RecordingActiveConnection(), {
+    clusterServiceContext: () => service,
+  });
+  const port = new RecordingConnectionPort();
+  port.openOperations.push(() => Promise.resolve(connection));
+  const target = await new SavedReplayDestinations(profiles, port).openReviewed(
+    "destination",
+    1,
+    new AbortController().signal,
+  );
+  expect(Object.keys(target).sort()).toEqual(["close", "readScope", "registryScope", "scope"]);
+  expect(JSON.stringify(target)).not.toContain("private-fixture-sentinel");
+  const read = deferred<string>(),
+    started = deferred<void>();
+  const result = target.registryScope!.read(async (context) => {
+    expect(context).toBe(service);
+    started.resolve();
+    return read.promise;
+  }, new AbortController().signal);
+  const rejected = expect(result).rejects.toThrow();
+  await started.promise;
+  await profiles.delete("destination");
+  expect(target.registryScope!.isCurrent()).toBe(false);
+  expect(target.readScope!.isCurrent()).toBe(false);
+  expect(target.scope.isCurrent()).toBe(false);
+  read.resolve("late");
+  await rejected;
+  expect(target.registryScope!.tryDispatch(() => Promise.resolve("must not run"))).toEqual({
+    started: false,
+  });
+  await target.close();
+});
