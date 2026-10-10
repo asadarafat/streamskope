@@ -6,11 +6,14 @@ import type { StreamSkopeHost } from "../contracts";
 
 import { ResourcePageHeader, TopicSectionTabs } from "./ResourcePageHeader";
 import { ReviewedWriteAction } from "./ReviewedWriteAction";
+import { TopicAdministrationAction } from "./TopicAdministrationAction";
 import type { TopicWorkspaceView } from "./WorkbenchContextBar";
 
 interface TopicDetailPageProperties {
   readonly host: StreamSkopeHost;
   readonly canProduce: boolean;
+  readonly onTopicChanged: () => void | Promise<void>;
+  readonly onTopicDeleted: () => void;
   readonly children: React.ReactNode;
   readonly onOpenTopicNotes: () => void;
   readonly onWorkspaceChange: (workspace: TopicWorkspaceView) => void;
@@ -21,6 +24,8 @@ interface TopicDetailPageProperties {
 export function TopicDetailPage({
   host,
   canProduce,
+  onTopicChanged,
+  onTopicDeleted,
   children,
   onOpenTopicNotes,
   onWorkspaceChange,
@@ -45,6 +50,13 @@ export function TopicDetailPage({
         action={
           <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
             <StudioButton onClick={onOpenTopicNotes}>Local topic notes</StudioButton>
+            <TopicAdministrationAction
+              host={host}
+              topic={selectedTopic}
+              canWrite={canProduce}
+              onChanged={onTopicChanged}
+              onDeleted={onTopicDeleted}
+            />
             <ReviewedWriteAction
               key={selectedTopic}
               host={host}

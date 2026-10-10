@@ -77,6 +77,8 @@ export const HOST_COMMANDS = [
   "rules.validate",
   "rules.evaluate",
   "topics.list",
+  "topics.change.review",
+  "topics.change.apply",
   "writes.review",
   "writes.apply",
   "consumerGroups.reset.review",

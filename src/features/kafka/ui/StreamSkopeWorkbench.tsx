@@ -848,6 +848,8 @@ export function StreamSkopeWorkbench({
       <TopicDetailPage
         key={views.revision}
         host={host}
+        onTopicChanged={requestTopics}
+        onTopicDeleted={() => setSelectedTopic(null)}
         canProduce={
           connected && state.preferenceSnapshot?.preferences.protection.readOnly === false
         }

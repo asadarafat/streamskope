@@ -38,6 +38,7 @@ import { testClusterServices } from "./service-connection-test";
 import { NodeBoundedJsonHttp } from "./bounded-json-http";
 import { PlatformaticOffsetReset } from "./platformatic-offset-reset";
 import { PlatformaticReviewedWrites } from "./platformatic-writes";
+import { PlatformaticTopicAdministration } from "./platformatic-topic-administration";
 import { TranslatedKafkaMessageStream } from "./translated-message-stream";
 import { translateKafkaRecord } from "./message-record";
 import {
@@ -179,6 +180,17 @@ function withCleanupFailure(
 }
 
 class ActiveKafkaEngineConnection implements KafkaEngineConnection {
+  topicAdministrationSnapshot(
+    topic: string,
+  ): Promise<import("../contracts/topic-administration").TopicAdministrationSnapshot> {
+    return this.topicAdministration.snapshot(topic);
+  }
+  applyTopicAdministration(
+    input: import("../contracts/topic-administration").TopicAdministrationInput,
+    baseline: import("../contracts/topic-administration").TopicAdministrationSnapshot,
+  ): Promise<import("../contracts/topic-administration").TopicAdministrationOutcome> {
+    return this.topicAdministration.apply(input, baseline);
+  }
   offsetResetSnapshot(
     input: import("../contracts/offset-reset").OffsetResetInput,
   ): Promise<import("../contracts/offset-reset").OffsetResetSnapshot> {
@@ -234,6 +246,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   private readonly pendingReaderOpens = new Set<Promise<void>>();
   private readonly lateReaders = new Set<KafkaReadOpenCleanup>();
   private readonly serviceContexts = new Map<string, KafkaClusterServiceContext>();
+  private readonly topicAdministration: PlatformaticTopicAdministration;
 
   constructor(
     private readonly admin: KafkaAdminPort,
@@ -249,7 +262,12 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     private readonly target: string,
     private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
     private readonly prepareRecord: StreamSkopeKafkaEngineOptions["prepareRecord"],
-  ) {}
+  ) {
+    this.topicAdministration = new PlatformaticTopicAdministration(
+      clientInput,
+      lifecycleController.signal,
+    );
+  }
 
   alterTopicConfiguration(
     topic: string,
@@ -693,6 +711,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
         this.lateReaders.delete(stream);
       }),
       this.admin.close(),
+      this.topicAdministration.close(),
     ]);
     const failures = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason as unknown] : [],

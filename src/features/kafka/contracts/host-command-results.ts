@@ -37,6 +37,14 @@ interface SpecificCommandResults
     RecordAnalysisResults,
     RecordLocatorResults,
     TopicCatalogResults {
+  readonly "topics.change.review": {
+    readonly correlationId: string;
+    readonly review: import("./topic-administration").TopicAdministrationReview;
+  };
+  readonly "topics.change.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./topic-administration").TopicAdministrationOutcome;
+  };
   readonly "relationships.capture": {
     readonly correlationId: string;
     readonly graph: import("./relationships").RelationshipGraph;
@@ -231,6 +239,8 @@ interface SpecificCommandResults
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "topics.change.review": true,
+  "topics.change.apply": true,
   "records.analysis.start": true,
   "records.locator.load": true,
   "records.locator.cancel": true,

@@ -2,6 +2,14 @@ import type { HostCommandBase } from "./types";
 
 export type RecoveryHostCommand =
   | (HostCommandBase & {
+      readonly command: "topics.change.review";
+      readonly payload: import("./topic-administration").TopicAdministrationInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "topics.change.apply";
+      readonly payload: { readonly planId: string; readonly confirmation: string };
+    })
+  | (HostCommandBase & {
       readonly command: "records.repair.list";
       readonly payload: Readonly<Record<string, never>>;
     })

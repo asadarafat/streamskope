@@ -283,9 +283,16 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 67 pairs the new closed transform/evidence contracts; protocol 66
-peers are refused. Protected journal format 3 accepts read-only legacy formats
+Host protocol 68 includes closed topic-administration reviews/outcomes alongside
+the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,
 and refuses structured evidence mislabeled as a legacy document. Browser
 inspection and maintenance recognize both encrypted predecessor generations;
 old installed format2 hosts refuse format3 before stopping their current owner.
+
+Topic administration reuses the bounded connection-pinned review owner. Its
+dedicated adapter owns admitted clients through acknowledgement and confirmed
+cleanup, joins them on connection close and fences new work after unresolved
+cleanup. Deletion uses the SDK's public UUID-based wire API; expansion uses Kafka's
+name-based API after fresh identity/assignment checks, with its concurrent
+replacement limitation explicit. Readback never invents an acknowledgement.

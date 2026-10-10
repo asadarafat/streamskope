@@ -27,6 +27,7 @@ import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
 import { parseEnvironmentCommand, parseEnvironmentResponse } from "./environment-protocol";
 import { parseSchemaClient } from "./schema-client";
 import { parseRecoveryCommand, parseRecoveryResponse } from "./recovery-protocol";
+import { assertTopicAdministrationResponse } from "./topic-administration-protocol";
 import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
 import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
 import { parseSchemaInspectionInput, parseSchemaInspection } from "./schema-inspection";
@@ -712,6 +713,7 @@ export function parseCorrelatedHostResponse<Command extends HostCommand>(
       "must match the submitted record cancellation",
     );
   assertTopicCatalogResponse(response, command);
+  assertTopicAdministrationResponse(response, command);
   // The parser validated the result shape, and the checks above established its discriminant.
   return response as HostCommandResponse<Command["command"]>;
 }
