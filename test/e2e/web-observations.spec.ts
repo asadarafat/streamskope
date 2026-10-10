@@ -231,7 +231,7 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
     await expect(health.getByRole("button", { name: "Start observing" })).toBeEnabled({
       timeout: 15000,
     });
-    await page.reload();
+    await navigation.getByRole("button", { name: "Overview", exact: true }).click();
     await navigation.getByRole("button", { name: "Observed health", exact: true }).click();
     await expect(health.getByLabel("Observed topic", { exact: true })).toHaveValue(topic);
     await expect(health.getByLabel("Observed consumer group (optional)")).toHaveValue(groupId);
