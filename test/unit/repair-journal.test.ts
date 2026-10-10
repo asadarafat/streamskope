@@ -13,6 +13,9 @@ import {
 } from "../../src/features/kafka/contracts/record-replay";
 import { parseRepairJournalDocument } from "../../src/features/kafka/contracts/repair-jobs";
 import type { KafkaWriteOutcome } from "../../src/features/kafka/contracts/reviewed-writes";
+import { RepairRecoveryService } from "../../src/features/kafka/application/repair-recovery-service";
+import { RepairReconciliationReader } from "../../src/features/kafka/application/repair-reconciliation-reader";
+import { KAFKA_RECORD_PROTECTION_DEFAULTS } from "../../src/features/kafka/contracts";
 
 const services: RecordReplayService[] = [];
 afterEach(async () => {
@@ -191,7 +194,7 @@ it("rejects inconsistent, duplicate and unknown-version stored jobs before admit
   await f.journal.begin(review);
   const valid = await f.journal.store.load(),
     job = valid.jobs[0]!;
-  expect(() => parseRepairJournalDocument({ ...valid, schemaVersion: 2 })).toThrow();
+  expect(() => parseRepairJournalDocument({ ...valid, schemaVersion: 3 })).toThrow();
   expect(() => parseRepairJournalDocument({ ...valid, jobs: [job, job] })).toThrow();
   expect(() =>
     parseRepairJournalDocument({ ...valid, jobs: [{ ...job, pendingIndex: 2 }] }),
@@ -199,4 +202,199 @@ it("rejects inconsistent, duplicate and unknown-version stored jobs before admit
   expect(() =>
     parseRepairJournalDocument({ ...valid, jobs: [{ ...job, status: "complete" }] }),
   ).toThrow();
+});
+it("links one fresh continuation and never resends the acknowledged or uncertain prefix", async () => {
+  const store = new MemoryRepairJobStore(),
+    first = fixture(store);
+  const parent = await first.service.review(input);
+  await first.journal.begin(parent);
+  await first.journal.intent(parent.planId, 0);
+  await first.journal.receipt(parent.planId, 0, ack);
+  await first.journal.intent(parent.planId, 1); // crash before a durable receipt
+  const reopened = fixture(store),
+    origin = await reopened.journal.continuation(parent.planId);
+  expect(origin.startIndex).toBe(2);
+  const child = await reopened.service.review(
+    { ...input, records: input.records.slice(2) },
+    origin,
+  );
+  const duplicate = await reopened.service.review(
+    { ...input, records: input.records.slice(2) },
+    origin,
+  );
+  expect(await reopened.service.apply(child.planId, replayConfirmation(child))).toMatchObject({
+    total: 1,
+    outcomes: [ack],
+    unsent: 0,
+  });
+  await expect(
+    reopened.service.apply(duplicate.planId, replayConfirmation(duplicate)),
+  ).rejects.toThrow("changed");
+  expect(reopened.send).toHaveBeenCalledTimes(1);
+  const jobs = (await store.load()).jobs;
+  expect(jobs[0]).toMatchObject({
+    id: parent.planId,
+    outcomes: [ack],
+    pendingIndex: 1,
+    continuationId: child.planId,
+  });
+  expect(jobs[1]).toMatchObject({
+    id: child.planId,
+    parentJobId: parent.planId,
+    outcomes: [ack],
+    status: "complete",
+  });
+  expect((await reopened.journal.list()).every((j) => !j.canArchive)).toBe(true);
+});
+it("retains a committed child reservation after an uncertain begin and permits only its unsent suffix after reopening", async () => {
+  const store = new MemoryRepairJobStore(),
+    first = fixture(store);
+  const parent = await first.service.review(input);
+  await first.journal.begin(parent);
+  const recovered = fixture(store),
+    origin = await recovered.journal.continuation(parent.planId);
+  const child = await recovered.service.review(input, origin),
+    normal = store.commit.bind(store);
+  vi.spyOn(store, "commit").mockImplementation(async (d) => {
+    await normal(d);
+    throw new Error("crash after reserving child before send");
+  });
+  await expect(recovered.service.apply(child.planId, replayConfirmation(child))).rejects.toThrow(
+    "uncertain",
+  );
+  expect(recovered.send).not.toHaveBeenCalled();
+  const reopened = new RepairJournal(store);
+  await expect(reopened.continuation(parent.planId)).rejects.toThrow("no available");
+  expect((await reopened.continuation(child.planId)).startIndex).toBe(0);
+  expect(await reopened.list()).toMatchObject([
+    { continuationId: child.planId, canContinue: false },
+    { parentJobId: parent.planId, canContinue: true, unsent: 3 },
+  ]);
+});
+it("rejects stale history and changed output bytes before reserving a continuation", async () => {
+  const store = new MemoryRepairJobStore(),
+    first = fixture(store),
+    parent = await first.service.review(input);
+  await first.journal.begin(parent);
+  const recovered = fixture(store),
+    origin = await recovered.journal.continuation(parent.planId);
+  const child = await recovered.service.review(input, origin);
+  await recovered.journal.recordFinding(origin.parent, {
+    id: "observation",
+    recordIndex: 0,
+    offset: "19",
+    observedAt: "2026-10-10T12:00:00Z",
+    state: "equivalent",
+    cleanup: "complete",
+  });
+  await expect(recovered.service.apply(child.planId, replayConfirmation(child))).rejects.toThrow(
+    "changed",
+  );
+  const fresh = await recovered.journal.continuation(parent.planId);
+  await expect(
+    recovered.journal.begin(
+      {
+        ...child,
+        batch: { ...child.batch, records: child.batch.records.map((r) => ({ ...r, value: "" })) },
+      },
+      fresh,
+    ),
+  ).rejects.toThrow("differs");
+  expect((await store.load()).jobs).toHaveLength(1);
+  expect(recovered.send).not.toHaveBeenCalled();
+});
+it("archives the exact inactive known chain, rejects stale revisions and preserves uncertain chains", async () => {
+  const store = new MemoryRepairJobStore(),
+    first = fixture(store),
+    parent = await first.service.review(input);
+  await first.journal.begin(parent);
+  await first.journal.finish(parent.planId, false, "complete");
+  const origin = await first.journal.continuation(parent.planId),
+    child = await first.service.review(input, origin);
+  await first.service.apply(child.planId, replayConfirmation(child));
+  const jobs = await first.journal.list(),
+    chain = jobs.map((j) => ({ id: j.id, revision: j.revision }));
+  await expect(
+    first.journal.archive({
+      jobId: parent.planId,
+      confirmation: parent.planId,
+      chain: [{ ...chain[0]!, revision: 1 }, chain[1]!],
+    }),
+  ).rejects.toThrow("changed");
+  expect((await store.load()).jobs).toHaveLength(2);
+  await first.journal.archive({ jobId: parent.planId, confirmation: parent.planId, chain });
+  expect((await store.load()).jobs).toEqual([]);
+});
+it("normalizes legacy jobs without guessing links and rejects string versions, dangling links and cycles", async () => {
+  const f = fixture(),
+    review = await f.service.review(input);
+  await f.journal.begin(review);
+  const modern = (await f.journal.store.load()).jobs[0]!;
+  const { revision, parentJobId, continuationId, findings, ...legacy } = modern;
+  expect([revision, parentJobId, continuationId, findings]).toEqual([1, null, null, []]);
+  expect(parseRepairJournalDocument({ schemaVersion: 1, jobs: [legacy] }).jobs[0]).toEqual(modern);
+  expect(() => parseRepairJournalDocument({ schemaVersion: "1", jobs: [legacy] })).toThrow();
+  expect(() =>
+    parseRepairJournalDocument({
+      schemaVersion: 2,
+      jobs: [{ ...modern, continuationId: "missing" }],
+    }),
+  ).toThrow();
+  const other = {
+    ...modern,
+    id: "other",
+    review: { ...modern.review, planId: "other" },
+    parentJobId: modern.id,
+    continuationId: modern.id,
+  };
+  expect(() =>
+    parseRepairJournalDocument({
+      schemaVersion: 2,
+      jobs: [{ ...modern, parentJobId: other.id, continuationId: other.id }, other],
+    }),
+  ).toThrow();
+});
+it("fences a pending recovery lookup during revocation and joins it without admitting a late destination reader", async () => {
+  const f = fixture(),
+    reader = new RepairReconciliationReader(
+      () => null,
+      () => ({
+        codecs: { key: "auto", value: "auto" },
+        protection: KAFKA_RECORD_PROTECTION_DEFAULTS,
+      }),
+    );
+  const review = await f.service.review(input);
+  await f.journal.begin(review);
+  const snapshot = await f.journal.snapshot(review.planId);
+  let resolve!: (job: typeof snapshot) => void;
+  const lookup = vi.spyOn(f.journal, "snapshot").mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const observe = vi.spyOn(reader, "observe");
+  const recovery = new RepairRecoveryService(f.journal, f.service, reader);
+  const work = recovery.reconcile({
+    jobId: review.planId,
+    targetProfile: null,
+    recordIndex: 0,
+    offset: "19",
+  });
+  const rejected = expect(work).rejects.toThrow("revoked");
+  await vi.waitFor(() => expect(lookup).toHaveBeenCalledOnce());
+  const stop = recovery.invalidate();
+  expect(recovery.invalidate()).toBe(stop);
+  await expect(
+    recovery.archive({
+      jobId: review.planId,
+      confirmation: review.planId,
+      chain: [{ id: review.planId, revision: 1 }],
+    }),
+  ).rejects.toThrow("cleanup");
+  resolve(snapshot);
+  await rejected;
+  await stop;
+  expect(observe).not.toHaveBeenCalled();
+  expect((await f.journal.store.load()).jobs).toHaveLength(1);
 });

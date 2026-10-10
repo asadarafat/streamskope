@@ -140,7 +140,7 @@ it("refuses a stale writer and linked parent without replacing another owner's c
   await stale.load();
   await new RepairJournal(first).begin(review);
   const committed = await readFile(file);
-  await expect(stale.commit({ schemaVersion: 1, jobs: [] })).rejects.toThrow(
+  await expect(stale.commit({ schemaVersion: 2, jobs: [] })).rejects.toThrow(
     "changed after loading",
   );
   expect(await readFile(file)).toEqual(committed);
@@ -171,15 +171,92 @@ it("inspects the protected envelope without decrypting, preserves full backup by
   expect(report.outcome).toBe("eligible");
   expect(report.documents.find((d) => d.kind === "repair-jobs")).toMatchObject({
     state: "verified",
-    formats: [1],
+    formats: [2],
     count: 1,
   });
   expect(await readFile(path)).toEqual(original);
   const backup = join(await root(), "history");
   await mkdir(backup);
   await writeFile(join(backup, "kafka-repair-jobs.json"), original, { mode: 0o600 });
-  await writeFile(path, JSON.stringify({ schemaVersion: 2, protected: "c2VjcmV0" }));
+  await writeFile(path, JSON.stringify({ schemaVersion: 3, protected: "c2VjcmV0" }));
   const blocked = await inspectBrowserData(r, { hostRelease: "v0.10.3" });
   expect(blocked.outcome).toBe("blocked");
   expect(await readFile(join(backup, "kafka-repair-jobs.json"))).toEqual(original);
+});
+async function seedLegacy(file: string, protector: ProfileProtector): Promise<Buffer> {
+  const plaintext = JSON.stringify({
+    schemaVersion: 1,
+    jobs: [
+      {
+        id: review.planId,
+        createdAt: "2026-10-10T00:00:00Z",
+        updatedAt: "2026-10-10T00:00:00Z",
+        review,
+        outcomes: [],
+        pendingIndex: 0,
+        status: "running",
+        cleanup: "pending",
+      },
+    ],
+  });
+  const bytes = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      protected: (await protector.protect(plaintext)).toString("base64"),
+    }) + "\n",
+  );
+  await writeFile(file, bytes, { mode: 0o600 });
+  return bytes;
+}
+it("reads legacy ciphertext without mutation and preserves its exact private predecessor on the first explicit transition", async () => {
+  const file = join(await root(), "repair.json"),
+    protector = protection(),
+    old = await seedLegacy(file, protector);
+  const metadata = await stat(file),
+    store = new AtomicRepairFileStore(file, protector);
+  const document = await store.load();
+  expect(document.schemaVersion).toBe(2);
+  expect(document.jobs[0]).toMatchObject({
+    revision: 1,
+    pendingIndex: 0,
+    findings: [],
+    parentJobId: null,
+  });
+  expect(await readFile(file)).toEqual(old);
+  expect((await stat(file)).mtimeMs).toBe(metadata.mtimeMs);
+  expect((await stat(file)).ino).toBe(metadata.ino);
+  await store.commit(document);
+  const protectedEnvelope: unknown = JSON.parse(await readFile(file, "utf8"));
+  expect(protectedEnvelope).toMatchObject({ schemaVersion: 2 });
+  expect(await readFile(`${file}.pre-repair-v1`)).toEqual(old);
+  if (process.platform !== "win32")
+    expect((await stat(`${file}.pre-repair-v1`)).mode & 0o777).toBe(0o600);
+  expect(await new AtomicRepairFileStore(file, protector).load()).toEqual(document);
+});
+it("refuses an existing mismatched or linked predecessor without overwriting legacy recovery data", async () => {
+  const file = join(await root(), "repair.json"),
+    protector = protection(),
+    old = await seedLegacy(file, protector);
+  await writeFile(`${file}.pre-repair-v1`, "different", { mode: 0o600 });
+  const store = new AtomicRepairFileStore(file, protector),
+    document = await store.load();
+  await expect(store.commit(document)).rejects.toThrow("differs");
+  expect(await readFile(file)).toEqual(old);
+  expect(await readFile(`${file}.pre-repair-v1`, "utf8")).toBe("different");
+  await rm(`${file}.pre-repair-v1`);
+  await symlink(file, `${file}.pre-repair-v1`);
+  await expect(store.commit(document)).rejects.toThrow("unsafe");
+  expect(await readFile(file)).toEqual(old);
+});
+it("preserves the legacy journal if predecessor directory synchronization fails", async () => {
+  const file = join(await root(), "repair.json"),
+    protector = protection(),
+    old = await seedLegacy(file, protector);
+  const store = new AtomicRepairFileStore(file, protector, (): Promise<void> =>
+    Promise.reject(new Error("injected backup sync failure")),
+  );
+  const document = await store.load();
+  await expect(store.commit(document)).rejects.toThrow("backup sync");
+  expect(await readFile(file)).toEqual(old);
+  expect(await readFile(`${file}.pre-repair-v1`)).toEqual(old);
 });

@@ -48,7 +48,7 @@ cancel, expiry, source change and application shutdown.
 
 ### Protected repair history
 
-Open **Repair history** in the message toolbar to inspect jobs and ordered broker
+Open **Repair history** in Connection Profiles or the message toolbar to inspect jobs and ordered broker
 receipts after navigation or restart. Installed desktop storage uses the operating
 system credential service; the browser host uses its unlocked vault. The
 development host reports **Session only**, which does not survive a host restart.
@@ -68,8 +68,54 @@ is **uncertain**, including when the app closes after Kafka accepted the record.
 Definitely unsent records are counted separately. A receipt-storage failure stops
 further sends and reports journal uncertainty while preserving any acknowledgement
 in the immediate response. Reopening history never sends or retries a record.
-This history view currently supports inspection; recovery requires a new explicit
-review rather than automatic restart.
+Reopening the view never sends or retries a record.
+
+### Continue an interrupted attempt
+
+1. Connect using current credentials, then open **Repair history → Recovery controls**.
+2. Choose the active connection or a current saved destination. It must identify the
+   original cluster, topic and partition count; a replacement topic is refused.
+3. Choose **Review definitely unsent records**. The new linked attempt contains
+   only the frozen suffix never dispatched by the parent. Acknowledged, rejected
+   and uncertain records are skipped; their original outcomes remain unchanged.
+4. Inspect the exact continuation bytes, skipped counts and destination. Type the
+   displayed confirmation and choose **Apply reviewed continuation**.
+5. Refresh history and inspect the child attempt's receipts before continuing again.
+
+Each parent can reserve one child, durably before sending. Duplicate or stale
+reviews cannot create a second child. If the host stops after reserving the child,
+recover from that child with a fresh review. Current profile credentials,
+permissions, masking and read-only settings apply; credentials are never copied
+into the journal. Rejected records are not retried by continuation; investigate
+their failure before a separate deliberately selected replay.
+
+### Inspect uncertainty and archive known chains
+
+In **Recovery controls**, enter the record's one-based index in that attempt and a
+destination offset to inspect. The bounded read checks actual cluster/topic
+identity and compares complete key, value and ordered header bytes. History keeps
+the timestamped result: **equivalent**, **different**, **not-observed** or
+**unavailable**, plus cleanup status. Absence requires complete single-offset
+coverage; permission failures, masking, replacement topics and incomplete reads
+are unavailable evidence. Each job retains at most 128 observations.
+
+Equivalent bytes are not proof that this attempt produced that record. The check
+does not change acknowledgements or clear uncertainty, and it does not justify an
+automatic retry. No reader or isolated destination is released until its owned
+cleanup is confirmed; unresolved cleanup blocks further recovery.
+
+**Archive confirmed chain** is available only for an inactive root and descendants
+with no pending or unknown dispatch. Back up application data first, then confirm
+the exact root ID. Archiving removes all linked attempts, receipts and any unsent
+records from history; a changed revision refuses the operation. An uncertain chain
+cannot be deleted through this control, including after an equivalent observation.
+
+The first explicit journal mutation upgrades legacy format 1 to format 2 and keeps
+the exact encrypted predecessor at `history/kafka-repair-jobs.json.pre-repair-v1`.
+Listing legacy history does not rewrite it. Older hosts refuse the new format;
+rollback requires a verified complete predecessor backup, including vault metadata
+and credentials. Restoring only the journal can lose newer receipts or mismatch
+its protection key. Preserve changed data during complete restoration.
 
 The host pins source connection generation, saved-profile revision, destination
 cluster ID, topic ID and partition count. A changed input stops dispatch. The

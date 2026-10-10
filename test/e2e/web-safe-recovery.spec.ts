@@ -165,6 +165,19 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     ).toBeVisible();
     await expect(history.getByRole("cell", { name: "acknowledged", exact: true })).toBeVisible();
     await expect(history.getByRole("cell", { name: `${target}/0@0`, exact: true })).toBeVisible();
+    await history.getByRole("button", { name: "Recovery controls" }).click();
+    await history.getByRole("textbox", { name: "Destination offset to inspect" }).fill("0");
+    await history.getByRole("button", { name: "Inspect destination offset" }).click();
+    await expect(history.getByText(/Record 1 at destination offset 0: equivalent/u)).toBeVisible();
+    const repairFile = join(dataRoot, "history", "kafka-repair-jobs.json");
+    const protectedRecovery = await readFile(repairFile, "utf8");
+    expect(protectedRecovery).not.toContain("replayed");
+    const protectedEnvelope: unknown = JSON.parse(protectedRecovery);
+    expect(protectedEnvelope).toMatchObject({ schemaVersion: 2 });
+    await expect(
+      history.getByRole("button", { name: "Review definitely unsent records" }),
+    ).toBeDisabled();
+    await history.getByRole("button", { name: "Close recovery controls" }).click();
     // Contrast checks require the dialog's entrance fade to have finished.
     await expect(history.locator("..")).toHaveCSS("opacity", "1");
     expect(
@@ -222,6 +235,16 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     await acl.getByRole("button", { name: "Apply reviewed ACL change" }).click();
     await expect(acl.getByText(/acknowledged · verified/u)).toBeVisible();
     await expect(acl.getByRole("button", { name: "Apply reviewed ACL change" })).toBeDisabled();
+    await acl.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(acl).not.toBeVisible();
+    await openWorkbenchResource(page, "Connection Profiles");
+    await page.getByRole("button", { name: "Repair history", exact: true }).click();
+    await expect(history.getByText(/Record 1 at destination offset 0: equivalent/u)).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("repair-history-profiles.png"),
+      animations: "disabled",
+    });
+    await history.getByRole("button", { name: "Close", exact: true }).click();
     expect(diagnostics.problems).toEqual([]);
   } finally {
     await testInfo.attach("browser-diagnostics", {

@@ -104,6 +104,14 @@ interface SpecificCommandResults
     readonly correlationId: string;
     readonly review: import("./record-replay").RecordReplayReview;
   };
+  readonly "records.repair.review": {
+    readonly correlationId: string;
+    readonly continuation: import("./repair-recovery").RepairContinuationReview;
+  };
+  readonly "records.repair.reconcile": {
+    readonly correlationId: string;
+    readonly finding: import("./repair-recovery").RepairFinding;
+  };
   readonly "records.replay.apply": {
     readonly correlationId: string;
     readonly outcome: import("./record-replay").RecordReplayOutcome;
@@ -248,6 +256,8 @@ const structuredResults = {
 
   "schemas.client": true,
   "records.repair.list": true,
+  "records.repair.review": true,
+  "records.repair.reconcile": true,
   "records.replay.review": true,
   "records.replay.apply": true,
   "consumerGroups.reset.review": true,

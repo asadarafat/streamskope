@@ -25,6 +25,9 @@ export const KAFKA_COMMAND_ACCESS = {
   "environments.apply": "remote-write",
   "schemas.client": "remote-read",
   "records.repair.list": "local",
+  "records.repair.review": "remote-read",
+  "records.repair.reconcile": "remote-read",
+  "records.repair.archive": "local",
   "records.replay.review": "remote-read",
   "records.replay.apply": "remote-write",
   "records.replay.cancel": "local",
@@ -239,6 +242,8 @@ export class KafkaCommandProtection {
       );
     if (
       (command.command === "records.replay.review" ||
+        command.command === "records.repair.review" ||
+        command.command === "records.repair.reconcile" ||
         command.command === "consumerGroups.reset.review" ||
         command.command === "records.decode") &&
       hasRecordMasking(snapshot.preferences.protection)
