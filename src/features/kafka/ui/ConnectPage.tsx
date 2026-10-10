@@ -22,16 +22,19 @@ import {
 export function ConnectPage({
   host,
   canWrite,
+  connectionName,
   onOpenTopic,
 }: {
   readonly host: StreamSkopeHost;
   readonly canWrite: boolean;
+  readonly connectionName: string | null;
   readonly onOpenTopic: (topic: string) => void;
 }): React.JSX.Element {
   const [inventory, setInventory] = useState<ConnectInventory>({ names: [], plugins: [] }),
     [detail, setDetail] = useState<ConnectDetail>();
   const [name, setName] = useState(""),
     [action, setAction] = useState<ConnectInput["action"]>("create"),
+    [remove, setRemove] = useState("[]"),
     [config, setConfig] = useState('{"connector.class":"","tasks.max":"1"}');
   const [review, setReview] = useState<ConnectReview>(),
     [validation, setValidation] = useState<ConnectValidation>(),
@@ -40,11 +43,14 @@ export function ConnectPage({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [attempted, setAttempted] = useState(false);
-  const mounted = useRef(true);
+  const mounted = useRef(true),
+    generation = useRef(0),
+    running = useRef(false);
   useEffect(() => {
     mounted.current = true;
     return (): void => {
       mounted.current = false;
+      generation.current += 1;
     };
   }, []);
   const invalidate = (): void => {
@@ -54,22 +60,28 @@ export function ConnectPage({
     setConfirmation("");
     setAttempted(false);
   };
-  const run = async (fn: () => Promise<void>): Promise<void> => {
-    if (busy) return;
+  const run = async (fn: (current: () => boolean) => Promise<void>): Promise<void> => {
+    if (running.current) return;
+    running.current = true;
+    const epoch = generation.current;
+    const current = (): boolean => mounted.current && generation.current === epoch;
     setBusy(true);
     setError("");
     try {
-      await fn();
+      await fn(current);
     } catch {
-      if (mounted.current)
+      if (current())
         setError(
           "Check the configured Connect endpoint, permissions and JSON configuration. Refresh status and validate before reviewing an action.",
         );
     } finally {
-      if (mounted.current) setBusy(false);
+      if (current()) {
+        running.current = false;
+        setBusy(false);
+      }
     }
   };
-  const refresh = async (): Promise<void> => {
+  const refresh = async (current: () => boolean): Promise<void> => {
     const r = await host.execute({
       command: "connect.list",
       id: crypto.randomUUID(),
@@ -77,12 +89,25 @@ export function ConnectPage({
       payload: {},
     });
     if (!r.ok) throw new Error();
-    if (mounted.current) setInventory(r.result.inventory);
+    if (current()) setInventory(r.result.inventory);
   };
   useEffect(() => {
+    generation.current += 1;
+    running.current = false;
+    setInventory({ names: [], plugins: [] });
+    setDetail(undefined);
+    setName("");
+    setAction("create");
+    setConfig('{"connector.class":"","tasks.max":"1"}');
+    setRemove("[]");
+    invalidate();
+    setBusy(false);
     void run(refresh);
-  }, [host]);
-  const load = async (n: string): Promise<void> => {
+    return (): void => {
+      generation.current += 1;
+    };
+  }, [host, connectionName]);
+  const load = async (n: string, current: () => boolean): Promise<void> => {
     invalidate();
     const r = await host.execute({
       command: "connect.load",
@@ -91,11 +116,12 @@ export function ConnectPage({
       payload: { name: n },
     });
     if (!r.ok) throw new Error();
-    if (mounted.current) {
+    if (current()) {
       setDetail(r.result.detail);
       setName(n);
       setAction("update");
       setConfig("{}");
+      setRemove("[]");
     }
   };
   const input = (): ConnectInput =>
@@ -103,6 +129,7 @@ export function ConnectPage({
       name,
       action,
       config: action === "create" || action === "update" ? (JSON.parse(config) as unknown) : {},
+      remove: action === "update" ? (JSON.parse(remove) as unknown) : [],
     });
   return (
     <Stack
@@ -118,6 +145,7 @@ export function ConnectPage({
         Manage connectors through the REST endpoint saved in your connection profile. Worker
         plugins, tasks and supported DLQs are separate from Redpanda transforms.
       </Typography>
+      <Typography variant="body2">Connection: {connectionName ?? "Disconnected"}</Typography>
       <Stack direction="row" spacing={1}>
         <Button
           disabled={busy}
@@ -128,12 +156,13 @@ export function ConnectPage({
           Refresh connectors
         </Button>
         <Button
-          disabled={busy}
+          disabled={busy || attempted}
           onClick={() => {
             invalidate();
             setDetail(undefined);
             setName("");
             setAction("create");
+            setRemove("[]");
             setConfig('{"connector.class":"","tasks.max":"1"}');
           }}
         >
@@ -144,9 +173,9 @@ export function ConnectPage({
         select
         label="Existing connector"
         value={detail?.name ?? ""}
-        disabled={busy}
+        disabled={busy || attempted}
         onChange={(e) => {
-          void run(() => load(e.target.value));
+          void run((current) => load(e.target.value, current));
         }}
       >
         <MenuItem value="">Select a connector</MenuItem>
@@ -197,7 +226,7 @@ export function ConnectPage({
         <TextField
           label="Connector name"
           value={name}
-          disabled={busy}
+          disabled={busy || attempted}
           onChange={(e) => {
             invalidate();
             setName(e.target.value);
@@ -207,10 +236,11 @@ export function ConnectPage({
           select
           label="Action"
           value={action}
-          disabled={busy}
+          disabled={busy || attempted}
           onChange={(e) => {
             invalidate();
             setAction(e.target.value as ConnectInput["action"]);
+            setRemove("[]");
           }}
         >
           {CONNECT_ACTIONS.map((a) => (
@@ -230,19 +260,33 @@ export function ConnectPage({
           multiline
           minRows={5}
           value={config}
-          disabled={busy}
+          disabled={busy || attempted}
           onChange={(e) => {
             invalidate();
             setConfig(e.target.value);
           }}
-          helperText="For updates, omitted fields retain their existing values, including secrets. Supply replacement values explicitly. Remote secrets and worker traces are never shown."
+          helperText="Set only replacement string values. Omitted fields retain their actual values, including secrets. Protected display placeholders cannot be submitted."
+        />
+      )}
+      {action === "update" && (
+        <TextField
+          label="Fields to remove (JSON string array)"
+          multiline
+          minRows={2}
+          value={remove}
+          disabled={busy || attempted}
+          onChange={(event) => {
+            invalidate();
+            setRemove(event.target.value);
+          }}
+          helperText='Example: ["errors.tolerance"]. Removed fields may revert to worker or connector defaults. A field cannot also be set.'
         />
       )}
       <Stack direction="row" spacing={1}>
         <Button
-          disabled={busy}
+          disabled={busy || attempted}
           onClick={() => {
-            void run(async () => {
+            void run(async (current) => {
               invalidate();
               const r = await host.execute({
                 command: "connect.validate",
@@ -251,16 +295,16 @@ export function ConnectPage({
                 payload: input(),
               });
               if (!r.ok) throw new Error();
-              if (mounted.current) setValidation(r.result.validation);
+              if (current()) setValidation(r.result.validation);
             });
           }}
         >
           Validate configuration
         </Button>
         <Button
-          disabled={busy}
+          disabled={busy || attempted}
           onClick={() => {
-            void run(async () => {
+            void run(async (current) => {
               invalidate();
               const r = await host.execute({
                 command: "connect.review",
@@ -269,7 +313,7 @@ export function ConnectPage({
                 payload: input(),
               });
               if (!r.ok) throw new Error();
-              if (mounted.current) setReview(r.result.review);
+              if (current()) setReview(r.result.review);
             });
           }}
         >
@@ -291,9 +335,11 @@ export function ConnectPage({
       {review && (
         <>
           <Alert severity="warning">
-            {review.action} {review.name}. Changed fields: {review.fields.join(", ") || "None"}.
-            Review expires {review.expiresAt}. Connect actions can interrupt delivery; deletion does
-            not delete Kafka topics. Restart targets failed connector/tasks only.
+            Connection {review.connectionName}: {review.action} {review.name}. Set fields:{" "}
+            {review.fields.join(", ") || "None"}. Remove fields:{" "}
+            {review.removedFields.join(", ") || "None"}. Review expires {review.expiresAt}. Connect
+            actions can interrupt delivery; deletion does not delete Kafka topics. Restart targets
+            failed connector/tasks only.
           </Alert>
           <TextField
             label={`Type ${review.confirmation} to confirm`}
@@ -306,7 +352,7 @@ export function ConnectPage({
             disabled={busy || attempted || !canWrite || confirmation !== review.confirmation}
             onClick={() => {
               setAttempted(true);
-              void run(async () => {
+              void run(async (current) => {
                 const r = await host.execute({
                   command: "connect.apply",
                   id: crypto.randomUUID(),
@@ -314,11 +360,11 @@ export function ConnectPage({
                   payload: { planId: review.planId, confirmation },
                 });
                 if (!r.ok) throw new Error();
-                if (mounted.current) {
+                if (current()) {
                   setOutcome(r.result.outcome);
                   setDetail(r.result.outcome.observed ?? undefined);
                 }
-                await refresh();
+                if (current()) await refresh(current);
               });
             }}
           >
@@ -330,6 +376,9 @@ export function ConnectPage({
         <Alert severity={outcome.state === "acknowledged" ? "success" : "warning"}>
           {outcome.state}: {outcome.detail}
         </Alert>
+      )}
+      {attempted && !busy && (
+        <Button onClick={invalidate}>Dismiss receipt and start another review</Button>
       )}
       {!canWrite && <Alert severity="info">Read-only mode blocks Connect changes.</Alert>}
       {error && <Alert severity="error">{error}</Alert>}

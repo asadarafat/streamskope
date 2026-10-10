@@ -283,7 +283,7 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 70 includes closed topic, consumer-group and client-quota administration reviews/outcomes alongside
+Host protocol 71 includes explicit Connect configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
 the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,
 and refuses structured evidence mislabeled as a legacy document. Browser
@@ -315,3 +315,12 @@ interprets the SDK's exact per-entity receipt and drains original clients throug
 `OwnedKafkaResources`. An ACK does not imply verified readback or confirmed cleanup.
 Effective and inherited quotas are not inferred, and Kafka has no atomic quota
 compare-and-set. See [client quota operation](../website/docs/guide/client-quotas.md).
+
+Connect configuration editing accepts independent bounded set and removal deltas.
+Only the host merges the actual complete configuration; omitted credentials stay
+protected. Reviews include the connection name and exact field lists and compare
+canonical config/task state before one attempt. The shared reply-correlation owner
+checks command identity and workflow-specific scope. The renderer fences stale
+connection responses and requires explicit receipt dismissal before another edit.
+Actual HTTP acknowledgement and asynchronous worker state remain distinct; original
+HTTP request drain and connector-offset recovery are subsequent work.

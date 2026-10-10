@@ -10,8 +10,14 @@ import {
   HOST_PROTOCOL_VERSION,
   parseHostCommand,
   parseHostCommandResponse,
+  parseCorrelatedHostResponse,
 } from "../../src/features/kafka/contracts";
-import type { ConnectInput } from "../../src/features/kafka/contracts/connect";
+import {
+  CONNECT_PROTECTED_VALUE,
+  parseConnectInput,
+  parseConnectReview,
+  type ConnectInput,
+} from "../../src/features/kafka/contracts/connect";
 import { connectDlqContext } from "../../src/features/kafka/contracts/connect-dlq";
 const input: ConnectInput = { name: "orders", action: "update", config: { "tasks.max": "2" } };
 interface Fixture {
@@ -84,7 +90,7 @@ it("preserves omitted host secrets, makes validation non-mutating and returns on
   expect(a.state).toBe("acknowledged");
   expect(f.port.apply).toHaveBeenCalledWith(
     expect.anything(),
-    { ...input, config: { ...f.getState().config, "tasks.max": "2" } },
+    { ...input, remove: [], config: { ...f.getState().config, "tasks.max": "2" } },
     expect.any(AbortSignal),
   );
   expect(await f.service.apply(review.planId, review.confirmation)).toEqual(a);
@@ -151,7 +157,7 @@ it("strictly validates Connect commands and typed replies", async () => {
       command: "connect.review",
       payload: input,
     }).payload,
-  ).toEqual(input);
+  ).toEqual({ ...input, remove: [] });
   expect(() =>
     parseHostCommand({
       version: HOST_PROTOCOL_VERSION,
@@ -214,4 +220,107 @@ it("rejects a Connect OAuth endpoint without protected token configuration at th
       },
     }),
   ).toThrow();
+});
+
+it("removes only explicit keys while preserving actual omitted secrets and a frozen review", async () => {
+  const f = fixture(),
+    update = { ...input, remove: ["password"] };
+  const p = await f.service.review(update);
+  expect(p).toMatchObject({
+    fields: ["tasks.max"],
+    removedFields: ["password"],
+    connectionName: "Test",
+  });
+  expect(JSON.stringify(p)).not.toContain("secret");
+  update.remove.push("tasks.max");
+  expect((await f.service.apply(p.planId, p.confirmation)).state).toBe("acknowledged");
+  expect(f.port.apply.mock.calls[0]![1].config).toEqual({
+    name: "orders",
+    "connector.class": "FileSink",
+    "tasks.max": "2",
+  });
+});
+it("compares complete canonical configuration and task state independently of key ordering", async () => {
+  const f = fixture(),
+    p = await f.service.review(input),
+    old = f.getState();
+  f.setState({
+    ...old,
+    config: Object.fromEntries(Object.entries(old.config).reverse()),
+    detail: {
+      ...old.detail,
+      observedAt: "later",
+      tasks: old.detail.tasks.map((t) => ({ ...t, failure: "a changed diagnostic" })),
+    },
+  });
+  expect((await f.service.apply(p.planId, p.confirmation)).state).toBe("acknowledged");
+  expect(f.port.apply).toHaveBeenCalledTimes(1);
+});
+it.each([
+  { remove: ["tasks.max", "tasks.max"] },
+  { remove: ["tasks.max"] },
+  { remove: ["name"] },
+  { config: { password: CONNECT_PROTECTED_VALUE } },
+  { config: { name: "foreign" } },
+  { action: "pause", config: { password: "replacement" } },
+  { action: "create", remove: ["password"] },
+  { remove: "password" },
+  { remove: Array.from({ length: 201 }, (_, i) => `field${i}`) },
+])(
+  "refuses ambiguous or display-only configuration input before remote access: %j",
+  async (delta) => {
+    const f = fixture();
+    await expect(f.service.review({ ...input, ...delta } as ConnectInput)).rejects.toThrow();
+    expect(f.port.load).not.toHaveBeenCalled();
+    expect(f.port.apply).not.toHaveBeenCalled();
+  },
+);
+it("refuses absent removals, empty updates and oversized merged host configuration", async () => {
+  const f = fixture();
+  await expect(f.service.review({ ...input, remove: ["absent"] })).rejects.toThrow();
+  await expect(f.service.review({ ...input, config: {} })).rejects.toThrow();
+  f.setState({
+    ...f.getState(),
+    config: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`f${i}`, "value"])),
+  });
+  await expect(f.service.review(input)).rejects.toThrow();
+  expect(f.port.apply).not.toHaveBeenCalled();
+});
+it("correlates connector and exact set/removal keys and refuses inconsistent reviews", async () => {
+  const f = fixture(),
+    payload = { ...input, remove: ["password"] },
+    review = await f.service.review(payload);
+  const command = {
+    command: "connect.review" as const,
+    id: "correlated",
+    version: HOST_PROTOCOL_VERSION,
+    payload,
+  };
+  const reply = {
+    command: command.command,
+    id: command.id,
+    version: command.version,
+    ok: true,
+    result: { correlationId: "c", review },
+  };
+  expect(parseCorrelatedHostResponse(reply, command)).toMatchObject({ result: { review } });
+  for (const delta of [
+    {
+      name: "foreign",
+      confirmation: "update foreign",
+      before: { ...review.before, name: "foreign" },
+    },
+    { fields: ["password"], removedFields: [] },
+    { removedFields: [] },
+    { action: "delete", confirmation: "delete orders", removedFields: [] },
+  ])
+    expect(() =>
+      parseCorrelatedHostResponse(
+        { ...reply, result: { ...reply.result, review: { ...review, ...delta } } },
+        command,
+      ),
+    ).toThrow();
+  expect(() => parseConnectReview({ ...review, fields: ["password"] })).toThrow();
+  expect(() => parseConnectReview({ ...review, confirmation: "yes" })).toThrow();
+  expect(parseConnectInput(input).remove).toEqual([]);
 });

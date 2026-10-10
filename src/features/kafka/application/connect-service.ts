@@ -6,7 +6,7 @@ import type {
   ConnectReview,
   ConnectOutcome,
 } from "../contracts/connect";
-import { parseConnectInput } from "../contracts/connect";
+import { connectConfig, parseConnectInput } from "../contracts/connect";
 
 import type { KafkaClusterServiceContext } from "./types";
 import { ConnectionPlans, type ReviewContext } from "./connection-plans";
@@ -54,7 +54,13 @@ function baseline(state: ConnectState | null): string {
   return JSON.stringify(
     state === null
       ? null
-      : { config: state.config, state: state.detail.state, tasks: state.detail.tasks },
+      : {
+          config: connectConfig(state.config),
+          state: state.detail.state,
+          tasks: [...state.detail.tasks]
+            .sort((a, b) => a.id - b.id)
+            .map(({ id, state }) => ({ id, state })),
+        },
   );
 }
 export class ConnectService {
@@ -107,11 +113,14 @@ export class ConnectService {
     const before = await this.port.load(service, input.name, signal);
     if (input.action === "create" && before) throw new Error("Connector already exists.");
     if (input.action !== "create" && !before) throw new Error("Connector no longer exists.");
-    const config =
+    if (input.remove?.some((key) => !before || !Object.hasOwn(before.config, key)))
+      throw new Error("A removal field is no longer configured. Refresh and review again.");
+    const config: Record<string, string> =
       input.action === "update"
         ? { ...before?.config, ...input.config, name: input.name }
         : { ...input.config, name: input.name };
-    const merged = { ...input, config };
+    for (const key of input.remove ?? []) delete config[key];
+    const merged = { ...input, config: connectConfig(config) };
     const validation =
       input.action === "create" || input.action === "update"
         ? await this.port.validate(service, config, signal)
@@ -123,6 +132,9 @@ export class ConnectService {
     return (await this.prepare(input)).validation;
   }
   async review(input: ConnectInput): Promise<ConnectReview> {
+    input = parseConnectInput(input);
+    if (input.action === "update" && !Object.keys(input.config).length && !input.remove?.length)
+      throw new Error("Choose configuration fields to set or remove.");
     const prepared = await this.prepare(input);
     if (prepared.validation.issues.length)
       throw new Error("Resolve validation errors before reviewing.");
@@ -138,6 +150,8 @@ export class ConnectService {
       name: input.name,
       action: input.action,
       fields: Object.keys(input.config).sort(),
+      removedFields: input.remove ?? [],
+      connectionName: prepared.owner.connectionName,
       confirmation,
       before: prepared.before?.detail ?? null,
     };
