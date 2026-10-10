@@ -1,13 +1,11 @@
-import {
-  request as httpRequest,
-  type ClientRequest,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+import { request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { GatewayProblem } from "./web-gateway-errors";
 import { readJson } from "./web-gateway-http";
 
+export interface WebGatewayUpstream {
+  close(): void;
+}
 interface WebGatewayProxyOptions {
   readonly request: IncomingMessage;
   readonly response: ServerResponse;
@@ -15,7 +13,7 @@ interface WebGatewayProxyOptions {
   readonly port: number;
   readonly origin: string;
   readonly token: string;
-  readonly upstreams: Set<ClientRequest>;
+  readonly upstreams: Set<WebGatewayUpstream>;
   readonly authorized: () => boolean;
   readonly discardPluginFile?: (commandId: string) => void;
 }
@@ -42,6 +40,7 @@ export async function proxyWebGatewayProvider(options: WebGatewayProxyOptions): 
   try {
     await new Promise<void>((resolve, reject) => {
       let settled = false;
+      let stream: IncomingMessage | undefined;
       const outgoing = httpRequest(
         {
           hostname: "127.0.0.1",
@@ -57,6 +56,7 @@ export async function proxyWebGatewayProvider(options: WebGatewayProxyOptions): 
           },
         },
         (incoming) => {
+          stream = incoming;
           response.statusCode = incoming.statusCode ?? 502;
           for (const name of ["content-type", "cache-control", "x-accel-buffering"]) {
             const value = incoming.headers[name];
@@ -70,11 +70,26 @@ export async function proxyWebGatewayProvider(options: WebGatewayProxyOptions): 
           incoming.pipe(response);
         },
       );
-      options.upstreams.add(outgoing);
+      const upstream: WebGatewayUpstream = {
+        close: (): void => {
+          try {
+            if (action === "events") {
+              // Ending delivery does not confirm provider cleanup or release its vault authority.
+              stream?.unpipe(response);
+              if (!response.destroyed && !response.writableEnded) response.end();
+              settled = true;
+              resolve();
+            }
+          } finally {
+            outgoing.destroy();
+          }
+        },
+      };
+      options.upstreams.add(upstream);
       outgoing.once("error", (error) => {
         if (!settled) reject(error);
       });
-      outgoing.once("close", () => options.upstreams.delete(outgoing));
+      outgoing.once("close", () => options.upstreams.delete(upstream));
       response.once("close", () => outgoing.destroy());
       outgoing.end(bytes);
     });

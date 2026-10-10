@@ -10,6 +10,7 @@ import { Producer } from "@platformatic/kafka";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { startConnectFixture } from "../support/connect-fixture";
+import { qualifyConnectDlqBrowser } from "../support/connect-dlq-browser-scenario";
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway, type WebGatewayRuntime } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
@@ -304,6 +305,16 @@ test("keyboard-operable Connect set/remove review preserves secrets and keeps on
     await expect(
       offsets.getByRole("button", { name: "Inspect connector offsets", exact: true }),
     ).toBeEnabled();
+    await qualifyConnectDlqBrowser({
+      page,
+      info,
+      connection: fixture.connection,
+      workerUrl: worker.url,
+      gatewayOrigin: gateway.origin,
+      dataRoot,
+      passphrase,
+      commands,
+    });
     expect(diagnostics.problems).toEqual([]);
   } catch (error) {
     failures.push(error);

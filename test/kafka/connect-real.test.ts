@@ -2,15 +2,10 @@ import { randomUUID } from "node:crypto";
 import { request } from "node:http";
 
 import { expect, it } from "vitest";
-import { Producer } from "@platformatic/kafka";
 
-import { RecordReplayService } from "../../src/features/kafka/application/record-replay-service";
-import { connectDlqContext } from "../../src/features/kafka/contracts/connect-dlq";
-import {
-  UNCHANGED_REPLAY_TRANSFORM,
-  replayConfirmation,
-} from "../../src/features/kafka/contracts/record-replay";
-import type { KafkaMessage } from "../../src/features/kafka/contracts";
+import { KAFKA_RECORD_PROTECTION_DEFAULTS } from "../../src/features/kafka/contracts";
+import { createHostRecordPipeline } from "../../src/platform/node/record-pipeline";
+import { qualifyConnectDlqRepair } from "../support/connect-dlq-repair-scenario";
 import { ConnectService } from "../../src/features/kafka/application/connect-service";
 import { KafkaApplicationSession } from "../../src/features/kafka/application";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
@@ -72,14 +67,20 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
     incoming.pipe(forwarded);
   });
   const port = new ConnectHttpAdapter(new NodeBoundedJsonHttp({ timeoutMs: 15000 }));
-  const session = new KafkaApplicationSession(new StreamSkopeKafkaEngine());
+  const session = new KafkaApplicationSession(
+    new StreamSkopeKafkaEngine(
+      createHostRecordPipeline(() => ({
+        codecs: { key: "auto", value: "auto" },
+        protection: KAFKA_RECORD_PROTECTION_DEFAULTS,
+      })),
+    ),
+  );
   const c = {
     baseUrl: tls.origin,
     caPem: tls.caPem,
     authorization: (): Promise<string> => Promise.resolve("Bearer fixture-token"),
   };
-  try {
-    await kafka.admin.createTopics({ topics: ["connect-input"], partitions: 1, replicas: 1 });
+  const connect = async (): Promise<void> => {
     await session.connect({
       ...kafka.connection,
       services: {
@@ -91,6 +92,10 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
         },
       },
     });
+  };
+  try {
+    await kafka.admin.createTopics({ topics: ["connect-input"], partitions: 1, replicas: 1 });
+    await connect();
     const owner = session.writeContext()!;
     const service = new ConnectService(() => session.administrationScopes.connect(), port);
     expect((await service.list()).plugins).toContain(
@@ -199,7 +204,7 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
         action: "update",
         config: {
           "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-          "value.converter.schemas.enable": "false",
+          "value.converter.schemas.enable": "true",
           "errors.tolerance": "all",
           "errors.deadletterqueue.topic.name": "connect-dlq",
           "errors.deadletterqueue.topic.replication.factor": "1",
@@ -210,74 +215,12 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
     await expect
       .poll(async () => (await service.load(create.name)).tasks[0]?.state, { timeout: 15000 })
       .toBe("RUNNING");
-    const producer = new Producer({
-      bootstrapBrokers: [...kafka.connection.brokers],
-      clientId: "connect-fixture",
-    });
-    try {
-      await producer.send({
-        messages: [
-          {
-            topic: "connect-input",
-            key: Buffer.from("original-key"),
-            value: Buffer.from("not-json"),
-          },
-        ],
-      });
-    } finally {
-      await producer.close();
-    }
-    const read = async (topic: string): Promise<KafkaMessage | undefined> => {
-      const stream = await owner.connection.openMessageStream(
-        { topic, mode: "earliest", maxMessages: 1 },
-        AbortSignal.timeout(10000),
-      );
-      try {
-        for await (const message of stream) return message;
-      } finally {
-        await stream.close();
-      }
-      return undefined;
-    };
-    let deadLetter: KafkaMessage | undefined;
-    await expect
-      .poll(
-        async () => {
-          deadLetter = await read("connect-dlq");
-          return deadLetter;
-        },
-        { timeout: 30000 },
-      )
-      .toBeDefined();
-    expect(connectDlqContext(deadLetter!)).toMatchObject({
-      topic: "connect-input",
+    await qualifyConnectDlqRepair({
+      session,
       connector: create.name,
+      workerUrl: worker.url,
+      connect,
     });
-    if (deadLetter!.original?.state !== "complete") throw new Error("Missing DLQ bytes.");
-    const replay = new RecordReplayService(() => session.reviewedWriteScope());
-    try {
-      const plan = await replay.review({
-        targetProfile: null,
-        topic: "connect-replayed",
-        partition: 0,
-        ratePerSecond: 1,
-        records: [
-          {
-            topic: deadLetter!.topic,
-            partition: deadLetter!.partition,
-            offset: deadLetter!.offset,
-            timestampMs: null,
-            original: deadLetter!.original,
-          },
-        ],
-        transform: UNCHANGED_REPLAY_TRANSFORM,
-      });
-      const result = await replay.apply(plan.planId, replayConfirmation(plan));
-      expect(result.outcomes[0]?.state).toBe("acknowledged");
-      expect((await read("connect-replayed"))?.original).toEqual(deadLetter!.original);
-    } finally {
-      await replay.invalidate();
-    }
     deny = true;
     expect(await apply({ ...create, action: "pause", config: {} })).toBe("rejected");
     deny = false;
@@ -308,17 +251,7 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
     } finally {
       release();
     }
-    await session.connect({
-      ...kafka.connection,
-      services: {
-        connect: {
-          baseUrl: tls.origin,
-          authentication: "bearer",
-          bearer: "fixture-token",
-          tls: { caPem: tls.caPem },
-        },
-      },
-    });
+    await connect();
     await expect
       .poll(async () => (await service.load(create.name)).state, { timeout: 15000 })
       .toBe("PAUSED");

@@ -1,11 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
-import {
-  createServer,
-  type ClientRequest,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import { browserDevelopmentSessionCookie } from "../providers/browser-development";
@@ -38,7 +33,7 @@ import {
   readJson,
   securityHeaders,
 } from "./web-gateway-http";
-import { proxyWebGatewayProvider } from "./web-gateway-proxy";
+import { proxyWebGatewayProvider, type WebGatewayUpstream } from "./web-gateway-proxy";
 import {
   prepareWebGatewayIndex,
   readWebGatewayAsset,
@@ -191,7 +186,7 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
   let closePromise: Promise<void> | undefined;
   let origin = publicUrl.origin;
   let cookieName = browserDevelopmentSessionCookie(origin);
-  const upstreams = new Set<ClientRequest>();
+  const upstreams = new Set<WebGatewayUpstream>();
   // Unconfirmed startup/shutdown retains the key and lease through process exit.
   const retainedRuntimes = new Set<WebGatewayRuntime>();
   let attemptWindow = Date.now();
@@ -212,7 +207,7 @@ export async function startWebGateway(options: WebGatewayOptions): Promise<Runni
     );
   };
   const stopUpstreams = (): void => {
-    for (const outgoing of upstreams) outgoing.destroy();
+    for (const outgoing of upstreams) outgoing.close();
   };
   const lock = (): Promise<void> => {
     if (pendingLock !== undefined) return pendingLock;

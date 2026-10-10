@@ -187,6 +187,46 @@ async function readChunk(
 }
 
 describe("production browser gateway", () => {
+  it("ends authenticated SSE normally while retaining the original vault until provider cleanup completes", async () => {
+    const f = await fixture(),
+      auth = session(await f.create()),
+      provider = f.providers[0]!;
+    const events = await fetch(f.gateway.origin + "/__streamskope_host/providers/alpha/events", {
+      headers: { cookie: auth },
+    });
+    expect(events.status).toBe(200);
+    const reader = events.body!.getReader();
+    expect((await readChunk(reader)).done).toBe(false);
+    let release!: () => void, admitted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      admitted = resolve;
+    });
+    provider.shutdownOperation = (): Promise<void> => {
+      admitted();
+      return new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    };
+    const locked = post(f.gateway, "/__streamskope_session/lock", {}, auth);
+    try {
+      await started;
+      expect(await readChunk(reader)).toEqual({ value: undefined, done: true });
+      expect(f.keyLocks).toEqual([]);
+      expect(
+        (
+          await fetch(f.gateway.origin + "/__streamskope_host/providers/alpha/health", {
+            headers: { cookie: auth },
+          })
+        ).status,
+      ).toBe(401);
+    } finally {
+      release();
+      await reader.cancel();
+    }
+    expect((await locked).status).toBe(200);
+    expect(provider.shutdownCalls).toBe(1);
+    expect(f.keyLocks).toEqual([1]);
+  });
   it("delivers host artifacts only behind session/origin authorization with HEAD and bounded exact routes", async () => {
     const store = new NodeRecordExportArtifacts();
     cleanups.push(async () => {

@@ -19,7 +19,6 @@ import {
   type ConnectInput,
 } from "../../src/features/kafka/contracts/connect";
 import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
-import { connectDlqContext } from "../../src/features/kafka/contracts/connect-dlq";
 const input: ConnectInput = { name: "orders", action: "update", config: { "tasks.max": "2" } };
 interface Fixture {
   readonly service: ConnectService;
@@ -205,27 +204,6 @@ it("strictly validates Connect commands and typed replies", async () => {
       payload: { ...input, config: { x: 123 } },
     }),
   ).toThrow();
-});
-it("recognizes supported DLQ context without bypassing protected or truncated headers", () => {
-  const headers = {
-    "__connect.errors.topic": "orders",
-    "__connect.errors.partition": "0",
-    "__connect.errors.offset": "42",
-    "__connect.errors.connector.name": "sink",
-  };
-  expect(connectDlqContext({ headers, truncated: false })).toMatchObject({
-    topic: "orders",
-    partition: "0",
-    offset: "42",
-    connector: "sink",
-  });
-  expect(connectDlqContext({ headers, truncated: true })).toBeNull();
-  expect(
-    connectDlqContext({
-      headers: { ...headers, "__connect.errors.offset": "[MASKED]" },
-      truncated: false,
-    }),
-  ).toBeNull();
 });
 
 it("rejects a Connect OAuth endpoint without protected token configuration at the host boundary", () => {
