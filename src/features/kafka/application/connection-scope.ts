@@ -16,6 +16,11 @@ import type {
   OffsetResetTarget,
 } from "../contracts/offset-reset";
 import type { KafkaWriteDestination } from "../contracts/reviewed-writes";
+import type {
+  TopicAdministrationInput,
+  TopicAdministrationSnapshot,
+  TopicAdministrationOutcome,
+} from "../contracts/topic-administration";
 
 import { ObservationOperationError, observationAborted } from "./observation-errors";
 import type { KafkaReadCheckpoint } from "./read-checkpoint";
@@ -77,6 +82,14 @@ export interface OffsetResetScope extends ReviewAuthority {
     groupId: string,
     target: OffsetResetTarget,
   ) => MutationDispatch<OffsetResetResult>;
+}
+
+export interface TopicAdministrationScope extends ReviewAuthority {
+  readonly snapshot?: (topic: string) => Promise<TopicAdministrationSnapshot>;
+  readonly tryApply?: (
+    input: TopicAdministrationInput,
+    baseline: TopicAdministrationSnapshot,
+  ) => MutationDispatch<TopicAdministrationOutcome>;
 }
 
 /** Metadata-only authority for associating local notes with a real broker resource. */
@@ -164,6 +177,32 @@ export class KafkaConnectionScopes {
         : {
             describeTopicIdentity: (topic: string): Promise<KafkaWriteDestination> =>
               this.readReviewed(context, () => connection.describeTopicIdentity!(topic)),
+          }),
+    };
+  }
+
+  topicAdministration(): TopicAdministrationScope | null {
+    const active = this.context();
+    if (active === null) return null;
+    const context = { ...active },
+      { connection } = context;
+    return {
+      connectionName: context.connectionName,
+      isCurrent: (): boolean => this.current(context),
+      ...(connection.topicAdministrationSnapshot === undefined
+        ? {}
+        : {
+            snapshot: (topic: string): Promise<TopicAdministrationSnapshot> =>
+              this.readReviewed(context, () => connection.topicAdministrationSnapshot!(topic)),
+          }),
+      ...(connection.applyTopicAdministration === undefined
+        ? {}
+        : {
+            tryApply: (
+              input: TopicAdministrationInput,
+              baseline: TopicAdministrationSnapshot,
+            ): MutationDispatch<TopicAdministrationOutcome> =>
+              this.dispatch(context, () => connection.applyTopicAdministration!(input, baseline)),
           }),
     };
   }

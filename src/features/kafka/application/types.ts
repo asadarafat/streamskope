@@ -56,6 +56,13 @@ export interface KafkaConsumptionObserver {
 }
 
 export interface KafkaActiveConnection {
+  topicAdministrationSnapshot?(
+    topic: string,
+  ): Promise<import("../contracts/topic-administration").TopicAdministrationSnapshot>;
+  applyTopicAdministration?(
+    input: import("../contracts/topic-administration").TopicAdministrationInput,
+    baseline: import("../contracts/topic-administration").TopicAdministrationSnapshot,
+  ): Promise<import("../contracts/topic-administration").TopicAdministrationOutcome>;
   observeConsumerGroup?(
     groupId: string,
     topic: string,

@@ -174,6 +174,18 @@ installed-package upgrade or managed-service certification.
 
 ## Structured record consistency
 
+The existing runtime report group also includes
+`test/kafka/topic-administration-real.test.ts`: an isolated pinned Kafka 4.3.1
+broker establishes preview without writes, actual partition expansion and UUID
+deletion, host read-only refusal, exact confirmation, duplicate-apply coalescing,
+stale partition/replaced UUID refusal and real permission denial. Independent
+fault/ownership regressions retain admitted acknowledgements across revocation,
+unknown replies, failed readback and unresolved cleanup. The production-built
+browser workbench suite includes `web-topic-administration.spec.ts` for keyboard
+entry, review/confirmation, visible receipts, real inventory and dialog accessibility.
+These cases do not certify managed services, older unsupported topic APIs or
+atomic exclusion of concurrent name-based partition expansion.
+
 The runtime lane includes `test/kafka/structured-records-real.test.ts` and retains
 `.artifacts/ci/structured-records-real.json`. It uses an isolated real Kafka broker,
 a controlled read-only Schema Registry protocol fixture, independently encoded

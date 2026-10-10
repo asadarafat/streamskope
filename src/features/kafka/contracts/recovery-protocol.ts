@@ -1,5 +1,9 @@
 import { parseAclReviewCommand, parseAclReviewResponse } from "./acl-review-protocol";
 import { parseReplayCommand, parseReplayResponse } from "./replay-protocol";
+import {
+  parseTopicAdministrationCommand,
+  parseTopicAdministrationResponse,
+} from "./topic-administration-protocol";
 import type { HostCommand, HostCommandResponse } from "./types";
 import { record, exactKeys, text } from "./validation-primitives";
 import {
@@ -73,6 +77,7 @@ export function parseRecoveryCommand(
   version: HostCommand["version"],
 ): HostCommand | undefined {
   return (
+    parseTopicAdministrationCommand(command, id, value, version) ??
     parseOffsetResetCommand(command, id, value, version) ??
     parseReplayCommand(command, id, value, version) ??
     parseAclReviewCommand(command, id, value, version)
@@ -85,6 +90,7 @@ export function parseRecoveryResponse(
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
   return (
+    parseTopicAdministrationResponse(command, id, result, version) ??
     parseOffsetResetResponse(command, id, result, version) ??
     parseReplayResponse(command, id, result, version) ??
     parseAclReviewResponse(command, id, result, version)

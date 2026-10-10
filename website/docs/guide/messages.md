@@ -520,3 +520,38 @@ again. Attempt results are session-local and bounded; after restart, inspect Kaf
 
 For reviewed recovery, see [copy or replay records](record-replay.md) and
 [preview consumer offset resets](offset-recovery.md).
+
+## Increase partitions or delete a topic
+
+Open the topic and choose **Manage topic…**. These actions require host write mode
+and the corresponding broker permission. Internal topics and names beginning with
+`__` are refused.
+
+For **Increase partitions**, enter the **new total partitions**, up to 4096. Review
+the current count, topic UUID and requested total, then type the displayed exact
+confirmation and choose **Apply reviewed change**. Expansion cannot shrink or undo
+partitions. It changes key routing and can break ordering across old and new
+partitions; coordinate with producers and consumers first.
+
+For **Delete topic**, stop this topic's current StreamSkope read and coordinate
+with downstream users, then review the topic UUID before confirming
+`DELETE <topic>`. This removes the topic and its retained messages with no undo.
+The host requires UUID metadata and the UUID-based deletion API; an older broker
+without these capabilities is explicitly refused. A recreated topic with the same
+name invalidates a review and cannot be deleted by the old UUID request.
+
+Reviews expire after two minutes. Apply freshly checks the connection, UUID,
+partition count, replica assignment and visible permissions. Editing an input
+requires another review. Kafka's expansion API addresses the topic by name: avoid
+concurrent deletion/recreation even after fresh revalidation. StreamSkope does not
+claim an atomic lock against another administrator.
+
+Read the receipt before closing. After deletion, closing the receipt refreshes the
+inventory and returns to the topic list. **Acknowledged** is a broker acknowledgement;
+readback can independently be **verified**, **different** or **unavailable**.
+Refresh without repeating an acknowledged mutation. **Unknown** means the request
+may have reached Kafka; inspect the actual resource and Activity before another
+attempt. **Unsent** means admission/revalidation prevented dispatch. A cleanup
+warning preserves the receipt and fences new topic actions until the original
+clients are closed through reconnect. Reviews and receipts are bounded and
+session-local, so inspect Kafka after a host restart. No automatic retry occurs.

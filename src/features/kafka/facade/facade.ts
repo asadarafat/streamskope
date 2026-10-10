@@ -1,4 +1,3 @@
-import { isAclReviewCommand } from "../contracts/acl-review-commands";
 import { SavedReplayDestinations } from "../application/replay-destination";
 import { KafkaReviewedWriteService } from "../application/reviewed-write-service";
 import {
@@ -35,9 +34,11 @@ import { RelationshipFacade } from "./relationship-facade";
 import { ObservationFacade } from "./observation-facade";
 import { ConnectFacade } from "./connect-facade";
 import { EnvironmentFacade } from "./environment-facade";
-import { AclReviewFacade } from "./acl-review-facade";
 import { RecordReplayFacade, isRecordReplayCommand } from "./record-replay-facade";
-import { OffsetResetFacade } from "./offset-reset-facade";
+import {
+  isReviewedAdministrationCommand,
+  ReviewedAdministrationFacade,
+} from "./reviewed-administration-facade";
 import { CorrelationTraceFacade } from "./correlation-trace-facade";
 import { SchemaSamplesFacade, isSchemaSamplesCommand } from "./schema-samples-facade";
 import { SchemaInspectionFacade } from "./schema-inspection-facade";
@@ -117,8 +118,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
   private readonly listeners = new Set<HostEventListener>();
   private readonly latencyProbe;
   private readonly now;
-  private readonly aclReviews: AclReviewFacade;
-  private readonly offsetResets: OffsetResetFacade;
+  private readonly administration: ReviewedAdministrationFacade;
   private readonly recordReplay: RecordReplayFacade;
   private readonly writes: KafkaReviewedWriteService;
   private readonly schemaSamples: SchemaSamplesFacade;
@@ -147,8 +147,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       options.recordCodec,
       options.schemaLookup,
     );
-    this.aclReviews = new AclReviewFacade(session, this.recordActivity.bind(this));
-    this.offsetResets = new OffsetResetFacade(session, this.recordActivity.bind(this));
+    this.administration = new ReviewedAdministrationFacade(session, this.recordActivity.bind(this));
     this.writes = new KafkaReviewedWriteService(() => session.reviewedWriteScope());
     this.schemaSamples = new SchemaSamplesFacade(
       session,
@@ -395,7 +394,8 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     if (isRecordRangeCommand(command))
       return this.recordRanges.execute(command, correlationId, suppressedLocatorLoad);
     if (isPluginHostCommand(command)) return this.plugins.execute(command, correlationId);
-    if (isAclReviewCommand(command)) return this.aclReviews.execute(command, correlationId);
+    if (isReviewedAdministrationCommand(command))
+      return this.administration.execute(command, correlationId);
     if (isSchemaSamplesCommand(command)) return this.schemaSamples.execute(command, correlationId);
 
     const recipeBindings = {
@@ -524,9 +524,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
               correlationId: requestId,
             }),
         });
-      case "consumerGroups.reset.review":
-      case "consumerGroups.reset.apply":
-        return this.offsetResets.execute(command, correlationId);
       case "consumerGroups.list":
       case "consumerGroups.load":
         return this.consumerGroups.execute(command, correlationId);

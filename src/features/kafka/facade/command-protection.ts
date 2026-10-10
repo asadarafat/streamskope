@@ -85,6 +85,8 @@ export const KAFKA_COMMAND_ACCESS = {
   "rules.validate": "local",
   "rules.evaluate": "local",
   "topics.list": "remote-read",
+  "topics.change.review": "remote-read",
+  "topics.change.apply": "remote-write",
   "writes.review": "remote-read",
   "writes.apply": "remote-write",
   "consumerGroups.reset.review": "remote-read",

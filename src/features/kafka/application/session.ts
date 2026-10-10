@@ -43,6 +43,7 @@ import {
   type OffsetResetScope,
   type RecordReadScope,
   type TopicCatalogScope,
+  type TopicAdministrationScope,
   type ReviewedWriteScope,
   type SchemaRegistryReviewScope,
 } from "./connection-scope";
@@ -149,6 +150,10 @@ export class KafkaApplicationSession {
 
   topicCatalogScope(): TopicCatalogScope | null {
     return this.scopes.topicCatalog();
+  }
+
+  topicAdministrationScope(): TopicAdministrationScope | null {
+    return this.scopes.topicAdministration();
   }
 
   recordReadScope(): RecordReadScope | null {
