@@ -312,3 +312,38 @@ it("closes watch payloads/results/events and permits protected read-only collect
     parseHostEvent({ ...event, payload: { ...event.payload, phase: "waiting" } }),
   ).toThrow();
 });
+
+it("restores successful desired settings without authority and refuses a replaced saved resource before group reads until explicit capture accepts it", async () => {
+  vi.useFakeTimers();
+  const original = fixture();
+  const selected = { ...input, thresholds: { lag: 12, requestMs: 50 }, sampleRecords: false };
+  await original.watch.capture(selected);
+  const saved = await original.store.load();
+  expect(saved).toMatchObject({
+    schemaVersion: 2,
+    settings: {
+      input: selected,
+      clusterId: "cluster",
+      topicId: "topic",
+      connectionName: "Same name",
+    },
+  });
+  const restarted = fixture(original.store);
+  await restarted.service.history();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(restarted.watch.snapshot()).toEqual(emptyObservationWatch());
+  expect(restarted.observe).not.toHaveBeenCalled();
+  restarted.observe.mockResolvedValue({ ...health, topicId: "recreated-topic" });
+  const refused = await restarted.watch.start({ ...selected, groupId: "workers" });
+  expect(refused).toMatchObject({ phase: "failed", error: { code: "OBSERVATION_INCOMPLETE" } });
+  expect(restarted.group).not.toHaveBeenCalled();
+  expect((await restarted.store.load()).series).toEqual(saved.series);
+  await vi.advanceTimersByTimeAsync(10_000);
+  await restarted.watch.capture(selected);
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(await restarted.watch.start(selected)).toMatchObject({
+    phase: "waiting",
+    topicId: "recreated-topic",
+  });
+  await restarted.watch.stop();
+});

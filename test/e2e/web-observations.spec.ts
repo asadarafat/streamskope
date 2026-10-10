@@ -228,6 +228,22 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
       });
     }
     await health.getByRole("button", { name: "Stop observing" }).click();
+    await expect(health.getByRole("button", { name: "Start observing" })).toBeEnabled();
+    await page.reload();
+    await expect(health.getByLabel("Observed topic", { exact: true })).toHaveValue(topic);
+    await expect(health.getByLabel("Observed consumer group (optional)")).toHaveValue(groupId);
+    await health.getByRole("button", { name: "History and collection settings" }).click();
+    await expect(health.getByLabel("Lag alert threshold (optional)")).toHaveValue("15");
+    await expect(
+      health.getByRole("checkbox", { name: "Sample records for size and key distribution" }),
+    ).toBeChecked();
+    await health
+      .getByRole("button", { name: "Retained five-minute summaries", exact: false })
+      .click();
+    await expect(
+      health.getByRole("table", { name: "Five-minute observation summaries" }),
+    ).toBeVisible();
+
     await health.getByRole("button", { name: "Analysis details", exact: true }).click();
     await expect(health).toContainText("Projected lag:");
     await expect(health).toContainText("Skew suspected");
