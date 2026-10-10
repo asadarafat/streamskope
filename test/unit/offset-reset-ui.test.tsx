@@ -28,7 +28,18 @@ class Host implements StreamSkopeHost {
   execute<C extends HostCommand>(command: C): Promise<HostCommandResponse<C["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
     this.commands.push(command);
-    if (command.command === "consumerGroups.reset.review")
+    if (command.command === "consumerGroups.reset.review") {
+      const request = command.payload;
+      const resolved =
+        "targets" in request
+          ? request
+          : {
+              groupId: request.groupId,
+              targets: request.partitions.map((p) => ({
+                ...p,
+                offset: request.position.kind === "latest" ? "5" : "0",
+              })),
+            };
       return Promise.resolve({
         command: command.command,
         id: command.id,
@@ -40,12 +51,15 @@ class Host implements StreamSkopeHost {
             planId: "r",
             connectionName: "lab",
             expiresAt: new Date(Date.now() + 120_000).toISOString(),
-            input: command.payload,
+            input: resolved,
+            ...("position" in command.payload ? { selection: command.payload } : {}),
             baseline: {
               inactive: true,
               state: "Empty",
               groupRead: "allowed",
-              partitions: command.payload.targets.map((t) => ({
+              clusterId: "fixture-cluster",
+              topics: [{ topic: "orders", topicId: "11111111-1111-1111-1111-111111111111" }],
+              partitions: resolved.targets.map((t) => ({
                 ...t,
                 before: "3",
                 low: "0",
@@ -58,6 +72,7 @@ class Host implements StreamSkopeHost {
           },
         },
       });
+    }
     if (command.command === "consumerGroups.reset.apply")
       return Promise.resolve({
         command: command.command,
@@ -77,6 +92,7 @@ class Host implements StreamSkopeHost {
                 observed: null,
                 verified: false,
                 state: "unknown",
+                cleanup: "confirmed",
               },
             ],
           },
@@ -112,4 +128,35 @@ it("requires partition selection, review and exact group confirmation, then disa
   ).toBeVisible();
   expect(screen.getByRole("button", { name: "Apply reviewed reset" })).toBeDisabled();
   expect(host.commands.at(-1)?.payload).toEqual({ planId: "r", confirmation: "payments" });
+});
+
+it("previews selected end offsets, warns about skipped records and requires a new preview on selector change", async () => {
+  const host = new Host(),
+    user = userEvent.setup();
+  render(<ResetOffsetsAction host={host} group={group} enabled canWrite />);
+  await user.click(screen.getByRole("button", { name: "Reset offsets…" }));
+  await user.click(screen.getByRole("checkbox", { name: "Reset orders:0" }));
+  await user.click(screen.getByRole("combobox", { name: "Reset position" }));
+  await user.click(screen.getByRole("option", { name: "Current end" }));
+  expect(screen.getByText(/skips all retained records/u)).toBeVisible();
+  expect(screen.getByRole("textbox", { name: "Next offset orders:0" })).toBeDisabled();
+  expect(screen.getByRole("textbox", { name: "Next offset orders:0" })).toHaveValue("");
+  await user.click(screen.getByRole("button", { name: "Preview reset" }));
+  await screen.findByRole("table", { name: "Offset reset preview" });
+  expect(screen.getByRole("textbox", { name: "Next offset orders:0" })).toHaveValue("5");
+  expect(host.commands[0]?.payload).toEqual({
+    groupId: "payments",
+    partitions: [{ topic: "orders", partition: 0 }],
+    position: { kind: "latest" },
+  });
+  await user.click(screen.getByRole("combobox", { name: "Reset position" }));
+  await user.click(screen.getByRole("option", { name: "At or after UTC time" }));
+  expect(screen.queryByRole("table", { name: "Offset reset preview" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Next offset orders:0" })).toHaveValue("");
+  await user.type(
+    screen.getByRole("textbox", { name: "UTC time (ISO 8601)" }),
+    "2026-10-10T14:00:00",
+  );
+  await user.click(screen.getByRole("button", { name: "Preview reset" }));
+  expect(host.commands).toHaveLength(1);
 });

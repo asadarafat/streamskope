@@ -20,6 +20,7 @@ import {
   StudioInventoryGrid,
 } from "../../../platform/ui/StudioInventoryGrid";
 
+import { GroupDeletionAction } from "./GroupDeletionAction";
 import { ResetOffsetsAction } from "./ResetOffsetsAction";
 import { ConsumerGroupWorkspace } from "./ConsumerGroupWorkspace";
 import { ResourcePageHeader, resourcePageGutter } from "./ResourcePageHeader";
@@ -35,7 +36,7 @@ interface ConsumerGroupsPageProperties {
   readonly inventory: KafkaConsumerGroupInventorySnapshot;
   readonly onFilterChange: (value: string) => void;
   readonly onRefresh: () => void;
-  readonly onSelect: (groupId: string) => void;
+  readonly onSelect: (groupId: string | null) => void;
   readonly requestError?: string;
   readonly selectedGroupId: string | null;
   readonly detailRequested?: boolean;
@@ -135,6 +136,18 @@ export function ConsumerGroupsPage({
         <ResourcePageHeader
           action={
             <Stack direction="row" spacing={1}>
+              {host && (
+                <GroupDeletionAction
+                  host={host}
+                  groupId={selectedGroupId}
+                  enabled={connected && currentDetail && detail.state === "ready"}
+                  canWrite={canWrite}
+                  onDeleted={() => {
+                    onSelect(null);
+                    onRefresh();
+                  }}
+                />
+              )}
               {host && (
                 <ResetOffsetsAction
                   host={host}

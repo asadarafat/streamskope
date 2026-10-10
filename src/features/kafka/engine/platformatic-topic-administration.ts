@@ -22,6 +22,7 @@ import type { MutationDispatch } from "../application/connection-scope";
 
 import type { KafkaClientInput } from "./types";
 import { platformaticClientOptions } from "./platformatic-options";
+import { OwnedKafkaResources } from "./owned-kafka-resources";
 
 export interface TopicAdministrationClient {
   snapshot(topic: string): Promise<TopicAdministrationSnapshot>;
@@ -154,47 +155,21 @@ class KafkaTopicAdministrationClient implements TopicAdministrationClient {
 
 /** Own every admitted client until completion and confirmed close, including late receipts. */
 export class PlatformaticTopicAdministration {
-  private readonly clients = new Set<TopicAdministrationClient>();
-  private readonly pending = new Set<Promise<unknown>>();
-  private closed = false;
-  private cleanupBlocked = false;
-  private closePromise: Promise<void> | undefined;
+  private readonly resources: OwnedKafkaResources;
   constructor(
     private readonly input: KafkaClientInput,
     private readonly lifetime: AbortSignal,
     private readonly createClient: (input: KafkaClientInput) => TopicAdministrationClient = (
       input,
     ) => new KafkaTopicAdministrationClient(input),
-  ) {}
+  ) {
+    this.resources = new OwnedKafkaResources(lifetime);
+  }
 
   private owned<T>(
     run: (client: TopicAdministrationClient) => Promise<T>,
   ): Promise<{ value: T; cleaned: boolean }> {
-    if (this.closed || this.cleanupBlocked || this.lifetime.aborted)
-      return Promise.reject(
-        new Error("Topic administration was revoked or its original cleanup is unresolved."),
-      );
-    const client = this.createClient(this.input);
-    this.clients.add(client);
-    const operation = (async (): Promise<{ value: T; cleaned: boolean }> => {
-      let cleaned = false;
-      let value: T;
-      try {
-        value = await run(client);
-      } finally {
-        try {
-          await client.close();
-          this.clients.delete(client);
-          cleaned = true;
-        } catch {
-          this.cleanupBlocked = true; /* The owner retains the client; connection close must confirm its cleanup. */
-        }
-      }
-      return { value, cleaned };
-    })();
-    this.pending.add(operation);
-    void operation.finally(() => this.pending.delete(operation)).catch(() => undefined);
-    return operation;
+    return this.resources.run(() => this.createClient(this.input), run);
   }
   async snapshot(topic: string): Promise<TopicAdministrationSnapshot> {
     parseKafkaTopicName(topic, "topic");
@@ -306,19 +281,6 @@ export class PlatformaticTopicAdministration {
     };
   }
   close(): Promise<void> {
-    this.closed = true;
-    this.closePromise ??= this.closeResources();
-    return this.closePromise;
-  }
-  private async closeResources(): Promise<void> {
-    await Promise.allSettled([...this.pending]);
-    const results = await Promise.allSettled(
-      [...this.clients].map(async (client) => {
-        await client.close();
-        this.clients.delete(client);
-      }),
-    );
-    if (results.some((r) => r.status === "rejected"))
-      throw new Error("Original topic administration clients did not close cleanly.");
+    return this.resources.close();
   }
 }

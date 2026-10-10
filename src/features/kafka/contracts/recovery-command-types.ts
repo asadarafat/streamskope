@@ -2,6 +2,14 @@ import type { HostCommandBase } from "./types";
 
 export type RecoveryHostCommand =
   | (HostCommandBase & {
+      readonly command: "consumerGroups.delete.review";
+      readonly payload: { readonly groupId: string };
+    })
+  | (HostCommandBase & {
+      readonly command: "consumerGroups.delete.apply";
+      readonly payload: { readonly planId: string; readonly confirmation: string };
+    })
+  | (HostCommandBase & {
       readonly command: "topics.change.review";
       readonly payload: import("./topic-administration").TopicAdministrationInput;
     })
@@ -40,7 +48,7 @@ export type RecoveryHostCommand =
     })
   | (HostCommandBase & {
       readonly command: "consumerGroups.reset.review";
-      readonly payload: import("./offset-reset").OffsetResetInput;
+      readonly payload: import("./offset-reset").OffsetResetRequest;
     })
   | (HostCommandBase & {
       readonly command: "consumerGroups.reset.apply";

@@ -1,3 +1,7 @@
+import {
+  parseGroupAdministrationCommand,
+  parseGroupAdministrationResponse,
+} from "./group-administration-protocol";
 import { parseAclReviewCommand, parseAclReviewResponse } from "./acl-review-protocol";
 import { parseReplayCommand, parseReplayResponse } from "./replay-protocol";
 import {
@@ -7,7 +11,7 @@ import {
 import type { HostCommand, HostCommandResponse } from "./types";
 import { record, exactKeys, text } from "./validation-primitives";
 import {
-  parseOffsetResetInput,
+  parseOffsetResetRequest,
   parseOffsetResetReview,
   parseOffsetResetOutcome,
 } from "./offset-reset";
@@ -19,7 +23,7 @@ function parseOffsetResetCommand(
   version: HostCommand["version"],
 ): HostCommand | undefined {
   if (command === "consumerGroups.reset.review")
-    return { command, id, version, payload: parseOffsetResetInput(value) };
+    return { command, id, version, payload: parseOffsetResetRequest(value) };
   if (command === "consumerGroups.reset.apply") {
     const p = record(value, "resetApply");
     exactKeys(p, ["planId", "confirmation"], "resetApply");
@@ -77,6 +81,7 @@ export function parseRecoveryCommand(
   version: HostCommand["version"],
 ): HostCommand | undefined {
   return (
+    parseGroupAdministrationCommand(command, id, value, version) ??
     parseTopicAdministrationCommand(command, id, value, version) ??
     parseOffsetResetCommand(command, id, value, version) ??
     parseReplayCommand(command, id, value, version) ??
@@ -90,6 +95,7 @@ export function parseRecoveryResponse(
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
   return (
+    parseGroupAdministrationResponse(command, id, result, version) ??
     parseTopicAdministrationResponse(command, id, result, version) ??
     parseOffsetResetResponse(command, id, result, version) ??
     parseReplayResponse(command, id, result, version) ??

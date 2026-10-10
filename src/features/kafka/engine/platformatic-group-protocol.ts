@@ -8,7 +8,7 @@ import { KafkaEngineFailure } from "./failure";
 export async function requireConsumerGroupProtocol(
   admin: { listGroups(): Promise<Map<string, GroupBase>> },
   groupId: string,
-): Promise<void> {
+): Promise<GroupBase> {
   const group = (await admin.listGroups()).get(groupId);
   if (!group) throw new Error(`Kafka did not return consumer group ${groupId}.`);
   // Empty groups can retain committed offsets while reporting no protocol.
@@ -22,6 +22,7 @@ export async function requireConsumerGroupProtocol(
       recovery:
         "Select a consumer-protocol group. Connect worker coordination is not a consumer subscription.",
     });
+  return group;
 }
 
 export function consumerGroupState(value: GroupBase["state"]): KafkaConsumerGroupBrokerState {

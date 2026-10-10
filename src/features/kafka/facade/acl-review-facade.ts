@@ -42,7 +42,7 @@ export class AclReviewFacade {
   private readonly handlers: AclReviewHandlers;
 
   constructor(session: KafkaApplicationSession, activity: (input: ActivityInput) => void) {
-    const service = new AclReviewService(() => session.aclReviewScope());
+    const service = new AclReviewService(() => session.administrationScopes.aclReview());
     this.handlers = {
       "acls.access.explain": async (
         payload,

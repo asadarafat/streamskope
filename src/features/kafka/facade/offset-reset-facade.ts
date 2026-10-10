@@ -10,7 +10,7 @@ export class OffsetResetFacade {
     session: KafkaApplicationSession,
     private readonly activity: (input: ActivityInput) => void,
   ) {
-    this.service = new OffsetResetService(() => session.offsetResetScope());
+    this.service = new OffsetResetService(() => session.administrationScopes.offsetReset());
   }
   async execute(
     command: Extract<
@@ -32,14 +32,16 @@ export class OffsetResetFacade {
         command.payload.planId,
         command.payload.confirmation,
       );
-      const complete = outcome.partitions.every((p) => p.state === "acknowledged" && p.verified);
+      const complete = outcome.partitions.every(
+        (p) => p.state === "acknowledged" && p.verified && p.cleanup === "confirmed",
+      );
       this.activity({
         correlationId,
         operation: "Apply reviewed offset reset",
         object: outcome.groupId,
         outcome: complete ? "succeeded" : "failed",
         severity: complete ? "info" : "warning",
-        detail: `${outcome.detail} ${outcome.partitions.map((p) => `${p.topic}/${p.partition}: ${p.state}, requested ${p.offset}, observed ${p.observed ?? "unknown"}`).join("; ")}`,
+        detail: `${outcome.detail} ${outcome.partitions.map((p) => `${p.topic}/${p.partition}: ${p.state}, requested ${p.offset}, observed ${p.observed ?? "unknown"}, cleanup ${p.cleanup}`).join("; ")}`,
       });
       return {
         command: command.command,
@@ -57,7 +59,7 @@ export class OffsetResetFacade {
         activeStateChanged: false,
         summary: "Offset reset review could not be accepted.",
         recovery:
-          "Check group/topic permissions and partition positions, stop consumers, then preview again. Expired reviews or a changed connection require another preview. Never retry an uncertain reset without inspecting committed offsets.",
+          "Check group/topic permissions and partition positions or matching retained timestamps, stop consumers, then preview again. Unresolved cleanup requires reconnecting through its original owner. Expired reviews or a changed connection require another preview. Never retry an uncertain reset without inspecting committed offsets.",
       });
     }
   }

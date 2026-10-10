@@ -81,6 +81,8 @@ export const HOST_COMMANDS = [
   "topics.change.apply",
   "writes.review",
   "writes.apply",
+  "consumerGroups.delete.review",
+  "consumerGroups.delete.apply",
   "consumerGroups.reset.review",
   "consumerGroups.reset.apply",
   "consumerGroups.list",

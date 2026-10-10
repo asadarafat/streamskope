@@ -168,7 +168,7 @@ describe("host record protection", () => {
       expect(rejected).not.toHaveBeenCalled();
     },
   );
-  it.each(["records.replay.review", "consumerGroups.reset.review", "records.decode"] as const)(
+  it.each(["records.replay.review", "records.decode"] as const)(
     "rejects direct %s while masking is enabled before reaching record data",
     async (operation) => {
       const service = new KafkaOperationalPreferenceService(
@@ -217,18 +217,16 @@ describe("host record protection", () => {
                     ],
                     transform: { key: null, removeHeaders: [], appendHeaders: [], valueText: null },
                   }
-                : operation === "consumerGroups.reset.review"
-                  ? { groupId: "g", targets: [{ topic: "events", partition: 0, offset: "0" }] }
-                  : operation === "records.decode"
-                    ? { format: "json", bytes: "e30=" }
-                    : {
-                        traceId: "trace",
-                        topics: ["events"],
-                        startTimeMs: 1000,
-                        endTimeMs: 2000,
-                        value: "secret",
-                        selector: { source: "key", path: "", format: "json" },
-                      },
+                : operation === "records.decode"
+                  ? { format: "json", bytes: "e30=" }
+                  : {
+                      traceId: "trace",
+                      topics: ["events"],
+                      startTimeMs: 1000,
+                      endTimeMs: 2000,
+                      value: "secret",
+                      selector: { source: "key", path: "", format: "json" },
+                    },
           }),
         ),
       ).toMatchObject({ ok: false, error: { code: "AUTHORIZATION_DENIED" } });

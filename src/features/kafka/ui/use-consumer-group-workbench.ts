@@ -22,7 +22,7 @@ interface ConsumerGroupWorkbenchController {
   readonly onClearSelection: () => void;
   readonly onNavigationChange: (navigation: NavigationView) => void;
   readonly onRefresh: () => void;
-  readonly onSelect: (groupId: string) => void;
+  readonly onSelect: (groupId: string | null) => void;
   readonly restoreSelection: (groupId: string) => void;
   readonly detailRequested: boolean;
   readonly requestError: string | undefined;
@@ -127,6 +127,13 @@ export function useConsumerGroupWorkbench({
       void requestInventory();
     },
     onSelect: (groupId): void => {
+      if (groupId === null) {
+        generation.current++;
+        setSelectedGroupId(null);
+        setDetailRequested(false);
+        setRequestError(undefined);
+        return;
+      }
       void select(groupId);
     },
     requestError,

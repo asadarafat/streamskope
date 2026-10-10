@@ -400,6 +400,7 @@ const resetResult: OffsetResetResult = {
   state: "acknowledged",
   observed: "10",
   verified: true,
+  cleanup: "confirmed",
 };
 const destination: KafkaWriteDestination = {
   clusterId: "cluster-a",
@@ -469,7 +470,14 @@ function mutationFixture(): MutationFixture {
     ): Promise<OffsetResetSnapshot> {
       expect(this).toBe(connection);
       await reads;
-      return { inactive: true, state: "Empty", groupRead: "allowed", partitions: [] };
+      return {
+        inactive: true,
+        state: "Empty",
+        groupRead: "allowed",
+        partitions: [],
+        clusterId: "fixture-cluster",
+        topics: [],
+      };
     }),
     offsetResetExamples: vi.fn(async function (
       this: Connection,

@@ -95,6 +95,14 @@ interface SpecificCommandResults
     readonly correlationId: string;
     readonly client: import("./schema-client").SchemaClient;
   };
+  readonly "consumerGroups.delete.review": {
+    readonly correlationId: string;
+    readonly review: import("./group-administration").GroupAdministrationReview;
+  };
+  readonly "consumerGroups.delete.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./group-administration").GroupAdministrationOutcome;
+  };
   readonly "consumerGroups.reset.review": {
     readonly correlationId: string;
     readonly review: import("./offset-reset").OffsetResetReview;
@@ -270,6 +278,8 @@ const structuredResults = {
   "records.repair.reconcile": true,
   "records.replay.review": true,
   "records.replay.apply": true,
+  "consumerGroups.delete.review": true,
+  "consumerGroups.delete.apply": true,
   "consumerGroups.reset.review": true,
   "consumerGroups.reset.apply": true,
   "records.trace": true,

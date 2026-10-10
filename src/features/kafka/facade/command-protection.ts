@@ -89,6 +89,8 @@ export const KAFKA_COMMAND_ACCESS = {
   "topics.change.apply": "remote-write",
   "writes.review": "remote-read",
   "writes.apply": "remote-write",
+  "consumerGroups.delete.review": "remote-read",
+  "consumerGroups.delete.apply": "remote-write",
   "consumerGroups.reset.review": "remote-read",
   "consumerGroups.reset.apply": "remote-write",
   "consumerGroups.list": "remote-read",
@@ -246,12 +248,11 @@ export class KafkaCommandProtection {
       (command.command === "records.replay.review" ||
         command.command === "records.repair.review" ||
         command.command === "records.repair.reconcile" ||
-        command.command === "consumerGroups.reset.review" ||
         command.command === "records.decode") &&
       hasRecordMasking(snapshot.preferences.protection)
     )
       return reject(
-        "Original-byte decoding, replay and offset-reset examples are unavailable while masking is active.",
+        "Original-byte decoding and replay are unavailable while masking is active.",
         "Search, trace and compare the shared masked projection. Original-byte operations cannot bypass disclosure settings.",
       );
     this.remoteOperations += 1;
