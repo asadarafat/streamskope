@@ -266,10 +266,18 @@ test("observes real rising lag across navigation and restores stopped settings a
       payload: {},
     });
     expect(reattached.ok && reattached.result.watch).toMatchObject({
+      id: watchId,
       phase: "stopped",
-      repeated: false,
+      repeated: true,
       nextCaptureAt: null,
     });
+    const reloadedHistory = await backend.execute({
+      command: "observations.history",
+      id: "reload-history",
+      version: HOST_PROTOCOL_VERSION,
+      payload: {},
+    });
+    expect(reloadedHistory.ok && reloadedHistory.result.snapshot.series[0]?.samples.length).toBe(9);
     expect(diagnostics.problems).toEqual([]);
   } finally {
     await testInfo.attach("browser-diagnostics", {
