@@ -1,4 +1,5 @@
 import type { HostCommand, HostCommandResponse } from "./types";
+import { HostContractValidationError } from "./validation-error";
 import { record, exactKeys, text, emptyRecord } from "./validation-primitives";
 import {
   connectName,
@@ -9,6 +10,29 @@ import {
   parseConnectReview,
   parseConnectOutcome,
 } from "./connect";
+export function assertConnectResponse(response: HostCommandResponse, command: HostCommand): void {
+  if (!response.ok) return;
+  if (
+    response.command === "connect.load" &&
+    command.command === "connect.load" &&
+    response.result.detail.name !== command.payload.name
+  )
+    throw new HostContractValidationError("detail.name", "must match the submitted connector");
+  if (response.command === "connect.review" && command.command === "connect.review") {
+    const input = parseConnectInput(command.payload),
+      review = response.result.review;
+    if (
+      review.name !== input.name ||
+      review.action !== input.action ||
+      JSON.stringify(review.fields) !== JSON.stringify(Object.keys(input.config).sort()) ||
+      JSON.stringify(review.removedFields) !== JSON.stringify(input.remove)
+    )
+      throw new HostContractValidationError(
+        "review",
+        "must match the submitted set and removal fields",
+      );
+  }
+}
 export function parseConnectCommand(
   command: HostCommand["command"],
   id: string,

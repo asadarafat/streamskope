@@ -778,8 +778,9 @@ export function StreamSkopeWorkbench({
       />
     ) : navigation === "connect" ? (
       <ConnectPage
-        key={state.connectionName ?? "disconnected"}
+        key={`${state.connectionState}:${state.connectionName ?? "disconnected"}`}
         host={host}
+        connectionName={state.connectionName}
         canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
         onOpenTopic={activateTopic}
       />

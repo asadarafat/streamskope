@@ -1,3 +1,4 @@
+import { assertHostResponseCorrelation } from "./host-response-correlation";
 import { parseSchemaPolicyCommand, parseSchemaPolicyResponse } from "./schema-policy-protocol";
 import { parseSchemaChangeCommand, parseSchemaChangeResponse } from "./schema-change-protocol";
 import {
@@ -6,12 +7,7 @@ import {
 } from "./record-analysis-protocol";
 import { parseRecordAnalysisSnapshot } from "./record-analysis-validation";
 import { parseRecordLocatorCommand, parseRecordLocatorResponse } from "./record-locator-protocol";
-import {
-  assertTopicCatalogResponse,
-  parseTopicCatalogCommand,
-  parseTopicCatalogResponse,
-} from "./topic-catalog-protocol";
-import { sameKafkaRecordLocator } from "./record-locator";
+import { parseTopicCatalogCommand, parseTopicCatalogResponse } from "./topic-catalog-protocol";
 import { parseRecordExportCommand, parseRecordExportResponse } from "./record-export-protocol";
 import { parseRecordExportSnapshot } from "./record-export-validation";
 import { parseKafkaExploredMessage } from "./message-validation";
@@ -27,9 +23,6 @@ import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
 import { parseEnvironmentCommand, parseEnvironmentResponse } from "./environment-protocol";
 import { parseSchemaClient } from "./schema-client";
 import { parseRecoveryCommand, parseRecoveryResponse } from "./recovery-protocol";
-import { assertClientQuotaResponse } from "./client-quota-protocol";
-import { assertGroupAdministrationResponse } from "./group-administration-protocol";
-import { assertTopicAdministrationResponse } from "./topic-administration-protocol";
 import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
 import { parseSampleResponse, parseSampleCommand } from "./schema-sample-protocol";
 import { parseSchemaInspectionInput, parseSchemaInspection } from "./schema-inspection";
@@ -687,37 +680,7 @@ export function parseCorrelatedHostResponse<Command extends HostCommand>(
   command: Command,
 ): HostCommandResponse<Command["command"]> {
   const response = parseHostCommandResponse(value);
-  if (response.id !== command.id || response.command !== command.command) {
-    throw new HostContractValidationError(
-      "response",
-      "must match the submitted command identifier and name",
-    );
-  }
-  if (
-    response.ok &&
-    response.command === "records.locator.load" &&
-    command.command === "records.locator.load" &&
-    (response.result.outcome.requestId !== command.payload.requestId ||
-      !sameKafkaRecordLocator(response.result.outcome.locator, command.payload.locator))
-  )
-    throw new HostContractValidationError(
-      "response.result.outcome",
-      "must match the submitted record reload and saved position",
-    );
-  if (
-    response.ok &&
-    response.command === "records.locator.cancel" &&
-    command.command === "records.locator.cancel" &&
-    response.result.requestId !== command.payload.requestId
-  )
-    throw new HostContractValidationError(
-      "response.result.requestId",
-      "must match the submitted record cancellation",
-    );
-  assertTopicCatalogResponse(response, command);
-  assertTopicAdministrationResponse(response, command);
-  assertGroupAdministrationResponse(response, command);
-  assertClientQuotaResponse(response, command);
+  assertHostResponseCorrelation(response, command);
   // The parser validated the result shape, and the checks above established its discriminant.
   return response as HostCommandResponse<Command["command"]>;
 }

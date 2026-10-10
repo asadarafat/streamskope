@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { HostCommand, StreamSkopeHost } from "../../src/features/kafka/contracts";
@@ -31,6 +31,8 @@ it("keeps edits non-mutating until exact reviewed confirmation and prevents a se
                     name: "orders",
                     action: "create",
                     fields: ["connector.class"],
+                    removedFields: [],
+                    connectionName: "Test",
                     confirmation: "create orders",
                     before: null,
                   },
@@ -47,7 +49,7 @@ it("keeps edits non-mutating until exact reviewed confirmation and prevents a se
   };
   render(
     <StreamSkopeThemeProvider>
-      <ConnectPage host={host} canWrite onOpenTopic={vi.fn()} />
+      <ConnectPage host={host} connectionName="Test" canWrite onOpenTopic={vi.fn()} />
     </StreamSkopeThemeProvider>,
   );
   await screen.findByText("Installed classes: Sink");
@@ -66,4 +68,146 @@ it("keeps edits non-mutating until exact reviewed confirmation and prevents a se
   await screen.findByText("acknowledged: Accepted; refresh task state");
   expect(commands.filter((c) => c.command === "connect.apply")).toHaveLength(1);
   expect(screen.getByRole("button", { name: "Apply reviewed action" })).toBeDisabled();
+});
+
+function editingHost(commands: HostCommand[]): StreamSkopeHost {
+  return {
+    subscribe: () => () => undefined,
+    openExternalUrl: () => Promise.reject(new Error("Unexpected external URL")),
+    execute: testHostExecute((command) => {
+      commands.push(command);
+      const result =
+        command.command === "connect.list"
+          ? { inventory: { names: ["orders"], plugins: ["Sink"] } }
+          : command.command === "connect.load"
+            ? {
+                detail: {
+                  name: "orders",
+                  state: "RUNNING",
+                  tasks: [],
+                  config: { password: "[protected — retained unless replaced]" },
+                  dlq: null,
+                  observedAt: "2026-10-10T00:00:00.000Z",
+                },
+              }
+            : command.command === "connect.review"
+              ? {
+                  review: {
+                    planId: "review",
+                    expiresAt: "2026-10-10T17:00:00.000Z",
+                    name: "orders",
+                    action: "update",
+                    fields: Object.keys(command.payload.config).sort(),
+                    removedFields: [...(command.payload.remove ?? [])].sort(),
+                    connectionName: "Test",
+                    confirmation: "update orders",
+                    before: {
+                      name: "orders",
+                      state: "RUNNING",
+                      tasks: [],
+                      config: { password: "[protected — retained unless replaced]" },
+                      dlq: null,
+                      observedAt: "2026-10-10T00:00:00.000Z",
+                    },
+                  },
+                }
+              : { validation: { issues: [] } };
+      return Promise.resolve({
+        id: command.id,
+        command: command.command,
+        version: command.version,
+        ok: true,
+        result: { correlationId: "c", ...result },
+      });
+    }),
+  };
+}
+it("reviews explicit removals without copying protected placeholders and keeps read-only writes blocked", async () => {
+  const commands: HostCommand[] = [],
+    host = editingHost(commands);
+  render(
+    <StreamSkopeThemeProvider>
+      <ConnectPage host={host} connectionName="Test" canWrite={false} onOpenTopic={vi.fn()} />
+    </StreamSkopeThemeProvider>,
+  );
+  await screen.findByText("Installed classes: Sink");
+  fireEvent.mouseDown(screen.getByLabelText("Existing connector"));
+  fireEvent.click(await screen.findByRole("option", { name: "orders" }));
+  const config = await screen.findByLabelText("Configuration changes (JSON string map)"),
+    remove = screen.getByLabelText("Fields to remove (JSON string array)");
+  expect(config).toHaveValue("{}");
+  expect(remove).toHaveValue("[]");
+  fireEvent.change(config, {
+    target: { value: '{"password":"[protected — retained unless replaced]"}' },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Review action" }));
+  await screen.findByText(/Check the configured Connect endpoint/u);
+  expect(commands.filter((c) => c.command === "connect.review")).toHaveLength(0);
+  fireEvent.change(config, { target: { value: '{"tasks.max":"2"}' } });
+  fireEvent.change(remove, { target: { value: '["password"]' } });
+  fireEvent.click(screen.getByRole("button", { name: "Review action" }));
+  const confirmation = await screen.findByLabelText("Type update orders to confirm");
+  expect(screen.getByText(/Remove fields: password/u)).toBeVisible();
+  expect(commands.find((c) => c.command === "connect.review")?.payload).toMatchObject({
+    remove: ["password"],
+    config: { "tasks.max": "2" },
+  });
+  fireEvent.change(confirmation, { target: { value: "update orders" } });
+  expect(screen.getByRole("button", { name: "Apply reviewed action" })).toBeDisabled();
+  expect(commands.filter((c) => c.command === "connect.apply")).toHaveLength(0);
+});
+it("does not project an old inventory or edited form into a replacement host connection", async () => {
+  let resolveOld: ((value: unknown) => void) | undefined;
+  let reads = 0;
+  const old: StreamSkopeHost = {
+    subscribe: () => () => undefined,
+    openExternalUrl: () => Promise.reject(new Error()),
+    execute: testHostExecute((command) => {
+      if (reads++ === 0)
+        return Promise.resolve({
+          id: command.id,
+          command: command.command,
+          version: command.version,
+          ok: true,
+          result: { correlationId: "old", inventory: { names: [], plugins: ["OldOnly"] } },
+        });
+      return new Promise((resolve) => {
+        resolveOld = (result: unknown): void =>
+          resolve({
+            id: command.id,
+            command: command.command,
+            version: command.version,
+            ok: true,
+            result,
+          });
+      });
+    }),
+  };
+  const view = render(
+    <StreamSkopeThemeProvider>
+      <ConnectPage host={old} connectionName="Old" canWrite onOpenTopic={vi.fn()} />
+    </StreamSkopeThemeProvider>,
+  );
+  await screen.findByText("Installed classes: OldOnly");
+  fireEvent.change(screen.getByLabelText("Connector name"), { target: { value: "old-edit" } });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh connectors" }));
+  const commands: HostCommand[] = [];
+  view.rerender(
+    <StreamSkopeThemeProvider>
+      <ConnectPage
+        host={editingHost(commands)}
+        connectionName="Test"
+        canWrite
+        onOpenTopic={vi.fn()}
+      />
+    </StreamSkopeThemeProvider>,
+  );
+  await screen.findByText("Installed classes: Sink");
+  expect(screen.getByLabelText("Connector name")).toHaveValue("");
+  await act(async () => {
+    resolveOld!({ correlationId: "old", inventory: { names: ["foreign"], plugins: ["OldOnly"] } });
+    await Promise.resolve();
+  });
+  expect(screen.getByText("Installed classes: Sink")).toBeVisible();
+  expect(screen.queryByText(/OldOnly/u)).toBeNull();
 });

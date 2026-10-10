@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { request } from "node:http";
 
 import { expect, it } from "vitest";
@@ -21,6 +22,7 @@ import { startConnectFixture } from "../support/connect-fixture";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 
 it("manages a real Apache Connect sink through authenticated TLS, validates without writing, recovers failed tasks and reconciles deletion", async () => {
+  const privateValue = `connect-private-${randomUUID()}`;
   const kafka = await startAuthorizationFixture();
   const worker = await startConnectFixture(kafka.connection.brokers[0]!).catch(
     async (error: unknown) => {
@@ -81,6 +83,8 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
         "tasks.max": "1",
         topics: "connect-input",
         file: "/tmp/streamskope-sink.txt",
+        "fixture.protected.value": privateValue,
+        "fixture.remove.value": "retained-until-explicit-remove",
       },
     };
     expect((await service.validate(create)).issues).toEqual([]);
@@ -93,6 +97,42 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
     await expect
       .poll(async () => (await service.load(create.name)).tasks[0]?.state, { timeout: 45000 })
       .toBe("RUNNING");
+    const delta: ConnectInput = {
+      name: create.name,
+      action: "update",
+      config: { "tasks.max": "2" },
+      remove: ["fixture.remove.value"],
+    };
+    const p = await service.review(delta);
+    expect(p).toMatchObject({
+      fields: ["tasks.max"],
+      removedFields: ["fixture.remove.value"],
+      connectionName: owner.connectionName,
+    });
+    expect(JSON.stringify(p)).not.toContain(privateValue);
+    const independentConfig = async (): Promise<Record<string, string>> => {
+      const response = await fetch(`${worker.url}/connectors/${create.name}/config`);
+      expect(response.ok).toBe(true);
+      return (await response.json()) as Record<string, string>;
+    };
+    expect((await independentConfig())["fixture.remove.value"]).toBe(
+      "retained-until-explicit-remove",
+    );
+    const result = await service.apply(p.planId, p.confirmation);
+    expect(result.state).toBe("acknowledged");
+    expect(await service.apply(p.planId, p.confirmation)).toEqual(result);
+    await expect
+      .poll(
+        async () => ({
+          removed: Object.hasOwn(await independentConfig(), "fixture.remove.value"),
+          tasks: (await independentConfig())["tasks.max"],
+        }),
+        { timeout: 15000 },
+      )
+      .toEqual({ removed: false, tasks: "2" });
+    expect((await independentConfig())["fixture.protected.value"]).toBe(privateValue);
+    expect(JSON.stringify(await service.load(create.name))).not.toContain(privateValue);
+    // The full omitted secret remains host-only even when validation and readback run.
     expect(await apply({ ...create, action: "pause", config: {} })).toBe("acknowledged");
     await expect
       .poll(async () => (await service.load(create.name)).state, { timeout: 15000 })

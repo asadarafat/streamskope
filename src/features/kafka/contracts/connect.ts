@@ -20,7 +20,10 @@ export interface ConnectInput {
   readonly name: string;
   readonly action: (typeof CONNECT_ACTIONS)[number];
   readonly config: Readonly<Record<string, string>>;
+  readonly remove?: readonly string[];
 }
+/** Display-only sentinel; never a replacement credential. */
+export const CONNECT_PROTECTED_VALUE = "[protected — retained unless replaced]";
 export interface ConnectIssue {
   readonly field: string;
   readonly message: string;
@@ -50,6 +53,8 @@ export interface ConnectReview {
   readonly name: string;
   readonly action: ConnectInput["action"];
   readonly fields: readonly string[];
+  readonly removedFields: readonly string[];
+  readonly connectionName: string;
   readonly confirmation: string;
   readonly before: ConnectDetail | null;
 }
@@ -93,12 +98,32 @@ export function connectConfig(value: unknown): Readonly<Record<string, string>> 
 }
 export function parseConnectInput(value: unknown): ConnectInput {
   const p = record(value, "connect input");
-  exactKeys(p, ["name", "action", "config"], "connect input");
-  return {
+  exactKeys(p, ["name", "action", "config", "remove"], "connect input");
+  const input = {
     name: connectName(p.name),
     action: declaredValue(p.action, CONNECT_ACTIONS, "action"),
     config: connectConfig(p.config),
+    remove: connectFields(p.remove === undefined ? [] : p.remove),
   };
+  if (Object.values(input.config).includes(CONNECT_PROTECTED_VALUE))
+    throw new Error("Protected display values cannot replace actual configuration.");
+  if (input.remove.some((key) => Object.hasOwn(input.config, key)))
+    throw new Error("A field cannot be both set and removed.");
+  if (input.remove.includes("name")) throw new Error("Connector name cannot be removed.");
+  if (Object.hasOwn(input.config, "name") && input.config.name !== input.name)
+    throw new Error("Configuration name must match the connector.");
+  if (input.action !== "update" && input.remove.length)
+    throw new Error("Only configuration updates can remove fields.");
+  if (!["create", "update"].includes(input.action) && Object.keys(input.config).length)
+    throw new Error("Lifecycle actions do not change configuration.");
+  return input;
+}
+function connectFields(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length > 200)
+    throw new Error("Connector fields exceed their limit.");
+  const fields = value.map((v) => text(v, "config field", 200)).sort();
+  if (new Set(fields).size !== fields.length) throw new Error("Duplicate configuration field.");
+  return fields;
 }
 function list<T>(v: unknown, parse: (x: unknown) => T): readonly T[] {
   if (!Array.isArray(v) || v.length > 1000) throw new Error("Connect list exceeds limit.");
@@ -147,18 +172,40 @@ export function parseConnectReview(v: unknown): ConnectReview {
   const p = record(v, "review");
   exactKeys(
     p,
-    ["planId", "expiresAt", "name", "action", "fields", "confirmation", "before"],
+    [
+      "planId",
+      "expiresAt",
+      "name",
+      "action",
+      "fields",
+      "removedFields",
+      "connectionName",
+      "confirmation",
+      "before",
+    ],
     "review",
   );
-  return {
+  const review = {
     planId: text(p.planId, "planId", 128),
     expiresAt: text(p.expiresAt, "expiresAt", 64),
     name: connectName(p.name),
     action: declaredValue(p.action, CONNECT_ACTIONS, "action"),
-    fields: list(p.fields, (x) => text(x, "field", 200)),
+    fields: connectFields(p.fields),
+    removedFields: connectFields(p.removedFields),
+    connectionName: text(p.connectionName, "connection name", 200),
     confirmation: text(p.confirmation, "confirmation", 512),
     before: p.before === null ? null : parseConnectDetail(p.before),
   };
+  if (
+    review.removedFields.some((key) => review.fields.includes(key)) ||
+    (review.removedFields.length && review.action !== "update") ||
+    review.removedFields.includes("name") ||
+    review.confirmation !== `${review.action} ${review.name}` ||
+    (review.before !== null && review.before.name !== review.name) ||
+    (review.action === "create" ? review.before !== null : review.before === null)
+  )
+    throw new Error("Inconsistent Connect review.");
+  return review;
 }
 export function parseConnectOutcome(v: unknown): ConnectOutcome {
   const p = record(v, "outcome");

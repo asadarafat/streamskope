@@ -1,5 +1,5 @@
 import type { ConnectInput, ConnectInventory, ConnectValidation } from "../contracts/connect";
-import { connectConfig, connectName } from "../contracts/connect";
+import { connectConfig, connectName, CONNECT_PROTECTED_VALUE } from "../contracts/connect";
 import type { KafkaClusterServiceContext } from "../application";
 import type {
   ConnectPort,
@@ -48,7 +48,7 @@ function safeConfig(config: Readonly<Record<string, string>>): Readonly<Record<s
         "value.converter",
       ].includes(k) && /^[a-zA-Z0-9._, -]{0,512}$/u.test(v)
         ? v
-        : "[protected — retained unless replaced]",
+        : CONNECT_PROTECTED_VALUE,
     ]),
   );
 }
@@ -72,7 +72,6 @@ export class ConnectHttpAdapter implements ConnectPort {
     signal = c.signal === undefined ? signal : AbortSignal.any([signal, c.signal]);
     signal.throwIfAborted();
     const authorization = await c.authorization(signal);
-    signal.throwIfAborted();
     signal.throwIfAborted();
     return this.http.request({
       url: `${c.baseUrl.replace(/\/+$/u, "")}${path}`,
