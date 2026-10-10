@@ -314,6 +314,31 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
       payload: {},
     });
     expect(after.ok && after.result.snapshot.series[0]?.samples.length).toBe(9);
+    await page.reload();
+    await expect(page.getByLabel("Backend status")).toContainText("Host ready");
+    await page
+      .getByRole("button", { name: "Connect insecure plaintext profile Observation fixture" })
+      .click();
+    await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    await navigation.getByRole("button", { name: "Observed health", exact: true }).click();
+    await expect(health.getByLabel("Observed topic", { exact: true })).toHaveValue(topic);
+    await expect(health.getByLabel("Observed consumer group (optional)")).toHaveValue(groupId);
+    await health.getByRole("button", { name: "History and collection settings" }).click();
+    await expect(health.getByLabel("Lag alert threshold (optional)")).toHaveValue("15");
+    await expect(
+      health.getByRole("checkbox", { name: "Sample records for size and key distribution" }),
+    ).toBeChecked();
+    const reattached = await backend.execute({
+      command: "observations.watch.status",
+      id: "reload-watch-status",
+      version: HOST_PROTOCOL_VERSION,
+      payload: {},
+    });
+    expect(reattached.ok && reattached.result.watch).toMatchObject({
+      phase: "stopped",
+      repeated: false,
+      nextCaptureAt: null,
+    });
     expect(diagnostics.problems).toEqual([]);
   } finally {
     await testInfo.attach("browser-diagnostics", {
