@@ -29,20 +29,13 @@ async function port(): Promise<number> {
 }
 
 test.use({ actionTimeout: 10_000, trace: "off", viewport: { width: 1600, height: 1100 } });
-test("observes a real rising-lag fixture, backtests its forecast, continues across navigation, stops host collection and discovers bounded lineage", async ({
+test("observes real rising lag across navigation and restores stopped settings after renderer reload", async ({
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
   const fixture = await startAuthorizationFixture();
-  const worker = await startConnectFixture(fixture.connection.brokers[0]!).catch(
-    async (error: unknown) => {
-      await fixture.dispose();
-      throw error;
-    },
-  );
   const topic = "browser-observations",
-    groupId = "browser-observed-group",
-    connector = "browser-lineage-sink";
+    groupId = "browser-observed-group";
   const backend = createKafkaBackend(),
     diagnostics = observeBrowserDiagnostics(page);
   const producer = new Producer({
@@ -51,8 +44,6 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
     retries: 0,
     autocreateTopics: false,
   });
-  const connect = new ConnectHttpAdapter(new NodeBoundedJsonHttp()),
-    context = worker.context;
   let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   try {
     await fixture.admin.createTopics({ topics: [{ topic, partitions: 2, replicas: 1 }] });
@@ -88,37 +79,6 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
         value: Buffer.from('{"id":42}'),
       })),
     });
-    expect(
-      await connect.apply(
-        context,
-        {
-          name: connector,
-          action: "create",
-          config: {
-            "connector.class": "org.apache.kafka.connect.file.FileStreamSinkConnector",
-            "tasks.max": "1",
-            topics: topic,
-            file: "/tmp/browser-lineage.txt",
-          },
-        },
-        AbortSignal.timeout(15000),
-      ),
-    ).toMatchObject({ state: "acknowledged", cleanup: "confirmed" });
-    await expect
-      .poll(
-        async () => {
-          try {
-            return (await connect.load(context, connector, AbortSignal.timeout(10000)))?.detail
-              .tasks[0]?.state;
-          } catch (error) {
-            // Creation is asynchronous; config can exist before the status record.
-            if (error instanceof ConnectHttpError && error.status === 404) return "PENDING";
-            throw error;
-          }
-        },
-        { timeout: 45000 },
-      )
-      .toBe("RUNNING");
     launch = await launchProductWebFixture({
       backend,
       hostPort: await port(),
@@ -138,7 +98,6 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
               name: "Observation fixture",
               transport: "plaintext",
               brokers: fixture.connection.brokers,
-              services: { connect: { baseUrl: worker.url, authentication: "none" } },
             },
           },
         })
@@ -278,34 +237,6 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
       body: Buffer.from(JSON.stringify(before.result.snapshot)),
       contentType: "application/json",
     });
-    await navigation.getByRole("button", { name: "Relationships", exact: true }).click();
-    const relations = page.getByRole("main", { name: "Relationships page" });
-    await relations.getByLabel("Topics (up to three, comma-separated)").fill(topic);
-    await relations.getByRole("button", { name: "Discover relationships" }).click();
-    await expect(relations.getByRole("table", { name: "Relationship evidence" })).toContainText(
-      connector,
-      { timeout: 15000 },
-    );
-    await expect(relations.getByRole("table", { name: "Relationship evidence" })).toContainText(
-      groupId,
-    );
-    await expect(relations.getByRole("table", { name: "Relationship coverage" })).toContainText(
-      "not-configured",
-    );
-    await relations.getByRole("button", { name: `Show relationships for ${groupId}` }).click();
-    await expect(relations.getByRole("table", { name: "Relationship evidence" })).not.toContainText(
-      connector,
-    );
-    await relations.getByRole("button", { name: "Show all relationships" }).click();
-    expect(
-      (await new AxeBuilder({ page }).include('[aria-label="Relationships page"]').analyze())
-        .violations,
-    ).toEqual([]);
-    await relations.getByRole("heading", { name: "Observed lineage" }).scrollIntoViewIfNeeded();
-    await page.screenshot({
-      path: testInfo.outputPath("relationship-lineage.png"),
-      animations: "disabled",
-    });
     await page.waitForTimeout(11_000);
     const after = await backend.execute({
       command: "observations.history",
@@ -338,6 +269,167 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
       phase: "stopped",
       repeated: false,
       nextCaptureAt: null,
+    });
+    expect(diagnostics.problems).toEqual([]);
+  } finally {
+    await testInfo.attach("browser-diagnostics", {
+      body: Buffer.from(JSON.stringify(diagnostics)),
+      contentType: "application/json",
+    });
+    await launch?.close();
+    await backend.shutdown();
+    await producer.close();
+    await fixture.dispose();
+  }
+});
+
+test("discovers bounded real connector and consumer-group lineage independently of observation collection", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const fixture = await startAuthorizationFixture();
+  const worker = await startConnectFixture(fixture.connection.brokers[0]!).catch(
+    async (error: unknown) => {
+      await fixture.dispose();
+      throw error;
+    },
+  );
+  const topic = "browser-observations",
+    groupId = "browser-observed-group",
+    connector = "browser-lineage-sink";
+  const backend = createKafkaBackend(),
+    diagnostics = observeBrowserDiagnostics(page);
+  const producer = new Producer({
+    clientId: "lineage-browser-fixture",
+    bootstrapBrokers: [...fixture.connection.brokers],
+    retries: 0,
+    autocreateTopics: false,
+  });
+  const connect = new ConnectHttpAdapter(new NodeBoundedJsonHttp()),
+    context = worker.context;
+  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
+  try {
+    await fixture.admin.createTopics({ topics: [{ topic, partitions: 2, replicas: 1 }] });
+    await expect
+      .poll(
+        async (): Promise<boolean> => {
+          try {
+            await fixture.admin.alterConsumerGroupOffsets({
+              groupId,
+              topics: [
+                {
+                  name: topic,
+                  partitionOffsets: [
+                    { partition: 0, offset: 0n },
+                    { partition: 1, offset: 0n },
+                  ],
+                },
+              ],
+            });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 15000 },
+      )
+      .toBe(true);
+    await producer.send({
+      messages: Array.from({ length: 20 }, (_, i) => ({
+        topic,
+        partition: i % 2,
+        key: Buffer.from("fixture-key"),
+        value: Buffer.from('{"id":42}'),
+      })),
+    });
+    expect(
+      await connect.apply(
+        context,
+        {
+          name: connector,
+          action: "create",
+          config: {
+            "connector.class": "org.apache.kafka.connect.file.FileStreamSinkConnector",
+            "tasks.max": "1",
+            topics: topic,
+            file: "/tmp/browser-lineage.txt",
+          },
+        },
+        AbortSignal.timeout(15000),
+      ),
+    ).toMatchObject({ state: "acknowledged", cleanup: "confirmed" });
+    await expect
+      .poll(
+        async () => {
+          try {
+            return (await connect.load(context, connector, AbortSignal.timeout(10000)))?.detail
+              .tasks[0]?.state;
+          } catch (error) {
+            // Creation is asynchronous; config can exist before the status record.
+            if (error instanceof ConnectHttpError && error.status === 404) return "PENDING";
+            throw error;
+          }
+        },
+        { timeout: 45000 },
+      )
+      .toBe("RUNNING");
+    launch = await launchProductWebFixture({
+      backend,
+      hostPort: await port(),
+      rendererPort: await port(),
+      rendererRoot: resolve(process.cwd()),
+    });
+    await page.goto(launch.browserUrl);
+    await expect(page.getByRole("button", { name: "Add connection" })).toBeVisible();
+    expect(
+      (
+        await backend.execute({
+          command: "profiles.create",
+          id: "observation-profile",
+          version: HOST_PROTOCOL_VERSION,
+          payload: {
+            profile: {
+              name: "Observation fixture",
+              transport: "plaintext",
+              brokers: fixture.connection.brokers,
+              services: { connect: { baseUrl: worker.url, authentication: "none" } },
+            },
+          },
+        })
+      ).ok,
+    ).toBe(true);
+    await page
+      .getByRole("button", { name: "Connect insecure plaintext profile Observation fixture" })
+      .click();
+    await expect(page.getByLabel("Connection status")).toContainText("Connected");
+    const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });
+    await navigation.getByRole("button", { name: "Relationships", exact: true }).click();
+    const relations = page.getByRole("main", { name: "Relationships page" });
+    await relations.getByLabel("Topics (up to three, comma-separated)").fill(topic);
+    await relations.getByRole("button", { name: "Discover relationships" }).click();
+    await expect(relations.getByRole("table", { name: "Relationship evidence" })).toContainText(
+      connector,
+      { timeout: 15000 },
+    );
+    await expect(relations.getByRole("table", { name: "Relationship evidence" })).toContainText(
+      groupId,
+    );
+    await expect(relations.getByRole("table", { name: "Relationship coverage" })).toContainText(
+      "not-configured",
+    );
+    await relations.getByRole("button", { name: `Show relationships for ${groupId}` }).click();
+    await expect(relations.getByRole("table", { name: "Relationship evidence" })).not.toContainText(
+      connector,
+    );
+    await relations.getByRole("button", { name: "Show all relationships" }).click();
+    expect(
+      (await new AxeBuilder({ page }).include('[aria-label="Relationships page"]').analyze())
+        .violations,
+    ).toEqual([]);
+    await relations.getByRole("heading", { name: "Observed lineage" }).scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("relationship-lineage.png"),
+      animations: "disabled",
     });
     expect(diagnostics.problems).toEqual([]);
   } finally {
