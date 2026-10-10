@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { build } from "vite";
+import { Producer } from "@platformatic/kafka";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { startConnectFixture } from "../support/connect-fixture";
@@ -47,6 +48,14 @@ test("keyboard-operable Connect set/remove review preserves secrets and keeps on
     expect(r.ok).toBe(true);
     return (await r.json()) as Record<string, string>;
   };
+  const actualOffset = async (): Promise<number | null> => {
+    const response = await fetch(`${worker!.url}/connectors/${name}/offsets`);
+    expect(response.ok).toBe(true);
+    const body = (await response.json()) as {
+      offsets: readonly { offset: { kafka_offset?: number } | null }[];
+    };
+    return body.offsets[0]?.offset?.kafka_offset ?? null;
+  };
   try {
     await fixture.admin.createTopics({
       topics: ["connect-browser-input"],
@@ -82,6 +91,21 @@ test("keyboard-operable Connect set/remove review preserves secrets and keeps on
         { timeout: 45000 },
       )
       .toBe("RUNNING");
+    const producer = new Producer({
+      bootstrapBrokers: [...fixture.connection.brokers],
+      clientId: "browser-connect-offsets",
+    });
+    try {
+      await producer.send({
+        messages: [
+          { topic: "connect-browser-input", value: Buffer.from("first") },
+          { topic: "connect-browser-input", value: Buffer.from("second") },
+        ],
+      });
+    } finally {
+      await producer.close();
+    }
+    await expect.poll(actualOffset, { timeout: 30_000 }).toBe(2);
     await build({
       configFile: resolve("config/vite.config.ts"),
       logLevel: "silent",
@@ -210,6 +234,76 @@ test("keyboard-operable Connect set/remove review preserves secrets and keeps on
       .click();
     await expect(main.getByText(/^acknowledged:/u)).toHaveCount(0);
     await expect(remove).toBeEnabled();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await main.getByRole("combobox", { name: "Action", exact: true }).click();
+    await page.getByRole("option", { name: "stop", exact: true }).click();
+    await main.getByRole("button", { name: "Review action", exact: true }).click();
+    await main
+      .getByRole("textbox", { name: `Type stop ${name} to confirm`, exact: true })
+      .fill(`stop ${name}`);
+    await apply.click();
+    await expect(main).toContainText("acknowledged:");
+    await expect
+      .poll(
+        async () => {
+          const response = await fetch(`${worker!.url}/connectors/${name}/status`);
+          expect(response.ok).toBe(true);
+          return ((await response.json()) as { connector: { state: string } }).connector.state;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe("STOPPED");
+    const offsets = main.getByRole("region", { name: `Connector offsets ${name}`, exact: true });
+    await offsets.getByRole("button", { name: "Inspect connector offsets", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(offsets).toContainText("available ·");
+    await expect(offsets).toContainText("connector STOPPED");
+    await offsets.getByRole("textbox", { name: "New offset position", exact: true }).fill("1");
+    await offsets.getByRole("button", { name: "Review offset change", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(offsets).toContainText("2 → 1");
+    expect(await actualOffset()).toBe(2);
+    expect(commands.filter((command) => command === "connect.offsets.apply")).toHaveLength(0);
+    const applyOffset = offsets.getByRole("button", {
+      name: "Apply reviewed offset change",
+      exact: true,
+    });
+    await expect(applyOffset).toBeDisabled();
+    expect(
+      (await new AxeBuilder({ page }).include(`[aria-label="Connector offsets ${name}"]`).analyze())
+        .violations,
+    ).toEqual([]);
+    await page.screenshot({
+      path: info.outputPath("connect-offset-review.png"),
+      animations: "disabled",
+    });
+    await offsets
+      .getByRole("textbox", { name: "Confirm exact offset change", exact: true })
+      .fill(`set OFFSETS ${name}`);
+    await applyOffset.focus();
+    await page.keyboard.press("Enter");
+    await expect(offsets).toContainText(
+      "acknowledged · dispatch attempted · readback verified · cleanup confirmed",
+    );
+    expect(await actualOffset()).toBe(1);
+    await expect(applyOffset).toBeDisabled();
+    expect(commands.filter((command) => command === "connect.offsets.apply")).toHaveLength(1);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectNoHorizontalOverflow(page);
+    expect(
+      (await new AxeBuilder({ page }).include(`[aria-label="Connector offsets ${name}"]`).analyze())
+        .violations,
+    ).toEqual([]);
+    await offsets.getByText(/^acknowledged · dispatch/u).scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: info.outputPath("connect-offset-mobile-receipt.png"),
+      animations: "disabled",
+    });
+    expect(await main.innerText()).not.toContain(privateValue);
+    await offsets.getByRole("button", { name: "Dismiss offset receipt", exact: true }).click();
+    await expect(
+      offsets.getByRole("button", { name: "Inspect connector offsets", exact: true }),
+    ).toBeEnabled();
     expect(diagnostics.problems).toEqual([]);
   } catch (error) {
     failures.push(error);

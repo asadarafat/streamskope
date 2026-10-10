@@ -12,6 +12,7 @@ export const CONNECT_ACTIONS = [
   "create",
   "update",
   "pause",
+  "stop",
   "resume",
   "restart-failed",
   "delete",

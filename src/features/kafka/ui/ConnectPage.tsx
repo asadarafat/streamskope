@@ -19,6 +19,8 @@ import {
   type ConnectValidation,
   type ConnectOutcome,
 } from "../contracts/connect";
+
+import { ConnectOffsetsPanel } from "./ConnectOffsetsPanel";
 export function ConnectPage({
   host,
   canWrite,
@@ -234,6 +236,9 @@ export function ConnectPage({
           )}
         </>
       )}
+      <Typography variant="h6" component="h2">
+        Configuration and lifecycle
+      </Typography>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
         <TextField
           label="Connector name"
@@ -405,6 +410,14 @@ export function ConnectPage({
       )}
       {!canWrite && <Alert severity="info">Read-only mode blocks Connect changes.</Alert>}
       {error && <Alert severity="error">{error}</Alert>}
+      {detail && (
+        <ConnectOffsetsPanel
+          host={host}
+          name={detail.name}
+          connectionName={connectionName}
+          canWrite={canWrite}
+        />
+      )}
     </Stack>
   );
 }

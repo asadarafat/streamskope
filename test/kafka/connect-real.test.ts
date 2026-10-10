@@ -20,6 +20,7 @@ import type { ConnectInput } from "../../src/features/kafka/contracts/connect";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
 import { startConnectFixture } from "../support/connect-fixture";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
+import { qualifyConnectOffsets } from "../support/connect-offset-scenario";
 
 it("manages a real Apache Connect sink through authenticated TLS, validates without writing, recovers failed tasks and reconciles deletion", async () => {
   const privateValue = `connect-private-${randomUUID()}`;
@@ -154,6 +155,14 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
       .toEqual({ removed: false, tasks: "2" });
     expect((await independentConfig())["fixture.protected.value"]).toBe(privateValue);
     expect(JSON.stringify(await service.load(create.name))).not.toContain(privateValue);
+    await kafka.admin.createTopics({ topics: ["connect-source"], partitions: 1, replicas: 1 });
+    await qualifyConnectOffsets({
+      session,
+      port,
+      lifecycle: service,
+      brokers: kafka.connection.brokers,
+      worker,
+    });
     // The full omitted secret remains host-only even when validation and readback run.
     expect(await apply({ ...create, action: "pause", config: {} })).toBe("acknowledged");
     await expect

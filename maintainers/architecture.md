@@ -283,7 +283,7 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 72 adds separate Connect dispatch, acknowledgement, readback and original-request cleanup evidence to explicit configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
+Host protocol 73 adds stopped connector offset inspection/review/application and separate Connect dispatch, acknowledgement, readback and original-request cleanup evidence to explicit configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
 the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,
 and refuses structured evidence mislabeled as a legacy document. Browser
@@ -324,3 +324,13 @@ checks command identity and workflow-specific scope. The renderer fences stale
 connection responses and requires explicit receipt dismissal before another edit.
 Actual HTTP acknowledgement and asynchronous worker state remain distinct; original
 HTTP request drain and connector-offset recovery are subsequent work.
+
+Connector offset reviews use the same captured Connect authority and original HTTP
+lease as lifecycle changes. A shared local write-admission gate prevents those
+services from mutating concurrently. Worker and connected-broker identity must
+match; complete canonical configuration/task/offset baselines and positive STOPPED
+state are rechecked before one attempt. Only supported FileStream source/sink
+mappings are admitted. Raw source partitions and complete configuration remain
+host-only behind short-lived opaque snapshot/partition references. Actual ACK,
+readback and cleanup remain separate; no automatic resend or atomic-CAS claim.
+PluginAPI3 and durable storage formats are unchanged by this protocol revision.

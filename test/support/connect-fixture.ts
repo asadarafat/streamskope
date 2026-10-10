@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, writeFile, chmod, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,10 +14,14 @@ const execute = promisify(execFile);
 export async function startConnectFixture(broker: string): Promise<{
   readonly url: string;
   readonly context: KafkaClusterServiceContext;
+  writeSource(lines: readonly string[]): Promise<void>;
   dispose(): Promise<void>;
 }> {
   const directory = await mkdtemp(join(tmpdir(), "streamskope-connect-"));
   await chmod(directory, 0o755);
+  const sourceData = join(directory, "source-data");
+  await mkdir(sourceData, { mode: 0o777 });
+  await chmod(sourceData, 0o777);
   const reservation = createServer();
   await new Promise<void>((r) => reservation.listen(0, "127.0.0.1", r));
   const address = reservation.address();
@@ -60,12 +64,23 @@ export async function startConnectFixture(broker: string): Promise<{
   };
   const dispose = async (): Promise<void> => {
     lifecycle.abort();
-    await owner.close();
+    const failures: unknown[] = [];
+    try {
+      await owner.close();
+    } catch (error) {
+      failures.push(error);
+    }
     try {
       await execute("docker", ["rm", "--force", name], { timeout: 30000 });
-    } finally {
-      await rm(directory, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
     }
+    try {
+      await rm(directory, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length) throw new AggregateError(failures, "Connect fixture cleanup failed.");
   };
   try {
     await execute(
@@ -86,6 +101,8 @@ export async function startConnectFixture(broker: string): Promise<{
         "KAFKA_HEAP_OPTS=-Xms128m -Xmx256m",
         "--mount",
         `type=bind,source=${directory},target=/fixture,readonly`,
+        "--mount",
+        `type=bind,source=${sourceData},target=/source-data`,
         "--entrypoint",
         "/opt/kafka/bin/connect-distributed.sh",
         image,
@@ -96,7 +113,18 @@ export async function startConnectFixture(broker: string): Promise<{
     for (let n = 0; n < 90; n++) {
       try {
         const response = await fetch(`${url}/connectors`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) return { url, context, dispose };
+        if (response.ok)
+          return {
+            url,
+            context,
+            dispose,
+            writeSource: async (lines: readonly string[]): Promise<void> => {
+              await writeFile(join(sourceData, "source.txt"), lines.join("\n") + "\n", {
+                mode: 0o666,
+              });
+              await chmod(join(sourceData, "source.txt"), 0o666);
+            },
+          };
       } catch {
         /* Worker starts asynchronously. */
       }

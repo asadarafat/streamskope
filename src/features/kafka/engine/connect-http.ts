@@ -7,9 +7,15 @@ import type {
   ConnectRelationships,
   ConnectMutationReceipt,
 } from "../application/connect-service";
+import type {
+  ConnectOffsetRead,
+  ConnectOffsetMutation,
+  ConnectOffsetsPort,
+} from "../application/connect-offset-types";
 
 import type { BoundedJsonHttpPort } from "./bounded-json-http";
 import { readConnectHttp, mutateConnectHttp } from "./connect-http-request";
+import { inspectConnectOffsets, applyConnectOffsets } from "./connect-offset-http";
 
 export class ConnectHttpError extends Error {
   constructor(readonly status: number) {
@@ -62,8 +68,22 @@ function failureHint(trace: unknown): string {
     return "Record conversion failed. Check converters and schemas; inspect configured DLQ records if supported.";
   return "Task failed. Inspect the worker logs securely for the cause, then review restart of failed tasks.";
 }
-export class ConnectHttpAdapter implements ConnectPort {
+export class ConnectHttpAdapter implements ConnectPort, ConnectOffsetsPort {
   constructor(private readonly http: BoundedJsonHttpPort) {}
+  inspectOffsets(
+    c: KafkaClusterServiceContext,
+    name: string,
+    signal: AbortSignal,
+  ): Promise<ConnectOffsetRead> {
+    return inspectConnectOffsets(this.http, this, c, name, signal);
+  }
+  applyOffsets(
+    c: KafkaClusterServiceContext,
+    input: ConnectOffsetMutation,
+    signal: AbortSignal,
+  ): Promise<ConnectMutationReceipt> {
+    return applyConnectOffsets(this.http, c, input, signal);
+  }
   private async request(
     c: KafkaClusterServiceContext,
     signal: AbortSignal,
@@ -226,6 +246,7 @@ export class ConnectHttpAdapter implements ConnectPort {
       case "delete":
         return mutateConnectHttp(this.http, c, signal, "DELETE", path);
       case "pause":
+      case "stop":
       case "resume":
         return mutateConnectHttp(this.http, c, signal, "PUT", `${path}/${input.action}`);
       case "restart-failed":
