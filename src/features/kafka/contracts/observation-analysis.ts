@@ -37,6 +37,7 @@ export interface ObservationAnomaly {
 }
 export interface ObservationHint {
   readonly title: string;
+  readonly criteria: string;
   readonly detail: string;
   readonly evidence: readonly string[];
 }
@@ -253,7 +254,7 @@ function anomaly(
   };
 }
 export function analyzeObservations(series: ObservationSeries, now: number): ObservationAnalysis {
-  const recent = contiguousObservations(series.samples).slice(-24),
+  const recent = contiguousObservations(series.samples).slice(-limits.analysisSamples),
     latest = recent.at(-1);
   const fresh =
     latest !== undefined && now >= latest.observedAt && now - latest.observedAt <= limits.staleMs;
@@ -265,6 +266,7 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
     if (latest.members === 0 && observationLag(latest) !== null && observationLag(latest)! > 0)
       hints.push({
         title: "No visible consumer members",
+        criteria: "Known selected-topic lag above zero and exactly zero visible group members.",
         detail:
           "The selected group has lag and no visible members. Check whether the application is intentionally stopped; this does not prove a consumer failure.",
         evidence: [latest.id],
@@ -278,6 +280,8 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
     )
       hints.push({
         title: "Append positions outpace commits",
+        criteria:
+          "Two comparable observations with complete group offsets; append progress exceeds commit progress.",
         detail:
           "Lag growth is consistent with commits advancing more slowly than new offset positions. Check consumer capacity and commit policy; offsets do not measure successful processing.",
         evidence: [interval.start.id, interval.end.id],
@@ -289,6 +293,8 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
     )
       hints.push({
         title: "Commits appear stalled",
+        criteria:
+          "Three comparable observations with known lag above zero and two intervals without commit progress.",
         detail:
           "Lag remains while committed positions do not advance. A stopped/slow consumer, batching or a poison record are possible; consumer logs are required to distinguish them.",
         evidence,
@@ -304,6 +310,8 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
     if (transitions >= 2)
       hints.push({
         title: "Observed group-state changes",
+        criteria:
+          "At least two sampled changes between known group states in the recent continuous segment.",
         detail:
           "Repeated sampled state changes may accompany rebalances. Ten-second sampling can miss transitions and cannot establish a rebalance storm or its cause.",
         evidence: recent.map((s) => s.id),
@@ -311,6 +319,8 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
     if (latest.partitions.some((p) => p.leader === null || p.inSyncReplicas < p.replicas))
       hints.push({
         title: "Replication evidence needs attention",
+        criteria:
+          "At least one selected-topic partition has an unavailable leader or fewer ISR than assigned replicas.",
         detail:
           "Selected-topic metadata reports a missing leader or fewer in-sync than assigned replicas. Check broker availability and replication metrics; CPU/disk causes are unknown.",
         evidence: [latest.id],
@@ -335,6 +345,8 @@ export function analyzeObservations(series: ObservationSeries, now: number): Obs
   if (skew?.suspected && interval)
     hints.push({
       title: "Uneven partition growth",
+      criteria:
+        "At least two partitions and 20 offset positions of complete growth; maximum share is at least 80% and 1.5 times the uniform share.",
       detail:
         "At least 80% of observed offset-position growth is concentrated in one partition and exceeds 1.5 times the uniform share. Investigate key distribution and partitioning; compaction/control records can affect positions.",
       evidence: [interval.start.id, interval.end.id],

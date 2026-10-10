@@ -7,6 +7,13 @@ import { parseKafkaPortableView, type KafkaPortableView } from "../contracts/vie
 /** Reviewed settings only; connection and record authority are never carried here. */
 export type KafkaViewSettings = Pick<KafkaSavedView, "configuration" | "view" | "records">;
 
+/** A reviewed draft; saving and opening remain separate explicit actions. */
+export interface PreparedKafkaInvestigation {
+  readonly name: string;
+  readonly resource: string;
+  readonly settings: KafkaViewSettings;
+}
+
 export function parseViewSettings(settings: KafkaViewSettings): KafkaViewSettings {
   const parsed = parseKafkaSavedView({ id: "current", name: "Current view", ...settings });
   return { configuration: parsed.configuration, view: parsed.view, records: parsed.records };

@@ -8,7 +8,11 @@ import {
 import { createDefaultKafkaInvestigationView } from "../contracts/investigation-view";
 
 import { initialKafkaMessageFilters } from "./message-operations";
-import { parseViewSettings, type KafkaViewSettings } from "./investigation-view-settings";
+import {
+  parseViewSettings,
+  type KafkaViewSettings,
+  type PreparedKafkaInvestigation,
+} from "./investigation-view-settings";
 import { useMessageViewPresentation } from "./use-message-view-presentation";
 import type { KafkaUiAction, KafkaUiState } from "./state";
 import type { NavigationView } from "./workbench-navigation";
@@ -65,6 +69,7 @@ export function useInvestigationViews({
     ((settings: KafkaViewSettings, profileId: string | undefined) => void) | undefined;
 }): {
   readonly open: boolean;
+  readonly prepared: PreparedKafkaInvestigation | undefined;
   readonly queryImport: string | undefined;
   readonly error: string | undefined;
   readonly revision: number;
@@ -73,10 +78,12 @@ export function useInvestigationViews({
   readonly presentation: ReturnType<typeof useMessageViewPresentation>;
   capture(this: void): KafkaViewSettings;
   restore(this: void, settings: KafkaViewSettings, profileId?: string): void;
+  prepare(this: void, investigation: PreparedKafkaInvestigation): void;
   show(this: void): void;
   close(this: void): void;
 } {
   const [open, setOpen] = useState(initialQueryImport !== undefined);
+  const [prepared, setPrepared] = useState<PreparedKafkaInvestigation>();
   const [queryImport, setQueryImport] = useState(initialQueryImport);
   const [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
@@ -96,12 +103,14 @@ export function useInvestigationViews({
     ) !== null ||
     state.latency.state === "running";
   const currentResource =
-    navigation === "consumer-groups" && selectedGroupId !== null
+    prepared?.resource ??
+    (navigation === "consumer-groups" && selectedGroupId !== null
       ? `Consumer group ${selectedGroupId}`
       : navigation === "topics" && selectedTopic !== null
         ? `${selectedTopic} · ${topicWorkspace}`
-        : null;
+        : null);
   const capture = useCallback((): KafkaViewSettings => {
+    if (prepared) return parseViewSettings(prepared.settings);
     if (currentResource === null)
       throw new HostContractValidationError("View", "choose a topic task or consumer group first");
     return parseViewSettings({
@@ -118,6 +127,7 @@ export function useInvestigationViews({
     });
   }, [
     currentResource,
+    prepared,
     selectedTopic,
     captureQuery,
     captureRecords,
@@ -188,6 +198,7 @@ export function useInvestigationViews({
         apply(settings, needsConnection);
         if (profile !== undefined) setSelectedProfileId(profile.id);
         setOpen(false);
+        setPrepared(undefined);
         setQueryImport(undefined);
       } catch (failure) {
         setError(
@@ -224,6 +235,7 @@ export function useInvestigationViews({
   }, [connected, state.profiles, onPendingViewConnection, apply]);
   return {
     open,
+    prepared,
     queryImport,
     error,
     revision,
@@ -232,11 +244,19 @@ export function useInvestigationViews({
     presentation,
     capture,
     restore,
+    prepare: (investigation): void => {
+      setPrepared({ ...investigation, settings: parseViewSettings(investigation.settings) });
+      setQueryImport(undefined);
+      setError(undefined);
+      setOpen(true);
+    },
     show: (): void => {
+      setPrepared(undefined);
       setError(undefined);
       setOpen(true);
     },
     close: (): void => {
+      setPrepared(undefined);
       setOpen(false);
       setQueryImport(undefined);
       setError(undefined);

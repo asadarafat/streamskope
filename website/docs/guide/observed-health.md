@@ -44,6 +44,38 @@ processing success, and advertised broker/controller presence does not prove
 each broker is reachable. Broker CPU, disk and end-to-end message latency are
 not measured here.
 
+## Save a repeatable investigation
+
+The findings section shows **Source and coverage** before its actions: Kafka
+cluster/topic identities, UTC collection times, age, raw/comparable sample counts,
+known partition values, group and record coverage, and the captured local
+thresholds. Each supported hint names its rule and supporting observation IDs
+and time span. It remains a hypothesis; inspect consumer or broker logs before
+assigning a cause. Missing support, stale evidence or an unverified connection
+disables the resource actions.
+
+1. Capture current evidence, then choose **Save topic investigation** or
+   **Save group investigation**.
+2. Review the name and local connection profile in **Saved views**, then choose
+   **Save current view**. Preparing or saving does not navigate, connect, read
+   messages or start observation collection.
+3. Later, open the view from the existing [saved-view library](messages.md#keep-investigation-views).
+   A topic investigation prepares Messages with a bounded time-window and a
+   100-record read limit. It uses the recorded sample window when available,
+   otherwise the recent comparable collection interval. Kafka record timestamps
+   can differ from collection time; review or widen the window before reading.
+   A group investigation prepares that group without inventing a topic.
+4. Connect if needed and explicitly read or refresh. Capture new observations to
+   re-evaluate current conditions; stop an existing watch explicitly if you want
+   it to stop while you inspect another workspace.
+
+These drafts store destination and query controls with an optional local profile
+reference. They start with no record positions and do not snapshot payloads,
+Kafka resource identity, threshold settings or diagnoses.
+The original measurements remain in observation history and can expire or be
+cleared. Opening a saved view cannot establish that a same-named resource is
+still the original resource. Verify current identities and coverage before acting.
+
 ## Freshness, coverage and recovery
 
 Each reading includes its source, observation time and measurement coverage.

@@ -22,7 +22,10 @@ import type { KafkaRecordLocator } from "../contracts/record-locator";
 
 import { SavedViewBookmarks } from "./SavedViewBookmarks";
 import { useInvestigationLibrary } from "./use-investigation-library";
-import { type KafkaViewSettings } from "./investigation-view-settings";
+import {
+  type KafkaViewSettings,
+  type PreparedKafkaInvestigation,
+} from "./investigation-view-settings";
 import { InvestigationTransferControls } from "./InvestigationTransferControls";
 import {
   browserTextDocumentTransfer,
@@ -31,9 +34,10 @@ import {
 
 export function SavedViewsDialog({
   host,
+  preparedInvestigation,
   profiles,
   currentResource,
-  currentQueryAvailable,
+  currentQueryAvailable: suppliedCurrentQueryAvailable,
   readActive,
   captureCurrent,
   restoreError,
@@ -45,6 +49,7 @@ export function SavedViewsDialog({
   onOpenTopicNotes,
 }: {
   readonly host: StreamSkopeHost;
+  readonly preparedInvestigation?: PreparedKafkaInvestigation | undefined;
   readonly profiles: readonly ProfileSummary[];
   readonly currentResource: string | null;
   readonly currentQueryAvailable: boolean;
@@ -60,8 +65,13 @@ export function SavedViewsDialog({
 }): React.JSX.Element {
   const { snapshot, busy, error: hostError, execute, refresh } = useInvestigationLibrary(host);
   const [selectedId, setSelectedId] = useState("");
-  const [name, setName] = useState("");
-  const [profileId, setProfileId] = useState("");
+  const [name, setName] = useState(preparedInvestigation?.name ?? "");
+  const [profileId, setProfileId] = useState(
+    preparedInvestigation ? (profiles.find((profile) => profile.active)?.id ?? "") : "",
+  );
+  const currentQueryAvailable = preparedInvestigation
+    ? preparedInvestigation.settings.configuration !== null
+    : suppliedCurrentQueryAvailable;
   const [error, setError] = useState<string>();
   const [status, setStatus] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -133,6 +143,14 @@ export function SavedViewsDialog({
             positions. Opening restores controls and unloaded positions; connection and reads remain
             explicit actions.
           </Typography>
+          {preparedInvestigation && (
+            <Alert severity="info">
+              Prepared from observed health. Save stores destination and query controls only.
+              Measurements, resource identity and diagnoses remain in observation history and can
+              expire. Opening does not start a read or collection; verify the current resource
+              before using it.
+            </Alert>
+          )}
           {snapshot?.durability === "session" ? (
             <Alert severity="info">
               This host keeps views only until it restarts. Durable desktop and browser hosts save
