@@ -1,8 +1,11 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
+
+import { Admin } from "@platformatic/kafka";
 
 const execute = promisify(execFile);
 /** Real reference-capable Registry. Host networking is confined to the Linux CI/qualification host. */
@@ -48,6 +51,41 @@ export async function startSchemaRegistryServerFixture(
   };
   let readiness = { ready: false, primary: false, coordinator: false, generation: -1 };
   try {
+    // Prepare the compacted topic before Registry consumers cache its initial absence.
+    // The caller owns and removes this isolated broker and its topic storage.
+    const admin = new Admin({
+      bootstrapBrokers: [broker],
+      clientId: name,
+      retries: 0,
+      connectTimeout: 1000,
+      requestTimeout: 5000,
+    });
+    try {
+      await admin.createTopics({
+        topics: [`${name}-schemas`],
+        partitions: 1,
+        replicas: 1,
+        configs: [{ name: "cleanup.policy", value: "compact" }],
+      });
+      let prepared = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        try {
+          const offsets = await admin.listOffsets({
+            topics: [
+              { name: `${name}-schemas`, partitions: [{ partitionIndex: 0, timestamp: -1n }] },
+            ],
+          });
+          prepared = offsets[0]?.partitions[0]?.offset === 0n;
+        } catch {
+          /* Bounded read-only leader readiness. */
+        }
+        if (prepared) break;
+        await delay(250);
+      }
+      if (!prepared) throw new Error("Owned Registry storage topic did not become ready.");
+    } finally {
+      await admin.close();
+    }
     const output = await execute(
       "docker",
       [
@@ -82,7 +120,7 @@ export async function startSchemaRegistryServerFixture(
         "--env",
         "KARAPACE_COMPATIBILITY=BACKWARD",
         "--env",
-        "KARAPACE_LOG_LEVEL=WARNING",
+        "KARAPACE_LOG_LEVEL=INFO",
         "--entrypoint",
         "python3",
         image,
@@ -143,7 +181,29 @@ export async function startSchemaRegistryServerFixture(
         /* No started owned container to adopt. */
       }
     }
-    await dispose();
+    if (id) {
+      try {
+        // This fixture has only an isolated loopback PLAINTEXT broker, without external credentials.
+        const logs = await execute("docker", ["logs", "--tail", "120", id], {
+          timeout: 10000,
+          maxBuffer: 1024 * 1024,
+        });
+        await mkdir(".artifacts/registry-fixture", { recursive: true });
+        await writeFile(
+          `.artifacts/registry-fixture/${name}-startup.log`,
+          JSON.stringify(readiness) + "\n" + logs.stdout + logs.stderr,
+        );
+      } catch {
+        /* Diagnostics never prevent owned cleanup. */
+      }
+    }
+    try {
+      await dispose();
+    } catch (cleanup) {
+      throw new AggregateError([cause, cleanup], "Registry setup and owned cleanup failed", {
+        cause: cleanup,
+      });
+    }
     throw new Error("Isolated reference-capable Registry fixture did not become ready.", { cause });
   }
 }

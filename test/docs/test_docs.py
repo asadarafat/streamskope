@@ -70,7 +70,9 @@ class DocumentationLimitTests(unittest.TestCase):
         source = (docs.WEBSITE / "docs/guide/data-handling.md").read_text()
         for boundary in ("Retained message bytes", "Broker search pass", "Read continuation",
                          "Saved view and topic-note library", "Portable query document",
-                         "Portable view document", "Local topic notes"):
+                         "Portable view document", "Local topic notes",
+                         "Schema record authoring", "Schema change draft",
+                         "Schema change snapshot", "Reviewed Registry operation"):
             with self.subTest(boundary=boundary):
                 changed, count = re.subn(
                     r"(\|\s*" + re.escape(boundary) + r"\s*\|)[^|]+",

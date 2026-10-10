@@ -2,6 +2,7 @@ import { HOST_PROTOCOL_VERSION, type HostCommandResponse } from "../contracts";
 import type { SchemaChangeCommand } from "../contracts/schema-change-protocol";
 import type { KafkaApplicationSession, SchemaRegistryPort } from "../application";
 import type { SchemaRegistryReviewPort } from "../application/schema-registry-types";
+import type { SchemaReviewOperations } from "../application/schema-review-operations";
 import { SchemaChangeService } from "../application/schema-change-service";
 import { SchemaChangeReviewError } from "../application/schema-change-errors";
 import { serviceConnectionDiagnostic } from "../application/connection-diagnostics";
@@ -15,15 +16,15 @@ export class SchemaChangeFacade {
     session: KafkaApplicationSession,
     port: (SchemaRegistryPort & Partial<SchemaRegistryReviewPort>) | undefined,
     private readonly activity: (input: ActivityInput) => void,
+    operations: SchemaReviewOperations,
   ) {
     if (port?.loadReviewSchema && port.loadCompatibilityPolicy && port.checkProposedCompatibility)
       this.service = new SchemaChangeService(
         () => session.schemaRegistryReviewScope(),
         port as SchemaRegistryPort & SchemaRegistryReviewPort,
+        Date.now,
+        operations,
       );
-  }
-  invalidate(): void {
-    this.service?.invalidate();
   }
   async execute(command: SchemaChangeCommand, correlationId: string): Promise<HostCommandResponse> {
     try {

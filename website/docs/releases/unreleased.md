@@ -94,3 +94,8 @@ connection-pinned review. Exact subject confirmation, fresh writer/reference/pol
 checks and acknowledged-ID readback replace the previous direct registration UI.
 New-subject validation and uncertain outcomes remain explicit; no records are
 published by registration.
+
+Subject compatibility policy now shows global, override and effective levels, with
+reviewed set/inherit actions, exact confirmation, stale-writer/policy refusal and
+separate acknowledgement/readback. Policy changes and registration share one
+reviewed write coordinator; global configuration stays read-only.

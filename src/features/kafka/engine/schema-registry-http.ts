@@ -1,3 +1,4 @@
+import type { SchemaPolicyChange } from "../contracts/schema-policy";
 import {
   SCHEMA_REGISTRY_LIMITS,
   SCHEMA_REGISTRY_TYPES,
@@ -187,6 +188,26 @@ export class SchemaRegistryHttpAdapter {
           );
     const globalLevel = compatibilityLevel(global.compatibilityLevel);
     return { globalLevel, subjectLevel, effectiveLevel: subjectLevel ?? globalLevel };
+  }
+
+  async changeSubjectCompatibility(
+    context: KafkaClusterServiceContext,
+    subject: string,
+    change: SchemaPolicyChange,
+    signal: AbortSignal,
+  ): Promise<{ readonly level: SchemaCompatibilityLevel }> {
+    const response = await this.request(
+      context,
+      signal,
+      change.mode === "set" ? "PUT" : "DELETE",
+      `/config/${encodeURIComponent(subject)}`,
+      change.mode === "set" ? { compatibility: change.level } : undefined,
+    );
+    return {
+      level: compatibilityLevel(
+        basicConfiguration(successful(response), ["compatibility"]).compatibility,
+      ),
+    };
   }
 
   async checkProposedCompatibility(
@@ -415,7 +436,7 @@ export class SchemaRegistryHttpAdapter {
   private async request(
     context: KafkaClusterServiceContext,
     signal: AbortSignal,
-    method: "DELETE" | "GET" | "POST",
+    method: "DELETE" | "GET" | "POST" | "PUT",
     path: string,
     body?: unknown,
   ): Promise<BoundedJsonHttpResponse> {

@@ -85,7 +85,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 63 as const;
+export const HOST_PROTOCOL_VERSION = 64 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -124,6 +124,9 @@ export const HOST_COMMANDS = [
   "schemas.author",
   "schemas.change.review",
   "schemas.change.apply",
+  "schemas.policy.load",
+  "schemas.policy.review",
+  "schemas.policy.apply",
   "records.batch.review",
   "records.batch.apply",
   "records.batch.cancel",
@@ -392,6 +395,7 @@ export interface HostCommandBase {
 
 type HostCommandDefinition =
   | import("./schema-change-protocol").SchemaChangeCommand
+  | import("./schema-policy-protocol").SchemaPolicyCommand
   | (HostCommandBase & {
       readonly command: "schemas.author";
       readonly payload: import("./schema-authoring").SchemaAuthoringInput;

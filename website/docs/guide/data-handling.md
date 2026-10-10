@@ -131,6 +131,19 @@ or a throughput guarantee. Both the record-count and byte limits apply.
 | Local topic notes                 | 4,096 UTF-8 description bytes / 128 owner characters / 16 labels / 8 links | The shared 1 MiB library limit still applies; no automatic pruning                                             |
 | Portable query document           | 32 KiB                                                                     | Versioned settings only; import requires review and explicit opening                                           |
 
+Schema authoring and reviewed Registry changes have separate bounds:
+
+| Boundary                    | Limit                         | What happens                                                                                                                                  |
+| --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Schema record authoring     | 16 KiB                        | Edited JSON draft and complete encoded key/value/header bytes; values over either bound are refused                                           |
+| Schema change draft         | 128 KiB UTF-8                 | Complete proposed schema/type/reference draft; oversized drafts cannot be reviewed                                                            |
+| Schema change snapshot      | 512 KiB / 32 nodes / 8 levels | Current writer, relevant history, policy and references; oversized or unreadable state blocks registration                                    |
+| Reviewed Registry operation | 15 seconds / 2 pending reads  | Shared by schema evolution and subject-policy review/read/apply; expired reads fail and admitted writes retain acknowledgement or uncertainty |
+
+Reviews expire after two minutes, are tied to the active connection and retain at
+most 16 IDs per review kind in host memory. A repeated admitted ID returns the
+retained receipt; it does not authorize another write. See [Schema Registry](schema-registry.md).
+
 Range exports use independent host bounds:
 
 | Boundary                | Limit                             | What happens                                                              |

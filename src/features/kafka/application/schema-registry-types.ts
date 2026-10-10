@@ -5,7 +5,11 @@ import type {
   SchemaSubjectVersionIdentity,
   SchemaVersionDetail,
 } from "../contracts";
-import type { SchemaCompatibilityPolicy } from "../contracts/schema-changes";
+import type {
+  SchemaCompatibilityPolicy,
+  SchemaCompatibilityLevel,
+} from "../contracts/schema-changes";
+import type { SchemaPolicyChange } from "../contracts/schema-policy";
 
 import type { KafkaClusterServiceContext } from "./types";
 
@@ -76,3 +80,17 @@ export interface SchemaRegistryPort {
     signal: AbortSignal,
   ): Promise<{ readonly id: number }>;
 }
+
+export interface SchemaRegistryPolicyPort {
+  changeSubjectCompatibility(
+    context: KafkaClusterServiceContext,
+    subject: string,
+    change: SchemaPolicyChange,
+    signal: AbortSignal,
+  ): Promise<{ readonly level: SchemaCompatibilityLevel }>;
+}
+export type ReviewedSchemaPolicyPort = Pick<
+  SchemaRegistryReviewPort,
+  "loadReviewSchema" | "loadCompatibilityPolicy"
+> &
+  SchemaRegistryPolicyPort;

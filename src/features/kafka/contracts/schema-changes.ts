@@ -27,6 +27,7 @@ export const SCHEMA_CHANGE_LIMITS = {
   referenceNodes: 32,
   referenceDepth: 8,
 } as const;
+export const SCHEMA_REVIEW_LIMITS = { operationMs: 15_000, pendingReads: 2 } as const;
 export interface SchemaCompatibilityPolicy {
   readonly globalLevel: SchemaCompatibilityLevel;
   readonly subjectLevel: SchemaCompatibilityLevel | null;

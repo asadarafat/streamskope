@@ -27,6 +27,7 @@ import {
 } from "../../../platform/ui/controls";
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
 
+import { SchemaPolicyDialog } from "./SchemaPolicyDialog";
 import { SchemaEvolutionDialog } from "./SchemaEvolutionDialog";
 import { SchemaClientPanel } from "./SchemaClientPanel";
 import { SchemaSamplesPanel } from "./SchemaSamplesPanel";
@@ -53,6 +54,9 @@ export function SchemaRegistryPage({
   const [filter, setFilter] = useState("");
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
+  const [policyWriter, setPolicyWriter] = useState<
+    import("../contracts").SchemaVersionDetail | null
+  >(null);
   const [evolution, setEvolution] = useState<import("../contracts").SchemaVersionDetail | null>(
     null,
   );
@@ -295,16 +299,31 @@ export function SchemaRegistryPage({
                   >
                     {selectedSchema.schema}
                   </StudioCodeBlock>
-                  <Button
-                    variant="outlined"
-                    disabled={!connected || busy || detail.state !== "ready"}
-                    onClick={() => {
-                      setEvolution(selectedSchema);
-                      setRegisterOpen(true);
-                    }}
+                  <Stack
+                    direction={{ xs: "column", md: "row" }}
+                    spacing={1}
+                    sx={{ "& > button": { flex: 1 } }}
                   >
-                    Evolve selected schema
-                  </Button>
+                    <Button
+                      variant="outlined"
+                      disabled={!connected || busy || detail.state !== "ready"}
+                      onClick={() => {
+                        setEvolution(selectedSchema);
+                        setRegisterOpen(true);
+                      }}
+                    >
+                      Evolve selected schema
+                    </Button>
+                    <Button
+                      disabled={
+                        !connected || busy || selectedSchema === null || detail.state !== "ready"
+                      }
+                      onClick={() => setPolicyWriter(selectedSchema)}
+                      variant="outlined"
+                    >
+                      Compatibility policy
+                    </Button>
+                  </Stack>
                   <SchemaClientPanel
                     schema={selectedSchema}
                     host={host}
@@ -377,6 +396,25 @@ export function SchemaRegistryPage({
           onRegistered={(next) => {
             setRegisterOpen(false);
             selectSubject(next);
+          }}
+        />
+      ) : null}
+
+      {policyWriter ? (
+        <SchemaPolicyDialog
+          key={`${inventory.connectionName ?? ""}:${policyWriter.subject}:${String(policyWriter.version)}`}
+          host={host}
+          writer={policyWriter}
+          enabled={
+            connected &&
+            selectedSubject === policyWriter.subject &&
+            selectedSchema?.id === policyWriter.id &&
+            selectedSchema.version === policyWriter.version
+          }
+          onClose={() => {
+            setPolicyWriter(null);
+            if (connected && selectedSubject === policyWriter.subject)
+              selectSubject(policyWriter.subject);
           }}
         />
       ) : null}

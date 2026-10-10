@@ -42,6 +42,8 @@ const writes = [
   "consumerGroups.reset.apply",
   "records.batch.apply",
   "writes.apply",
+  "schemas.policy.apply",
+  "schemas.change.apply",
   "schemas.register",
   "schemas.delete",
   "acls.create",

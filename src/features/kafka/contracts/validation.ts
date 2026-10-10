@@ -1,3 +1,4 @@
+import { parseSchemaPolicyCommand, parseSchemaPolicyResponse } from "./schema-policy-protocol";
 import { parseSchemaChangeCommand, parseSchemaChangeResponse } from "./schema-change-protocol";
 import {
   parseRecordAnalysisCommand,
@@ -245,6 +246,7 @@ export function parseHostCommand(value: unknown): HostCommand {
     parseRecordExportCommand(command, id, envelope.payload, version) ??
     parseSampleCommand(command, id, envelope.payload, version) ??
     parseSchemaChangeCommand(command, id, envelope.payload, version) ??
+    parseSchemaPolicyCommand(command, id, envelope.payload, version) ??
     parsePluginHostCommand(command, id, envelope.payload, version) ??
     parseTrustEditorCommand(command, id, envelope.payload, version) ??
     parseTrustRecipeHostCommand(command, id, envelope.payload, version) ??
@@ -522,7 +524,8 @@ export function parseHostCommandResponse(value: unknown): HostCommandResponse {
     parseRecordAnalysisResponse(command, id, result, version) ??
     parseRecordExportResponse(command, id, result, version) ??
     parseSampleResponse(command, id, version, result) ??
-    parseSchemaChangeResponse(command, id, result, version);
+    parseSchemaChangeResponse(command, id, result, version) ??
+    parseSchemaPolicyResponse(command, id, result, version);
   if (sampleResponse) return sampleResponse;
   if (command === "schemas.client") {
     exactKeys(result, ["correlationId", "client"], "result");

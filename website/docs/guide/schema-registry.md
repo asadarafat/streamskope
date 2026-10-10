@@ -66,8 +66,9 @@ version, rather than reducing the policy to a latest-only check. Missing or deni
 compatibility APIs block the review. Advanced aliases, metadata/rules and other
 non-basic configuration are outside reviewed-change support and are refused.
 
-The displayed policy comes from the Registry's subject configuration, falling back
-to its global configuration. StreamSkope checks that policy; it does not edit it.
+The displayed effective policy comes from the subject override or the global
+default. Use **Compatibility policy** to inspect its provenance and review a
+subject-level change; global configuration remains read-only.
 A new subject reports **no existing writer**; this is not proof of valid schema
 syntax. The Registry validates the new definition during registration.
 
@@ -98,6 +99,40 @@ StreamSkope never cascades deletion through other subjects.
 
 Registration does not rewrite existing Kafka messages. Review the exact subject
 and version before deletion; permanent deletion can break readers that need it.
+
+## Change a subject's compatibility policy
+
+Select the latest writer, then open **Compatibility policy**. The table separates
+the global default, subject override and effective level. Choose a specific level
+or **Inherit global default**, then choose **Review policy change**. Inspect the
+current and proposed policy, connection and two-minute expiry; changing the choice
+clears review and confirmation. Type the exact subject and choose **Apply reviewed
+policy**.
+
+The host rechecks the latest writer and basic policy before dispatch and serializes
+reviewed policy writes with reviewed schema registration. A changed, unreadable or
+unsupported baseline sends no write. An identical explicit override or inheritance
+is a verified no-op. Setting an explicit override equal to the inherited default
+still changes the subject's intent and requires confirmation.
+
+**Inherit global default** removes only the basic subject override. Later changes to
+the global default will affect the subject. **NONE** disables compatibility
+enforcement for future registration. Changing policy does not validate existing
+schemas, rewrite records, prove consumer compatibility or change the global level.
+Advanced metadata, rules, aliases and non-basic configuration block this operation
+so they cannot be silently removed. Registry subject-configuration permission is
+required independently of schema-registration permission.
+
+Read the outcome and readback separately. An acknowledged write remains
+acknowledged if readback fails or differs. **Read current policy** only reads; it
+does not repeat the write or replace its historical receipt. A missing response is
+**unknown** and may have reached the Registry. Inspect the current policy before
+another attempt; there is no automatic retry or Registry compare-and-swap.
+
+The same 15-second operation deadline and two pending-read slots apply to policy
+and schema-change reviews. Each kind retains at most 16 review IDs in host memory;
+reviews and their retained outcomes are unavailable after restart. Policies and
+schemas remain remote Registry resources.
 
 ## Next: read the record
 

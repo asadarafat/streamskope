@@ -107,6 +107,18 @@ interface SpecificCommandResults
     readonly correlationId: string;
     readonly trace: import("./correlation-trace").CorrelationTraceResult;
   };
+  readonly "schemas.policy.load": {
+    readonly correlationId: string;
+    readonly baseline: import("./schema-policy").SchemaPolicyBaseline;
+  };
+  readonly "schemas.policy.review": {
+    readonly correlationId: string;
+    readonly review: import("./schema-policy").SchemaPolicyReview;
+  };
+  readonly "schemas.policy.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./schema-policy").SchemaPolicyOutcome;
+  };
   readonly "schemas.change.review": {
     readonly correlationId: string;
     readonly review: import("./schema-changes").SchemaChangeReview;
@@ -241,6 +253,9 @@ const structuredResults = {
   "schemas.author": true,
   "schemas.change.review": true,
   "schemas.change.apply": true,
+  "schemas.policy.load": true,
+  "schemas.policy.review": true,
+  "schemas.policy.apply": true,
   "records.batch.review": true,
   "records.batch.apply": true,
   "writes.review": true,
