@@ -56,6 +56,13 @@ export interface KafkaConsumptionObserver {
 }
 
 export interface KafkaActiveConnection {
+  clientQuotaSnapshot?(
+    entity: import("../contracts/client-quotas").ClientQuotaEntity,
+  ): Promise<import("../contracts/client-quotas").ClientQuotaSnapshot>;
+  applyClientQuotas?(
+    input: import("../contracts/client-quotas").ClientQuotaInput,
+    baseline: import("../contracts/client-quotas").ClientQuotaSnapshot,
+  ): Promise<import("../contracts/client-quotas").ClientQuotaOutcome>;
   topicAdministrationSnapshot?(
     topic: string,
   ): Promise<import("../contracts/topic-administration").TopicAdministrationSnapshot>;

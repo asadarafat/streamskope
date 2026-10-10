@@ -131,6 +131,26 @@ export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   );
 }
 
+/** Audit actual settled UI, including ancestor fades and floating-label transitions. */
+export async function waitForSettledDialog(dialog: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      dialog.evaluate((element) => {
+        for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+          if (
+            getComputedStyle(parent).opacity !== "1" ||
+            parent.getAnimations().some((animation) => animation.playState === "running")
+          )
+            return false;
+        }
+        return element
+          .getAnimations({ subtree: true })
+          .every((animation) => animation.playState !== "running");
+      }),
+    )
+    .toBe(true);
+}
+
 export async function expectRawLogEvidence(
   activity: Locator,
   operation: string,

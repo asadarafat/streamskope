@@ -135,7 +135,7 @@ export class KafkaApplicationSession {
 
   get administrationScopes(): Pick<
     KafkaConnectionScopes,
-    "aclReview" | "offsetReset" | "topicAdministration" | "groupAdministration"
+    "aclReview" | "offsetReset" | "topicAdministration" | "groupAdministration" | "clientQuotas"
   > {
     return this.scopes;
   }

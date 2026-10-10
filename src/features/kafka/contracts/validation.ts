@@ -27,6 +27,7 @@ import { parseConnectCommand, parseConnectResponse } from "./connect-protocol";
 import { parseEnvironmentCommand, parseEnvironmentResponse } from "./environment-protocol";
 import { parseSchemaClient } from "./schema-client";
 import { parseRecoveryCommand, parseRecoveryResponse } from "./recovery-protocol";
+import { assertClientQuotaResponse } from "./client-quota-protocol";
 import { assertGroupAdministrationResponse } from "./group-administration-protocol";
 import { assertTopicAdministrationResponse } from "./topic-administration-protocol";
 import { parseCorrelationCommand, parseCorrelationResponse } from "./correlation-protocol";
@@ -716,6 +717,7 @@ export function parseCorrelatedHostResponse<Command extends HostCommand>(
   assertTopicCatalogResponse(response, command);
   assertTopicAdministrationResponse(response, command);
   assertGroupAdministrationResponse(response, command);
+  assertClientQuotaResponse(response, command);
   // The parser validated the result shape, and the checks above established its discriminant.
   return response as HostCommandResponse<Command["command"]>;
 }

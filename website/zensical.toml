@@ -36,6 +36,7 @@ nav = [
   { "Operate safely" = [
     { "Use the browser workbench" = "guide/browser-host.md" },
     { "Reset consumer offsets" = "guide/offset-recovery.md" },
+    { "Inspect and change client quotas" = "guide/client-quotas.md" },
     { "Copy or replay records" = "guide/record-replay.md" },
     { "Manage Kafka Connect" = "guide/kafka-connect.md" },
     { "Compare environments" = "guide/environment-comparison.md" },

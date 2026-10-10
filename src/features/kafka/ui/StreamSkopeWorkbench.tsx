@@ -703,13 +703,9 @@ export function StreamSkopeWorkbench({
   const page =
     navigation === "overview" ? (
       <OverviewPage
-        activeConnectionName={state.connectionName}
-        backend={state.backend}
-        connectionState={state.connectionState}
-        consumerGroupCount={state.consumerGroupInventory.groups.length}
+        host={host}
+        snapshot={state}
         onOpenProfiles={() => selectNavigation("profiles")}
-        profileCount={state.profiles.length}
-        topicCount={state.topics.length}
       />
     ) : navigation === "profiles" ? (
       (profilesPage ?? (

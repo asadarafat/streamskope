@@ -37,6 +37,18 @@ interface SpecificCommandResults
     RecordAnalysisResults,
     RecordLocatorResults,
     TopicCatalogResults {
+  readonly "quotas.inspect": {
+    readonly correlationId: string;
+    readonly snapshot: import("./client-quotas").ClientQuotaSnapshot;
+  };
+  readonly "quotas.change.review": {
+    readonly correlationId: string;
+    readonly review: import("./client-quotas").ClientQuotaReview;
+  };
+  readonly "quotas.change.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./client-quotas").ClientQuotaOutcome;
+  };
   readonly "topics.change.review": {
     readonly correlationId: string;
     readonly review: import("./topic-administration").TopicAdministrationReview;
@@ -247,6 +259,9 @@ interface SpecificCommandResults
 
 /** Commands whose success cannot be represented by a plain acknowledgement. */
 const structuredResults = {
+  "quotas.inspect": true,
+  "quotas.change.review": true,
+  "quotas.change.apply": true,
   "topics.change.review": true,
   "topics.change.apply": true,
   "records.analysis.start": true,

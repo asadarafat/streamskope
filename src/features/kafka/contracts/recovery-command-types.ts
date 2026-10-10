@@ -2,6 +2,18 @@ import type { HostCommandBase } from "./types";
 
 export type RecoveryHostCommand =
   | (HostCommandBase & {
+      readonly command: "quotas.inspect";
+      readonly payload: { readonly entity: import("./client-quotas").ClientQuotaEntity };
+    })
+  | (HostCommandBase & {
+      readonly command: "quotas.change.review";
+      readonly payload: import("./client-quotas").ClientQuotaInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "quotas.change.apply";
+      readonly payload: { readonly planId: string; readonly confirmation: string };
+    })
+  | (HostCommandBase & {
       readonly command: "consumerGroups.delete.review";
       readonly payload: { readonly groupId: string };
     })

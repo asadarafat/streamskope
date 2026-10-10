@@ -31,6 +31,15 @@ import type {
   KafkaClusterServiceContext,
 } from "./types";
 
+export interface ClientQuotaScope extends ReviewAuthority {
+  readonly snapshot?: (
+    entity: import("../contracts/client-quotas").ClientQuotaEntity,
+  ) => Promise<import("../contracts/client-quotas").ClientQuotaSnapshot>;
+  readonly tryApply?: (
+    input: import("../contracts/client-quotas").ClientQuotaInput,
+    baseline: import("../contracts/client-quotas").ClientQuotaSnapshot,
+  ) => MutationDispatch<import("../contracts/client-quotas").ClientQuotaOutcome>;
+}
 export interface GroupAdministrationScope extends ReviewAuthority {
   readonly snapshot?: (
     groupId: string,
@@ -299,6 +308,30 @@ export class KafkaConnectionScopes {
     };
   }
 
+  clientQuotas(): ClientQuotaScope | null {
+    const active = this.context();
+    if (!active) return null;
+    const context = { ...active },
+      { connection } = context;
+    return {
+      connectionName: context.connectionName,
+      isCurrent: () => this.current(context),
+      ...(connection.clientQuotaSnapshot === undefined
+        ? {}
+        : {
+            snapshot: (entity: import("../contracts/client-quotas").ClientQuotaEntity) =>
+              this.readReviewed(context, () => connection.clientQuotaSnapshot!(entity)),
+          }),
+      ...(connection.applyClientQuotas === undefined
+        ? {}
+        : {
+            tryApply: (
+              input: import("../contracts/client-quotas").ClientQuotaInput,
+              baseline: import("../contracts/client-quotas").ClientQuotaSnapshot,
+            ) => this.dispatch(context, () => connection.applyClientQuotas!(input, baseline)),
+          }),
+    };
+  }
   groupAdministration(): GroupAdministrationScope | null {
     const active = this.context();
     if (!active) return null;

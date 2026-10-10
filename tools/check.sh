@@ -53,7 +53,7 @@ docs() {
 runtime() {
   patch_dependencies
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/connection-profiles-real.json test/kafka/production-connection-profiles-real.test.ts
-  npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/structured-records-real.json test/kafka/structured-records-real.test.ts test/kafka/resumable-search-real.test.ts test/kafka/streaming-export-real.test.ts test/kafka/record-locators-real.test.ts test/kafka/schema-authoring-real.test.ts test/kafka/schema-evolution-real.test.ts test/kafka/schema-policy-real.test.ts test/kafka/record-replay-real.test.ts test/kafka/topic-administration-real.test.ts test/kafka/group-administration-real.test.ts
+  npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/structured-records-real.json test/kafka/structured-records-real.test.ts test/kafka/resumable-search-real.test.ts test/kafka/streaming-export-real.test.ts test/kafka/record-locators-real.test.ts test/kafka/schema-authoring-real.test.ts test/kafka/schema-evolution-real.test.ts test/kafka/schema-policy-real.test.ts test/kafka/record-replay-real.test.ts test/kafka/topic-administration-real.test.ts test/kafka/group-administration-real.test.ts test/kafka/client-quotas-real.test.ts
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/observation-replication-real.test.ts test/kafka/provider-stream-stop-real.test.ts
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/nats-real.json test/nats/provider-real.test.ts
   STREAMSKOPE_TEST_SUITE=production-startup node tools/package/e2e.mjs web test/e2e/web-production-startup.spec.ts
@@ -64,6 +64,7 @@ runtime() {
     test/e2e/web-responsive-workbench.spec.ts \
     test/e2e/web-topic-administration.spec.ts \
     test/e2e/web-group-administration.spec.ts \
+    test/e2e/web-client-quotas.spec.ts \
     --grep 'keyboard-operable|investigates real lag|persistent resource hierarchy|expanded dock in both themes|main resource page primary'
   STREAMSKOPE_TEST_SUITE=nats-workspace node tools/package/e2e.mjs web test/e2e/web-nats-workspace.spec.ts
   STREAMSKOPE_TEST_SUITE=structured-records node tools/package/e2e.mjs web test/e2e/web-structured-events.spec.ts test/e2e/web-streaming-export.spec.ts test/e2e/web-record-analysis.spec.ts test/e2e/web-investigation-views.spec.ts test/e2e/web-record-bookmarks.spec.ts test/e2e/web-portable-views.spec.ts test/e2e/web-topic-notes.spec.ts test/e2e/web-schema-authoring.spec.ts test/e2e/web-schema-evolution.spec.ts test/e2e/web-schema-policy.spec.ts test/e2e/web-safe-recovery.spec.ts

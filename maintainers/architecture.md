@@ -283,7 +283,7 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 69 includes closed topic and consumer-group administration reviews/outcomes alongside
+Host protocol 70 includes closed topic, consumer-group and client-quota administration reviews/outcomes alongside
 the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,
 and refuses structured evidence mislabeled as a legacy document. Browser
@@ -306,3 +306,12 @@ review/apply adapter uses `OwnedKafkaResources` to drain original clients and
 preserve admitted replies through revocation. ACK, readback and cleanup remain
 separate; failed cleanup fences the owner. No durable format or plugin API changes
 are introduced by these protocol commands.
+
+Client quotas inspect one strict, explicit user/client-ID entity, including actual
+default entries. The dedicated service freezes the complete explicit baseline,
+preserves untouched keys and uses the same captured connection and review owner.
+The adapter revalidates cluster/entity/API/value evidence on its mutation client,
+interprets the SDK's exact per-entity receipt and drains original clients through
+`OwnedKafkaResources`. An ACK does not imply verified readback or confirmed cleanup.
+Effective and inherited quotas are not inferred, and Kafka has no atomic quota
+compare-and-set. See [client quota operation](../website/docs/guide/client-quotas.md).
