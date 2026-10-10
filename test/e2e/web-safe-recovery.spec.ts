@@ -18,6 +18,7 @@ import {
   fetchTopicMessages,
   observeBrowserDiagnostics,
   openWorkbenchResource,
+  waitForSettledDialog,
 } from "../support/workbench-browser";
 
 test.use({ actionTimeout: 10_000, trace: "off", viewport: { width: 1440, height: 1000 } });
@@ -144,6 +145,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     await expect(
       replay.getByRole("textbox", { name: "Find literal UTF-8 value text" }),
     ).toBeDisabled();
+    await waitForSettledDialog(replay);
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
@@ -184,8 +186,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
       history.getByRole("button", { name: "Review definitely unsent records" }),
     ).toBeDisabled();
     await history.getByRole("button", { name: "Close recovery controls" }).click();
-    // Contrast checks require the dialog's entrance fade to have finished.
-    await expect(history.locator("..")).toHaveCSS("opacity", "1");
+    await waitForSettledDialog(history);
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
@@ -202,6 +203,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     await reset.getByRole("textbox", { name: `Next offset ${topic}:0` }).fill("0");
     await reset.getByRole("button", { name: "Preview reset" }).click();
     await expect(reset.getByRole("table", { name: "Offset reset preview" })).toBeVisible();
+    await waitForSettledDialog(reset);
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
@@ -231,6 +233,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     await acl.getByRole("button", { name: "Preview ACL change" }).click();
     await expect(acl.getByRole("table", { name: "Before access evidence" })).toBeVisible();
     await expect(acl.getByRole("table", { name: "After access evidence" })).toBeVisible();
+    await waitForSettledDialog(acl);
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
