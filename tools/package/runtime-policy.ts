@@ -26,6 +26,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/application/observation-record-sample.ts",
     "src/features/kafka/facade/facade-support.ts",
     "src/features/kafka/engine/engine.ts",
+    // Each HTTP cleanup owns one diagnostic deadline; expiry retains the original lease.
+    "src/features/kafka/engine/owned-http-request.ts",
     "src/features/kafka/engine/platformatic-latency.ts",
     // Finite reads own a deadline that is cleared when iteration ends.
     "src/features/kafka/engine/platformatic-consumer.ts",
