@@ -6,12 +6,25 @@ import {
   parseRecordReplayReview,
   parseRecordReplayOutcome,
 } from "./record-replay";
+import {
+  parseRepairContinuationInput,
+  parseRepairReconciliationInput,
+  parseRepairArchiveInput,
+  parseRepairContinuationReview,
+  parseRepairFinding,
+} from "./repair-recovery";
 export function parseReplayCommand(
   command: HostCommand["command"],
   id: string,
   value: unknown,
   version: HostCommand["version"],
 ): HostCommand | undefined {
+  if (command === "records.repair.review")
+    return { command, id, version, payload: parseRepairContinuationInput(value) };
+  if (command === "records.repair.reconcile")
+    return { command, id, version, payload: parseRepairReconciliationInput(value) };
+  if (command === "records.repair.archive")
+    return { command, id, version, payload: parseRepairArchiveInput(value) };
   if (command === "records.repair.list") {
     exactKeys(record(value, "repairList"), [], "repairList");
     return { command, id, version, payload: {} };
@@ -44,6 +57,32 @@ export function parseReplayResponse(
   result: Record<string, unknown>,
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
+  if (command === "records.repair.review") {
+    exactKeys(result, ["correlationId", "continuation"], "repairReview");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "correlationId", 128),
+        continuation: parseRepairContinuationReview(result.continuation),
+      },
+    };
+  }
+  if (command === "records.repair.reconcile") {
+    exactKeys(result, ["correlationId", "finding"], "repairReconcile");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "correlationId", 128),
+        finding: parseRepairFinding(result.finding),
+      },
+    };
+  }
   if (command === "records.repair.list") {
     exactKeys(result, ["correlationId", "durability", "jobs"], "repairList");
     if (!Array.isArray(result.jobs) || result.jobs.length > REPAIR_JOB_LIMITS.jobs)

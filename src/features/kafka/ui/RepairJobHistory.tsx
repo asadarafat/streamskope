@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Stack, Typography, Table, TableHead, TableBody, TableRow, TableCell } from "@mui/material";
 
-import { HOST_PROTOCOL_VERSION, type StreamSkopeHost } from "../contracts";
+import { HOST_PROTOCOL_VERSION, type StreamSkopeHost, type ProfileSummary } from "../contracts";
 import type { RepairJobSummary } from "../contracts/repair-jobs";
 import {
   StudioButton as Button,
@@ -12,7 +12,15 @@ import {
   StudioDialogActions as DialogActions,
 } from "../../../platform/ui/controls";
 
-export function RepairJobHistory({ host }: { readonly host: StreamSkopeHost }): React.JSX.Element {
+import { RepairJobRecovery } from "./RepairJobRecovery";
+
+export function RepairJobHistory({
+  host,
+  profiles = [],
+}: {
+  readonly host: StreamSkopeHost;
+  readonly profiles?: readonly ProfileSummary[];
+}): React.JSX.Element {
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [jobs, setJobs] = useState<readonly RepairJobSummary[]>([]),
@@ -105,11 +113,18 @@ export function RepairJobHistory({ host }: { readonly host: StreamSkopeHost }): 
                   <Typography variant="body2">
                     Job {job.id} · {job.updatedAt} · {job.status} · cleanup {job.cleanup} ·{" "}
                     {job.unsent} definitely unsent
+                    {job.continuationId ? " in this parent attempt" : ""}
                     {job.uncertainIndex === null
                       ? ""
                       : ` · record ${job.uncertainIndex + 1} uncertain after interruption`}
                     .
                   </Typography>
+                  {(job.parentJobId || job.continuationId) && (
+                    <Typography variant="body2">
+                      Parent: {job.parentJobId ?? "None"} · Continuation:{" "}
+                      {job.continuationId ?? "None"}
+                    </Typography>
+                  )}
                   <Table size="small" aria-label={`Receipts for ${job.id}`}>
                     <TableHead>
                       <TableRow>
@@ -134,6 +149,20 @@ export function RepairJobHistory({ host }: { readonly host: StreamSkopeHost }): 
                       ))}
                     </TableBody>
                   </Table>
+                  {job.findings.map((f) => (
+                    <Typography key={f.id} variant="body2">
+                      Record {f.recordIndex + 1} at destination offset {f.offset}: {f.state} ·{" "}
+                      {f.observedAt} · cleanup {f.cleanup}. Observation does not establish write
+                      ownership.
+                    </Typography>
+                  ))}
+                  <RepairJobRecovery
+                    host={host}
+                    job={job}
+                    jobs={jobs}
+                    profiles={profiles}
+                    changed={load}
+                  />
                 </Stack>
               ))}
           </Stack>

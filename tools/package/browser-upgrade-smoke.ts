@@ -195,13 +195,14 @@ async function verifyNewBackup(
   return { inventorySha256: sha(bytes), dataSnapshotSha256: String(manifest.dataSnapshotSha256) };
 }
 
-interface TransitionOptions {
+export interface TransitionOptions {
   readonly target: BrowserInstallerTarget;
   readonly installerSource: string;
   readonly environment?: NodeJS.ProcessEnv;
   readonly repairHistory?: boolean;
+  readonly repairRecovery?: boolean;
 }
-interface LocalPredecessorAssets {
+export interface LocalPredecessorAssets {
   readonly installerSource: string;
   readonly topologySha256: string;
   readonly manifestSha256: string;
@@ -209,7 +210,7 @@ interface LocalPredecessorAssets {
 interface TransitionFixture {
   readonly predecessor: BrowserInstallerTarget;
   readonly localAssets?: LocalPredecessorAssets;
-  readonly queryFormat: 1 | 2 | 3;
+  readonly queryFormat: 1 | 2 | 3 | 4;
 }
 type TransitionEvidence = Omit<BrowserUpgradeEvidence, "checks"> & {
   readonly checks: readonly string[];
@@ -235,7 +236,7 @@ const LOCAL_RECORD_PREDECESSOR: BrowserInstallerTarget = {
 };
 
 /** Shared transaction mechanics; public predecessor authority stays in its closed caller. */
-async function verifyTransition(
+export async function verifyTransition(
   options: TransitionOptions,
   fixtureOptions: TransitionFixture,
 ): Promise<TransitionEvidence> {
@@ -279,6 +280,9 @@ async function verifyTransition(
     | "baseline-install"
     | "baseline-upgrade"
     | "baseline-fixture"
+    | "predecessor-repair-fixture"
+    | "repair-recovery-migration"
+    | "saved-view-read"
     | "check"
     | "upgrade"
     | "upgrade-backup"
@@ -442,6 +446,21 @@ async function verifyTransition(
       schemaVersion: queryFormat,
       queries: [legacyQuery],
     });
+    let legacyRepairBytes: Buffer | undefined;
+    if (options.repairRecovery) {
+      stage = "predecessor-repair-fixture";
+      await fixture.lock();
+      const predecessorContainer = await docker(["inspect", container], environment);
+      fixture.seedRepairHistory(String(predecessorContainer.Id), true);
+      legacyRepairBytes = await readFile(join(data, "history", "kafka-repair-jobs.json"));
+      await fixture.unlockAfterReplacement();
+      const history = await fixture.kafkaCommand("records.repair.list", {});
+      assert.ok(Array.isArray(history.jobs) && history.jobs.length === 2);
+      assert.deepEqual(
+        await readFile(join(data, "history", "kafka-repair-jobs.json")),
+        legacyRepairBytes,
+      );
+    }
     const treeBefore = await inventory(data);
     const recordBefore = await readFile(join(state, "installation.json"));
     const runningBefore = await docker(["inspect", container], environment);
@@ -474,6 +493,41 @@ async function verifyTransition(
     await fixture.unlockAfterReplacement();
     verifyBrowserNativeWorkers(String(targetContainer.Id));
     let repairBytes: Buffer | undefined;
+    if (options.repairRecovery) {
+      stage = "repair-recovery-migration";
+      assert.ok(legacyRepairBytes);
+      const repairPath = join(data, "history", "kafka-repair-jobs.json");
+      const beforeListing = await lstat(repairPath);
+      const history = await fixture.kafkaCommand("records.repair.list", {});
+      assert.equal(history.durability, "durable");
+      assert.ok(Array.isArray(history.jobs) && history.jobs.length === 2);
+      assert.deepEqual(await readFile(repairPath), legacyRepairBytes);
+      const afterListing = await lstat(repairPath);
+      assert.equal(afterListing.ino, beforeListing.ino);
+      assert.equal(afterListing.mtimeMs, beforeListing.mtimeMs);
+      const completed: unknown = history.jobs.find(
+        (j) => object(j).id === "native-completed-repair",
+      );
+      assert.ok(completed);
+      assert.equal(object(completed).canArchive, true);
+      await fixture.kafkaCommand("records.repair.archive", {
+        jobId: "native-completed-repair",
+        confirmation: "native-completed-repair",
+        chain: [{ id: "native-completed-repair", revision: 1 }],
+      });
+      repairBytes = await readFile(repairPath);
+      assert.equal(object(JSON.parse(repairBytes.toString("utf8"))).schemaVersion, 2);
+      assert.deepEqual(await readFile(`${repairPath}.pre-repair-v1`), legacyRepairBytes);
+      await fixture.lock();
+      await fixture.unlockAfterReplacement();
+      const recovered = await fixture.kafkaCommand("records.repair.list", {});
+      assert.ok(Array.isArray(recovered.jobs) && recovered.jobs.length === 1);
+      assert.equal(object(recovered.jobs[0]).id, "native-interrupted-repair");
+      assert.equal(object(recovered.jobs[0]).uncertainIndex, 0);
+      assert.equal(object(recovered.jobs[0]).canContinue, false);
+      assert.equal(object(recovered.jobs[0]).canArchive, false);
+      assert.deepEqual(await readFile(repairPath), repairBytes);
+    }
     if (options.repairHistory) {
       stage = "repair-history-native-recovery";
       const empty = await fixture.kafkaCommand("records.repair.list", {});
@@ -502,7 +556,7 @@ async function verifyTransition(
       assert.equal((await docker(["inspect", container], environment)).Id, targetContainer.Id);
       await fixture.verifyUnlocked();
     }
-    stage = "view-migration";
+    stage = queryFormat === 4 ? "saved-view-read" : "view-migration";
     const listed = object((await fixture.kafkaCommand("queries.list", {})).snapshot).queries;
     assert.ok(Array.isArray(listed) && listed.length === 1);
     const catalog = object((await fixture.kafkaCommand("catalog.list", {})).snapshot);
@@ -522,12 +576,14 @@ async function verifyTransition(
       records: savedRecords,
     };
     await fixture.kafkaCommand("queries.put", { query: changedView });
-    assert.deepEqual(
-      await readFile(
-        `${queryPath}.${queryFormat === 1 ? "pre-views-v1" : queryFormat === 2 ? "pre-records-v2" : "pre-catalog-v3"}`,
-      ),
-      legacyQueryBytes,
-    );
+    if (queryFormat !== 4) {
+      assert.deepEqual(
+        await readFile(
+          `${queryPath}.${queryFormat === 1 ? "pre-views-v1" : queryFormat === 2 ? "pre-records-v2" : "pre-catalog-v3"}`,
+        ),
+        legacyQueryBytes,
+      );
+    }
     assert.deepEqual(JSON.parse((await readFile(queryPath)).toString("utf8")), {
       schemaVersion: 4,
       queries: [changedView],
@@ -544,7 +600,9 @@ async function verifyTransition(
     assert.notEqual(
       incompatible.code,
       0,
-      "An old target must not accept the migrated view library.",
+      options.repairRecovery
+        ? "The exact old repair host must refuse format2 before stopping the installed owner."
+        : "An old target must not accept the migrated view library.",
     );
     assert.ok((incompatible.stdout + incompatible.stderr).includes("compatibility inspection"));
     assert.deepEqual(await inventory(data), changedTree);
@@ -590,9 +648,27 @@ async function verifyTransition(
         ),
         repairBytes,
       );
-      await assert.rejects(lstat(join(data, "history", "kafka-repair-jobs.json")), {
-        code: "ENOENT",
-      });
+      if (options.repairRecovery) {
+        assert.deepEqual(
+          await readFile(join(data, "history", "kafka-repair-jobs.json")),
+          legacyRepairBytes,
+        );
+        assert.deepEqual(
+          await readFile(
+            join(
+              state,
+              "preserved-after-view-migration",
+              "history",
+              "kafka-repair-jobs.json.pre-repair-v1",
+            ),
+          ),
+          legacyRepairBytes,
+        );
+      } else {
+        await assert.rejects(lstat(join(data, "history", "kafka-repair-jobs.json")), {
+          code: "ENOENT",
+        });
+      }
     }
     assert.deepEqual(await readFile(queryPath), legacyQueryBytes);
     await run("docker", ["start", String(targetContainer.Id)], environment);
@@ -624,6 +700,14 @@ async function verifyTransition(
       legacyQuery,
     ]);
     assert.deepEqual(await readFile(queryPath), legacyQueryBytes);
+    if (options.repairRecovery) {
+      const history = await fixture.kafkaCommand("records.repair.list", {});
+      assert.ok(Array.isArray(history.jobs) && history.jobs.length === 2);
+      assert.deepEqual(
+        await readFile(join(data, "history", "kafka-repair-jobs.json")),
+        legacyRepairBytes,
+      );
+    }
     verifyBrowserNativeWorkers(String(restored.Id));
     await fixture.lock();
     const pinnedRecord = await readFile(join(state, "installation.json"));
@@ -730,12 +814,33 @@ async function verifyTransition(
                   ? `exact previously qualified local-staged version-${String(queryFormat)} predecessor`
                   : check === "no-argument resume preserves rolled-back release"
                     ? "exact local-staged rolled-back owner restarts with preserved installation"
-                    : check,
+                    : options.repairRecovery &&
+                        check ===
+                          "genuine predecessor query remains unchanged until explicit view migration"
+                      ? "genuine predecessor saved view remains unchanged during repair migration"
+                      : options.repairRecovery &&
+                          check ===
+                            "incompatible view rollback refuses without changing the running host"
+                        ? "incompatible repair rollback refuses without changing the running host"
+                        : check,
               ),
               `published installation upgraded to actual local version-${String(queryFormat)} predecessor with complete backup`,
-              queryFormat === 3
-                ? "view-only format3-to-format4 migration; real broker catalog writes qualified separately"
-                : "locator metadata persistence only; real record reload qualified separately",
+              queryFormat === 4
+                ? "saved-view format4 preserved; repair recovery migration qualified separately"
+                : queryFormat === 3
+                  ? "view-only format3-to-format4 migration; real broker catalog writes qualified separately"
+                  : "locator metadata persistence only; real record reload qualified separately",
+              ...(options.repairRecovery
+                ? [
+                    "actual old repair host reads independently encrypted format1 jobs before upgrade",
+                    "new host legacy listing preserves exact encrypted bytes, inode and modification time",
+                    "explicit archive migrates to format2 and retains exact private encrypted predecessor",
+                    "uncertain repair remains protected across native vault restart without retry or archive",
+                    "old format1 target refuses format2 before stopping the installed owner",
+                    "complete backup restoration retains changed format2 and predecessor in recovery",
+                    "actual old repair host lists original format1 jobs after complete restore and rollback",
+                  ]
+                : []),
               ...(options.repairHistory
                 ? [
                     "independently encrypted interrupted repair job survives native vault restart without retry",

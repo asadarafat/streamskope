@@ -13,9 +13,20 @@ import {
   type HostCommand,
   type HostCommandResponse,
 } from "../../src/features/kafka/contracts";
+import {
+  replayBatch,
+  UNCHANGED_REPLAY_TRANSFORM,
+} from "../../src/features/kafka/contracts/record-replay";
 afterEach(cleanup);
 const job = {
   id: "interrupted-job",
+  revision: 1,
+  parentJobId: null,
+  continuationId: null,
+  findings: [],
+  targetProfile: null,
+  canContinue: true,
+  canArchive: false,
   createdAt: "2026-10-10T00:00:00Z",
   updatedAt: "2026-10-10T00:00:00Z",
   targetName: "Target",
@@ -88,4 +99,100 @@ it("rejects payload disclosure and forged inconsistent counts at the host bounda
   expect(() =>
     parseHostCommandResponse({ ...response, result: { ...result, jobs: [{ ...job, unsent: 3 }] } }),
   ).toThrow();
+});
+it("requires a fresh preview and exact destination confirmation, sends only the reviewed child and leaves uncertainty visible", async () => {
+  const input = {
+    targetProfile: null,
+    topic: job.topic,
+    partition: job.partition,
+    ratePerSecond: 1,
+    records: [
+      {
+        topic: "source",
+        partition: 0,
+        offset: "2",
+        timestampMs: null,
+        original: {
+          state: "complete" as const,
+          encoding: "base64" as const,
+          key: null,
+          value: "c2VjcmV0",
+          headers: [],
+        },
+      },
+    ],
+    transform: UNCHANGED_REPLAY_TRANSFORM,
+  };
+  const review = {
+    planId: "child",
+    sourceName: "Source",
+    targetName: job.targetName,
+    expiresAt: "2026-10-10T12:00:00Z",
+    input,
+    batch: replayBatch(input),
+    destination: { clusterId: "cluster", topicId: "topic", partitions: 1 },
+  };
+  const commands: HostCommand[] = [];
+  const host: StreamSkopeHost = new Host();
+  host.execute = ((command: HostCommand): Promise<HostCommandResponse> => {
+    commands.push(parseHostCommand(command));
+    const result =
+      command.command === "records.repair.list"
+        ? { correlationId: "history", durability: "durable", jobs: [job] }
+        : command.command === "records.repair.review"
+          ? {
+              correlationId: "review",
+              continuation: {
+                parentJobId: job.id,
+                skipped: { acknowledged: 1, rejected: 0, uncertain: 1 },
+                review,
+              },
+            }
+          : command.command === "records.replay.apply"
+            ? {
+                correlationId: "apply",
+                outcome: {
+                  total: 1,
+                  unsent: 0,
+                  outcomes: [
+                    {
+                      ...job.outcomes[0]!,
+                      receipt: { topic: "events", partition: 0, offset: "20" },
+                    },
+                  ],
+                  stopReason: "complete",
+                  cleanup: "complete",
+                },
+              }
+            : { correlationId: "cancel" };
+    return Promise.resolve(
+      parseHostCommandResponse({
+        command: command.command,
+        id: command.id,
+        version: command.version,
+        ok: true,
+        result,
+      }),
+    );
+  }) as StreamSkopeHost["execute"];
+  render(<RepairJobHistory host={host} />);
+  await userEvent.click(screen.getByRole("button", { name: "Repair history" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Recovery controls" }));
+  expect(screen.queryByRole("button", { name: "Archive confirmed chain" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Review definitely unsent records" }));
+  expect(
+    await screen.findByText(/Skipped: 1 acknowledged, 0 rejected, 1 uncertain/u),
+  ).toBeVisible();
+  const apply = screen.getByRole("button", { name: "Apply reviewed continuation" });
+  expect(apply).toBeDisabled();
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Type Target / events / 0" }),
+    "Target / events / 0",
+  );
+  await userEvent.click(apply);
+  expect(await screen.findByText(/Continuation stopped: complete/u)).toBeVisible();
+  expect(
+    commands.filter((c) => c.command === "records.replay.apply").map((c) => c.payload),
+  ).toEqual([{ planId: "child", confirmation: "Target / events / 0" }]);
+  expect(screen.getByText(/record 2 uncertain after interruption/u)).toBeVisible();
 });

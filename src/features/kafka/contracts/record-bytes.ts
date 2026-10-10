@@ -22,6 +22,22 @@ export interface KafkaCompleteRecord {
   readonly headers: readonly KafkaRecordHeaderBytes[];
 }
 
+/** Canonical Base64 permits exact bytes to be compared without decoding or coercion. */
+export function sameKafkaCompleteRecord(
+  left: KafkaCompleteRecord,
+  right: KafkaCompleteRecord,
+): boolean {
+  return (
+    left.key === right.key &&
+    left.value === right.value &&
+    left.headers.length === right.headers.length &&
+    left.headers.every(
+      (header, index) =>
+        header.key === right.headers[index]!.key && header.value === right.headers[index]!.value,
+    )
+  );
+}
+
 export type KafkaOriginalRecord =
   | KafkaCompleteRecord
   | {

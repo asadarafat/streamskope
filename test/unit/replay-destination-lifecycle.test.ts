@@ -117,7 +117,12 @@ it("projects only reviewed authority, keeps the opening deadline separate, and r
     1,
     controller.signal,
   );
-  expect(Object.keys(target).sort()).toEqual(["close", "scope"]);
+  expect(Object.keys(target).sort()).toEqual(["close", "readScope", "scope"]);
+  expect(Object.keys(target.readScope!).sort()).toEqual([
+    "connectionName",
+    "isCurrent",
+    "openMessageStream",
+  ]);
   expect(Object.keys(target.scope).sort()).toEqual([
     "connectionName",
     "isCurrent",
@@ -126,10 +131,12 @@ it("projects only reviewed authority, keeps the opening deadline separate, and r
   ]);
   controller.abort(new Error("Opening deadline elapsed after successful admission."));
   expect(target.scope.isCurrent()).toBe(true);
+  expect(target.readScope?.isCurrent()).toBe(true);
   const first = target.close();
   const second = target.close();
   expect(second).toBe(first);
   expect(target.scope.isCurrent()).toBe(false);
+  expect(target.readScope?.isCurrent()).toBe(false);
   expect(
     target.scope.tryDispatchWrite!({
       kind: "topic",

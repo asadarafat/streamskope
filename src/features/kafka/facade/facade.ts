@@ -36,7 +36,7 @@ import { ObservationFacade } from "./observation-facade";
 import { ConnectFacade } from "./connect-facade";
 import { EnvironmentFacade } from "./environment-facade";
 import { AclReviewFacade } from "./acl-review-facade";
-import { RecordReplayFacade } from "./record-replay-facade";
+import { RecordReplayFacade, isRecordReplayCommand } from "./record-replay-facade";
 import { OffsetResetFacade } from "./offset-reset-facade";
 import { CorrelationTraceFacade } from "./correlation-trace-facade";
 import { SchemaSamplesFacade, isSchemaSamplesCommand } from "./schema-samples-facade";
@@ -149,13 +149,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     );
     this.aclReviews = new AclReviewFacade(session, this.recordActivity.bind(this));
     this.offsetResets = new OffsetResetFacade(session, this.recordActivity.bind(this));
-    this.recordReplay = new RecordReplayFacade(
-      session,
-      profiles,
-      options.replayConnections,
-      this.recordActivity.bind(this),
-      options.repairStore,
-    );
     this.writes = new KafkaReviewedWriteService(() => session.reviewedWriteScope());
     this.schemaSamples = new SchemaSamplesFacade(
       session,
@@ -187,6 +180,14 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
           state: "ready",
         }),
       );
+    this.recordReplay = new RecordReplayFacade(
+      session,
+      profiles,
+      options.replayConnections,
+      this.recordActivity.bind(this),
+      options.repairStore,
+      this.preferences,
+    );
     this.protection = new KafkaCommandProtection({
       preferences: this.preferences,
       disconnected: (): boolean =>
@@ -389,6 +390,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     if (!this.available) {
       return this.unavailableResponse(command, correlationId);
     }
+    if (isRecordReplayCommand(command)) return this.recordReplay.execute(command, correlationId);
     if (isRecordRangeCommand(command))
       return this.recordRanges.execute(command, correlationId, suppressedLocatorLoad);
     if (isPluginHostCommand(command)) return this.plugins.execute(command, correlationId);
@@ -437,11 +439,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "environments.review":
       case "environments.apply":
         return this.environments.execute(command, correlationId);
-      case "records.repair.list":
-      case "records.replay.review":
-      case "records.replay.apply":
-      case "records.replay.cancel":
-        return this.recordReplay.execute(command, correlationId);
       case "records.trace":
       case "records.trace.cancel":
         return this.correlationTrace.execute(command, correlationId);
@@ -498,6 +495,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "preferences.reset":
       case "preferences.update":
         await this.recordRanges.preparePreferences(command);
+        await this.recordReplay.preparePreferences(command);
         return executeOperationalPreferenceCommand(command, correlationId, {
           nextSequence: this.nextSequence.bind(this),
           preferences: this.preferences,

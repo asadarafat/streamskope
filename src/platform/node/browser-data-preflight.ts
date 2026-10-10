@@ -8,7 +8,11 @@ import {
 import { isPluginCompatibleWithHost, parseReleaseVersion } from "../../plugins/compatibility";
 import { STREAMSKOPE_RELEASE } from "../../plugins/host-release";
 
-import { inspectRepairEnvelope, REPAIR_ENVELOPE_MAX_BYTES } from "./kafka-repair-file-store";
+import {
+  inspectRepairEnvelope,
+  repairEnvelopeFormat,
+  REPAIR_ENVELOPE_MAX_BYTES,
+} from "./kafka-repair-file-store";
 import {
   BROWSER_DATA_COMPATIBILITY,
   BROWSER_DATA_DOCUMENT_KINDS,
@@ -83,6 +87,7 @@ const STATIC_FILES = [
   "templates/trust-acquisition-recipes.json",
   "history/kafka-observations.json",
   "history/kafka-repair-jobs.json",
+  "history/kafka-repair-jobs.json.pre-repair-v1",
   "plugins/state.json",
   "plugins/network.json",
   "plugins/catalog.json",
@@ -299,15 +304,24 @@ export async function inspectBrowserData(
     ).series.length,
     formats: [1],
   }));
-  await inspect("repair-jobs", exists("history/kafka-repair-jobs.json"), async () => {
-    const bytes = await readBoundedFile(
-      join(root, "history/kafka-repair-jobs.json"),
-      REPAIR_ENVELOPE_MAX_BYTES,
-      { rejectSymlinks: true },
-    );
-    const protectedValue = inspectRepairEnvelope(JSON.parse(bytes.toString("utf8")) as unknown);
-    assertVaultValueEnvelope(protectedValue);
-    return { count: 1, formats: [1] };
+  const repairPaths = [
+    "history/kafka-repair-jobs.json",
+    "history/kafka-repair-jobs.json.pre-repair-v1",
+  ].filter(exists);
+  await inspect("repair-jobs", repairPaths.length > 0, async () => {
+    const formats = new Set<number>();
+    for (const path of repairPaths) {
+      const bytes = await readBoundedFile(join(root, path), REPAIR_ENVELOPE_MAX_BYTES, {
+        rejectSymlinks: true,
+      });
+      const envelope: unknown = JSON.parse(bytes.toString("utf8"));
+      const format = repairEnvelopeFormat(envelope);
+      if (path.endsWith(".pre-repair-v1") && format !== 1)
+        throw new Error("Repair predecessor format differs from its declared backup.");
+      assertVaultValueEnvelope(inspectRepairEnvelope(envelope));
+      formats.add(format);
+    }
+    return { count: repairPaths.length, formats: [...formats].sort((a, b) => a - b) };
   });
   // Constructors supply verification authority only; none activate installed modules or repair caches.
   let store: PluginStore;

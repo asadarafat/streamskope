@@ -15,7 +15,6 @@ import type { StreamSkopeDesktop } from "../../../platform/desktop";
 import { streamSkopeLayout } from "../../../platform/ui/createStreamSkopeTheme";
 import { ProviderWorkbenchShell } from "../../../platform/ui/ProviderWorkbenchShell";
 import { useProductNavigator } from "../../../platform/ui/use-product-navigator";
-import { StudioButton } from "../../../platform/ui/controls";
 import { kafkaRecordLocator, type KafkaRecordLocator } from "../contracts/record-locator";
 
 import { RelationshipsPage } from "./RelationshipsPage";
@@ -32,6 +31,7 @@ import type { KafkaViewSettings } from "./investigation-view-settings";
 import { ActivityLogDrawer } from "./ActivityLogDrawer";
 import { AclPage } from "./AclPage";
 import { ConnectionProfilesPage } from "./ConnectionProfilesPage";
+import { WorkbenchHistoryActions } from "./WorkbenchHistoryActions";
 import { ConsumerGroupsPage } from "./ConsumerGroupsPage";
 import { SchemaRegistryPage } from "./SchemaRegistryPage";
 import { TransformsPage } from "./TransformsPage";
@@ -869,15 +869,15 @@ export function StreamSkopeWorkbench({
       onNavigate={selectNavigation}
       providerControl={providerControl}
       headerActions={
-        <StudioButton
-          aria-label="Saved views"
-          onClick={() => {
+        <WorkbenchHistoryActions
+          host={host}
+          profiles={state.profiles}
+          repairVisible={navigation === "profiles"}
+          onOpenViews={() => {
             setBookmarkCandidate(undefined);
             views.show();
           }}
-        >
-          Views
-        </StudioButton>
+        />
       }
       onOpenCommandPalette={() => setCommandPaletteOpen(true)}
       onOpenPreferences={() => {

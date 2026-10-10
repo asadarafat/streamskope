@@ -7,6 +7,18 @@ export type RecoveryHostCommand =
     })
   | import("./acl-review-commands").AclReviewCommand
   | (HostCommandBase & {
+      readonly command: "records.repair.review";
+      readonly payload: import("./repair-recovery").RepairContinuationInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "records.repair.reconcile";
+      readonly payload: import("./repair-recovery").RepairReconciliationInput;
+    })
+  | (HostCommandBase & {
+      readonly command: "records.repair.archive";
+      readonly payload: import("./repair-recovery").RepairArchiveInput;
+    })
+  | (HostCommandBase & {
       readonly command: "records.replay.review";
       readonly payload: import("./record-replay").RecordReplayInput;
     })

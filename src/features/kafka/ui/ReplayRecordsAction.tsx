@@ -225,7 +225,7 @@ export function ReplayRecordsAction({
     };
   return (
     <>
-      <RepairJobHistory host={host} />
+      <RepairJobHistory host={host} profiles={profiles} />
       <Button
         disabled={!enabled || !messages.length}
         size="small"

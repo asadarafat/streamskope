@@ -390,6 +390,7 @@ def inspection(value, policy, version, target=None):
     kafka_maximum = 3 if legacy_target else 4
     preference_maximum = 1 if legacy_target else 2
     query_maximum = 1 if legacy_target else 4
+    repair_maximum = 1 if legacy_target else 2
     exact(
         value,
         {"schemaVersion", "dataContract", "hostRelease", "outcome", "documents", "unverified"},
@@ -425,7 +426,7 @@ def inspection(value, policy, version, target=None):
         require(
             isinstance(formats, list)
             and all(
-                integer(number, 1, kafka_maximum if kind in ("kafka-profiles", "profile-backups") else preference_maximum if kind == "preferences" else query_maximum if kind == "queries" else 1)
+                integer(number, 1, kafka_maximum if kind in ("kafka-profiles", "profile-backups") else preference_maximum if kind == "preferences" else query_maximum if kind == "queries" else repair_maximum if kind == "repair-jobs" else 1)
                 for number in formats
             )
             and formats == sorted(set(formats)),

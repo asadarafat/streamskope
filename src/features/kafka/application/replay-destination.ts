@@ -1,5 +1,9 @@
 import type { KafkaProfileService } from "./profile-service";
-import { KafkaConnectionScopes, type ReviewedWriteScope } from "./connection-scope";
+import {
+  KafkaConnectionScopes,
+  type ReviewedWriteScope,
+  type RecordReadScope,
+} from "./connection-scope";
 import type { KafkaActiveConnection, KafkaConnectionPort } from "./types";
 
 export interface ReplayDestination {
@@ -13,6 +17,7 @@ export interface ReplayDestinationPort {
 }
 export interface ReviewedReplayDestination {
   readonly scope: ReviewedWriteScope;
+  readonly readScope?: RecordReadScope;
   close(): Promise<void>;
 }
 export interface ReviewedReplayDestinationPort {
@@ -44,7 +49,8 @@ export class SavedReplayDestinations
         ? { connection: target.connection, generation: 0, connectionName: target.name }
         : null,
     );
-    const scope = scopes.reviewedWrite();
+    const scope = scopes.reviewedWrite(),
+      readScope = scopes.recordRead();
     if (scope === null) {
       try {
         await target.close();
@@ -60,6 +66,7 @@ export class SavedReplayDestinations
     }
     return {
       scope,
+      ...(readScope === null ? {} : { readScope }),
       close(): Promise<void> {
         closed = true;
         closing ??= Promise.resolve().then(() => target.close());

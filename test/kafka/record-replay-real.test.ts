@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { Admin } from "@platformatic/kafka";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { startNativeKafkaFixture } from "../support/native-kafka-fixture";
 import {
@@ -17,6 +17,9 @@ import {
 } from "../../src/features/kafka/application";
 import { RecordReplayService } from "../../src/features/kafka/application/record-replay-service";
 import { SavedReplayDestinations } from "../../src/features/kafka/application/replay-destination";
+import { RepairReconciliationReader } from "../../src/features/kafka/application/repair-reconciliation-reader";
+import { RepairRecoveryService } from "../../src/features/kafka/application/repair-recovery-service";
+import { KAFKA_RECORD_PROTECTION_DEFAULTS } from "../../src/features/kafka/contracts";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import {
   UNCHANGED_REPLAY_TRANSFORM,
@@ -88,6 +91,7 @@ async function qualifyReplay(fixture: FixtureConnection): Promise<void> {
     undefined,
     journal,
   );
+  let recovery: RepairRecoveryService | undefined;
   try {
     await admin.createTopics({ topics: [otherTopic], partitions: 1, replicas: 1 });
     await target.admin.createTopics({ topics: [otherTopic], partitions: 1, replicas: 1 });
@@ -212,7 +216,83 @@ async function qualifyReplay(fixture: FixtureConnection): Promise<void> {
     expect(delivered.map((r) => r.timestampMs)).toEqual([timestamp, timestamp]);
     expect(await service.apply(cross.planId, replayConfirmation(cross))).toEqual(result);
     expect(await read(targetConnection, otherTopic)).toHaveLength(2);
+    // Independently inject receipt-storage loss after an actual acknowledged broker send.
+    // A fresh owner must skip that uncertain position and publish only the unsent tombstone.
+    const interrupted = await service.review({
+      ...input,
+      topic: otherTopic,
+      targetProfile: { id: profile.id, revision: profile.revision ?? 1 },
+    });
+    const commit = repairStore.commit.bind(repairStore);
+    const failure = vi.spyOn(repairStore, "commit").mockImplementation(async (d) => {
+      if (d.jobs.find((j) => j.id === interrupted.planId)?.outcomes.length)
+        throw new Error("injected receipt loss");
+      await commit(d);
+    });
+    const uncertain = await service.apply(interrupted.planId, replayConfirmation(interrupted));
+    failure.mockRestore();
+    expect(uncertain).toMatchObject({
+      stopReason: "journal-unavailable",
+      unsent: 1,
+      outcomes: [{ state: "acknowledged" }],
+    });
+    expect(await read(targetConnection, otherTopic)).toHaveLength(3);
+    const reopenedJournal = new RepairJournal(repairStore);
+    const reopenedReplay = new RecordReplayService(
+      () => session.reviewedWriteScope(),
+      new SavedReplayDestinations(profiles, engine),
+      undefined,
+      reopenedJournal,
+    );
+    recovery = new RepairRecoveryService(
+      reopenedJournal,
+      reopenedReplay,
+      new RepairReconciliationReader(
+        () => {
+          const scope = session.reviewedWriteScope(),
+            readScope = session.recordReadScope();
+          return scope && readScope
+            ? { scope, readScope, close: (): Promise<void> => Promise.resolve() }
+            : null;
+        },
+        () => ({
+          codecs: { key: "auto", value: "auto" },
+          protection: KAFKA_RECORD_PROTECTION_DEFAULTS,
+        }),
+        new SavedReplayDestinations(profiles, engine),
+      ),
+    );
+    const observation = await recovery.reconcile({
+      jobId: interrupted.planId,
+      recordIndex: 0,
+      offset: uncertain.outcomes[0]!.receipt!.offset,
+      targetProfile: { id: profile.id, revision: profile.revision ?? 1 },
+    });
+    expect(observation).toMatchObject({ state: "equivalent", cleanup: "complete" });
+    expect((await reopenedJournal.snapshot(interrupted.planId)).pendingIndex).toBe(0);
+    const continuation = await recovery.review({
+      jobId: interrupted.planId,
+      targetProfile: { id: profile.id, revision: profile.revision ?? 1 },
+    });
+    expect(continuation.skipped).toEqual({ acknowledged: 0, rejected: 0, uncertain: 1 });
+    expect(continuation.review.batch.records).toEqual([records[1]!.original]);
+    expect(
+      await reopenedReplay.apply(
+        continuation.review.planId,
+        replayConfirmation(continuation.review),
+      ),
+    ).toMatchObject({ stopReason: "complete", total: 1, unsent: 0 });
+    const recovered = await read(targetConnection, otherTopic);
+    expect(recovered).toHaveLength(4);
+    expect(recovered.slice(2).map((r) => r.original)).toEqual(records.map((r) => r.original));
+    const root = (await reopenedJournal.list()).find((j) => j.id === interrupted.planId)!;
+    expect(root).toMatchObject({
+      uncertainIndex: 0,
+      continuationId: continuation.review.planId,
+      canArchive: false,
+    });
   } finally {
+    await recovery?.invalidate();
     await service.invalidate();
     await targetConnection?.close();
     await session.shutdown();
