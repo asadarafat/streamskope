@@ -55,6 +55,9 @@ export interface RecordReplayReview {
 }
 export interface RecordReplayOutcome extends RecordBatchOutcome {
   readonly cleanup: "complete" | "unavailable";
+  readonly jobId?: string;
+  readonly journal?: "confirmed" | "unavailable";
+  readonly durability?: "durable" | "session" | "unavailable";
 }
 export function replayConfirmation(review: RecordReplayReview): string {
   return `${review.targetName} / ${review.input.topic} / ${review.input.partition}`;
@@ -226,7 +229,16 @@ export function parseRecordReplayReview(value: unknown): RecordReplayReview {
 }
 export function parseRecordReplayOutcome(value: unknown): RecordReplayOutcome {
   const v = record(value, "replayOutcome");
-  exactKeys(v, ["total", "unsent", "outcomes", "stopReason", "cleanup"], "replayOutcome");
+  exactKeys(
+    v,
+    ["total", "unsent", "outcomes", "stopReason", "cleanup", "jobId", "journal", "durability"],
+    "replayOutcome",
+  );
+  if (
+    (v.jobId === undefined) !== (v.journal === undefined) ||
+    (v.jobId === undefined) !== (v.durability === undefined)
+  )
+    throw new Error("Repair journal metadata must be complete.");
   return {
     ...parseRecordBatchOutcome({
       total: v.total,
@@ -235,5 +247,16 @@ export function parseRecordReplayOutcome(value: unknown): RecordReplayOutcome {
       stopReason: v.stopReason,
     }),
     cleanup: declaredValue(v.cleanup, ["complete", "unavailable"] as const, "cleanup"),
+    ...(v.jobId === undefined
+      ? {}
+      : {
+          jobId: text(v.jobId, "jobId", 128),
+          journal: declaredValue(v.journal, ["confirmed", "unavailable"] as const, "journal"),
+          durability: declaredValue(
+            v.durability,
+            ["durable", "session", "unavailable"] as const,
+            "durability",
+          ),
+        }),
   };
 }

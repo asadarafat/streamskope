@@ -51,6 +51,7 @@ DOCUMENTS = (
     "queries",
     "trust-recipes",
     "observations",
+    "repair-jobs",
     "plugin-installations",
     "plugin-network",
     "plugin-catalog",
@@ -402,11 +403,16 @@ def inspection(value, policy, version, target=None):
         and value["unverified"] == LIMITATIONS,
         "preflight-blocked",
     )
+    document_kinds = DOCUMENTS
+    if isinstance(value["documents"], list) and len(value["documents"]) == len(DOCUMENTS) - 1:
+        # Exact older inspector binaries predate repair history. Their path scan
+        # still rejects the new journal; a missing row never proves it readable.
+        document_kinds = tuple(kind for kind in DOCUMENTS if kind != "repair-jobs")
     require(
-        isinstance(value["documents"], list) and len(value["documents"]) == len(DOCUMENTS),
+        isinstance(value["documents"], list) and len(value["documents"]) == len(document_kinds),
         "preflight-blocked",
     )
-    for kind, row in zip(DOCUMENTS, value["documents"]):
+    for kind, row in zip(document_kinds, value["documents"]):
         exact(row, {"kind", "state", "count", "formats", "reason"})
         require(
             row["kind"] == kind
@@ -1043,6 +1049,7 @@ class Maintenance:
         require(inspector["inspector"], "unsupported-target")
         path = self.data if data is None else Path(data)
         if target is not None and not target["inspector"]:
+            require(not os.path.lexists(path / "history" / "kafka-repair-jobs.json"), "preflight-blocked")
             # A failed first mutation may leave v1 plus a new predecessor sidecar.
             # Its actual format remains v1, but an old image never qualified this layout.
             require(

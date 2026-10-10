@@ -1,3 +1,7 @@
+import {
+  MemoryRepairJobStore,
+  type RepairJobStore,
+} from "../../features/kafka/application/repair-journal";
 import { ConnectHttpAdapter } from "../../features/kafka/engine/connect-http";
 import {
   InMemoryKafkaTrustRecipeStore,
@@ -75,6 +79,7 @@ export function createBrowserKafkaProfileStore(
 }
 
 export interface KafkaBackendOptions {
+  readonly repairStore?: RepairJobStore;
   readonly profileStore?: KafkaProfileStore;
   readonly legacySource?: KafkaLegacyTemplateSource;
   readonly ruleStore?: KafkaRuleStore;
@@ -153,6 +158,7 @@ export function createKafkaBackend(options: KafkaBackendOptions = {}): NodeKafka
     new KafkaTopicConfigurationService(session, topicConfigurationHistoryStore),
     {
       ...(observationStore ? { observationStore } : {}),
+      repairStore: options.repairStore ?? new MemoryRepairJobStore(),
       recordExportArtifacts,
       replayConnections: new StreamSkopeKafkaEngine(),
       ...(plugins === undefined ? {} : { plugins }),

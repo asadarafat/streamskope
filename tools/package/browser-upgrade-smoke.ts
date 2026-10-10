@@ -199,6 +199,7 @@ interface TransitionOptions {
   readonly target: BrowserInstallerTarget;
   readonly installerSource: string;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly repairHistory?: boolean;
 }
 interface LocalPredecessorAssets {
   readonly installerSource: string;
@@ -282,6 +283,7 @@ async function verifyTransition(
     | "upgrade"
     | "upgrade-backup"
     | "target-unlock"
+    | "repair-history-native-recovery"
     | "view-migration"
     | "incompatible-rollback"
     | "operator-full-restore"
@@ -471,6 +473,35 @@ async function verifyTransition(
     stage = "target-unlock";
     await fixture.unlockAfterReplacement();
     verifyBrowserNativeWorkers(String(targetContainer.Id));
+    let repairBytes: Buffer | undefined;
+    if (options.repairHistory) {
+      stage = "repair-history-native-recovery";
+      const empty = await fixture.kafkaCommand("records.repair.list", {});
+      assert.equal(empty.durability, "durable");
+      assert.deepEqual(empty.jobs, []);
+      await fixture.lock();
+      fixture.seedRepairHistory(String(targetContainer.Id));
+      repairBytes = await readFile(join(data, "history", "kafka-repair-jobs.json"));
+      assert.ok(!repairBytes.toString("utf8").includes("disposable native repair"));
+      await fixture.unlockAfterReplacement();
+      const history = await fixture.kafkaCommand("records.repair.list", {});
+      assert.equal(history.durability, "durable");
+      assert.ok(Array.isArray(history.jobs) && history.jobs.length === 1);
+      assert.equal(object(history.jobs[0]).uncertainIndex, 0);
+      assert.equal(object(history.jobs[0]).status, "interrupted");
+      const inventoryBefore = await inventory(data);
+      const refused = await run("bash", [installer, "rollback"], environment, true);
+      fixture.assertNoSecrets(refused.stdout + refused.stderr);
+      assert.notEqual(
+        refused.code,
+        0,
+        "The exact predecessor must refuse the new repair journal before unrelated view migration.",
+      );
+      assert.ok((refused.stdout + refused.stderr).includes("compatibility inspection"));
+      assert.deepEqual(await inventory(data), inventoryBefore);
+      assert.equal((await docker(["inspect", container], environment)).Id, targetContainer.Id);
+      await fixture.verifyUnlocked();
+    }
     stage = "view-migration";
     const listed = object((await fixture.kafkaCommand("queries.list", {})).snapshot).queries;
     assert.ok(Array.isArray(listed) && listed.length === 1);
@@ -552,6 +583,17 @@ async function verifyTransition(
     assert.equal(restoredBackup.originalLeaseInodePreserved, true);
     assert.equal(restoredBackup.originalInstallerLockInodePreserved, true);
     assert.equal(restoredBackup.restoredDataSnapshotSha256, upgradeBackup.dataSnapshotSha256);
+    if (repairBytes !== undefined) {
+      assert.deepEqual(
+        await readFile(
+          join(state, "preserved-after-view-migration", "history", "kafka-repair-jobs.json"),
+        ),
+        repairBytes,
+      );
+      await assert.rejects(lstat(join(data, "history", "kafka-repair-jobs.json")), {
+        code: "ENOENT",
+      });
+    }
     assert.deepEqual(await readFile(queryPath), legacyQueryBytes);
     await run("docker", ["start", String(targetContainer.Id)], environment);
     await fixture.unlockAfterReplacement();
@@ -694,6 +736,13 @@ async function verifyTransition(
               queryFormat === 3
                 ? "view-only format3-to-format4 migration; real broker catalog writes qualified separately"
                 : "locator metadata persistence only; real record reload qualified separately",
+              ...(options.repairHistory
+                ? [
+                    "independently encrypted interrupted repair job survives native vault restart without retry",
+                    "exact predecessor refuses repair journal before view migration",
+                    "full-backup restoration preserves the encrypted repair journal in changed-data recovery",
+                  ]
+                : []),
             ],
     };
   } catch {

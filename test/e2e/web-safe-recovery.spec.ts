@@ -144,6 +144,21 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     await expect(page.getByLabel("Backend status")).toContainText("Host ready");
     await expect(page.getByLabel("Consumption status")).toContainText("Streaming");
 
+    await page.getByRole("button", { name: "Repair history", exact: true }).click();
+    const history = page.getByRole("dialog", { name: "Repair jobs and receipts" });
+    await expect(history.getByText(/Session only/u)).toBeVisible();
+    await expect(
+      history.getByText(`Owned recovery / ${target} / 0`, { exact: true }),
+    ).toBeVisible();
+    await expect(history.getByRole("cell", { name: "acknowledged", exact: true })).toBeVisible();
+    await expect(history.getByRole("cell", { name: `${target}/0@0`, exact: true })).toBeVisible();
+    expect(
+      (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
+    ).toEqual([]);
+    await history.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(history.getByRole("cell", { name: `${target}/0@0`, exact: true })).toBeVisible();
+    await history.getByRole("button", { name: "Close", exact: true }).click();
+
     await openWorkbenchResource(page, "Consumer Groups");
     await page.getByRole("button", { name: groupId, exact: true }).click();
     await page.getByRole("button", { name: "Reset offsets…" }).click();

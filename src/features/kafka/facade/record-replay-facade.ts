@@ -1,3 +1,8 @@
+import {
+  RepairJournal,
+  RepairJournalStorageError,
+  type RepairJobStore,
+} from "../application/repair-journal";
 import { HOST_PROTOCOL_VERSION, type HostCommand, type HostCommandResponse } from "../contracts";
 import { RecordReplayService } from "../application/record-replay-service";
 import { SavedReplayDestinations } from "../application/replay-destination";
@@ -11,25 +16,42 @@ import { failureResponse, successResponse, type ActivityInput } from "./facade-s
 
 export class RecordReplayFacade {
   private readonly service: RecordReplayService;
+  private readonly journal: RepairJournal | undefined;
   constructor(
     session: KafkaApplicationSession,
     profiles: KafkaProfileService,
     connections: KafkaConnectionPort | undefined,
     private readonly activity: (input: ActivityInput) => void,
+    repairStore?: RepairJobStore,
   ) {
+    this.journal = repairStore ? new RepairJournal(repairStore) : undefined;
     this.service = new RecordReplayService(
       () => session.reviewedWriteScope(),
       connections ? new SavedReplayDestinations(profiles, connections) : undefined,
+      undefined,
+      this.journal,
     );
   }
   invalidate(): Promise<void> {
     return this.service.invalidate();
   }
   async execute(
-    command: Extract<HostCommand, { command: `records.replay.${string}` }>,
+    command: Extract<HostCommand, { command: `records.replay.${string}` | "records.repair.list" }>,
     correlationId: string,
   ): Promise<HostCommandResponse> {
     try {
+      if (command.command === "records.repair.list")
+        return {
+          command: command.command,
+          id: command.id,
+          version: HOST_PROTOCOL_VERSION,
+          ok: true,
+          result: {
+            correlationId,
+            durability: this.journal?.store.durability ?? "unavailable",
+            jobs: (await this.journal?.list()) ?? [],
+          },
+        };
       if (command.command === "records.replay.cancel") {
         await this.service.cancel(command.payload.planId);
         return successResponse(command, correlationId);
@@ -54,8 +76,12 @@ export class RecordReplayFacade {
         object: "Reviewed destination",
         outcome: outcome.stopReason === "complete" ? "succeeded" : "failed",
         severity:
-          outcome.stopReason === "complete" && outcome.cleanup === "complete" ? "info" : "warning",
-        detail: `${acknowledged} acknowledged; ${unknown} unknown; ${outcome.outcomes.length - acknowledged - unknown} rejected; ${outcome.unsent} unsent. Stopped: ${outcome.stopReason}. Destination cleanup: ${outcome.cleanup}. Repeating a new plan can duplicate records; reconcile receipts before any retry.`,
+          outcome.stopReason === "complete" &&
+          outcome.cleanup === "complete" &&
+          outcome.journal !== "unavailable"
+            ? "info"
+            : "warning",
+        detail: `${acknowledged} acknowledged; ${unknown} unknown; ${outcome.outcomes.length - acknowledged - unknown} rejected; ${outcome.unsent} unsent. Stopped: ${outcome.stopReason}. Destination cleanup: ${outcome.cleanup}. Journal: ${outcome.journal ?? "not configured"}; storage: ${outcome.durability ?? "session"}; job: ${outcome.jobId ?? "none"}. Repeating a new plan can duplicate records; reconcile receipts before any retry.`,
       });
       return {
         command: command.command,
@@ -64,7 +90,18 @@ export class RecordReplayFacade {
         ok: true,
         result: { correlationId, outcome },
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof RepairJournalStorageError)
+        return failureResponse(command, {
+          code: "BACKEND_UNAVAILABLE",
+          stage: "storage",
+          correlationId,
+          retryable: false,
+          activeStateChanged: false,
+          summary: error.message,
+          recovery:
+            "No automatic retry is allowed. Preserve complete application data, reopen Repair history and reconcile any acknowledged or uncertain records. Restore protection or storage access before a new reviewed attempt.",
+        });
       return failureResponse(command, {
         code: "VALIDATION",
         stage: "kafka",

@@ -320,6 +320,30 @@ class TransactionTest(unittest.TestCase):
         with self.assertRaises(m.Refused):
             m.inspection(value, POLICY, "0.11.0", current)
 
+    def test_exact_older_inspection_has_no_implicit_repair_history_support(self):
+        value = report("0.11.0")
+        value["documents"] = [row for row in value["documents"] if row["kind"] != "repair-jobs"]
+        self.assertEqual(m.inspection(value, POLICY, "0.11.0"), value)
+        # Only the exact older inventory is supported, not arbitrary coverage omissions.
+        value["documents"].pop()
+        with self.assertRaises(m.Refused):
+            m.inspection(value, POLICY, "0.11.0")
+
+    def test_repair_history_refuses_legacy_fallback_before_stopping_the_host(self):
+        f = self.fixture
+        (f.data / "history").mkdir(mode=0o700)
+        path = f.data / "history/kafka-repair-jobs.json"
+        payload = b'{"schemaVersion":1,"protected":"preserved-repair-history"}\n'
+        path.write_bytes(payload)
+        legacy = {**f.source, "inspector": False}
+        engine = f.open()
+        calls = list(f.calls)
+        with self.assertRaises(m.Refused) as rejected:
+            m.Maintenance.preflight(engine, f.target, target=legacy)
+        self.assertEqual(rejected.exception.reason, "preflight-blocked")
+        self.assertEqual(f.calls, calls)
+        self.assertEqual(path.read_bytes(), payload)
+
     def test_legacy_query_sidecars_refuse_fallback_before_docker_or_data_mutation(self):
         f = self.fixture
         (f.data / "queries").mkdir(mode=0o700)

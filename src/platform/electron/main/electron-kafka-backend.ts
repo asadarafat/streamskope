@@ -1,5 +1,7 @@
 import { join } from "node:path";
 
+import { UnavailableRepairJobStore } from "../../../features/kafka/application/repair-journal";
+import { AtomicRepairFileStore } from "../../node/kafka-repair-file-store";
 import { AtomicObservationFileStore } from "../../node/kafka-observation-file-store";
 import { AtomicKafkaQueryFileStore } from "../../node/kafka-query-file-store";
 import { UnavailableKafkaProfileStore } from "../../../features/kafka/application";
@@ -69,6 +71,16 @@ export async function createElectronKafkaBackend(
     });
   const backend = createKafkaBackend({
     profileStore,
+    ...(protection.protector === undefined
+      ? {
+          repairStore: new UnavailableRepairJobStore(),
+        }
+      : {
+          repairStore: new AtomicRepairFileStore(
+            join(options.userDataPath, "history", "kafka-repair-jobs.json"),
+            protection.protector,
+          ),
+        }),
     legacySource,
     ruleStore,
     topicConfigurationHistoryStore,

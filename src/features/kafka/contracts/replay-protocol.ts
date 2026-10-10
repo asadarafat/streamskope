@@ -1,5 +1,6 @@
+import { parseRepairJobSummary, REPAIR_JOB_LIMITS } from "./repair-jobs";
 import type { HostCommand, HostCommandResponse } from "./types";
-import { record, exactKeys, text } from "./validation-primitives";
+import { record, exactKeys, text, declaredValue } from "./validation-primitives";
 import {
   parseRecordReplayInput,
   parseRecordReplayReview,
@@ -11,6 +12,10 @@ export function parseReplayCommand(
   value: unknown,
   version: HostCommand["version"],
 ): HostCommand | undefined {
+  if (command === "records.repair.list") {
+    exactKeys(record(value, "repairList"), [], "repairList");
+    return { command, id, version, payload: {} };
+  }
   if (command === "records.replay.review")
     return { command, id, version, payload: parseRecordReplayInput(value) };
   if (command === "records.replay.apply") {
@@ -39,6 +44,26 @@ export function parseReplayResponse(
   result: Record<string, unknown>,
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
+  if (command === "records.repair.list") {
+    exactKeys(result, ["correlationId", "durability", "jobs"], "repairList");
+    if (!Array.isArray(result.jobs) || result.jobs.length > REPAIR_JOB_LIMITS.jobs)
+      throw new Error("Invalid repair history.");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "correlationId", 128),
+        durability: declaredValue(
+          result.durability,
+          ["durable", "session", "unavailable"] as const,
+          "durability",
+        ),
+        jobs: result.jobs.map(parseRepairJobSummary),
+      },
+    };
+  }
   if (command === "records.replay.review") {
     exactKeys(result, ["correlationId", "review"], "replayResult");
     return {

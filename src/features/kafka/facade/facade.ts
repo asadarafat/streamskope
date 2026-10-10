@@ -154,6 +154,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       profiles,
       options.replayConnections,
       this.recordActivity.bind(this),
+      options.repairStore,
     );
     this.writes = new KafkaReviewedWriteService(() => session.reviewedWriteScope());
     this.schemaSamples = new SchemaSamplesFacade(
@@ -436,6 +437,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "environments.review":
       case "environments.apply":
         return this.environments.execute(command, correlationId);
+      case "records.repair.list":
       case "records.replay.review":
       case "records.replay.apply":
       case "records.replay.cancel":

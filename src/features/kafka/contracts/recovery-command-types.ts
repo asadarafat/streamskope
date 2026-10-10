@@ -1,6 +1,10 @@
 import type { HostCommandBase } from "./types";
 
 export type RecoveryHostCommand =
+  | (HostCommandBase & {
+      readonly command: "records.repair.list";
+      readonly payload: Readonly<Record<string, never>>;
+    })
   | import("./acl-review-commands").AclReviewCommand
   | (HostCommandBase & {
       readonly command: "records.replay.review";

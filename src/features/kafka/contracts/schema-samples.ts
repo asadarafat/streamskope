@@ -60,6 +60,7 @@ export interface RecordBatchOutcome {
     | "cancelled"
     | "connection-changed"
     | "destination-changed"
+    | "journal-unavailable"
     | "write-failed"
     | "deadline";
 }
@@ -175,6 +176,7 @@ export function parseRecordBatchOutcome(value: unknown): RecordBatchOutcome {
     reason !== "cancelled" &&
     reason !== "connection-changed" &&
     reason !== "destination-changed" &&
+    reason !== "journal-unavailable" &&
     reason !== "write-failed" &&
     reason !== "deadline"
   )

@@ -95,6 +95,11 @@ interface SpecificCommandResults
     readonly correlationId: string;
     readonly outcome: import("./offset-reset").OffsetResetOutcome;
   };
+  readonly "records.repair.list": {
+    readonly correlationId: string;
+    readonly durability: "durable" | "session" | "unavailable";
+    readonly jobs: readonly import("./repair-jobs").RepairJobSummary[];
+  };
   readonly "records.replay.review": {
     readonly correlationId: string;
     readonly review: import("./record-replay").RecordReplayReview;
@@ -242,6 +247,7 @@ const structuredResults = {
   "environments.apply": true,
 
   "schemas.client": true,
+  "records.repair.list": true,
   "records.replay.review": true,
   "records.replay.apply": true,
   "consumerGroups.reset.review": true,

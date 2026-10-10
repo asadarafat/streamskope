@@ -5,6 +5,10 @@ import { Admin } from "@platformatic/kafka";
 import { expect, it } from "vitest";
 
 import {
+  MemoryRepairJobStore,
+  RepairJournal,
+} from "../../src/features/kafka/application/repair-journal";
+import {
   KafkaApplicationSession,
   KafkaProfileService,
   InMemoryKafkaProfileStore,
@@ -63,9 +67,13 @@ it("replays frozen original bytes to the same topic, another topic and a separat
         Promise.reject(new Error("No trust decode for the plaintext test profile")),
     },
   );
+  const repairStore = new MemoryRepairJobStore();
+  const journal = new RepairJournal(repairStore);
   const service = new RecordReplayService(
     () => session.reviewedWriteScope(),
     new SavedReplayDestinations(profiles, engine),
+    undefined,
+    journal,
   );
   try {
     await admin.createTopics({ topics: [otherTopic], partitions: 1, replicas: 1 });
@@ -137,6 +145,14 @@ it("replays frozen original bytes to the same topic, another topic and a separat
       unsent: 0,
       stopReason: "complete",
     });
+    expect(await new RepairJournal(repairStore).list()).toMatchObject([
+      {
+        id: same.planId,
+        status: "complete",
+        unsent: 0,
+        outcomes: [{ state: "acknowledged" }, { state: "acknowledged" }],
+      },
+    ]);
     const copied = await read(connection, seeded.config.topic);
     expect(copied.slice(-2).map((r) => r.original)).toEqual(records.map((r) => r.original));
     const other = await service.review({ ...input, topic: otherTopic });
