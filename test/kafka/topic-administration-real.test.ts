@@ -116,14 +116,27 @@ it("expands and UUID-deletes real topics with no preview writes, duplicate apply
       .poll(() => fixture.admin.listTopics(), { timeout: 10_000 })
       .not.toContain(replacement);
     await fixture.admin.createTopics({ topics: [replacement], partitions: 1, replicas: 1 });
-    const newId = (
-      await fixture.admin.metadata({
-        topics: [replacement],
-        forceUpdate: true,
-        autocreateTopics: false,
-      })
-    ).topics.get(replacement)?.id;
-    expect(newId).not.toBe(old.topicId);
+    // The create acknowledgement can precede propagation to metadata readers.
+    // Require positive replacement identity evidence; absence is never success.
+    await expect
+      .poll(
+        async () => {
+          try {
+            const newId = (
+              await fixture.admin.metadata({
+                topics: [replacement],
+                forceUpdate: true,
+                autocreateTopics: false,
+              })
+            ).topics.get(replacement)?.id;
+            return newId !== undefined && newId !== old.topicId;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
     expect(
       await execute("topics.change.apply", { planId: old.planId, confirmation: old.confirmation }),
     ).toMatchObject({ ok: true, result: { outcome: { state: "unsent" } } });
