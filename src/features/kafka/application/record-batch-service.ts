@@ -26,6 +26,10 @@ const pause = (milliseconds: number, signal: AbortSignal): Promise<void> =>
     signal.addEventListener("abort", finish, { once: true });
     if (signal.aborted) finish();
   });
+export interface RecordBatchJournal {
+  beforeRecord(index: number): Promise<void>;
+  afterRecord(index: number, outcome: KafkaWriteOutcome | undefined): Promise<void>;
+}
 export class RecordBatchService {
   private readonly plans = new Map<string, Plan>();
   private active = false;
@@ -35,6 +39,7 @@ export class RecordBatchService {
     private readonly now = Date.now,
     private readonly wait = pause,
     private readonly beforeDispatch?: () => Promise<boolean>,
+    private readonly journal?: RecordBatchJournal,
   ) {}
   invalidate(): void {
     for (const plan of this.plans.values()) plan.controller.abort();
@@ -141,6 +146,28 @@ export class RecordBatchService {
         }
       }
       let outcome: KafkaWriteOutcome;
+      const index = outcomes.length;
+      if (this.journal) {
+        try {
+          await this.journal.beforeRecord(index);
+          if (
+            plan.controller.signal.aborted ||
+            !plan.scope.isCurrent() ||
+            this.now() - started >= SCHEMA_SAMPLE_LIMITS.durationMs
+          ) {
+            await this.journal.afterRecord(index, undefined);
+            stopReason = plan.controller.signal.aborted
+              ? "cancelled"
+              : !plan.scope.isCurrent()
+                ? "connection-changed"
+                : "deadline";
+            break;
+          }
+        } catch {
+          stopReason = "journal-unavailable";
+          break;
+        }
+      }
       try {
         const dispatch = plan.scope.tryDispatchWrite!({
           kind: "record",
@@ -153,6 +180,13 @@ export class RecordBatchService {
         });
         if (!dispatch.started) {
           stopReason = "connection-changed";
+          if (this.journal) {
+            try {
+              await this.journal.afterRecord(index, undefined);
+            } catch {
+              stopReason = "journal-unavailable";
+            }
+          }
           break;
         }
         outcome = await dispatch.result;
@@ -166,6 +200,14 @@ export class RecordBatchService {
         };
       }
       outcomes.push(outcome);
+      if (this.journal) {
+        try {
+          await this.journal.afterRecord(index, outcome);
+        } catch {
+          stopReason = "journal-unavailable";
+          break;
+        }
+      }
       if (outcome.state !== "acknowledged") {
         stopReason = "write-failed";
         break;

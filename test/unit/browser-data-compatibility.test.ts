@@ -16,6 +16,7 @@ const kinds = [
   "queries",
   "trust-recipes",
   "observations",
+  "repair-jobs",
   "plugin-installations",
   "plugin-network",
   "plugin-catalog",
@@ -108,7 +109,10 @@ describe("closed browser data evidence", () => {
     const report = evidence();
     report.outcome = "blocked";
     Object.assign(documents(report)[2]!, { state: "blocked", reason: "managed-source-unverified" });
-    Object.assign(documents(report)[15]!, { state: "verified", count: 4, formats: [1, 2, 3, 4] });
+    Object.assign(
+      documents(report).find((row) => row.kind === "profile-backups")!,
+      { state: "verified", count: 4, formats: [1, 2, 3, 4] },
+    );
     expect(parseBrowserDataInspection(report).outcome).toBe("blocked");
   });
 });

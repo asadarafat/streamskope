@@ -8,6 +8,7 @@ import {
 import { isPluginCompatibleWithHost, parseReleaseVersion } from "../../plugins/compatibility";
 import { STREAMSKOPE_RELEASE } from "../../plugins/host-release";
 
+import { inspectRepairEnvelope, REPAIR_ENVELOPE_MAX_BYTES } from "./kafka-repair-file-store";
 import {
   BROWSER_DATA_COMPATIBILITY,
   BROWSER_DATA_DOCUMENT_KINDS,
@@ -81,6 +82,7 @@ const STATIC_FILES = [
   "queries/kafka-queries.json",
   "templates/trust-acquisition-recipes.json",
   "history/kafka-observations.json",
+  "history/kafka-repair-jobs.json",
   "plugins/state.json",
   "plugins/network.json",
   "plugins/catalog.json",
@@ -297,6 +299,16 @@ export async function inspectBrowserData(
     ).series.length,
     formats: [1],
   }));
+  await inspect("repair-jobs", exists("history/kafka-repair-jobs.json"), async () => {
+    const bytes = await readBoundedFile(
+      join(root, "history/kafka-repair-jobs.json"),
+      REPAIR_ENVELOPE_MAX_BYTES,
+      { rejectSymlinks: true },
+    );
+    const protectedValue = inspectRepairEnvelope(JSON.parse(bytes.toString("utf8")) as unknown);
+    assertVaultValueEnvelope(protectedValue);
+    return { count: 1, formats: [1] };
+  });
   // Constructors supply verification authority only; none activate installed modules or repair caches.
   let store: PluginStore;
   try {

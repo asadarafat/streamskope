@@ -7,6 +7,7 @@ import {
   type OperationalDiagnosticCode,
 } from "../diagnostics";
 
+import { AtomicRepairFileStore } from "./kafka-repair-file-store";
 import { BrowserPluginFiles } from "./browser-plugin-files";
 import { handleRecordExportRequest } from "./record-export-http";
 import { createKafkaBackend } from "./kafka-backend";
@@ -59,6 +60,10 @@ export async function openBrowserRuntime(
         vault.capability,
       ),
       plugins,
+      repairStore: new AtomicRepairFileStore(
+        join(dataRoot, "history", "kafka-repair-jobs.json"),
+        vault.protector,
+      ),
       ruleStore: new AtomicKafkaRuleFileStore(join(dataRoot, "rules", "kafka-rules.json")),
       preferenceStore: new AtomicKafkaOperationalPreferenceFileStore(
         join(dataRoot, "workbench", "kafka-operational-preferences.json"),

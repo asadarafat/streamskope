@@ -16,6 +16,7 @@ export const BROWSER_DATA_DOCUMENT_KINDS = [
   "queries",
   "trust-recipes",
   "observations",
+  "repair-jobs",
   "plugin-installations",
   "plugin-network",
   "plugin-catalog",

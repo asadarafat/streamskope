@@ -104,6 +104,8 @@ export interface BrowserVaultFixture {
   assertNoSecrets(text: string): void;
   /** Uses this fixture's authenticated session and the running Kafka host's own protocol. */
   kafkaCommand(name: string, payload: unknown): Promise<Record<string, unknown>>;
+  /** Independent encrypted interrupted-job fixture; call only after locking this owned host. */
+  seedRepairHistory(container: string): void;
 }
 
 /** Credentials and exact expected profile remain owned by this disposable fixture's closure. */
@@ -225,6 +227,35 @@ export async function createBrowserVaultFixture(instance: {
   return {
     verifyUnlocked,
     assertNoSecrets,
+    seedRepairHistory: (container): void => {
+      // The disposable passphrase stays in this closure and enters the owned worker
+      // through stdin. Neither it nor protected contents enter a qualification receipt.
+      const result = docker(
+        ["exec", "--interactive", container, "node"],
+        `
+        const fs=require('node:fs'); const crypto=require('node:crypto'); const assert=require('node:assert/strict');
+        (async()=>{
+          const metadata=JSON.parse(fs.readFileSync('/data/vault.json','utf8'));
+          const key=await new Promise((resolve,reject)=>crypto.scrypt(${JSON.stringify(passphrase)},Buffer.from(metadata.salt,'base64'),32,{...metadata.kdf,maxmem:64*1024*1024},(error,key)=>error?reject(error):resolve(key)));
+          const aad=Buffer.from(JSON.stringify({version:metadata.version,cipher:metadata.cipher,kdf:metadata.kdf,salt:metadata.salt,vaultId:metadata.vaultId}));
+          const valueAad=Buffer.concat([aad,Buffer.from('\\0profile-value')]);
+          const original={state:'complete',encoding:'base64',key:null,value:Buffer.from('disposable native repair').toString('base64'),headers:[]};
+          const input={targetProfile:null,topic:'native-repair',partition:0,ratePerSecond:1,records:[{topic:'native-source',partition:0,offset:'0',timestampMs:null,original}],transform:{key:null,removeHeaders:[],appendHeaders:[],valueText:null}};
+          const timestamp=new Date().toISOString();
+          const review={planId:'native-interrupted-repair',sourceName:'Disposable source',targetName:'Disposable target',expiresAt:timestamp,input,batch:{topic:input.topic,partition:0,ratePerSecond:1,records:[original],timestamps:[null]},destination:{clusterId:'fixture-cluster',topicId:'fixture-topic',partitions:1}};
+          const document={schemaVersion:1,jobs:[{id:review.planId,createdAt:timestamp,updatedAt:timestamp,review,outcomes:[],pendingIndex:0,status:'running',cleanup:'pending'}]};
+          const nonce=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',key,nonce);cipher.setAAD(valueAad);
+          const encrypted=Buffer.concat([cipher.update(JSON.stringify(document),'utf8'),cipher.final()]);
+          const value=Buffer.concat([Buffer.from('SKV1'),nonce,cipher.getAuthTag(),encrypted]).toString('base64');key.fill(0);
+          fs.mkdirSync('/data/history',{recursive:true,mode:0o700}); const path='/data/history/kafka-repair-jobs.json';assert.equal(fs.existsSync(path),false);
+          const fd=fs.openSync(path,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({schemaVersion:1,protected:value})+'\\n');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+          const directory=fs.openSync('/data/history','r');try{fs.fsyncSync(directory);}finally{fs.closeSync(directory);}
+          console.log('native-repair-fixture-seeded');
+        })().catch(()=>{process.exitCode=1;});
+      `,
+      );
+      assert.equal(result, "native-repair-fixture-seeded");
+    },
     kafkaCommand: async (name, payload): Promise<Record<string, unknown>> => {
       const health = await request(
         port,

@@ -85,7 +85,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 64 as const;
+export const HOST_PROTOCOL_VERSION = 65 as const;
 
 export const HOST_COMMANDS = [
   "relationships.capture",
@@ -103,6 +103,7 @@ export const HOST_COMMANDS = [
   "environments.review",
   "environments.apply",
   "schemas.client",
+  "records.repair.list",
   "records.replay.review",
   "records.replay.apply",
   "records.replay.cancel",

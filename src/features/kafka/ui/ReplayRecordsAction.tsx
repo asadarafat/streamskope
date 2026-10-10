@@ -26,6 +26,8 @@ import {
 } from "../../../platform/ui/controls";
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
 
+import { RepairJobHistory } from "./RepairJobHistory";
+
 function encode(value: string): string {
   return btoa(Array.from(new TextEncoder().encode(value), (b) => String.fromCharCode(b)).join(""));
 }
@@ -223,6 +225,7 @@ export function ReplayRecordsAction({
     };
   return (
     <>
+      <RepairJobHistory host={host} />
       <Button
         disabled={!enabled || !messages.length}
         size="small"
@@ -440,6 +443,14 @@ export function ReplayRecordsAction({
             )}
             {outcome && (
               <>
+                {outcome.jobId && (
+                  <Alert severity={outcome.journal === "unavailable" ? "warning" : "info"}>
+                    Job {outcome.jobId}. Journal: {outcome.journal}. Storage: {outcome.durability}.{" "}
+                    {outcome.journal === "unavailable"
+                      ? "Durable completion is uncertain; inspect Repair history after reopening the host. Do not retry acknowledged or uncertain writes."
+                      : "Open Repair history to inspect retained receipts."}
+                  </Alert>
+                )}
                 <Alert severity={outcome.stopReason === "complete" ? "success" : "warning"}>
                   {outcome.outcomes.filter((o) => o.state === "acknowledged").length} acknowledged;{" "}
                   {outcome.outcomes.filter((o) => o.state === "unknown").length} unknown;{" "}

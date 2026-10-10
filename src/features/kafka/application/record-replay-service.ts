@@ -15,6 +15,7 @@ import type {
   ReviewedReplayDestinationPort,
 } from "./replay-destination";
 import { ownedCleanupFailure } from "./session-lifecycle";
+import type { RepairJournal } from "./repair-journal";
 
 /** Combine source and isolated destination authority without exposing either adapter. */
 function replayScope(
@@ -66,6 +67,7 @@ export class RecordReplayService {
     private readonly scope: () => ReviewedWriteScope | null,
     private readonly destinations?: ReviewedReplayDestinationPort,
     private readonly now = Date.now,
+    private readonly journal?: RepairJournal,
   ) {}
   review(input: RecordReplayInput): Promise<RecordReplayReview> {
     const operation = this.prepare(input).catch((error: unknown): never => {
@@ -104,6 +106,7 @@ export class RecordReplayService {
           close: (): Promise<void> => Promise.resolve(),
         };
       const pinned = target;
+      const planId = crypto.randomUUID();
       const scope = replayScope(source, pinned.scope, controller.signal);
       const current = (): boolean => scope.isCurrent();
       const first = {
@@ -133,6 +136,13 @@ export class RecordReplayService {
             actual.partitions === identity.partitions
           );
         },
+        this.journal
+          ? {
+              beforeRecord: (index): Promise<void> => this.journal!.intent(planId, index),
+              afterRecord: (index, outcome): Promise<void> =>
+                this.journal!.receipt(planId, index, outcome),
+            }
+          : undefined,
       );
       const reviewed = await batch.review(batchInput);
       if (!current()) throw new Error("Replay inputs changed during review.");
@@ -144,7 +154,7 @@ export class RecordReplayService {
         }
       }
       const review: RecordReplayReview = {
-        planId: crypto.randomUUID(),
+        planId,
         sourceName: source.connectionName,
         targetName: target.scope.connectionName,
         expiresAt: reviewed.expiresAt,
@@ -222,10 +232,19 @@ export class RecordReplayService {
     plan.operation = Promise.resolve()
       .then(async (): Promise<RecordReplayOutcome> => {
         let result;
+        let journalStarted = false;
         try {
+          if (this.journal) {
+            await this.journal.begin(plan.review);
+            journalStarted = true;
+          }
           result = await plan.batch.apply(plan.batchId);
         } catch (error) {
-          await this.close(plan).catch(() => undefined);
+          let cleanup: "complete" | "unavailable" = "complete";
+          await this.close(plan).catch(() => {
+            cleanup = "unavailable";
+          });
+          if (journalStarted) await this.journal!.finish(id, false, cleanup).catch(() => undefined);
           throw error;
         }
         let cleanup: RecordReplayOutcome["cleanup"] = "complete";
@@ -234,7 +253,20 @@ export class RecordReplayService {
         } catch {
           cleanup = "unavailable";
         }
-        return { ...result, cleanup };
+        if (!this.journal) return { ...result, cleanup };
+        let journal: "confirmed" | "unavailable" = "confirmed";
+        try {
+          await this.journal.finish(id, result.stopReason === "complete", cleanup);
+        } catch {
+          journal = "unavailable";
+        }
+        return {
+          ...result,
+          cleanup,
+          jobId: id,
+          journal,
+          durability: this.journal.store.durability,
+        };
       })
       .finally(() => {
         this.active = false;

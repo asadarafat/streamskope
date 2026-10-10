@@ -46,6 +46,31 @@ cancel, expiry, source change and application shutdown.
 
 ## Freshness, cancellation and duplicate risk
 
+### Protected repair history
+
+Open **Repair history** in the message toolbar to inspect jobs and ordered broker
+receipts after navigation or restart. Installed desktop storage uses the operating
+system credential service; the browser host uses its unlocked vault. The
+development host reports **Session only**, which does not survive a host restart.
+The history view contains destination metadata and receipts, without record values
+or connection credentials. Exact reviewed inputs remain in protected host storage.
+
+Each job contains at most 50 records. The journal holds at most 32 jobs within a
+4 MiB plaintext bound; capacity or unavailable protection refuses publication
+before sending. Existing history is retained when it cannot be read or updated.
+Preserve complete application-data backups, including the encrypted journal.
+Older browser builds that cannot read this storage refuse rollback; restore the
+verified complete predecessor backup rather than deleting repair history.
+
+Before every send the host records a dispatch intent. It then records the actual
+broker outcome before starting another record. An intent without a durable receipt
+is **uncertain**, including when the app closes after Kafka accepted the record.
+Definitely unsent records are counted separately. A receipt-storage failure stops
+further sends and reports journal uncertainty while preserving any acknowledgement
+in the immediate response. Reopening history never sends or retries a record.
+This history view currently supports inspection; recovery requires a new explicit
+review rather than automatic restart.
+
 The host pins source connection generation, saved-profile revision, destination
 cluster ID, topic ID and partition count. A changed input stops dispatch. The
 destination identity is rechecked before each send, but Kafka has no atomic
