@@ -84,22 +84,27 @@ it("does not manufacture changes when an empty watch is stopped or invalidated r
   expect(f.observe).not.toHaveBeenCalled();
 });
 
-it("publishes evidence revocation once after a completed capture without acquiring another scope", async () => {
-  const changed = vi.fn();
-  const f = fixture(undefined, changed);
-  await f.watch.capture(input);
-  expect(f.watch.snapshot().current).toBe(true);
-  changed.mockClear();
-  f.watch.invalidate();
-  const revoked = f.watch.snapshot();
-  expect(revoked).toMatchObject({ phase: "stopped", current: false, nextCaptureAt: null });
-  expect(changed).toHaveBeenCalledOnce();
-  f.watch.invalidate();
-  await f.watch.stop();
-  expect(f.watch.snapshot()).toEqual(revoked);
-  expect(changed).toHaveBeenCalledOnce();
-  expect(f.observe).toHaveBeenCalledOnce();
-});
+it.each([false, true])(
+  "publishes revocation once for stopped evidence (scope already replaced: %s)",
+  async (replaced) => {
+    const changed = vi.fn();
+    const f = fixture(undefined, changed);
+    await f.watch.capture(input);
+    await f.watch.stop();
+    expect(f.watch.snapshot().current).toBe(true);
+    changed.mockClear();
+    if (replaced) f.replace();
+    f.watch.invalidate();
+    const revoked = f.watch.snapshot();
+    expect(revoked).toMatchObject({ phase: "stopped", current: false, nextCaptureAt: null });
+    expect(changed).toHaveBeenCalledOnce();
+    f.watch.invalidate();
+    await f.watch.stop();
+    expect(f.watch.snapshot()).toEqual(revoked);
+    expect(changed).toHaveBeenCalledOnce();
+    expect(f.observe).toHaveBeenCalledOnce();
+  },
+);
 
 it("collects only after opt-in, keeps one completion-relative deadline and stops without another read", async () => {
   vi.useFakeTimers();

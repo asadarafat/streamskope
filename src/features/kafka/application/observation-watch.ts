@@ -151,7 +151,8 @@ export class ObservationWatch {
   }
 
   private revoke(clearEvidence: boolean): void {
-    const wasCurrent = this.snapshot().current;
+    // Replacement can revoke the scope before this hook runs; still notify attached views once.
+    const hadEvidenceScope = this.lastScope !== undefined;
     if (this.owner) this.owner.revoked = true;
     if (this.manual) this.manual.revoked = true;
     if (clearEvidence) this.lastScope = undefined;
@@ -166,7 +167,7 @@ export class ObservationWatch {
     if (
       this.value.phase !== phase ||
       this.value.nextCaptureAt !== null ||
-      (clearEvidence && wasCurrent)
+      (clearEvidence && hadEvidenceScope)
     )
       this.update({ phase, nextCaptureAt: null });
   }
