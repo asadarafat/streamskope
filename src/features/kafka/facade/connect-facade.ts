@@ -12,7 +12,7 @@ export class ConnectFacade {
     port: ConnectPort | undefined,
     private readonly activity: (input: ActivityInput) => void,
   ) {
-    if (port) this.service = new ConnectService(() => session.writeContext(), port);
+    if (port) this.service = new ConnectService(() => session.administrationScopes.connect(), port);
   }
   async execute(command: ConnectHostCommand, correlationId: string): Promise<HostCommandResponse> {
     try {
@@ -54,7 +54,12 @@ export class ConnectFacade {
             object: command.payload.confirmation,
             detail: outcome.detail,
             outcome: outcome.state === "acknowledged" ? "succeeded" : "failed",
-            severity: outcome.state === "acknowledged" ? "info" : "warning",
+            severity:
+              outcome.state === "acknowledged" &&
+              outcome.cleanup === "confirmed" &&
+              outcome.verification === "verified"
+                ? "info"
+                : "warning",
           });
           return { ...base, command: command.command, result: { correlationId, outcome } };
         }

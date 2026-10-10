@@ -52,10 +52,7 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
     autocreateTopics: false,
   });
   const connect = new ConnectHttpAdapter(new NodeBoundedJsonHttp()),
-    context = {
-      baseUrl: worker.url,
-      authorization: (): Promise<undefined> => Promise.resolve(undefined),
-    };
+    context = worker.context;
   let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   try {
     await fixture.admin.createTopics({ topics: [{ topic, partitions: 2, replicas: 1 }] });
@@ -91,20 +88,22 @@ test("observes a real rising-lag fixture, backtests its forecast, stops polling 
         value: Buffer.from('{"id":42}'),
       })),
     });
-    await connect.apply(
-      context,
-      {
-        name: connector,
-        action: "create",
-        config: {
-          "connector.class": "org.apache.kafka.connect.file.FileStreamSinkConnector",
-          "tasks.max": "1",
-          topics: topic,
-          file: "/tmp/browser-lineage.txt",
+    expect(
+      await connect.apply(
+        context,
+        {
+          name: connector,
+          action: "create",
+          config: {
+            "connector.class": "org.apache.kafka.connect.file.FileStreamSinkConnector",
+            "tasks.max": "1",
+            topics: topic,
+            file: "/tmp/browser-lineage.txt",
+          },
         },
-      },
-      AbortSignal.timeout(15000),
-    );
+        AbortSignal.timeout(15000),
+      ),
+    ).toMatchObject({ state: "acknowledged", cleanup: "confirmed" });
     await expect
       .poll(
         async () => {

@@ -30,7 +30,9 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
       throw error;
     },
   );
-  let deny = false;
+  let deny = false,
+    heldRequests = 0;
+  let heldResponse: { admitted(): void; allow: Promise<void> } | undefined;
   const tls = await createHttpsTrustFixture((incoming, outgoing) => {
     if (
       incoming.headers.authorization !== "Bearer fixture-token" ||
@@ -44,8 +46,22 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
       `${worker.url}${incoming.url ?? "/"}`,
       { method: incoming.method, headers: { "content-type": "application/json" } },
       (response) => {
-        outgoing.writeHead(response.statusCode ?? 502, { "content-type": "application/json" });
-        response.pipe(outgoing);
+        const holding =
+          incoming.method === "PUT" && incoming.url?.endsWith("/pause") ? heldResponse : undefined;
+        const reply = (): void => {
+          if (outgoing.destroyed) {
+            response.destroy();
+            return;
+          }
+          outgoing.writeHead(response.statusCode ?? 502, { "content-type": "application/json" });
+          response.pipe(outgoing);
+        };
+        if (holding) {
+          heldResponse = undefined;
+          heldRequests += 1;
+          holding.admitted();
+          void holding.allow.then(reply);
+        } else reply();
       },
     );
     forwarded.on("error", () => {
@@ -63,15 +79,19 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
   };
   try {
     await kafka.admin.createTopics({ topics: ["connect-input"], partitions: 1, replicas: 1 });
-    await session.connect(kafka.connection);
+    await session.connect({
+      ...kafka.connection,
+      services: {
+        connect: {
+          baseUrl: tls.origin,
+          authentication: "bearer",
+          bearer: "fixture-token",
+          tls: { caPem: tls.caPem },
+        },
+      },
+    });
     const owner = session.writeContext()!;
-    const service = new ConnectService(
-      () => ({
-        ...owner,
-        connection: Object.assign(owner.connection, { clusterServiceContext: () => c }),
-      }),
-      port,
-    );
+    const service = new ConnectService(() => session.administrationScopes.connect(), port);
     expect((await service.list()).plugins).toContain(
       "org.apache.kafka.connect.file.FileStreamSinkConnector",
     );
@@ -120,6 +140,8 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
     );
     const result = await service.apply(p.planId, p.confirmation);
     expect(result.state).toBe("acknowledged");
+    expect(result.cleanup).toBe("confirmed");
+    expect(result.dispatch).toBe("attempted");
     expect(await service.apply(p.planId, p.confirmation)).toEqual(result);
     await expect
       .poll(
@@ -250,6 +272,47 @@ it("manages a real Apache Connect sink through authenticated TLS, validates with
     deny = true;
     expect(await apply({ ...create, action: "pause", config: {} })).toBe("rejected");
     deny = false;
+    const interrupted = await service.review({ ...create, action: "pause", config: {} });
+    let admit!: () => void, release!: () => void;
+    const admitted = new Promise<void>((resolve) => {
+      admit = resolve;
+    });
+    heldResponse = {
+      admitted: admit,
+      allow: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const pending = service.apply(interrupted.planId, interrupted.confirmation);
+    try {
+      await admitted;
+      await session.disconnect();
+      const receipt = await pending;
+      expect(receipt).toMatchObject({
+        state: "unknown",
+        dispatch: "attempted",
+        verification: "not-applicable",
+        cleanup: "confirmed",
+      });
+      expect(await service.apply(interrupted.planId, interrupted.confirmation)).toEqual(receipt);
+      expect(heldRequests).toBe(1);
+    } finally {
+      release();
+    }
+    await session.connect({
+      ...kafka.connection,
+      services: {
+        connect: {
+          baseUrl: tls.origin,
+          authentication: "bearer",
+          bearer: "fixture-token",
+          tls: { caPem: tls.caPem },
+        },
+      },
+    });
+    await expect
+      .poll(async () => (await service.load(create.name)).state, { timeout: 15000 })
+      .toBe("PAUSED");
     expect(await apply({ ...create, action: "delete", config: {} })).toBe("acknowledged");
     await expect
       .poll(async () => (await service.list()).names, { timeout: 15000 })

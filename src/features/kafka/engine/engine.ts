@@ -11,8 +11,8 @@ import {
   parseKafkaFetchRequest,
   parseKafkaLatencyProbeRequest,
   validateSecureConnectionInput,
-  type HostErrorStage,
   type KafkaFetchRequest,
+  type HostErrorStage,
   type KafkaLatencyProbeRequest,
   type KafkaConfigurationEntry,
   type KafkaAclBinding,
@@ -30,9 +30,15 @@ import type {
   KafkaLatencyProbeMeasurement,
   KafkaClusterServiceContext,
 } from "../application";
-import { classifyConnectionFailure } from "../application/connection-diagnostics";
 import { KafkaReadCheckpointError, type KafkaReadCheckpoint } from "../application/read-checkpoint";
 
+import {
+  cancelledFailure,
+  timeoutFailure,
+  oauthFailure,
+  withCleanupFailure,
+} from "./connection-failures";
+import { OwnedKafkaResources } from "./owned-kafka-resources";
 import { serviceConnectionContext } from "./service-connection-context";
 import { testClusterServices } from "./service-connection-test";
 import { NodeBoundedJsonHttp } from "./bounded-json-http";
@@ -51,7 +57,7 @@ import {
   mapKafkaTopicConfigurationFailure,
 } from "./failure";
 import { abortableOperation } from "./abortable-operation";
-import { OAuthEndpointResponseError, requestOAuthToken } from "./oauth";
+import { requestOAuthToken } from "./oauth";
 import { PlatformaticAdminFactory } from "./platformatic-admin";
 import { PlatformaticConsumerFactory } from "./platformatic-consumer";
 import { PlatformaticLatencyProbe } from "./platformatic-latency";
@@ -89,95 +95,6 @@ function openCleanupDiagnostic(
     recovery: failure.recovery,
     retryable: failure.retryable,
     target: failure.target,
-  });
-}
-
-function cancelledFailure(stage: HostErrorStage, target: string): KafkaEngineFailure {
-  return new KafkaEngineFailure({
-    code: "CANCELLED",
-    recovery: "Retry the operation when the current connection change is complete.",
-    retryable: true,
-    stage,
-    summary: "The Kafka operation was cancelled.",
-    target,
-  });
-}
-
-function timeoutFailure(stage: HostErrorStage, target: string): KafkaEngineFailure {
-  return new KafkaEngineFailure({
-    code: "TIMEOUT",
-    recovery:
-      stage === "oauth"
-        ? "Verify the OAuth endpoint and retry."
-        : "Verify the broker endpoints and network path, then retry.",
-    retryable: true,
-    stage,
-    summary:
-      stage === "oauth"
-        ? "OAuth token acquisition timed out."
-        : "Kafka broker metadata access timed out.",
-    target,
-  });
-}
-
-function oauthFailure(error: unknown, target: string): KafkaEngineFailure {
-  if (error instanceof KafkaEngineFailure) {
-    return error;
-  }
-  const category = classifyConnectionFailure(error);
-  if (category === "tls-trust" || category === "tls-client") {
-    return new KafkaEngineFailure({
-      cause: error,
-      code: "TLS_TRUST",
-      recovery:
-        "Verify the OAuth endpoint hostname, certificate validity and issuing CA in this profile's trust material.",
-      retryable: false,
-      stage: "tls",
-      summary: "OAuth endpoint certificate validation failed.",
-      target,
-    });
-  }
-  if (error instanceof OAuthEndpointResponseError) {
-    return new KafkaEngineFailure({
-      cause: error,
-      code:
-        error.status === 400 || error.status === 401 || error.status === 403
-          ? "OAUTH_REJECTED"
-          : "OAUTH_UNREACHABLE",
-      recovery: "Check the token endpoint, client identifier, client secret and required scope.",
-      retryable: error.status >= 500,
-      stage: "oauth",
-      summary:
-        error.status === 400 || error.status === 401 || error.status === 403
-          ? "OAuth credentials were rejected."
-          : "The OAuth token endpoint did not complete the request.",
-      target,
-    });
-  }
-  return new KafkaEngineFailure({
-    cause: error,
-    code: "OAUTH_UNREACHABLE",
-    recovery: "Verify the OAuth endpoint, TLS trust and local network path, then retry.",
-    retryable: true,
-    stage: "oauth",
-    summary: "The OAuth token endpoint could not be reached.",
-    target,
-  });
-}
-
-function withCleanupFailure(
-  failure: KafkaEngineFailure,
-  cleanupCause: unknown,
-): KafkaEngineFailure {
-  return new KafkaEngineFailure({
-    cause: failure.cause,
-    cleanupCause,
-    code: failure.code,
-    recovery: failure.recovery,
-    retryable: failure.retryable,
-    stage: failure.stage,
-    summary: failure.message,
-    ...(failure.target === undefined ? {} : { target: failure.target }),
   });
 }
 
@@ -284,6 +201,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     private readonly tokenRequester: NonNullable<
       StreamSkopeKafkaEngineOptions["requestOAuthToken"]
     >,
+    private readonly serviceRequests: OwnedKafkaResources,
     private readonly target: string,
     private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
     private readonly prepareRecord: StreamSkopeKafkaEngineOptions["prepareRecord"],
@@ -359,10 +277,14 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     if (endpoint === undefined) return null;
     const existing = this.serviceContexts.get(service);
     if (existing !== undefined) return existing;
-    const context = serviceConnectionContext(endpoint, this.clientInput, {
-      lifecycleSignal: this.lifecycleController.signal,
-      operationTimeoutMs: this.operationTimeoutMs,
-      requestOAuthToken: this.tokenRequester,
+    const context = Object.freeze({
+      ...serviceConnectionContext(endpoint, this.clientInput, {
+        lifecycleSignal: this.lifecycleController.signal,
+        operationTimeoutMs: this.operationTimeoutMs,
+        requestOAuthToken: this.tokenRequester,
+        ownWork: <T>(start: () => Promise<T>): Promise<T> => this.serviceRequests.runWork(start),
+      }),
+      requestOwner: this.serviceRequests,
     });
     this.serviceContexts.set(service, context);
     return context;
@@ -752,6 +674,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       this.offsetReset.close(),
       this.groupAdministration.close(),
       this.clientQuotas.close(),
+      this.serviceRequests.close(),
     ]);
     const failures = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason as unknown] : [],
@@ -843,19 +766,22 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
       readonly oauth: NonNullable<SecureConnectionInput["oauth"]>;
     },
     signal: AbortSignal,
-    cancellationSignal?: AbortSignal,
+    cancellationSignal: AbortSignal | undefined,
+    owner: OwnedKafkaResources,
   ): Promise<OAuthToken> {
     const target = connection.oauth.tokenEndpoint;
     try {
       return await abortableOperation(
-        this.tokenRequester({
-          ...(connection.tls.enabled === true ? { caPem: connection.tls.caPem } : {}),
-          clientId: connection.oauth.clientId,
-          clientSecret: connection.oauth.clientSecret,
-          scope: connection.oauth.scope,
-          signal,
-          tokenEndpoint: target,
-        }),
+        owner.runWork(() =>
+          this.tokenRequester({
+            ...(connection.tls.enabled === true ? { caPem: connection.tls.caPem } : {}),
+            clientId: connection.oauth.clientId,
+            clientSecret: connection.oauth.clientSecret,
+            scope: connection.oauth.scope,
+            signal,
+            tokenEndpoint: target,
+          }),
+        ),
         signal,
         () => new OperationAborted(),
       );
@@ -875,6 +801,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
     },
     initialToken: OAuthToken,
     lifecycleSignal: AbortSignal,
+    owner: OwnedKafkaResources,
   ): OAuthTokenProvider {
     let currentToken = initialToken;
     let refresh: Promise<OAuthToken> | undefined;
@@ -893,6 +820,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
         connection,
         AbortSignal.any([lifecycleSignal, refreshController.signal]),
         lifecycleSignal,
+        owner,
       );
       try {
         currentToken = await refresh;
@@ -923,6 +851,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
 
     const timeoutController = new AbortController();
     const lifecycleController = new AbortController();
+    const serviceRequests = new OwnedKafkaResources(lifecycleController.signal);
     const timeout = setTimeout(() => {
       timeoutController.abort();
     }, this.operationTimeoutMs);
@@ -947,11 +876,13 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
           oauthConnection,
           signal,
           cancellationSignal,
+          serviceRequests,
         );
         oauthTokenProvider = this.createOAuthTokenProvider(
           oauthConnection,
           initialToken,
           lifecycleController.signal,
+          serviceRequests,
         );
       }
 
@@ -987,6 +918,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
         this.operationTimeoutMs,
         connection.services,
         this.tokenRequester,
+        serviceRequests,
         target,
         this.protectRecord,
         this.prepareRecord,
@@ -1005,9 +937,11 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
     } catch (error) {
       lifecycleController.abort();
       let cleanupFailure: unknown;
-      if (activeConnection !== undefined) {
+      {
         try {
-          await activeConnection.close();
+          await (activeConnection === undefined
+            ? serviceRequests.close()
+            : activeConnection.close());
         } catch (cleanupError) {
           cleanupFailure = cleanupError;
         }

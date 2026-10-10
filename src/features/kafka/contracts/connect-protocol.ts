@@ -18,6 +18,17 @@ export function assertConnectResponse(response: HostCommandResponse, command: Ho
     response.result.detail.name !== command.payload.name
   )
     throw new HostContractValidationError("detail.name", "must match the submitted connector");
+  if (
+    response.command === "connect.apply" &&
+    command.command === "connect.apply" &&
+    response.result.outcome.observed !== null &&
+    response.result.outcome.observed.name !==
+      command.payload.confirmation.split(" ").slice(1).join(" ")
+  )
+    throw new HostContractValidationError(
+      "outcome.observed.name",
+      "must match the confirmed connector",
+    );
   if (response.command === "connect.review" && command.command === "connect.review") {
     const input = parseConnectInput(command.payload),
       review = response.result.review;

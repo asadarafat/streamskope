@@ -84,6 +84,18 @@ test("keyboard-operable reviewed topic expansion and UUID deletion preserve visi
     await expect(page.getByLabel("Connection status")).toContainText("Connected");
     await openWorkbenchResource(page, "Topics");
     await page.getByRole("button", { name: topic, exact: true }).click();
+    // This scenario qualifies administration, not tail continuity across partition changes.
+    // Confirm the original stream has stopped before changing its partition metadata.
+    const stopsBeforeAdministration = commands.filter(
+      (command) => command === "messages.stop",
+    ).length;
+    await page.getByRole("button", { name: `Stop tail ${topic}`, exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: `Start tail ${topic}`, exact: true }),
+    ).toBeVisible();
+    expect(commands.filter((command) => command === "messages.stop").length).toBeGreaterThan(
+      stopsBeforeAdministration,
+    );
     const manage = page.getByRole("button", { name: "Manage topic…" });
     await manage.focus();
     await page.keyboard.press("Enter");
@@ -128,7 +140,6 @@ test("keyboard-operable reviewed topic expansion and UUID deletion preserve visi
       )
       .toBe(2);
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
-    await page.getByRole("button", { name: `Stop tail ${topic}`, exact: true }).click();
     await expect(
       page.getByRole("button", { name: `Start tail ${topic}`, exact: true }),
     ).toBeVisible();

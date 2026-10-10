@@ -7,10 +7,15 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
+import type { KafkaClusterServiceContext } from "../../src/features/kafka/application/types";
+import { OwnedKafkaResources } from "../../src/features/kafka/engine/owned-kafka-resources";
+
 const execute = promisify(execFile);
-export async function startConnectFixture(
-  broker: string,
-): Promise<{ readonly url: string; dispose(): Promise<void> }> {
+export async function startConnectFixture(broker: string): Promise<{
+  readonly url: string;
+  readonly context: KafkaClusterServiceContext;
+  dispose(): Promise<void>;
+}> {
   const directory = await mkdtemp(join(tmpdir(), "streamskope-connect-"));
   await chmod(directory, 0o755);
   const reservation = createServer();
@@ -45,7 +50,17 @@ export async function startConnectFixture(
   ].join("\n");
   await writeFile(join(directory, "worker.properties"), config, { mode: 0o644 });
   const url = `http://127.0.0.1:${port}`;
+  const lifecycle = new AbortController(),
+    owner = new OwnedKafkaResources(lifecycle.signal);
+  const context: KafkaClusterServiceContext = {
+    baseUrl: url,
+    signal: lifecycle.signal,
+    requestOwner: owner,
+    authorization: (): Promise<undefined> => Promise.resolve(undefined),
+  };
   const dispose = async (): Promise<void> => {
+    lifecycle.abort();
+    await owner.close();
     try {
       await execute("docker", ["rm", "--force", name], { timeout: 30000 });
     } finally {
@@ -81,7 +96,7 @@ export async function startConnectFixture(
     for (let n = 0; n < 90; n++) {
       try {
         const response = await fetch(`${url}/connectors`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) return { url, dispose };
+        if (response.ok) return { url, context, dispose };
       } catch {
         /* Worker starts asynchronously. */
       }

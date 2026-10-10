@@ -283,7 +283,7 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 71 includes explicit Connect configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
+Host protocol 72 adds separate Connect dispatch, acknowledgement, readback and original-request cleanup evidence to explicit configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
 the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,
 and refuses structured evidence mislabeled as a legacy document. Browser

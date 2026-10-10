@@ -18,6 +18,7 @@ import {
   parseConnectReview,
   type ConnectInput,
 } from "../../src/features/kafka/contracts/connect";
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import { connectDlqContext } from "../../src/features/kafka/contracts/connect-dlq";
 const input: ConnectInput = { name: "orders", action: "update", config: { "tasks.max": "2" } };
 interface Fixture {
@@ -58,11 +59,16 @@ function fixture(): Fixture {
       .mockResolvedValue({ names: ["orders"], plugins: ["FileSink"] }),
     load: vi.fn<ConnectPort["load"]>().mockImplementation(() => Promise.resolve(state)),
     validate: vi.fn<ConnectPort["validate"]>().mockResolvedValue({ issues: [] }),
-    apply: vi.fn<ConnectPort["apply"]>().mockResolvedValue(undefined),
+    apply: vi.fn<ConnectPort["apply"]>().mockResolvedValue({
+      state: "acknowledged",
+      dispatch: "attempted",
+      cleanup: "confirmed",
+      detail: "Accepted",
+    }),
   };
   return {
     service: new ConnectService(
-      () => context,
+      () => new KafkaConnectionScopes(() => context).connect(),
       port,
       () => now,
     ),
@@ -123,11 +129,27 @@ it("keeps dispatch timeout unknown, authorization denied rejected and acknowledg
     const f = fixture();
     const p = await f.service.review(input);
     vi.mocked(f.port.apply).mockImplementation(() => {
-      if (mode === "timeout") return Promise.reject(new Error("private token"));
+      if (mode === "timeout")
+        return Promise.resolve({
+          state: "unknown",
+          dispatch: "attempted",
+          cleanup: "confirmed",
+          detail: "Unknown",
+        });
       if (mode === "denied")
-        return Promise.reject(Object.assign(new Error("private token"), { status: 403 }));
+        return Promise.resolve({
+          state: "rejected",
+          dispatch: "attempted",
+          cleanup: "confirmed",
+          detail: "Rejected HTTP 403",
+        });
       vi.mocked(f.port.load).mockRejectedValue(new Error("private token"));
-      return Promise.resolve();
+      return Promise.resolve({
+        state: "acknowledged",
+        dispatch: "attempted",
+        cleanup: "confirmed",
+        detail: "Accepted",
+      });
     });
     const result = await f.service.apply(p.planId, p.confirmation);
     expect(result.state).toBe(
@@ -323,4 +345,58 @@ it("correlates connector and exact set/removal keys and refuses inconsistent rev
   expect(() => parseConnectReview({ ...review, fields: ["password"] })).toThrow();
   expect(() => parseConnectReview({ ...review, confirmation: "yes" })).toThrow();
   expect(parseConnectInput(input).remove).toEqual([]);
+});
+
+it("keeps an admitted ACK after reconnect separate from unavailable readback and reuses its receipt", async () => {
+  const f = fixture(),
+    plan = await f.service.review(input);
+  let admit!: () => void, finish!: (value: Awaited<ReturnType<ConnectPort["apply"]>>) => void;
+  const started = new Promise<void>((resolve) => {
+    admit = resolve;
+  });
+  f.port.apply.mockImplementation(() => {
+    admit();
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  const pending = f.service.apply(plan.planId, plan.confirmation);
+  await started;
+  f.disconnect();
+  finish({
+    state: "acknowledged",
+    dispatch: "attempted",
+    cleanup: "confirmed",
+    detail: "Accepted",
+  });
+  const receipt = await pending;
+  expect(receipt).toMatchObject({
+    state: "acknowledged",
+    verification: "unavailable",
+    cleanup: "confirmed",
+    observed: null,
+  });
+  expect(await f.service.apply(plan.planId, plan.confirmation)).toEqual(receipt);
+  expect(f.port.apply).toHaveBeenCalledTimes(1);
+});
+it("distinguishes a positive readback from an asynchronously different state and keeps failed cleanup explicit", async () => {
+  for (const mode of ["verified", "different", "cleanup"]) {
+    const f = fixture(),
+      plan = await f.service.review(input);
+    f.port.apply.mockImplementation((_c, merged) => {
+      if (mode === "verified") f.setState({ ...f.getState(), config: merged.config });
+      return Promise.resolve({
+        state: "acknowledged",
+        dispatch: "attempted",
+        cleanup: mode === "cleanup" ? "unresolved" : "confirmed",
+        detail: "Accepted",
+      });
+    });
+    const receipt = await f.service.apply(plan.planId, plan.confirmation);
+    expect(receipt).toMatchObject({
+      state: "acknowledged",
+      verification: mode === "cleanup" ? "unavailable" : mode,
+      cleanup: mode === "cleanup" ? "unresolved" : "confirmed",
+    });
+  }
 });

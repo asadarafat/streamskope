@@ -175,6 +175,7 @@ test("keyboard-operable Connect set/remove review preserves secrets and keeps on
     await apply.focus();
     await page.keyboard.press("Enter");
     await expect(main).toContainText("acknowledged:");
+    await expect(main).toContainText("Original request cleanup: confirmed.");
     await expect(apply).toBeDisabled();
     await expect(remove).toBeDisabled();
     await expect

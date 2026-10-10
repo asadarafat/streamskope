@@ -734,3 +734,30 @@ describe("narrow mutation scopes", () => {
     },
   );
 });
+
+it("refuses captured Connect reads and dispatch after original cleanup becomes unresolved", async () => {
+  const f = fixture();
+  let available = true;
+  Object.assign(f.connection, {
+    clusterServiceContext: () => ({
+      baseUrl: "http://connect.fixture",
+      authorization: (): Promise<undefined> => Promise.resolve(undefined),
+      requestOwner: {
+        get available(): boolean {
+          return available;
+        },
+        get cleanupUnresolved(): boolean {
+          return !available;
+        },
+      },
+    }),
+  });
+  const scope = f.scopes.connect()!;
+  expect(scope.isCurrent()).toBe(true);
+  available = false;
+  const send = vi.fn(() => Promise.resolve("must-not-send"));
+  expect(scope.tryDispatch(send)).toEqual({ started: false });
+  await expect(scope.read(send, AbortSignal.timeout(1000))).rejects.toThrow();
+  expect(scope.cleanupUnresolved()).toBe(true);
+  expect(send).not.toHaveBeenCalled();
+});

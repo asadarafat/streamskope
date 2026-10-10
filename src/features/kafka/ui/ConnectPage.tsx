@@ -92,19 +92,31 @@ export function ConnectPage({
     if (current()) setInventory(r.result.inventory);
   };
   useEffect(() => {
-    generation.current += 1;
-    running.current = false;
-    setInventory({ names: [], plugins: [] });
-    setDetail(undefined);
-    setName("");
-    setAction("create");
-    setConfig('{"connector.class":"","tasks.max":"1"}');
-    setRemove("[]");
-    invalidate();
-    setBusy(false);
+    const reset = (): void => {
+      generation.current += 1;
+      running.current = false;
+      setInventory({ names: [], plugins: [] });
+      setDetail(undefined);
+      setName("");
+      setAction("create");
+      setConfig('{"connector.class":"","tasks.max":"1"}');
+      setRemove("[]");
+      invalidate();
+      setBusy(false);
+    };
+    reset();
     void run(refresh);
+    let sequence = -1;
+    const unsubscribe = host.subscribe((event) => {
+      if (event.event !== "connection.state" || event.sequence <= sequence) return;
+      sequence = event.sequence;
+      // Invalidate synchronously, including same-name reconnect events batched by React.
+      reset();
+      if (event.payload.state === "connected") void run(refresh);
+    });
     return (): void => {
       generation.current += 1;
+      unsubscribe();
     };
   }, [host, connectionName]);
   const load = async (n: string, current: () => boolean): Promise<void> => {
@@ -375,10 +387,21 @@ export function ConnectPage({
       {outcome && (
         <Alert severity={outcome.state === "acknowledged" ? "success" : "warning"}>
           {outcome.state}: {outcome.detail}
+          <Typography variant="body2">
+            Readback: {outcome.verification}. Original request cleanup: {outcome.cleanup}.
+          </Typography>
+          {outcome.cleanup === "unresolved" && (
+            <Typography>
+              New actions are blocked until original cleanup is resolved. Disconnect and inspect
+              host diagnostics.
+            </Typography>
+          )}
         </Alert>
       )}
       {attempted && !busy && (
-        <Button onClick={invalidate}>Dismiss receipt and start another review</Button>
+        <Button disabled={outcome?.cleanup === "unresolved"} onClick={invalidate}>
+          Dismiss receipt and start another review
+        </Button>
       )}
       {!canWrite && <Alert severity="info">Read-only mode blocks Connect changes.</Alert>}
       {error && <Alert severity="error">{error}</Alert>}
