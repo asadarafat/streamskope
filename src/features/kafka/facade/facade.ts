@@ -31,7 +31,7 @@ import { ActivityHistory } from "../../../platform/activity";
 
 import { isRecordRangeCommand, RecordRangeFacade } from "./record-range-facade";
 import { RelationshipFacade } from "./relationship-facade";
-import { ObservationFacade } from "./observation-facade";
+import { ObservationFacade, isObservationCommand } from "./observation-facade";
 import { ConnectFacade } from "./connect-facade";
 import { EnvironmentFacade } from "./environment-facade";
 import { RecordReplayFacade, isRecordReplayCommand } from "./record-replay-facade";
@@ -223,6 +223,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       session,
       options.observationStore,
       this.recordActivity.bind(this),
+      { publish, nextSequence },
     );
     this.connectService = new ConnectFacade(
       session,
@@ -421,15 +422,11 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
     }
     if (isTopicCatalogCommand(command))
       return executeTopicCatalogCommand(command, correlationId, this.queries, this.session);
+    if (isObservationCommand(command)) return this.observations.execute(command, correlationId);
     switch (command.command) {
       case "relationships.capture":
       case "relationships.cancel":
         return this.relationships.execute(command, correlationId);
-      case "observations.capture":
-      case "observations.history":
-      case "observations.cancel":
-      case "observations.clear":
-        return this.observations.execute(command, correlationId);
       case "connect.list":
       case "connect.load":
       case "connect.validate":

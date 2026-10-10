@@ -24,6 +24,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/application/trust-acquisition-lifecycle.ts",
     // Protected sampling owns one five-second deadline, cleared on settlement.
     "src/features/kafka/application/observation-record-sample.ts",
+    // One opted-in host watch owns one finite next-capture timeout, cleared on revocation.
+    "src/features/kafka/application/observation-watch.ts",
     "src/features/kafka/facade/facade-support.ts",
     "src/features/kafka/engine/engine.ts",
     // Each HTTP cleanup owns one diagnostic deadline; expiry retains the original lease.
@@ -40,7 +42,7 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     // One post-close focus frame, cancelled on replacement or unmount and scoped to its active grid.
     "src/features/nats/ui/SubscriptionWorkspace.tsx",
     "src/features/kafka/ui/LatencyWorkspace.tsx",
-    // Page-scoped opted-in collection and absolute cooldown/freshness deadlines; disposed on unmount.
+    // UI-only absolute cooldown/freshness deadlines; disposed on unmount.
     "src/features/kafka/ui/use-observed-health.ts",
     // One continuation-expiry deadline, cleared on replacement or unmount.
     "src/features/kafka/ui/use-read-continuation.ts",

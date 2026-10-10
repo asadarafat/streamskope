@@ -65,7 +65,8 @@ export function ObservationFindings({
                 `${alert.metric === "lag" ? "Lag" : "Collection time"} ${alert.observed.toLocaleString()} exceeded ${alert.threshold.toLocaleString()}${alert.metric === "requestMs" ? " ms" : " positions"}`,
             )
             .join("; ")}
-          . No notification service runs while this page is closed.
+          . The authorized host watch can add local Activity entries while this page is closed;
+          external notifications are not configured.
         </Alert>
       )}
       {actionable && hints.length === 0 && (

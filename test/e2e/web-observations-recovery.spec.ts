@@ -252,9 +252,10 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
       health.getByRole("combobox", { name: "Observed consumer group (optional)" }),
       groupId,
     );
+    // Page attachment preserves completed evidence from the still-current original host.
     await expect(
       health.getByRole("button", { name: `Inspect consumer group ${groupId}` }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     await expect(capture()).toBeEnabled({ timeout: 15_000 });
     await capture().click();
     await expect(
@@ -302,7 +303,7 @@ test("investigates real lag and sampled records, respects cooldown, and recovers
     await expect(
       health.getByRole("alert").filter({ hasText: /history.*unavailable|history.*read/iu }),
     ).toHaveCount(0);
-    await expect(health.getByRole("button", { name: `Inspect topic ${topic}` })).toBeDisabled();
+    await expect(health.getByRole("button", { name: `Inspect topic ${topic}` })).toBeEnabled();
     const profileConnect = commands.find((command) => command.command === "profiles.connect");
     if (!profileConnect || profileConnect.command !== "profiles.connect")
       throw new Error("The fixture did not connect a saved profile.");

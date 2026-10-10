@@ -140,6 +140,7 @@ export interface RecordReadScope extends ReviewAuthority {
 
 /** Read authority is fenced against connection changes; the sampler owns its reader. */
 export interface ObservationScope {
+  readonly connectionName: string;
   readonly connectionIdentity: object;
   assertCurrent(signal: AbortSignal): void;
   readonly observeTopicHealth?: (topic: string, signal: AbortSignal) => Promise<TopicHealth>;
@@ -466,6 +467,7 @@ export class KafkaConnectionScopes {
     };
     return {
       connectionIdentity: identity,
+      connectionName: context.connectionName,
       assertCurrent,
       ...(connection.observeTopicHealth === undefined
         ? {}

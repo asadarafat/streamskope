@@ -69,6 +69,20 @@ export function ObservedHealthPage({
   const health = useObservedHealth(host, backendAvailable);
   const { series, latest } = health;
   const selectionInitialized = useRef(false);
+  const restoredWatch = useRef<string | null>(null);
+  useEffect(() => {
+    const watch = health.watch;
+    if (!health.running || watch.input === null || watch.id === restoredWatch.current) return;
+    restoredWatch.current = watch.id;
+    selectionInitialized.current = true;
+    setTopic(watch.input.topic);
+    setGroupId(watch.input.groupId ?? "");
+    setLagThreshold(watch.input.thresholds.lag === null ? "" : String(watch.input.thresholds.lag));
+    setLatencyThreshold(
+      watch.input.thresholds.requestMs === null ? "" : String(watch.input.thresholds.requestMs),
+    );
+    setSampleRecords(watch.input.sampleRecords === true);
+  }, [health.running, health.watch]);
   useEffect(() => {
     if (!series || selectionInitialized.current) return;
     selectionInitialized.current = true;
@@ -147,9 +161,10 @@ export function ObservedHealthPage({
       </Stack>
       {!backendAvailable && (
         <Alert severity="warning">
-          Host unavailable. Collection is stopped. Restore the application host and reload the
-          workbench if needed, then capture a new observation. Retained evidence remains readable;
-          collection does not resume automatically.
+          Host unavailable. Watch status is unknown. Restore the host connection to check its
+          status; a browser transport interruption alone does not stop host-owned collection.
+          Disconnect, vault lock and host shutdown revoke collection. Retained evidence remains
+          readable.
         </Alert>
       )}
       <ObservationControls
@@ -159,6 +174,8 @@ export function ObservedHealthPage({
         groups={groupInventory?.groups.map((group) => group.id) ?? []}
         busy={health.busy}
         running={health.running}
+        canStop={health.canStop}
+        stopping={health.watch.phase === "stopping"}
         connected={connected}
         backendAvailable={backendAvailable}
         historyReady={health.historyReady}
@@ -212,7 +229,8 @@ export function ObservedHealthPage({
               </Button>
             )}
             {(health.error.operation === "history" ||
-              health.error.hostError?.code === "OBSERVATION_HISTORY_UNAVAILABLE") && (
+              (health.error.code ?? health.error.hostError?.code) ===
+                "OBSERVATION_HISTORY_UNAVAILABLE") && (
               <Button
                 disabled={!backendAvailable || health.busy}
                 onClick={() => {

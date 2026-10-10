@@ -61,6 +61,12 @@ interface SpecificCommandResults
     readonly correlationId: string;
     readonly graph: import("./relationships").RelationshipGraph;
   };
+  readonly "observations.watch.start": {
+    readonly correlationId: string;
+    readonly watch: import("./observation-watch").ObservationWatchSnapshot;
+  };
+  readonly "observations.watch.status": SpecificCommandResults["observations.watch.start"];
+  readonly "observations.watch.stop": SpecificCommandResults["observations.watch.start"];
   readonly "observations.capture": {
     readonly correlationId: string;
     readonly capture: import("./observations").ObservationCapture;
@@ -287,6 +293,9 @@ const structuredResults = {
   "records.export.cancel": true,
   "records.export.discard": true,
   "relationships.capture": true,
+  "observations.watch.start": true,
+  "observations.watch.status": true,
+  "observations.watch.stop": true,
   "observations.capture": true,
   "observations.history": true,
   "observations.clear": true,

@@ -33,6 +33,9 @@ export class ObservationService {
   private operation: Promise<ObservationCapture> | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private lastAttempt: { connectionIdentity: object; at: number } | undefined;
+  get busy(): boolean {
+    return this.operation !== undefined;
+  }
   constructor(
     private readonly scope: () => ObservationScope | null,
     private readonly store: ObservationStore = new MemoryObservationStore(),
@@ -77,6 +80,14 @@ export class ObservationService {
     });
   }
   capture(request: ObservationInput): Promise<ObservationCapture> {
+    return this.captureOwned(request, this.scope());
+  }
+  /** Scheduled reads retain the original authority, never resolve a replacement connection. */
+  captureOwned(
+    request: ObservationInput,
+    scope: ObservationScope | null,
+    expectedIdentity?: Pick<TopicHealth, "clusterId" | "topicId">,
+  ): Promise<ObservationCapture> {
     if (this.operation)
       return Promise.reject(
         new ObservationOperationError(
@@ -100,8 +111,7 @@ export class ObservationService {
         ),
       );
     }
-    const scope = this.scope(),
-      startedAt = this.now();
+    const startedAt = this.now();
     if (!scope)
       return Promise.reject(
         new ObservationOperationError(
@@ -139,7 +149,7 @@ export class ObservationService {
       this.controller.signal,
       AbortSignal.timeout(limits.deadlineMs),
     ]);
-    this.operation = this.collect(scope, input, startedAt, signal)
+    this.operation = this.collect(scope, input, startedAt, signal, expectedIdentity)
       .catch((error: unknown) => {
         this.segmentId = crypto.randomUUID();
         if (signal.aborted) throw observationAborted(signal, error);
@@ -156,6 +166,7 @@ export class ObservationService {
     input: ObservationInput,
     startedAt: number,
     signal: AbortSignal,
+    expectedIdentity?: Pick<TopicHealth, "clusterId" | "topicId">,
   ): Promise<ObservationCapture> {
     // Load first: an unreadable durable store must never be silently replaced.
     const prior = await this.history();
@@ -164,6 +175,17 @@ export class ObservationService {
     scope.assertCurrent(signal);
     if (health.topic !== input.topic || !health.clusterId || !health.topicId)
       throw new Error("The observation identity is unavailable.");
+    if (
+      expectedIdentity &&
+      (health.clusterId !== expectedIdentity.clusterId ||
+        health.topicId !== expectedIdentity.topicId)
+    )
+      throw new ObservationOperationError(
+        "OBSERVATION_INCOMPLETE",
+        "The watched Kafka resource identity changed.",
+        "Inspect the current topic and connection, then explicitly start a new watch. Earlier evidence has been retained separately.",
+        false,
+      );
     const issues: ObservationIssue[] = [...(health.issues ?? [])];
     let group: KafkaConsumerGroupDetails | undefined;
     let selectedGroup: ObservationGroupHealth | undefined;

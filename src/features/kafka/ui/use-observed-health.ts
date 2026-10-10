@@ -9,6 +9,9 @@ import {
   type ObservationSeries,
   type KafkaObservation,
 } from "../contracts/observations";
+import type { ObservationWatchSnapshot } from "../contracts/observation-watch";
+
+import { useObservationWatch } from "./use-observation-watch";
 
 type Operation = "history" | "capture" | "clear";
 export interface ObservationRequestError {
@@ -16,10 +19,12 @@ export interface ObservationRequestError {
   readonly summary: string;
   readonly recovery: string;
   readonly hostError?: HostError;
+  readonly code?: HostError["code"];
 }
 
 interface ObservedHealthController {
   readonly snapshot: ObservationSnapshot;
+  readonly watch: ObservationWatchSnapshot;
   readonly selected: string;
   readonly setSelected: (value: string) => void;
   readonly series: ObservationSeries | undefined;
@@ -28,6 +33,7 @@ interface ObservedHealthController {
   readonly now: number;
   readonly current: boolean;
   readonly running: boolean;
+  readonly canStop: boolean;
   readonly busy: boolean;
   readonly operation: Operation | null;
   readonly historyReady: boolean;
@@ -42,15 +48,24 @@ interface ObservedHealthController {
 
 const emptyHistory: ObservationSnapshot = { schemaVersion: 1, series: [], durability: "session" };
 
-/** Owns page-scoped collection, cooldown and late-result cancellation. */
+/** Displays host-owned evidence; its only deadlines update cooldown and freshness text. */
 export function useObservedHealth(
   host: StreamSkopeHost,
   backendAvailable = true,
 ): ObservedHealthController {
   const [snapshot, setSnapshot] = useState(emptyHistory);
   const [selected, setSelected] = useState("");
-  const [currentCapture, setCurrentCapture] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
+  const attachment = useObservationWatch(host, backendAvailable);
+  const { watch } = attachment;
+  const running =
+    backendAvailable &&
+    attachment.ready &&
+    watch.repeated &&
+    ["capturing", "waiting", "stopping"].includes(watch.phase);
+  const hostBusy =
+    backendAvailable && (attachment.pending || ["capturing", "stopping"].includes(watch.phase));
+  const loadedSample = useRef<string | null>(null);
+  const displayedSample = useRef<string | null>(null);
   const [operation, setOperation] = useState<Operation | null>("history");
   const [historyReady, setHistoryReady] = useState(false);
   const [error, setError] = useState<ObservationRequestError | null>(null);
@@ -63,7 +78,6 @@ export function useObservedHealth(
   readiness.current = backendAvailable;
   const previousReadiness = useRef(backendAvailable);
   const cooldown = useRef(0);
-  const input = useRef<ObservationInput | null>(null);
   const series = snapshot.series.find((value) => observationIdentity(value) === selected);
   const latest = series?.samples.at(-1);
   const fresh =
@@ -83,7 +97,13 @@ export function useObservedHealth(
   const failure = useCallback((kind: Operation, hostError?: HostError): void => {
     setError(
       hostError
-        ? { operation: kind, summary: hostError.summary, recovery: hostError.recovery, hostError }
+        ? {
+            operation: kind,
+            summary: hostError.summary,
+            recovery: hostError.recovery,
+            code: hostError.code,
+            hostError,
+          }
         : {
             operation: kind,
             summary: "The application host did not answer the observation request.",
@@ -141,14 +161,6 @@ export function useObservedHealth(
     return (): void => {
       mounted.current = false;
       generation.current++;
-      void host
-        .execute({
-          command: "observations.cancel",
-          id: crypto.randomUUID(),
-          version: HOST_PROTOCOL_VERSION,
-          payload: {},
-        })
-        .catch(() => undefined);
     };
   }, [host, refreshHistory]);
   useEffect(() => {
@@ -162,17 +174,6 @@ export function useObservedHealth(
     if (!previouslyAvailable) return;
     generation.current++;
     inFlight.current = null;
-    input.current = null;
-    setCurrentCapture(null);
-    setRunning(false);
-    void host
-      .execute({
-        command: "observations.cancel",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: {},
-      })
-      .catch(() => undefined);
   }, [backendAvailable, historyReady, host, refreshHistory]);
   useEffect(() => {
     if (!backendAvailable) return;
@@ -200,7 +201,6 @@ export function useObservedHealth(
       if (!readiness.current || inFlight.current !== null || Date.now() < cooldown.current) return;
       const current = generation.current;
       inFlight.current = current;
-      input.current = request;
       setOperation("capture");
       setError(null);
       let retryDelay = limits.intervalMs as number;
@@ -216,7 +216,6 @@ export function useObservedHealth(
           if (response.error.code === "OBSERVATION_HISTORY_UNAVAILABLE") setHistoryReady(false);
           retryDelay = Math.max(retryDelay, response.error.retryAfterMs ?? 0);
           failure("capture", response.error);
-          setRunning(false);
           return;
         }
         const next = response.result.capture;
@@ -231,11 +230,10 @@ export function useObservedHealth(
           ].slice(-limits.series),
         }));
         setSelected(observationIdentity(next.series));
-        setCurrentCapture(next.series.samples.at(-1)!.id);
+        loadedSample.current = next.series.samples.at(-1)!.id;
       } catch {
         if (mounted.current && readiness.current && generation.current === current) {
           failure("capture");
-          setRunning(false);
         }
       } finally {
         if (inFlight.current === current) {
@@ -252,48 +250,44 @@ export function useObservedHealth(
     },
     [host, failure],
   );
-  const captureRef = useRef(capture);
-  captureRef.current = capture;
+  // Events carry compact capture receipts. History is read once for a new receipt, never polled.
   useEffect(() => {
-    if (!running || !backendAvailable) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async (): Promise<void> => {
-      if (input.current) await captureRef.current(input.current);
-      if (!cancelled)
-        timer = setTimeout(
-          () => {
-            void tick();
-          },
-          Math.max(limits.intervalMs, cooldown.current - Date.now()),
-        );
-    };
-    void tick();
-    return (): void => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [backendAvailable, running]);
+    if (watch.nextCaptureAt !== null && watch.nextCaptureAt > cooldown.current) {
+      cooldown.current = watch.nextCaptureAt;
+      setNextCaptureAt(watch.nextCaptureAt);
+    }
+    if (
+      watch.lastSampleId === null ||
+      loadedSample.current === watch.lastSampleId ||
+      operation !== null
+    )
+      return;
+    loadedSample.current = watch.lastSampleId;
+    void refreshHistory();
+  }, [watch.lastSampleId, watch.nextCaptureAt, operation, refreshHistory]);
+  useEffect(() => {
+    if (watch.lastSampleId === null || displayedSample.current === watch.lastSampleId) return;
+    if (
+      !snapshot.series.some(
+        (series) =>
+          observationIdentity(series) === watch.lastSeriesId &&
+          series.samples.at(-1)?.id === watch.lastSampleId,
+      )
+    )
+      return;
+    displayedSample.current = watch.lastSampleId;
+    setSelected(watch.lastSeriesId!);
+  }, [watch.lastSampleId, watch.lastSeriesId, snapshot]);
   const stop = useCallback((): void => {
-    setRunning(false);
-    generation.current++;
-    void host
-      .execute({
-        command: "observations.cancel",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: {},
-      })
-      .catch(() => undefined);
-  }, [host]);
+    void attachment.stop();
+  }, [attachment.stop]);
   const start = (request: ObservationInput): void => {
     if (!readiness.current || inFlight.current !== null || Date.now() < cooldown.current) return;
-    input.current = request;
-    setRunning(true);
+    setError(null);
+    void attachment.start(request);
   };
   const clear = async (): Promise<boolean> => {
     if (!readiness.current || inFlight.current !== null) return false;
-    stop();
     const current = generation.current;
     inFlight.current = current;
     setOperation("clear");
@@ -308,7 +302,7 @@ export function useObservedHealth(
       if (response.ok) {
         update(response.result.snapshot);
         setHistoryReady(true);
-        setCurrentCapture(null);
+        loadedSample.current = null;
         setError(null);
         return true;
       }
@@ -325,18 +319,31 @@ export function useObservedHealth(
   };
   return {
     snapshot,
+    watch,
     selected,
     setSelected,
     series,
     latest,
     fresh,
     now,
-    current: backendAvailable && latest?.id === currentCapture,
+    current:
+      backendAvailable &&
+      watch.current &&
+      series !== undefined &&
+      observationIdentity(series) === watch.lastSeriesId &&
+      latest?.id === watch.lastSampleId,
     running,
-    busy: operation !== null,
-    operation,
-    historyReady,
-    error,
+    canStop:
+      backendAvailable &&
+      attachment.ready &&
+      ["capturing", "waiting", "stopping"].includes(watch.phase),
+    busy: operation !== null || hostBusy,
+    operation: operation ?? (hostBusy ? "capture" : null),
+    historyReady:
+      historyReady &&
+      attachment.ready &&
+      attachment.error?.code !== "OBSERVATION_HISTORY_UNAVAILABLE",
+    error: error ?? (attachment.error ? { operation: "capture", ...attachment.error } : null),
     cooldownSeconds,
     capture,
     start,

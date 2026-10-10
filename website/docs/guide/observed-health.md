@@ -48,14 +48,18 @@ not measured here.
 
 Each reading includes its source, observation time and measurement coverage.
 A sample becomes stale after **45 seconds**. Retained history can belong to a
-different connection: collecting successfully on the current connection is
-required before treating it as current evidence. Failed reads do not create zero
+different connection: the running host must confirm that the selected sample and
+resource identity were captured on its still-current original connection. Page
+navigation and Stop preserve that completed evidence; a connection replacement or
+host restart requires a new explicit capture. Failed reads do not create zero
 measurements, and stale evidence produces no current diagnosis or forecast.
 
-If the application host becomes unavailable, collection stops and its last
-measurements become retained evidence. Capture and resource links stay disabled
-while the host is unavailable. Follow the host recovery action, then capture
-again to verify the connection; repeated collection does not resume automatically.
+When the host is unreachable, watch status is unknown and capture and resource
+links stay disabled. A browser transport interruption alone does not stop the
+host watch. Restore transport and attach to its current status. Disconnect, vault
+lock, connection replacement and host shutdown revoke collection; recovering
+from those transitions requires an explicit new capture or Start and never grants
+unattended connection or unlock.
 
 Group-access failures leave available topic evidence intact. Selected-topic lag
 uses that topic's committed and end positions; omitted unrelated group members
@@ -70,12 +74,16 @@ unreadable or unsupported history file remains preserved until explicitly cleare
 ## Collection and history limits
 
 - One collection runs at a time, with a **15-second deadline** and **1–128
-  selected-topic partitions**.
+  selected-topic partitions**. The deadline cancels reads; Stop still waits for
+  their original provider cleanup and cannot force ownership release.
 - Repeated collection waits at least **ten seconds after each completed attempt**.
   A one-shot attempt also observes the host cooldown.
-- **Stop observing**, navigation away, disconnect, host loss and app shutdown stop collection.
-  Sampling and local alerts run only while this page is open; there is no
-  background notification service.
+- **Start observing** explicitly authorizes one host-owned watch on the original connection and topic identity. It continues across page navigation while that host is running and unlocked. Reopening the page attaches to its status without starting a second collector.
+- **Stop observing**, disconnect, connection replacement, vault lock and app shutdown revoke collection and wait for original work to settle. A browser transport interruption makes status unknown; reconnect to check the host rather than assuming collection stopped. A failed read stops the watch and requires an explicit retry.
+- The first positive broker and topic identity binds the watch. A replaced topic stops collection before group or record reads; earlier evidence remains separate. Watch authority is session-only and does not survive host restart or grant unattended connection or unlock.
+  The host can add local threshold Activity entries while the page is closed.
+  No external notification service is configured. Stopping collection preserves
+  completed evidence for inspection while its original connection remains current.
 - Desktop history is stored privately in `history/kafka-observations.json` inside
   application data. Browser development retains history only for the host session.
 - History loaded or updated by the host is bounded by eight resource identities, **240 samples per identity**,
