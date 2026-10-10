@@ -228,3 +228,23 @@ it("rejects a valid-state response whose wire header or projection disagrees wit
   if (json.state !== "valid") throw new Error("Valid JSON fixture unavailable.");
   expect(() => parseSchemaAuthoringResult({ ...json, json: "[]" })).toThrow();
 });
+
+it("projects Avro float32 from encoded bytes rather than the unrounded draft", () => {
+  const definition =
+    '{"type":"record","name":"Measurement","fields":[{"name":"ratio","type":"float"}]}';
+  const result = author(bundle("AVRO", definition), '{"ratio":0.1}');
+  if (result.state !== "valid") throw new Error("Avro float authoring failed.");
+  const independent = avro.Type.forSchema(JSON.parse(definition) as avro.Schema);
+  const decoded: unknown = independent.fromBuffer(bytes(result).subarray(5));
+  expect(JSON.parse(result.json)).toEqual(decoded);
+  expect(decoded).toMatchObject({ ratio: Math.fround(0.1) });
+});
+it("projects Protobuf float32 from encoded bytes rather than the unrounded draft", () => {
+  const definition = 'syntax="proto3"; message Measurement { float ratio=1; }';
+  const result = author(bundle("PROTOBUF", definition), '{"ratio":0.1}', "Measurement");
+  if (result.state !== "valid") throw new Error("Protobuf float authoring failed.");
+  const independent = protobuf.parse(definition).root.lookupType("Measurement");
+  const decoded = independent.toObject(independent.decode(bytes(result).subarray(6)));
+  expect(JSON.parse(result.json)).toEqual(decoded);
+  expect(decoded).toEqual({ ratio: Math.fround(0.1) });
+});

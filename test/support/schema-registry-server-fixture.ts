@@ -46,6 +46,7 @@ export async function startSchemaRegistryServerFixture(
     if (remaining.stdout.trim() !== "") throw new Error("Registry fixture removal is unconfirmed.");
     id = undefined;
   };
+  let readiness = { ready: false, primary: false, coordinator: false, generation: -1 };
   try {
     const output = await execute(
       "docker",
@@ -98,9 +99,21 @@ export async function startSchemaRegistryServerFixture(
         const response = await fetch(`${url}/_health`, { signal: AbortSignal.timeout(1000) });
         const health = response.ok
           ? ((await response.json()) as {
-              status?: { schema_registry_ready?: boolean; schema_registry_is_primary?: boolean };
+              status?: {
+                schema_registry_ready?: boolean;
+                schema_registry_is_primary?: boolean;
+                schema_registry_coordinator_running?: boolean;
+                schema_registry_coordinator_generation_id?: number;
+              };
             })
           : undefined;
+        const generation = health?.status?.schema_registry_coordinator_generation_id;
+        readiness = {
+          ready: health?.status?.schema_registry_ready === true,
+          primary: health?.status?.schema_registry_is_primary === true,
+          coordinator: health?.status?.schema_registry_coordinator_running === true,
+          generation: generation !== undefined && Number.isSafeInteger(generation) ? generation : -1,
+        };
         if (
           health?.status?.schema_registry_ready === true &&
           health.status.schema_registry_is_primary === true
@@ -111,8 +124,8 @@ export async function startSchemaRegistryServerFixture(
       }
       await delay(1000);
     }
-    throw new Error("Registry readiness timed out.");
-  } catch {
+    throw new Error(`Registry readiness timed out: ${JSON.stringify(readiness)}.`);
+  } catch (cause) {
     if (!id) {
       try {
         const inspected = (
@@ -130,6 +143,6 @@ export async function startSchemaRegistryServerFixture(
       }
     }
     await dispose();
-    throw new Error("Isolated reference-capable Registry fixture did not become ready.");
+    throw new Error("Isolated reference-capable Registry fixture did not become ready.", { cause });
   }
 }

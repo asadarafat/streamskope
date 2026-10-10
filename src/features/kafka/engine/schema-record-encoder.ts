@@ -101,12 +101,10 @@ export function createSchemaRecordEncoder(
       }
       if (!type.isValid(converted, { noUndeclaredFields: true }))
         invalidPayload("", "schema", "Payload does not validate against the Avro writer schema.");
+      const body = type.toBuffer(converted);
       return {
-        json: type.toString(converted),
-        wire: frame(
-          bundle,
-          type.typeName === "bytes" ? (converted as Buffer) : type.toBuffer(converted),
-        ),
+        json: type.toString(type.fromBuffer(body)),
+        wire: frame(bundle, type.typeName === "bytes" ? (converted as Buffer) : body),
         encoding:
           "Confluent Avro (writer schema ID); Avro JSON branches and byte strings; logical types use underlying storage values",
         messageType: null,
@@ -119,22 +117,17 @@ export function createSchemaRecordEncoder(
       const converted = selected.type.fromObject(value as Record<string, unknown>);
       if (selected.type.verify(converted))
         invalidPayload("", "schema", "Payload does not validate against the writer message.");
+      const body = selected.type.encode(converted).finish();
       return {
         json: boundedRecordJson(
-          selected.type.toObject(converted, {
+          selected.type.toObject(selected.type.decode(body), {
             longs: String,
             enums: String,
             bytes: String,
             defaults: false,
           }),
         ),
-        wire: frame(
-          bundle,
-          Buffer.concat([
-            messagePrefix(selected.indexes),
-            selected.type.encode(converted).finish(),
-          ]),
-        ),
+        wire: frame(bundle, Buffer.concat([messagePrefix(selected.indexes), body])),
         encoding:
           "Confluent Protobuf (writer schema ID and message indexes); decimal-string int64, Base64 bytes and declared enum names",
         messageType: selected.type.fullName,

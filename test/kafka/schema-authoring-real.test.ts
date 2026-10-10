@@ -81,14 +81,14 @@ it("authors registered referenced schemas, publishes reviewed bytes and independ
     const childAvro =
       '{"type":"record","name":"Detail","fields":[{"name":"name","type":"string"}]}';
     const rootAvro =
-      '{"type":"record","name":"Event","fields":[{"name":"id","type":"long"},{"name":"detail","type":"Detail"}]}';
+      '{"type":"record","name":"Event","fields":[{"name":"id","type":"long"},{"name":"detail","type":"Detail"},{"name":"ratio","type":"float"}]}';
     await register("avro-detail", "AVRO", childAvro);
     const avroId = await register("avro", "AVRO", rootAvro, [
       { name: "Detail", subject: `${topic}-avro-detail`, version: 1 },
     ]);
     const childProto = 'syntax="proto3"; package author; message Detail { string name=1; }';
     const rootProto =
-      'syntax="proto3"; package author; import "detail.proto"; message Other { bool ignored=1; } message Event { int64 id=1; Detail detail=2; }';
+      'syntax="proto3"; package author; import "detail.proto"; message Other { bool ignored=1; } message Event { int64 id=1; Detail detail=2; float ratio=3; }';
     await register("proto-detail", "PROTOBUF", childProto);
     const protoId = await register("proto", "PROTOBUF", rootProto, [
       { name: "detail.proto", subject: `${topic}-proto-detail`, version: 1 },
@@ -113,7 +113,8 @@ it("authors registered referenced schemas, publishes reviewed bytes and independ
       }),
     ).toMatchObject({ ok: true });
     const records: KafkaCompleteRecord[] = [];
-    const payload = '{"id":"9223372036854775807","detail":{"name":"edited"}}';
+    const projections: unknown[] = [];
+    const payload = '{"id":"9223372036854775807","detail":{"name":"edited"},"ratio":0.1}';
     for (const [suffix, schemaId, messageType, json] of [
       ["avro", avroId, "", payload],
       ["proto", protoId, "author.Event", payload],
@@ -137,6 +138,7 @@ it("authors registered referenced schemas, publishes reviewed bytes and independ
       )
         throw new Error("Authoring did not return validated bytes.");
       records.push(result.result.authoring.record);
+      projections.push(JSON.parse(result.result.authoring.json) as unknown);
     }
     const offsets = (): Promise<unknown> =>
       admin!.listOffsets({
@@ -214,9 +216,11 @@ it("authors registered referenced schemas, publishes reviewed bytes and independ
       registry: { Detail: avro.Type.forSchema(JSON.parse(childAvro) as avro.Schema) },
       typeHook: (s) => (s === "long" ? long : undefined),
     });
-    expect(avroType.fromBuffer(originals[0]!.subarray(5))).toMatchObject(
-      JSON.parse(payload) as object,
-    );
+    expect(avroType.fromBuffer(originals[0]!.subarray(5))).toMatchObject(projections[0] as object);
+    expect(avroType.fromBuffer(originals[0]!.subarray(5))).toMatchObject({
+      ...(JSON.parse(payload) as object),
+      ratio: Math.fround(0.1),
+    });
     const protoRoot = new protobuf.Root();
     protobuf.parse(childProto, protoRoot, { keepCase: true });
     protobuf.parse(rootProto, protoRoot, { keepCase: true });
@@ -224,7 +228,10 @@ it("authors registered referenced schemas, publishes reviewed bytes and independ
     expect(originals[1]!.subarray(5, 7).toString("hex")).toBe("0202");
     expect(
       protoType.toObject(protoType.decode(originals[1]!.subarray(7)), { longs: String }),
-    ).toEqual(JSON.parse(payload) as object);
+    ).toEqual({ ...(JSON.parse(payload) as object), ratio: Math.fround(0.1) });
+    expect(
+      protoType.toObject(protoType.decode(originals[1]!.subarray(7)), { longs: String }),
+    ).toEqual(projections[1]);
     expect(JSON.parse(originals[2]!.toString()) as unknown).toEqual({ id: "edited" });
     await adapter.delete(
       context,
