@@ -54,6 +54,22 @@ export class OwnedKafkaResources {
     return operation;
   }
 
+  /** Track the original work, never only the caller's cancellation race. */
+  runWork<T>(start: () => Promise<T>): Promise<T> {
+    if (!this.available)
+      return Promise.reject(
+        new Error("Original service authority is revoked or cleanup is unresolved."),
+      );
+    const operation = Promise.resolve().then(() => {
+      if (!this.available)
+        throw new Error("Original service authority is revoked or cleanup is unresolved.");
+      return start();
+    });
+    this.pending.add(operation);
+    void operation.finally(() => this.pending.delete(operation)).catch(() => undefined);
+    return operation;
+  }
+
   close(): Promise<void> {
     this.closed = true;
     this.closePromise ??= this.closeResources();

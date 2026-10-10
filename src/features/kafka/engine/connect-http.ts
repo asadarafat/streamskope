@@ -5,9 +5,11 @@ import type {
   ConnectPort,
   ConnectState,
   ConnectRelationships,
+  ConnectMutationReceipt,
 } from "../application/connect-service";
 
 import type { BoundedJsonHttpPort } from "./bounded-json-http";
+import { readConnectHttp, mutateConnectHttp } from "./connect-http-request";
 
 export class ConnectHttpError extends Error {
   constructor(readonly status: number) {
@@ -69,21 +71,9 @@ export class ConnectHttpAdapter implements ConnectPort {
     path: string,
     body?: unknown,
   ): Promise<{ status: number; body: unknown }> {
-    signal = c.signal === undefined ? signal : AbortSignal.any([signal, c.signal]);
-    signal.throwIfAborted();
-    const authorization = await c.authorization(signal);
-    signal.throwIfAborted();
-    return this.http.request({
-      url: `${c.baseUrl.replace(/\/+$/u, "")}${path}`,
-      method,
-      signal,
-      contentType: "application/json",
-      ...(body === undefined ? {} : { body }),
-      ...(authorization === undefined ? {} : { authorization }),
-      ...(c.caPem === undefined ? {} : { caPem: c.caPem }),
-      ...(c.clientIdentity === undefined ? {} : { clientIdentity: c.clientIdentity }),
-    });
+    return readConnectHttp(this.http, c, signal, method, path, body);
   }
+
   private ok(r: { status: number; body: unknown }): unknown {
     if (r.status < 200 || r.status >= 300) throw new ConnectHttpError(r.status);
     return r.body;
@@ -219,41 +209,33 @@ export class ConnectHttpAdapter implements ConnectPort {
       });
     return { issues };
   }
-  async apply(
+  apply(
     c: KafkaClusterServiceContext,
     input: ConnectInput,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<ConnectMutationReceipt> {
     const path = `/connectors/${encodeURIComponent(input.name)}`;
     switch (input.action) {
       case "create":
-        this.ok(
-          await this.request(c, signal, "POST", "/connectors", {
-            name: input.name,
-            config: input.config,
-          }),
-        );
-        break;
+        return mutateConnectHttp(this.http, c, signal, "POST", "/connectors", {
+          name: input.name,
+          config: input.config,
+        });
       case "update":
-        this.ok(await this.request(c, signal, "PUT", `${path}/config`, input.config));
-        break;
+        return mutateConnectHttp(this.http, c, signal, "PUT", `${path}/config`, input.config);
       case "delete":
-        this.ok(await this.request(c, signal, "DELETE", path));
-        break;
+        return mutateConnectHttp(this.http, c, signal, "DELETE", path);
       case "pause":
       case "resume":
-        this.ok(await this.request(c, signal, "PUT", `${path}/${input.action}`));
-        break;
+        return mutateConnectHttp(this.http, c, signal, "PUT", `${path}/${input.action}`);
       case "restart-failed":
-        this.ok(
-          await this.request(
-            c,
-            signal,
-            "POST",
-            `${path}/restart?includeTasks=true&onlyFailed=true`,
-          ),
+        return mutateConnectHttp(
+          this.http,
+          c,
+          signal,
+          "POST",
+          `${path}/restart?includeTasks=true&onlyFailed=true`,
         );
-        break;
     }
   }
 }

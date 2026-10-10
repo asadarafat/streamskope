@@ -20,19 +20,14 @@ import {
   KafkaReadCheckpointError,
   type KafkaReadCheckpoint,
 } from "../../src/features/kafka/application/read-checkpoint";
-import type {
-  KafkaAdminFactory,
-  KafkaAdminInput,
-  KafkaAdminPort,
-  OAuthToken,
-  OAuthTokenRequest,
-} from "../../src/features/kafka/engine/types";
+import type { OAuthToken, OAuthTokenRequest } from "../../src/features/kafka/engine/types";
 import type { KafkaClusterServiceContext } from "../../src/features/kafka/application";
 import type {
   BoundedJsonHttpPort,
   BoundedJsonHttpRequest,
   BoundedJsonHttpResponse,
 } from "../../src/features/kafka/engine/bounded-json-http";
+import { RecordingAdmin, RecordingAdminFactory } from "../support/kafka-engine-admin-fixture";
 import { probeKafkaNetwork } from "../../src/features/kafka/engine/latency-network";
 
 const oauthConnection: OAuthConnectionInput = {
@@ -64,69 +59,21 @@ function codedError(code: string, message: string): Error {
   return Object.assign(new Error(message), { code });
 }
 
-class RecordingAdmin implements KafkaAdminPort {
-  closeCalls = 0;
-  consumerGroupDetailResult: (() => Promise<KafkaConsumerGroupDetails>) | undefined;
-
-  constructor(
-    private readonly listTopicsResult: readonly string[] | (() => Promise<readonly string[]>),
-  ) {}
-
-  alterTopicConfiguration(): Promise<void> {
-    return Promise.reject(new Error("No topic-configuration operation was configured."));
-  }
-
-  close(): Promise<void> {
-    this.closeCalls += 1;
-    return Promise.resolve();
-  }
-
-  describeBrokerConfiguration(): never {
-    throw new Error("No broker-configuration operation was configured.");
-  }
-
-  describeClusterMetadata(): never {
-    throw new Error("No cluster-metadata operation was configured.");
-  }
-
-  describeConsumerGroup(): Promise<KafkaConsumerGroupDetails> {
-    if (this.consumerGroupDetailResult === undefined) {
-      return Promise.reject(new Error("No consumer-group detail operation was configured."));
-    }
-    return this.consumerGroupDetailResult();
-  }
-
-  listConsumerGroups(): Promise<{ readonly groups: []; readonly omittedGroups: 0 }> {
-    return Promise.resolve({ groups: [], omittedGroups: 0 });
-  }
-
-  listTopics(): Promise<readonly string[]> {
-    return typeof this.listTopicsResult === "function"
-      ? this.listTopicsResult()
-      : Promise.resolve(this.listTopicsResult);
-  }
-
-  describeTopicConfiguration(): Promise<readonly never[]> {
-    return Promise.reject(new Error("No topic-configuration operation was configured."));
-  }
-}
-
-class RecordingAdminFactory implements KafkaAdminFactory {
-  readonly inputs: KafkaAdminInput[] = [];
-
-  constructor(private readonly admin: RecordingAdmin) {}
-
-  create(input: KafkaAdminInput): KafkaAdminPort {
-    this.inputs.push(input);
-    return this.admin;
-  }
-}
-
 class RecordingJsonHttp implements BoundedJsonHttpPort {
   readonly requests: BoundedJsonHttpRequest[] = [];
 
   constructor(private readonly responses: readonly BoundedJsonHttpResponse[]) {}
 
+  open(
+    input: BoundedJsonHttpRequest,
+  ): import("../../src/features/kafka/engine/owned-http-request").OwnedHttpRequest {
+    return {
+      response: this.request(input),
+      closed: Promise.resolve(),
+      dispatched: () => true,
+      close: () => Promise.resolve(),
+    };
+  }
   request(input: BoundedJsonHttpRequest): Promise<BoundedJsonHttpResponse> {
     this.requests.push(input);
     return Promise.resolve(this.responses[this.requests.length - 1] ?? { body: null, status: 500 });
@@ -1043,4 +990,43 @@ describe("StreamSkope Kafka engine connection test", () => {
     );
     await active.close();
   });
+});
+
+it("does not complete connection cleanup until the original borrowed OAuth refresh has settled", async () => {
+  let refresh!: (value: OAuthToken) => void, admit!: () => void;
+  const started = new Promise<void>((resolve) => {
+    admit = resolve;
+  });
+  let calls = 0;
+  const engine = new StreamSkopeKafkaEngine({
+    adminFactory: new RecordingAdminFactory(new RecordingAdmin(["fixture"])),
+    requestOAuthToken: (): Promise<OAuthToken> =>
+      ++calls === 1
+        ? Promise.resolve({ value: "expired", expiresAt: 0 })
+        : new Promise((resolve) => {
+            refresh = resolve;
+            admit();
+          }),
+  });
+  const active = await engine.openConnection(
+    {
+      ...connection,
+      services: { connect: { baseUrl: "http://connect.fixture", authentication: "oauth" } },
+    },
+    new AbortController().signal,
+  );
+  const authorization = active.clusterServiceContext!("connect")!.authorization();
+  const rejected = expect(authorization).rejects.toThrow();
+  await started;
+  let closed = false;
+  const closing = active.close().then(() => {
+    closed = true;
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(closed).toBe(false);
+  refresh({ value: "late-token", expiresAt: Date.now() + 60000 });
+  await closing;
+  await rejected;
+  expect(closed).toBe(true);
 });

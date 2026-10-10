@@ -59,6 +59,9 @@ export interface ConnectReview {
   readonly before: ConnectDetail | null;
 }
 export interface ConnectOutcome {
+  readonly dispatch: "not-sent" | "attempted";
+  readonly verification: "not-applicable" | "verified" | "different" | "unavailable";
+  readonly cleanup: "confirmed" | "unresolved";
   readonly state: "acknowledged" | "rejected" | "unknown";
   readonly detail: string;
   readonly observed: ConnectDetail | null;
@@ -209,10 +212,27 @@ export function parseConnectReview(v: unknown): ConnectReview {
 }
 export function parseConnectOutcome(v: unknown): ConnectOutcome {
   const p = record(v, "outcome");
-  exactKeys(p, ["state", "detail", "observed"], "outcome");
-  return {
+  exactKeys(p, ["state", "dispatch", "verification", "cleanup", "detail", "observed"], "outcome");
+  const outcome = {
     state: declaredValue(p.state, ["acknowledged", "rejected", "unknown"], "state"),
+    dispatch: declaredValue(p.dispatch, ["not-sent", "attempted"], "dispatch"),
+    verification: declaredValue(
+      p.verification,
+      ["not-applicable", "verified", "different", "unavailable"],
+      "verification",
+    ),
+    cleanup: declaredValue(p.cleanup, ["confirmed", "unresolved"], "cleanup"),
     detail: text(p.detail, "detail", 512),
     observed: p.observed === null ? null : parseConnectDetail(p.observed),
   };
+  if (
+    (outcome.state !== "rejected" && outcome.dispatch !== "attempted") ||
+    (outcome.state === "acknowledged"
+      ? outcome.verification === "not-applicable"
+      : outcome.verification !== "not-applicable") ||
+    ((outcome.verification === "verified" || outcome.verification === "different") &&
+      outcome.cleanup !== "confirmed")
+  )
+    throw new Error("Inconsistent Connect outcome.");
+  return outcome;
 }

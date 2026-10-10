@@ -1,10 +1,8 @@
 import { lookup as lookupDns } from "node:dns";
-import { request as requestHttp } from "node:http";
 import type { RequestOptions } from "node:http";
-import { request as requestHttps } from "node:https";
 
 import type { OAuthToken, OAuthTokenRequest } from "./types";
-import { tlsClientIdentityOptions } from "./tls-client-identity";
+import { openOwnedHttpRequest } from "./owned-http-request";
 
 const OAUTH_RESPONSE_BYTE_LIMIT = 65_536;
 
@@ -43,7 +41,7 @@ function endpointParameters(endpoint: URL): Readonly<Record<string, string>> {
   return Object.fromEntries(endpoint.searchParams);
 }
 
-function postForm(
+async function postForm(
   endpoint: URL,
   body: URLSearchParams,
   caPem: string | undefined,
@@ -51,46 +49,26 @@ function postForm(
   authorization?: string,
   clientIdentity?: OAuthTokenRequest["clientIdentity"],
 ): Promise<OAuthHttpResponse> {
-  return new Promise((resolve, reject) => {
-    const encodedBody = body.toString();
-    const request = (endpoint.protocol === "https:" ? requestHttps : requestHttp)(
-      endpoint,
-      {
-        ...(endpoint.protocol === "https:" && caPem !== undefined ? { ca: [caPem] } : {}),
-        ...(endpoint.protocol === "https:" ? tlsClientIdentityOptions(clientIdentity) : {}),
-        headers: {
-          ...(authorization === undefined ? {} : { authorization }),
-          "content-length": Buffer.byteLength(encodedBody),
-          "content-type": "application/x-www-form-urlencoded",
-        },
-        ...(endpoint.hostname === "localhost" ? { lookup: lookupLocalhost } : {}),
-        method: "POST",
-        rejectUnauthorized: true,
-        signal,
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        let receivedBytes = 0;
-        response.on("data", (chunk: Buffer) => {
-          receivedBytes += chunk.length;
-          if (receivedBytes > OAUTH_RESPONSE_BYTE_LIMIT) {
-            response.destroy(new Error("OAuth token response exceeded the 64 KiB limit."));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.once("end", () => {
-          resolve({
-            body: Buffer.concat(chunks).toString("utf8"),
-            status: response.statusCode ?? 0,
-          });
-        });
-        response.once("error", reject);
-      },
-    );
-    request.once("error", reject);
-    request.end(encodedBody);
+  const request = openOwnedHttpRequest({
+    url: endpoint,
+    method: "POST",
+    signal,
+    encodedBody: body.toString(),
+    contentType: "application/x-www-form-urlencoded",
+    ...(caPem === undefined ? {} : { caPem }),
+    ...(authorization === undefined ? {} : { authorization }),
+    ...(clientIdentity === undefined ? {} : { clientIdentity }),
+    ...(endpoint.hostname === "localhost" ? { lookup: lookupLocalhost } : {}),
+    responseMode: "text",
+    maximumResponseBytes: OAUTH_RESPONSE_BYTE_LIMIT,
   });
+  try {
+    const response = await request.response;
+    if (typeof response.body !== "string") throw new Error("Invalid OAuth response.");
+    return { status: response.status, body: response.body };
+  } finally {
+    await request.close();
+  }
 }
 
 function parseTokenResponse(body: string): OAuthToken {

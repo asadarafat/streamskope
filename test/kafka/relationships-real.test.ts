@@ -36,10 +36,7 @@ it("discovers actual Connect/group relationships and Registry reference impact f
     authorization: async (): Promise<string> =>
       `Bearer ${await fetchFixtureToken(fixture, config)}`,
   };
-  const connectContext = {
-    baseUrl: worker.url,
-    authorization: (): Promise<undefined> => Promise.resolve(undefined),
-  };
+  const connectContext = worker.context;
   const topic = `a-streamskope-lineage-${randomUUID()}`,
     base = `${topic}-base`,
     subject = `${topic}-value`,
@@ -81,20 +78,22 @@ it("discovers actual Connect/group relationships and Registry reference impact f
       signal,
     );
     created.add(subject);
-    await connect.apply(
-      connectContext,
-      {
-        name,
-        action: "create",
-        config: {
-          "connector.class": "org.apache.kafka.connect.file.FileStreamSinkConnector",
-          "tasks.max": "1",
-          topics: topic,
-          file: "/tmp/streamskope-lineage.txt",
+    expect(
+      await connect.apply(
+        connectContext,
+        {
+          name,
+          action: "create",
+          config: {
+            "connector.class": "org.apache.kafka.connect.file.FileStreamSinkConnector",
+            "tasks.max": "1",
+            topics: topic,
+            file: "/tmp/streamskope-lineage.txt",
+          },
         },
-      },
-      signal,
-    );
+        signal,
+      ),
+    ).toMatchObject({ state: "acknowledged", cleanup: "confirmed" });
     await expect
       .poll(
         async () => (await connect.load(connectContext, name, signal))?.detail.tasks[0]?.state,

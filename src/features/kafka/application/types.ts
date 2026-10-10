@@ -149,7 +149,18 @@ export interface KafkaActiveConnection {
   ): Promise<KafkaLatencyProbeMeasurement>;
 }
 
+/** Opaque local resource authority, shared by one original service connection. */
+export interface ServiceRequestOwner {
+  readonly available: boolean;
+  readonly cleanupUnresolved: boolean;
+  runWork<T>(start: () => Promise<T>): Promise<T>;
+  run<Resource extends { close(): Promise<void> }, Result>(
+    create: () => Resource,
+    run: (resource: Resource) => Promise<Result>,
+  ): Promise<{ readonly value: Result; readonly cleaned: boolean }>;
+}
 export interface KafkaClusterServiceContext {
+  readonly requestOwner?: ServiceRequestOwner;
   readonly baseUrl: string;
   readonly caPem?: string;
   readonly clientIdentity?: ConnectionClientIdentity;

@@ -8,6 +8,7 @@ interface ServiceConnectionOptions {
   readonly lifecycleSignal: AbortSignal;
   readonly operationTimeoutMs: number;
   readonly requestOAuthToken: OAuthTokenRequester;
+  readonly ownWork?: <T>(start: () => Promise<T>) => Promise<T>;
 }
 
 /** One context owns one service's refresh cache and its connection lifetime. */
@@ -36,16 +37,15 @@ export function serviceConnectionContext(
       options.lifecycleSignal,
       AbortSignal.timeout(options.operationTimeoutMs),
     ]);
-    refresh = abortableOperation(
+    const acquire = (): Promise<OAuthToken> =>
       options.requestOAuthToken({
         ...oauth,
         ...(caPem === undefined ? {} : { caPem }),
         ...(clientIdentity === undefined ? {} : { clientIdentity }),
         signal,
-      }),
-      signal,
-      () => signal.reason as Error,
-    )
+      });
+    const original = options.ownWork ? options.ownWork(acquire) : acquire();
+    refresh = abortableOperation(original, signal, () => signal.reason as Error)
       .then((value) => {
         options.lifecycleSignal.throwIfAborted();
         token = value;

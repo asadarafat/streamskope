@@ -4,7 +4,11 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { HostCommand, StreamSkopeHost } from "../../src/features/kafka/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  type HostCommand,
+  type StreamSkopeHost,
+} from "../../src/features/kafka/contracts";
 import { ConnectPage } from "../../src/features/kafka/ui/ConnectPage";
 import { StreamSkopeThemeProvider } from "../../src/platform/ui/StreamSkopeThemeProvider";
 import { testHostExecute } from "../support/host-response";
@@ -40,6 +44,9 @@ it("keeps edits non-mutating until exact reviewed confirmation and prevents a se
               : {
                   outcome: {
                     state: "acknowledged",
+                    dispatch: "attempted",
+                    verification: "unavailable",
+                    cleanup: "confirmed",
                     detail: "Accepted; refresh task state",
                     observed: null,
                   },
@@ -210,4 +217,93 @@ it("does not project an old inventory or edited form into a replacement host con
   });
   expect(screen.getByText("Installed classes: Sink")).toBeVisible();
   expect(screen.queryByText(/OldOnly/u)).toBeNull();
+});
+
+it("invalidates edited forms on synchronously batched reconnects to the same named profile", async () => {
+  const commands: HostCommand[] = [];
+  let receive!: (event: import("../../src/features/kafka/contracts").HostEvent) => void;
+  const base = editingHost(commands),
+    host = {
+      ...base,
+      subscribe: (listener: typeof receive): (() => void) => {
+        receive = listener;
+        return () => undefined;
+      },
+    };
+  render(
+    <StreamSkopeThemeProvider>
+      <ConnectPage host={host} connectionName="Test" canWrite onOpenTopic={vi.fn()} />
+    </StreamSkopeThemeProvider>,
+  );
+  await screen.findByText("Installed classes: Sink");
+  fireEvent.change(screen.getByLabelText("Connector name"), {
+    target: { value: "edited-before-reconnect" },
+  });
+  await act(async () => {
+    receive({
+      event: "connection.state",
+      sequence: 1,
+      version: HOST_PROTOCOL_VERSION,
+      payload: { state: "connecting", connectionName: "Test" },
+    });
+    receive({
+      event: "connection.state",
+      sequence: 2,
+      version: HOST_PROTOCOL_VERSION,
+      payload: { state: "connected", connectionName: "Test" },
+    });
+    await Promise.resolve();
+  });
+  expect(screen.getByLabelText("Connector name")).toHaveValue("");
+  expect(commands.filter((command) => command.command === "connect.list")).toHaveLength(2);
+  expect(commands.filter((command) => command.command === "connect.apply")).toHaveLength(0);
+});
+it("keeps unresolved original cleanup visible and disables starting another review", async () => {
+  const commands: HostCommand[] = [],
+    base = editingHost(commands);
+  const host: StreamSkopeHost = {
+    ...base,
+    execute: testHostExecute((command) =>
+      command.command === "connect.apply"
+        ? Promise.resolve({
+            id: command.id,
+            command: command.command,
+            version: command.version,
+            ok: true,
+            result: {
+              correlationId: "receipt",
+              outcome: {
+                state: "acknowledged",
+                dispatch: "attempted",
+                verification: "unavailable",
+                cleanup: "unresolved",
+                detail: "Accepted by original worker",
+                observed: null,
+              },
+            },
+          })
+        : base.execute(command),
+    ),
+  };
+  render(
+    <StreamSkopeThemeProvider>
+      <ConnectPage host={host} connectionName="Test" canWrite onOpenTopic={vi.fn()} />
+    </StreamSkopeThemeProvider>,
+  );
+  await screen.findByText("Installed classes: Sink");
+  fireEvent.mouseDown(screen.getByLabelText("Existing connector"));
+  fireEvent.click(await screen.findByRole("option", { name: "orders" }));
+  fireEvent.change(await screen.findByLabelText("Configuration changes (JSON string map)"), {
+    target: { value: '{"tasks.max":"2"}' },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Review action" }));
+  fireEvent.change(await screen.findByLabelText("Type update orders to confirm"), {
+    target: { value: "update orders" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Apply reviewed action" }));
+  await screen.findByText("Readback: unavailable. Original request cleanup: unresolved.");
+  expect(
+    screen.getByRole("button", { name: "Dismiss receipt and start another review" }),
+  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Review action" })).toBeDisabled();
 });

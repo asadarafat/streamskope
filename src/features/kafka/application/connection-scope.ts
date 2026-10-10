@@ -65,13 +65,17 @@ export interface ReviewAuthority {
 }
 
 /** Captured service authority; successful mutations survive connection revocation. */
-export interface SchemaRegistryReviewScope extends ReviewAuthority {
+export interface ClusterServiceReviewScope extends ReviewAuthority {
+  cleanupUnresolved(): boolean;
   read<T>(
     run: (context: KafkaClusterServiceContext, signal: AbortSignal) => Promise<T>,
     signal: AbortSignal,
   ): Promise<T>;
   tryDispatch<T>(run: (context: KafkaClusterServiceContext) => Promise<T>): MutationDispatch<T>;
 }
+
+export type SchemaRegistryReviewScope = Omit<ClusterServiceReviewScope, "cleanupUnresolved">;
+export type ConnectReviewScope = ClusterServiceReviewScope;
 
 /** Authorizes one reviewed attempt without exposing the adapter or its lifecycle. */
 export interface ReviewedWriteScope extends ReviewAuthority {
@@ -160,14 +164,27 @@ export class KafkaConnectionScopes {
   constructor(private readonly context: () => ConnectionScopeContext | null) {}
 
   schemaRegistry(): SchemaRegistryReviewScope | null {
+    return this.clusterService("schemaRegistry");
+  }
+
+  connect(): ConnectReviewScope | null {
+    return this.clusterService("connect");
+  }
+
+  private clusterService(name: "schemaRegistry" | "connect"): ClusterServiceReviewScope | null {
     const active = this.context();
     if (active === null) return null;
     const context = { ...active };
-    const service = context.connection.clusterServiceContext?.("schemaRegistry");
+    const service = context.connection.clusterServiceContext?.(name);
     if (!service) return null;
+    const current = (): boolean =>
+      this.current(context) &&
+      !service.signal?.aborted &&
+      service.requestOwner?.available !== false;
     return {
       connectionName: context.connectionName,
-      isCurrent: (): boolean => this.current(context),
+      isCurrent: current,
+      cleanupUnresolved: (): boolean => service.requestOwner?.cleanupUnresolved === true,
       read: async <T>(
         run: (value: KafkaClusterServiceContext, signal: AbortSignal) => Promise<T>,
         signal: AbortSignal,
@@ -175,13 +192,16 @@ export class KafkaConnectionScopes {
         const combined =
           service.signal === undefined ? signal : AbortSignal.any([signal, service.signal]);
         combined.throwIfAborted();
+        if (!current()) throw new Error("Original service authority is unavailable.");
         const result = await this.readReviewed(context, () => run(service, combined));
         combined.throwIfAborted();
+        if (!current()) throw new Error("Original service authority is unavailable.");
         return result;
       },
       tryDispatch: <T>(
         run: (value: KafkaClusterServiceContext) => Promise<T>,
-      ): MutationDispatch<T> => this.dispatch(context, () => run(service)),
+      ): MutationDispatch<T> =>
+        current() ? this.dispatch(context, () => run(service)) : { started: false },
     };
   }
 
