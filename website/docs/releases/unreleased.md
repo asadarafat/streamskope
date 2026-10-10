@@ -88,3 +88,9 @@ Avro, Protobuf or JSON Schema writer. Validation and seeded starting samples
 share the bounded encoder; publication requires a separate destination review
 and exact topic confirmation. Writer identity changes, precision loss and
 unsupported forms remain explicit. See [record authoring](../guide/schema-registry.md#author-a-record).
+
+Schema evolution now uses an editable draft, bounded before/after diff and a
+connection-pinned review. Exact subject confirmation, fresh writer/reference/policy
+checks and acknowledged-ID readback replace the previous direct registration UI.
+New-subject validation and uncertain outcomes remain explicit; no records are
+published by registration.

@@ -42,17 +42,40 @@ service bundle. See [service trust selection](tls-trust.md#which-trust-settings-
 **You should have:** a schema definition and its version within the selected
 subject. A subject's naming strategy determines how it relates to topic records.
 
-If you need to change a schema:
+To create a new subject, choose **Create subject** and enter its definition.
+To evolve an existing subject, select its latest version and choose **Evolve selected
+schema**. Historical selections cannot authorize a change to a newer writer.
 
-1. Prepare the proposed schema for that subject.
-2. Check compatibility and review the result for this exact draft. Changing the schema, type, subject or references requires a new check.
-3. Register the new version only when the change is appropriate for its readers.
-4. Reopen the subject and verify the newly registered version.
+1. Edit **Proposed schema** and **Pinned references** (a JSON array of name, subject
+   and exact version). The complete draft is limited to 128 KiB UTF-8.
+2. Choose **Review schema change**. Inspect the structural/source diff, exact prior
+   writer, current effective policy, connection and expiry. Editing any draft field
+   clears the review and confirmation.
+3. Type the exact subject to confirm **Register reviewed schema**. The host rechecks
+   writer, references, relevant history and policy, and checks compatibility again
+   before sending one registration attempt. It rejects a changed baseline.
+4. Read the acknowledged ID and verification result. Choose **Refresh subject** to
+   inspect the actual registered version; then **Author record** to validate and
+   explicitly publish a value using that exact writer.
+
+A review expires after two minutes and is bound to its connection. Registry reads
+have a 15-second deadline. Review snapshots are limited to 512 KiB, 32 schema nodes
+and eight reference levels; oversized or unreadable state blocks the change.
+Transitive compatibility snapshots visible history and checks every captured
+version, rather than reducing the policy to a latest-only check. Missing or denied
+compatibility APIs block the review. Advanced aliases, metadata/rules and other
+non-basic configuration are outside reviewed-change support and are refused.
 
 The displayed policy comes from the Registry's subject configuration, falling back
 to its global configuration. StreamSkope checks that policy; it does not edit it.
-A new subject reports **no registered version**, not compatibility with an existing
-schema. Registration checks compatibility again before sending the write.
+A new subject reports **no existing writer**; this is not proof of valid schema
+syntax. The Registry validates the new definition during registration.
+
+Registration is one reviewed attempt, with repeated calls to the same review ID
+returning its retained result. The Registry API provides no compare-and-swap:
+another client can still change state between the final recheck and the write.
+Readback confirms the acknowledged writer ID is latest at that moment, not an
+exclusive lock or proof of deployed consumer compatibility.
 
 References name another subject and an exact version; their supported formats
 depend on the Registry. The isolated authoring fixture pins Karapace 6.1.0, including Avro and

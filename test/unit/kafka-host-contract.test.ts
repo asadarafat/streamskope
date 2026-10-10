@@ -43,7 +43,7 @@ const zeroRuleEvaluation = {
 
 describe("Kafka host contract", () => {
   it("declares the complete current command and event vocabulary", () => {
-    expect(HOST_PROTOCOL_VERSION).toBe(62);
+    expect(HOST_PROTOCOL_VERSION).toBe(63);
     expect(HOST_COMMANDS).toEqual([
       "relationships.capture",
       "relationships.cancel",
@@ -79,6 +79,8 @@ describe("Kafka host contract", () => {
       "schemas.inspect",
       "schemas.samples",
       "schemas.author",
+      "schemas.change.review",
+      "schemas.change.apply",
       "records.batch.review",
       "records.batch.apply",
       "records.batch.cancel",
@@ -219,7 +221,7 @@ describe("Kafka host contract", () => {
     ]);
   });
 
-  it.each([51, 52, 61])(
+  it.each([51, 52, 62])(
     "rejects protocol-%s renderer traffic at every current host boundary",
     (version) => {
       const command = {

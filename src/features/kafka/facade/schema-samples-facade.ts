@@ -72,7 +72,7 @@ export class SchemaSamplesFacade {
           const unknown = outcome.outcomes.filter((item) => item.state === "unknown").length;
           this.recordActivity?.({
             correlationId,
-            operation: "Publish reviewed sample batch",
+            operation: "Publish reviewed record batch",
             object: "Reviewed destination",
             outcome: outcome.stopReason === "complete" ? "succeeded" : "failed",
             severity: outcome.stopReason === "complete" ? "info" : "warning",

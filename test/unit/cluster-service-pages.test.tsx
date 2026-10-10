@@ -27,6 +27,25 @@ class PageHost implements StreamSkopeHost {
   ): Promise<HostCommandResponse<Command["command"]>>;
   execute(command: HostCommand): Promise<HostCommandResponse> {
     this.commands.push(command);
+    if (command.command === "schemas.change.review")
+      return Promise.resolve({
+        command: command.command,
+        id: command.id,
+        version: command.version,
+        ok: true,
+        result: {
+          correlationId: "schema",
+          review: {
+            planId: "schema-review",
+            expiresAt: new Date(Date.now() + 120000).toISOString(),
+            connectionName: "Local",
+            input: command.payload,
+            before: null,
+            policy: { globalLevel: "BACKWARD", subjectLevel: null, effectiveLevel: "BACKWARD" },
+            compatible: true,
+          },
+        },
+      });
     if (command.command === "acls.change.review")
       return Promise.resolve({
         command: command.command,
@@ -173,27 +192,31 @@ describe("cluster service pages", () => {
         inventory={inventory}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "Register schema" }));
+    await user.click(screen.getByRole("button", { name: "Create subject" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), {
       target: { value: "new-schema" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Schema" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Proposed schema" }), {
       target: { value: '{"type":"string"}' },
     });
-    expect(screen.getByRole("button", { name: "Register" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Check compatibility" }));
-    expect(await screen.findByText("The subject has no registered version.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Register" })).toBeEnabled();
-    fireEvent.change(screen.getByRole("textbox", { name: "Schema" }), {
+    expect(screen.getByRole("button", { name: "Register reviewed schema" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Review schema change" }));
+    expect(await screen.findByText(/New subject: no existing writer/)).toBeVisible();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Type new-schema to confirm registration" }),
+      { target: { value: "new-schema" } },
+    );
+    expect(screen.getByRole("button", { name: "Register reviewed schema" })).toBeEnabled();
+    fireEvent.change(screen.getByRole("textbox", { name: "Proposed schema" }), {
       target: { value: '{"type":"int"}' },
     });
-    expect(screen.getByRole("button", { name: "Register" })).toBeDisabled();
-    expect(screen.queryByText("The subject has no registered version.")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Check compatibility" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "References" }), {
+    expect(screen.getByRole("button", { name: "Register reviewed schema" })).toBeDisabled();
+    expect(screen.queryByText(/New subject: no existing writer/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Review schema change" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Pinned references" }), {
       target: { value: '[{"name":"dep","subject":"dependency","version":1}]' },
     });
-    expect(screen.getByRole("button", { name: "Register" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Register reviewed schema" })).toBeDisabled();
   });
 
   it("presents schema references and keeps soft deletion distinct from permanent deletion", async () => {

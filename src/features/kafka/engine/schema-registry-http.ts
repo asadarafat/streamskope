@@ -15,6 +15,11 @@ import type {
   SchemaRegistrySubjectInventory,
 } from "../application/schema-registry-types";
 import type { RegisteredSchema } from "../application/record-codec-types";
+import {
+  SCHEMA_COMPATIBILITY_LEVELS,
+  type SchemaCompatibilityLevel,
+  type SchemaCompatibilityPolicy,
+} from "../contracts/schema-changes";
 
 import type { BoundedJsonHttpPort, BoundedJsonHttpResponse } from "./bounded-json-http";
 
@@ -97,8 +102,122 @@ function serviceUrl(context: KafkaClusterServiceContext, path: string): string {
   return `${context.baseUrl.replace(/\/+$/u, "")}${path}`;
 }
 
+function basicConfiguration(value: unknown, allowed: readonly string[]): UnknownRecord {
+  const body = record(value);
+  for (const [key, entry] of Object.entries(body)) {
+    if (
+      !allowed.includes(key) &&
+      entry !== null &&
+      entry !== false &&
+      JSON.stringify(entry) !== "{}" &&
+      JSON.stringify(entry) !== "[]"
+    )
+      throw new SchemaRegistryResponseError(
+        null,
+        "Advanced Registry configuration is outside reviewed change support.",
+      );
+  }
+  return body;
+}
+function compatibilityLevel(value: unknown): SchemaCompatibilityLevel {
+  if (
+    typeof value !== "string" ||
+    !SCHEMA_COMPATIBILITY_LEVELS.includes(value as SchemaCompatibilityLevel)
+  )
+    throw new SchemaRegistryResponseError(null);
+  return value as SchemaCompatibilityLevel;
+}
+
 export class SchemaRegistryHttpAdapter {
   constructor(private readonly http: BoundedJsonHttpPort) {}
+
+  async loadReviewSchema(
+    context: KafkaClusterServiceContext,
+    identity: SchemaSubjectVersionIdentity,
+    signal: AbortSignal,
+  ): Promise<SchemaVersionDetail | null> {
+    const response = await this.request(
+      context,
+      signal,
+      "GET",
+      `/subjects/${encodeURIComponent(identity.subject)}/versions/${String(identity.version)}`,
+    );
+    if (
+      response.status === 404 &&
+      [40401, 40402].includes(Number(record(response.body).error_code))
+    )
+      return null;
+    const body = basicConfiguration(successful(response), [
+      "subject",
+      "version",
+      "id",
+      "schema",
+      "schemaType",
+      "references",
+    ]);
+    const parsed = schemaVersion(body);
+    if (
+      parsed.subject !== identity.subject ||
+      (identity.version !== "latest" && parsed.version !== identity.version)
+    )
+      throw new SchemaRegistryResponseError(null);
+    return parsed;
+  }
+
+  async loadCompatibilityPolicy(
+    context: KafkaClusterServiceContext,
+    subject: string,
+    signal: AbortSignal,
+  ): Promise<SchemaCompatibilityPolicy> {
+    const global = basicConfiguration(
+      successful(await this.request(context, signal, "GET", "/config")),
+      ["compatibilityLevel"],
+    );
+    const response = await this.request(
+      context,
+      signal,
+      "GET",
+      `/config/${encodeURIComponent(subject)}?defaultToGlobal=false`,
+    );
+    const subjectLevel =
+      response.status === 404 && [40401, 40408].includes(Number(record(response.body).error_code))
+        ? null
+        : compatibilityLevel(
+            basicConfiguration(successful(response), ["compatibilityLevel"]).compatibilityLevel,
+          );
+    const globalLevel = compatibilityLevel(global.compatibilityLevel);
+    return { globalLevel, subjectLevel, effectiveLevel: subjectLevel ?? globalLevel };
+  }
+
+  async checkProposedCompatibility(
+    context: KafkaClusterServiceContext,
+    input: SchemaRegistrationInput,
+    versions: readonly number[],
+    signal: AbortSignal,
+  ): Promise<SchemaRegistryCompatibilityResult> {
+    if (
+      !versions.length ||
+      versions.length > 32 ||
+      versions.some((version) => !Number.isSafeInteger(version) || version < 1 || version > 10000)
+    )
+      throw new SchemaRegistryResponseError(null);
+    for (const version of versions) {
+      const payload = record(
+        successful(
+          await this.request(
+            context,
+            signal,
+            "POST",
+            `/compatibility/subjects/${encodeURIComponent(input.subject)}/versions/${String(version)}?verbose=true&normalize=${String(input.normalize)}`,
+            { references: input.references, schema: input.schema, schemaType: input.schemaType },
+          ),
+        ),
+      );
+      if (typeof payload.is_compatible !== "boolean") throw new SchemaRegistryResponseError(null);
+      if (!payload.is_compatible) return { compatible: false, messages: [] };
+    }
+    return { compatible: true, messages: [] };
+  }
 
   async byId(
     context: KafkaClusterServiceContext,

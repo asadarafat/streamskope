@@ -44,6 +44,7 @@ import {
   type RecordReadScope,
   type TopicCatalogScope,
   type ReviewedWriteScope,
+  type SchemaRegistryReviewScope,
 } from "./connection-scope";
 
 export { ConnectionAttemptSupersededError, NoActiveKafkaConnectionError } from "./session-errors";
@@ -152,6 +153,10 @@ export class KafkaApplicationSession {
 
   recordReadScope(): RecordReadScope | null {
     return this.scopes.recordRead();
+  }
+
+  schemaRegistryReviewScope(): SchemaRegistryReviewScope | null {
+    return this.scopes.schemaRegistry();
   }
 
   activeConnectionContext(): {

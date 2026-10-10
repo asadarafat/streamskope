@@ -427,3 +427,12 @@ An independent broker reader checks the resulting writer framing and exact int64
 value. Its browser scope and controlled Registry limitation remain distinct from
 the real Registry case. Both cases run in the existing runtime lane and reports;
 no new CI lane or npm command is introduced.
+
+Guided evolution is qualified separately by `test/kafka/schema-evolution-real.test.ts`
+and `test/e2e/web-schema-evolution.spec.ts`. Both use the real isolated Registry:
+stale policy blocks registration, each review admits at most one attempt, malformed
+new subjects are rejected, transitive checks use pinned visible history, and the
+browser reads back the new writer before authoring and independently decoding its
+published record. Controlled faults cover denied writes, connection revocation,
+lost acknowledgements and unavailable/mismatched readback; the anonymous Registry
+fixture does not establish vendor RBAC or managed-service certification.
