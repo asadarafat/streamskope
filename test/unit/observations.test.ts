@@ -16,6 +16,7 @@ import {
 import { parseObservationHistory } from "../../src/features/kafka/contracts/observation-validation";
 import {
   OBSERVATION_LIMITS,
+  emptyObservationHistory,
   observationLag,
   type TopicHealth,
   type ObservationInput,
@@ -195,7 +196,7 @@ it("coalesces no concurrent collection, discards cancellation and connection cha
 it("refuses to commit a collected observation when its generation changes during the final history load", async () => {
   const f = fixture();
   let release!: (history: ObservationHistory) => void;
-  const empty = { schemaVersion: 1 as const, series: [] };
+  const empty = emptyObservationHistory();
   const loading = vi
     .spyOn(f.store, "load")
     .mockResolvedValueOnce(empty)

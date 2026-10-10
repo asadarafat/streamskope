@@ -1,3 +1,4 @@
+import { observationContinuityBreak } from "./observation-continuity";
 import {
   OBSERVATION_LIMITS as limits,
   observationLag,
@@ -60,12 +61,6 @@ export interface ObservationAnalysis {
     readonly suspected: boolean;
   } | null;
 }
-function topology(sample: KafkaObservation): string {
-  return sample.partitions
-    .map((p) => p.partition)
-    .sort((a, b) => a - b)
-    .join(",");
-}
 function difference(before: string | null, after: string | null): number | null {
   if (before === null || after === null) return null;
   const d = BigInt(after) - BigInt(before);
@@ -79,28 +74,7 @@ export function contiguousObservations(
   for (; start > 0; start--) {
     const a = samples[start - 1]!,
       b = samples[start]!;
-    if (
-      a.segmentId !== b.segmentId ||
-      b.observedAt <= a.observedAt ||
-      b.startedAt - a.startedAt < limits.intervalMs ||
-      b.observedAt - a.observedAt > limits.staleMs ||
-      topology(a) !== topology(b)
-    )
-      break;
-    if (
-      b.partitions.some((p) => {
-        const old = a.partitions.find((v) => v.partition === p.partition)!;
-        return (
-          (old.endOffset !== null &&
-            p.endOffset !== null &&
-            BigInt(p.endOffset) < BigInt(old.endOffset)) ||
-          (old.committedOffset !== null &&
-            p.committedOffset !== null &&
-            BigInt(p.committedOffset) < BigInt(old.committedOffset))
-        );
-      })
-    )
-      break;
+    if (observationContinuityBreak(a, b)) break;
   }
   return samples.slice(Math.max(0, start));
 }

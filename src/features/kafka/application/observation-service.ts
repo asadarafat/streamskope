@@ -6,7 +6,8 @@ import {
   type ObservationCapture,
   type ObservationInput,
   type ObservationSnapshot,
-  type ObservationHistory,
+  type RetainedObservationHistory,
+  emptyObservationHistory,
   type TopicHealth,
   type ObservationGroupHealth,
   type ObservationIssue,
@@ -58,9 +59,12 @@ export class ObservationService {
       return { ...(await this.loadHistory()), durability: this.store.durability };
     });
   }
-  private async loadHistory(): Promise<ObservationHistory> {
+  private async loadHistory(): Promise<RetainedObservationHistory> {
+    let loaded: import("../contracts/observations").ObservationHistory;
+    let retained: RetainedObservationHistory;
     try {
-      return retainObservations(await this.store.load(), this.now());
+      loaded = await this.store.load();
+      retained = retainObservations(loaded, this.now());
     } catch (cause) {
       throw new ObservationOperationError(
         "OBSERVATION_HISTORY_UNAVAILABLE",
@@ -70,13 +74,16 @@ export class ObservationService {
         { cause, stage: "storage" },
       );
     }
+    if (JSON.stringify(loaded) !== JSON.stringify(retained)) await this.commit(retained);
+    return retained;
   }
   async clear(): Promise<ObservationSnapshot> {
     this.cancel();
     await this.operation?.catch(() => undefined);
     return this.serial(async () => {
-      await this.commit({ schemaVersion: 1, series: [] });
-      return { schemaVersion: 1, series: [], durability: this.store.durability };
+      if (this.store.clear) await this.persist(() => this.store.clear!(), "cleared");
+      else await this.commit(emptyObservationHistory());
+      return { ...emptyObservationHistory(), durability: this.store.durability };
     });
   }
   capture(request: ObservationInput): Promise<ObservationCapture> {
@@ -87,6 +94,7 @@ export class ObservationService {
     request: ObservationInput,
     scope: ObservationScope | null,
     expectedIdentity?: Pick<TopicHealth, "clusterId" | "topicId">,
+    useSavedIdentity = false,
   ): Promise<ObservationCapture> {
     if (this.operation)
       return Promise.reject(
@@ -149,7 +157,14 @@ export class ObservationService {
       this.controller.signal,
       AbortSignal.timeout(limits.deadlineMs),
     ]);
-    this.operation = this.collect(scope, input, startedAt, signal, expectedIdentity)
+    this.operation = this.collect(
+      scope,
+      input,
+      startedAt,
+      signal,
+      expectedIdentity,
+      useSavedIdentity,
+    )
       .catch((error: unknown) => {
         this.segmentId = crypto.randomUUID();
         if (signal.aborted) throw observationAborted(signal, error);
@@ -167,9 +182,17 @@ export class ObservationService {
     startedAt: number,
     signal: AbortSignal,
     expectedIdentity?: Pick<TopicHealth, "clusterId" | "topicId">,
+    useSavedIdentity = false,
   ): Promise<ObservationCapture> {
     // Load first: an unreadable durable store must never be silently replaced.
     const prior = await this.history();
+    if (
+      expectedIdentity === undefined &&
+      useSavedIdentity &&
+      prior.schemaVersion === 2 &&
+      prior.settings?.input.topic === input.topic
+    )
+      expectedIdentity = prior.settings;
     scope.assertCurrent(signal);
     const health: TopicHealth = await scope.observeTopicHealth!(input.topic, signal);
     scope.assertCurrent(signal);
@@ -183,7 +206,7 @@ export class ObservationService {
       throw new ObservationOperationError(
         "OBSERVATION_INCOMPLETE",
         "The watched Kafka resource identity changed.",
-        "Inspect the current topic and connection, then explicitly start a new watch. Earlier evidence has been retained separately.",
+        "Capture once to verify and accept the currently selected resource, then explicitly start a new watch. Earlier evidence has been retained separately.",
         false,
       );
     const issues: ObservationIssue[] = [...(health.issues ?? [])];
@@ -388,7 +411,20 @@ export class ObservationService {
         (s) => observationIdentity(s) === observationIdentity(identity),
       );
       const next = { ...identity, samples: [...(previous?.samples ?? []), sample] };
-      const retained = retainObservations(history, this.now(), next);
+      const retained = retainObservations(
+        {
+          ...history,
+          settings: {
+            input,
+            connectionName: scope.connectionName,
+            clusterId: health.clusterId,
+            topicId: health.topicId,
+            savedAt: sample.observedAt,
+          },
+        },
+        this.now(),
+        next,
+      );
       scope.assertCurrent(signal);
       await this.commit(retained);
       return {
@@ -402,13 +438,16 @@ export class ObservationService {
   private async commit(
     history: import("../contracts/observations").ObservationHistory,
   ): Promise<void> {
+    await this.persist(() => this.store.commit(history), "saved");
+  }
+  private async persist(write: () => Promise<void>, operation: "saved" | "cleared"): Promise<void> {
     try {
-      await this.store.commit(history);
+      await write();
     } catch (cause) {
       throw new ObservationOperationError(
         "OBSERVATION_HISTORY_UNAVAILABLE",
-        "Observation history could not be saved.",
-        "Check the history-file permissions and available disk space, then capture again.",
+        `The observation history ${operation === "saved" ? "write" : "clear"} could not be confirmed.`,
+        "Reload history to reconcile the file, then check permissions and available disk space before retrying. Keep separate backups.",
         true,
         { cause, stage: "storage" },
       );

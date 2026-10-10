@@ -17,7 +17,7 @@ Desktop paths below are relative to the [application-data directory](recovery.md
 | Rules                                           | `rules/kafka-rules.json`                         | Ordinary JSON; persists across restarts                                                                                                                                                                                                                                                                                                                            |
 | Saved investigation views and local topic notes | `queries/kafka-queries.json`                     | Ordinary JSON with selected topic task/group, query settings, layout, optional local profile IDs and selected/comparison/bookmark locators, plus topic descriptions, owners, labels and HTTPS links keyed by cluster ID/topic UUID. No record bodies, original bytes or headers; filter literals and resource positions can be sensitive. Persists across restarts |
 | Topic configuration history                     | `history/kafka-topic-configuration-history.json` | Ordinary JSON with recorded configuration-change evidence; not a broker audit log                                                                                                                                                                                                                                                                                  |
-| Kafka observations                              | `history/kafka-observations.json`                | Unencrypted JSON with cluster/topic/group identities, offset and health samples, optional record-size/key-frequency aggregates and example partition/offset locators; no raw keys, headers or payloads. Private file permissions on POSIX                                                                                                                          |
+| Kafka observations                              | `history/kafka-observations.json`                | Unencrypted JSON with cluster/topic/group identities, offset and health samples, direct five-minute summaries, desired selection/threshold/sampling settings, optional record-size/key-frequency aggregates and example partition/offset locators; no raw keys, headers or payloads. Private file permissions on POSIX                                             |
 | Relationship graphs                             | Workbench page memory                            | Bounded identities and timestamped evidence; no saved graph, raw records, schema definitions or connector credentials                                                                                                                                                                                                                                              |
 | Operational preferences                         | `workbench/kafka-operational-preferences.json`   | Ordinary JSON, including host-wide key/value encoding choices; persists across restarts                                                                                                                                                                                                                                                                            |
 | Installed plugins                               | `plugins/`                                       | Verified code, manifests and selection state; removed through Preferences → Plugins                                                                                                                                                                                                                                                                                |
@@ -60,11 +60,14 @@ Browser development profiles are session-only. Its installed plugins live in
 `.cache/development-plugins`; a development checkout is not a desktop backup.
 Keep approved portable files separately from the plugin cache. Cache metadata alone
 does not authorize executable code; retained archives are verified again before use.
-Development browser observation history also lasts only for the host session. Desktop
-observation history is limited to eight identities, 240 samples per identity,
-24 hours and 4 MiB; retention is enforced when the store is used, not by a
-background erasure service. **Observed health → Clear all observation history** removes all
-of it, including other profiles' observations. Enabling masking later does not
+Development browser observation history also lasts only for the host session.
+Persistent-host observation history is limited to eight identities, 240 raw samples
+and 288 direct summaries per identity, 24 hours and 4 MiB. History access or capture
+physically prunes expired active measurements; there is no background erasure.
+**Observed health → Clear all observation history** discards active measurements
+and saved settings for every profile. Exact migration predecessors and installer
+whole-data backups remain until deliberately removed; the active retention limit
+does not erase separate copies. Enabling masking later does not
 erase earlier aggregates. Topic names, group names, frequencies and locators can
 still be sensitive operational information; protect backups accordingly.
 EDA credentials used for a capture must be supplied again to resume after restart.

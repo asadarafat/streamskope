@@ -146,3 +146,12 @@ describe("reviewed published predecessor identity", () => {
       expect(reviewedLegacyBrowserDataContract({ ...predecessor, ...change })).toBeUndefined();
   });
 });
+
+it("accepts actual retained observation format2 alongside legacy format1 and refuses future observation formats", () => {
+  const report = evidence();
+  const entry = documents(report)[9]!;
+  Object.assign(entry, { state: "verified", count: 2, formats: [1, 2] });
+  expect(parseBrowserDataInspection(report).documents[9]!.formats).toEqual([1, 2]);
+  entry.formats = [3];
+  expect(() => parseBrowserDataInspection(report)).toThrow();
+});

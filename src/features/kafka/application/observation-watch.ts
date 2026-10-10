@@ -211,7 +211,12 @@ export class ObservationWatch {
     const operation = Promise.resolve()
       .then(async (): Promise<void> => {
         if (owner.revoked || this.owner !== owner) return;
-        const capture = await this.service.captureOwned(owner.input, owner.scope, owner.identity);
+        const capture = await this.service.captureOwned(
+          owner.input,
+          owner.scope,
+          owner.identity,
+          true,
+        );
         if (owner.revoked || this.owner !== owner) return;
         owner.identity = { clusterId: capture.series.clusterId, topicId: capture.series.topicId };
         this.lastScope = owner.scope;

@@ -12,6 +12,8 @@ export const OBSERVATION_LIMITS = {
   fileBytes: 4 * 1_048_576,
   sampleRecords: 200,
   sampleBytes: 2 * 1_048_576,
+  rollupMs: 300_000,
+  rollupsPerSeries: 288,
 } as const;
 
 export interface ObservationInput {
@@ -93,12 +95,73 @@ export interface ObservationSeries {
   readonly groupId: string | null;
   readonly samples: readonly KafkaObservation[];
 }
-export interface ObservationHistory {
+/** Desired selection only: no credential, reconnect, timer or original connection authority. */
+export interface ObservationSettings {
+  readonly input: ObservationInput;
+  readonly connectionName: string;
+  readonly clusterId: string;
+  readonly topicId: string;
+  readonly savedAt: number;
+}
+/** Direct measurements only. A bucket does not establish continuous or complete coverage. */
+export interface ObservationRollup extends Pick<
+  ObservationSeries,
+  "clusterId" | "topicId" | "topic" | "groupId"
+> {
+  readonly source: "kafka-api";
+  readonly bucketStart: number;
+  readonly bucketEnd: number;
+  readonly firstObservedAt: number;
+  readonly lastObservedAt: number;
+  readonly samples: number;
+  readonly partial: number;
+  readonly lagKnown: number;
+  readonly lagMin: number | null;
+  readonly lagMax: number | null;
+  readonly lastLag: number | null;
+  readonly requestMin: number;
+  readonly requestMax: number;
+  readonly lastRequest: number;
+  readonly boundary: ObservationRollupBoundary;
+  readonly firstSampleId: string;
+  readonly lastSampleId: string;
+}
+export type ObservationRollupBoundary =
+  | import("./observation-continuity").ObservationContinuityBreak
+  | "initial"
+  | "window"
+  | "unverified"
+  | "incomplete"
+  | "group-state";
+export interface LegacyObservationHistory {
   readonly schemaVersion: 1;
   readonly series: readonly ObservationSeries[];
 }
-export interface ObservationSnapshot extends ObservationHistory {
+export interface RetainedObservationHistory {
+  readonly schemaVersion: 2;
+  readonly series: readonly ObservationSeries[];
+  readonly settings: ObservationSettings | null;
+  readonly rollups: readonly ObservationRollup[];
+}
+export type ObservationHistory = LegacyObservationHistory | RetainedObservationHistory;
+export type ObservationSnapshot = ObservationHistory & {
   readonly durability: "session" | "durable";
+};
+export type ObservationResource = Pick<
+  ObservationSeries,
+  "clusterId" | "topicId" | "topic" | "groupId"
+>;
+export function observationResources(history: ObservationHistory): readonly ObservationResource[] {
+  const resources = new Map<string, ObservationResource>();
+  for (const resource of [
+    ...history.series,
+    ...(history.schemaVersion === 2 ? history.rollups : []),
+  ])
+    resources.set(observationIdentity(resource), resource);
+  return [...resources.values()];
+}
+export function emptyObservationHistory(): RetainedObservationHistory {
+  return { schemaVersion: 2, series: [], settings: null, rollups: [] };
 }
 export interface ObservationCapture {
   readonly series: ObservationSeries;

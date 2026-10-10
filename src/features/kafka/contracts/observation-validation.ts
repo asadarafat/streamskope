@@ -1,4 +1,11 @@
 import { parseObservationRecords } from "./observation-records";
+import { parseObservationRollups, parseObservationSettings } from "./observation-retention";
+import {
+  observationNumber as number,
+  nullableObservationNumber as nullableNumber,
+  observationArray as array,
+} from "./observation-values";
+export { parseObservationInput } from "./observation-input";
 import { HOST_ERROR_CODES } from "./types";
 import {
   declaredValue,
@@ -13,31 +20,17 @@ import {
   OBSERVATION_LIMITS as limits,
   type KafkaObservation,
   type ObservationHistory,
-  type ObservationInput,
   type ObservationSeries,
   type ObservationIssue,
   observationIdentity,
 } from "./observations";
 
-function number(value: unknown, maximum: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > maximum)
-    throw new Error("Invalid bounded observation value.");
-  return value;
-}
-function nullableNumber(value: unknown, maximum: number): number | null {
-  return value === null ? null : number(value, maximum);
-}
 function offset(value: unknown): string | null {
   if (value === null) return null;
   const result = text(value, "offset", 20);
   if (!/^(0|[1-9][0-9]*)$/.test(result) || BigInt(result) > 9223372036854775807n)
     throw new Error("Invalid offset.");
   return result;
-}
-function array(value: unknown, maximum: number): unknown[] {
-  if (!Array.isArray(value) || value.length > maximum)
-    throw new Error("Observation collection exceeds its limit.");
-  return value as unknown[];
 }
 export function parseObservationIssues(value: unknown): readonly ObservationIssue[] {
   if (value === undefined) return [];
@@ -56,24 +49,6 @@ export function parseObservationIssues(value: unknown): readonly ObservationIssu
       retryable: truth(p.retryable, "issue retryable"),
     };
   });
-}
-export function parseObservationInput(value: unknown): ObservationInput {
-  const p = record(value, "observation");
-  exactKeys(p, ["topic", "groupId", "thresholds", "sampleRecords"], "observation");
-  const topic = text(p.topic, "topic", 249);
-  if (!/^[A-Za-z0-9._-]+$/.test(topic) || topic === "." || topic === "..")
-    throw new Error("Select one valid topic.");
-  const t = record(p.thresholds, "thresholds");
-  exactKeys(t, ["lag", "requestMs"], "thresholds");
-  return {
-    topic,
-    sampleRecords: p.sampleRecords === undefined ? false : truth(p.sampleRecords, "sampleRecords"),
-    groupId: nullableText(p.groupId, "groupId", 512),
-    thresholds: {
-      lag: nullableNumber(t.lag, Number.MAX_SAFE_INTEGER),
-      requestMs: nullableNumber(t.requestMs, 60_000),
-    },
-  };
 }
 export function parseObservation(value: unknown): KafkaObservation {
   const p = record(value, "sample");
@@ -172,14 +147,24 @@ export function parseObservationSeries(value: unknown): ObservationSeries {
 }
 export function parseObservationHistory(value: unknown): ObservationHistory {
   const p = record(value, "history");
-  exactKeys(p, ["schemaVersion", "series"], "history");
+  exactKeys(
+    p,
+    p.schemaVersion === 2
+      ? ["schemaVersion", "series", "settings", "rollups"]
+      : ["schemaVersion", "series"],
+    "history",
+  );
   if (
-    p.schemaVersion !== 1 ||
+    (p.schemaVersion !== 1 && p.schemaVersion !== 2) ||
     new TextEncoder().encode(JSON.stringify(value)).length > limits.fileBytes
   )
     throw new Error("Unsupported or oversized observation history.");
   const series = array(p.series, limits.series).map(parseObservationSeries);
   if (new Set(series.map(observationIdentity)).size !== series.length)
     throw new Error("Duplicate history identity.");
-  return { schemaVersion: 1, series };
+  if (p.schemaVersion === 1) return { schemaVersion: 1, series };
+  const rollups = parseObservationRollups(p.rollups);
+  if (new Set([...series, ...rollups].map(observationIdentity)).size > limits.series)
+    throw new Error("Observation history exceeds its identity bound.");
+  return { schemaVersion: 2, series, settings: parseObservationSettings(p.settings), rollups };
 }

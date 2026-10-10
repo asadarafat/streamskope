@@ -896,3 +896,29 @@ describe.skipIf(process.platform !== "linux")("read-only browser data preflight"
     expect(await tree(root)).toEqual(before);
   });
 });
+
+it("inspects actual legacy and retained observation formats and exact predecessor read-only without migration or expiry writes", async () => {
+  const root = await directory();
+  const legacy = '{"schemaVersion":1,"series":[]}\n';
+  await write(root, "history/kafka-observations.json", legacy);
+  expect(row(await check(root), "observations")).toMatchObject({ state: "verified", formats: [1] });
+  await write(root, "history/kafka-observations.json.pre-observation-v1", legacy);
+  await write(
+    root,
+    "history/kafka-observations.json",
+    JSON.stringify({ schemaVersion: 2, series: [], settings: null, rollups: [] }),
+  );
+  expect(row(await check(root), "observations")).toMatchObject({
+    state: "verified",
+    formats: [1, 2],
+  });
+  await write(
+    root,
+    "history/kafka-observations.json.pre-observation-v1",
+    JSON.stringify({ schemaVersion: 2, series: [], settings: null, rollups: [] }),
+  );
+  expect(row(await check(root), "observations")).toMatchObject({
+    state: "blocked",
+    reason: "unsupported-format",
+  });
+});

@@ -23,6 +23,7 @@ import { ObservationFindings, type ObservationNavigation } from "./ObservationFi
 import { ObservationPartitionTable } from "./ObservationPartitionTable";
 import { ObservationSummary } from "./ObservationSummary";
 import { ObservationTrends } from "./ObservationTrends";
+import { ObservationRollupTable } from "./ObservationRollupTable";
 import { useObservedHealth } from "./use-observed-health";
 
 function threshold(value: string, label: string, maximum = Number.MAX_SAFE_INTEGER): number | null {
@@ -70,6 +71,11 @@ export function ObservedHealthPage({
   const { series, latest } = health;
   const selectionInitialized = useRef(false);
   const restoredWatch = useRef<string | null>(null);
+  const settings = health.snapshot.schemaVersion === 2 ? health.snapshot.settings : null;
+  const rollups =
+    health.snapshot.schemaVersion === 2
+      ? health.snapshot.rollups.filter((r) => observationIdentity(r) === health.selected)
+      : [];
   useEffect(() => {
     const watch = health.watch;
     if (!health.running || watch.input === null || watch.id === restoredWatch.current) return;
@@ -83,6 +89,21 @@ export function ObservedHealthPage({
     );
     setSampleRecords(watch.input.sampleRecords === true);
   }, [health.running, health.watch]);
+  useEffect(() => {
+    if (!settings || selectionInitialized.current || health.running) return;
+    selectionInitialized.current = true;
+    setTopic(settings.input.topic);
+    setGroupId(settings.input.groupId ?? "");
+    setLagThreshold(
+      settings.input.thresholds.lag === null ? "" : String(settings.input.thresholds.lag),
+    );
+    setLatencyThreshold(
+      settings.input.thresholds.requestMs === null
+        ? ""
+        : String(settings.input.thresholds.requestMs),
+    );
+    setSampleRecords(settings.input.sampleRecords === true);
+  }, [settings, health.running]);
   useEffect(() => {
     if (!series || selectionInitialized.current) return;
     selectionInitialized.current = true;
@@ -243,7 +264,7 @@ export function ObservedHealthPage({
           </Stack>
         </Alert>
       )}
-      {health.snapshot.series.length > 0 && (
+      {health.resources.length > 0 && (
         <TextField
           select
           label="Recorded observation series"
@@ -251,7 +272,7 @@ export function ObservedHealthPage({
           value={health.selected}
           onChange={(event) => {
             health.setSelected(event.target.value);
-            const selection = health.snapshot.series.find(
+            const selection = health.resources.find(
               (value) => observationIdentity(value) === event.target.value,
             );
             if (selection) {
@@ -260,12 +281,19 @@ export function ObservedHealthPage({
             }
           }}
         >
-          {health.snapshot.series.map((value) => (
+          {health.resources.map((value) => (
             <MenuItem key={observationIdentity(value)} value={observationIdentity(value)}>
               {value.topic} · {value.groupId ?? "No group"} · cluster {value.clusterId}
             </MenuItem>
           ))}
         </TextField>
+      )}
+      {settings && !health.running && (
+        <Typography variant="caption">
+          Saved selection from {settings.connectionName}, captured{" "}
+          {new Date(settings.savedAt).toISOString()}. Settings do not connect or start collection.
+          Capture once to accept a changed resource before starting its watch.
+        </Typography>
       )}
       {series && latest && analysis ? (
         <>
@@ -313,10 +341,27 @@ export function ObservedHealthPage({
         !health.busy &&
         !health.error && (
           <Alert severity="info">
-            No observation yet. Choose an existing topic and capture once. Add a consumer group to
-            measure its offset backlog; start observing to compare progress over time.
+            {rollups.length
+              ? "No raw observations remain; retained summaries are available below."
+              : "No observation yet."}{" "}
+            Choose an existing topic and capture once. Add a consumer group to measure its offset
+            backlog; start observing to compare progress over time.
           </Alert>
         )
+      )}
+      {rollups.length > 0 && (
+        <Accordion key={health.selected}>
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+            aria-controls="observation-rollup-details"
+            id="observation-rollup-title"
+          >
+            <Typography>Retained five-minute summaries ({rollups.length})</Typography>
+          </AccordionSummary>
+          <AccordionDetails id="observation-rollup-details">
+            <ObservationRollupTable rollups={rollups} />
+          </AccordionDetails>
+        </Accordion>
       )}
       <Accordion expanded={settingsOpen} onChange={(_event, expanded) => setSettingsOpen(expanded)}>
         <AccordionSummary
@@ -353,16 +398,19 @@ export function ObservedHealthPage({
             </Typography>
             <Typography variant="body2">
               Threshold breaches appear here and once per transition in Activity. Collection and
-              local alerts stop when you leave this page, disconnect or close the app. Missing data
-              never satisfies a threshold.
+              local alerts continue across navigation and stop on Stop, connection replacement,
+              vault lock or host shutdown. Missing data never satisfies a threshold.
             </Typography>
             <Typography variant="body2">
               History:{" "}
               {health.snapshot.durability === "durable"
                 ? "Private host storage; retained across restarts"
-                : "Browser host session only"}
-              . At most eight identities, 240 samples each, 24 hours and 4 MiB. Older evidence is
-              evicted; payloads, raw keys and credentials are not stored.
+                : "Host session only"}
+              . Up to eight identities, 240 raw samples and 288 five-minute summaries per identity,
+              24 hours and 4 MiB. Expired measurements are pruned from the active file on history
+              access or capture. Migration and whole-data backups retain their separate copies.
+              Payloads, raw keys and credentials are not stored. Last successful settings survive
+              restart; collection requires an explicit Start.
             </Typography>
             <Button
               disabled={!backendAvailable || health.busy || health.running}
@@ -377,7 +425,7 @@ export function ObservedHealthPage({
                 label="Clear all history confirmation"
                 value={confirmation}
                 disabled={health.busy || health.running}
-                helperText="Type CLEAR HISTORY to delete every retained series, including other connections."
+                helperText="Type CLEAR HISTORY to clear active measurements and saved settings for every connection. Separate backup copies remain."
                 onChange={(event) => setConfirmation(event.target.value)}
               />
               <Button
