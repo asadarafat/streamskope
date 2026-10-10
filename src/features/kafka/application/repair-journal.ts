@@ -29,7 +29,7 @@ export class RepairJournalStorageError extends Error {
 }
 export class MemoryRepairJobStore implements RepairJobStore {
   readonly durability = "session" as const;
-  private document: RepairJournalDocument = { schemaVersion: 2, jobs: [] };
+  private document: RepairJournalDocument = { schemaVersion: 3, jobs: [] };
   load(): Promise<RepairJournalDocument> {
     return Promise.resolve(structuredClone(this.document));
   }
@@ -152,14 +152,15 @@ export class RepairJournal {
           JSON.stringify(review.batch.timestamps) !==
             JSON.stringify(current.review.batch.timestamps?.slice(next)) ||
           JSON.stringify(review.input.records) !==
-            JSON.stringify(current.review.input.records.slice(next))
+            JSON.stringify(current.review.input.records.slice(next)) ||
+          JSON.stringify(review.encoding) !== JSON.stringify(current.review.encoding?.slice(next))
         )
           throw new Error(
             "Continuation differs from the frozen unsent records or original destination.",
           );
       }
       return {
-        schemaVersion: 2,
+        schemaVersion: 3,
         jobs: [
           ...document.jobs.map((job) =>
             job.id === continuation?.parent.id
@@ -223,7 +224,7 @@ export class RepairJournal {
           "The repair chain changed or contains an active or uncertain write. Refresh and preserve its recovery state.",
         );
       const ids = new Set(chain.map((j) => j.id));
-      return { schemaVersion: 2, jobs: document.jobs.filter((j) => !ids.has(j.id)) };
+      return { schemaVersion: 3, jobs: document.jobs.filter((j) => !ids.has(j.id)) };
     });
   }
   intent(id: string, index: number): Promise<void> {
@@ -257,7 +258,7 @@ export class RepairJournal {
     return this.mutate((document) => {
       if (!document.jobs.some((j) => j.id === id)) throw new Error("Repair job is missing.");
       return {
-        schemaVersion: 2,
+        schemaVersion: 3,
         jobs: document.jobs.map((j) =>
           j.id === id
             ? {

@@ -450,3 +450,26 @@ of inherited policy. The anonymous Registry does not certify vendor RBAC or
 managed-service permissions. Global changes and advanced Registry rules are outside
 policy-write support. These cases join existing runtime report groups and add no
 qualification lane.
+
+## Structured replay and writer translation
+
+The existing structured runtime group includes `record-replay-real.test.ts`.
+Its translation case uses an isolated real Kafka broker and two independent real
+Registries. It deliberately collides numeric IDs, registers missing destination
+writers through the reviewed schema-change contract with fresh readback, checks
+that replay preview writes neither schema nor record, independently decodes
+Avro/Protobuf output with referenced destination definitions, and checks JSON,
+tombstones, duplicate headers and timestamps. A receipt-persistence fault follows
+an actual acknowledged send; a fresh host continues only the frozen unsent suffix
+with the source Registry offline. A deleted destination writer stops before send.
+The production browser recovery case exercises structured JSON editing and
+protected history through the actual built renderer and unlocked browser host.
+
+Journal format3 requires actual installed format2-to3 upgrade, pure legacy list,
+explicit migration, encrypted predecessor preservation, uncertain-history restart,
+old-host refusal before downtime, complete backup restoration and actual old-host
+rollback. `browser-repair-recovery-smoke.ts` binds the retained qualified format2
+image and source; `browser-upgrade-smoke.ts` reports the explicit format pair.
+Keep these local staged Linux ARM64 receipts separate from public delivery,
+desktop keychain migration and real-broker publication evidence. Earlier format1
+to2 receipts retain their original source and scope.

@@ -38,7 +38,7 @@ export class RecordBatchService {
     private readonly scope: () => ReviewedWriteScope | null,
     private readonly now = Date.now,
     private readonly wait = pause,
-    private readonly beforeDispatch?: () => Promise<boolean>,
+    private readonly beforeDispatch?: (index: number) => Promise<boolean>,
     private readonly journal?: RecordBatchJournal,
   ) {}
   invalidate(): void {
@@ -124,7 +124,7 @@ export class RecordBatchService {
       if (this.beforeDispatch) {
         let valid = false;
         try {
-          valid = await this.beforeDispatch();
+          valid = await this.beforeDispatch(outcomes.length);
         } catch {
           /* Fail closed before dispatch. */
         }

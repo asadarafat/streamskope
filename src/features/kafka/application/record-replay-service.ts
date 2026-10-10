@@ -1,5 +1,6 @@
 import {
   parseRecordReplayInput,
+  parseRecordReplayReview,
   replayBatch,
   replayConfirmation,
   type RecordReplayInput,
@@ -16,6 +17,7 @@ import type {
 } from "./replay-destination";
 import { ownedCleanupFailure } from "./session-lifecycle";
 import type { RepairJournal, RepairContinuation } from "./repair-journal";
+import type { ReplayEncodingPort } from "./structured-replay-service";
 
 /** Combine source and isolated destination authority without exposing either adapter. */
 function replayScope(
@@ -70,6 +72,8 @@ export class RecordReplayService {
     private readonly destinations?: ReviewedReplayDestinationPort,
     private readonly now = Date.now,
     private readonly journal?: RepairJournal,
+    private readonly encoding?: ReplayEncodingPort,
+    private readonly currentDestination?: () => ReviewedReplayDestination | null,
   ) {}
   recoveryAvailable(): boolean {
     return (
@@ -93,8 +97,7 @@ export class RecordReplayService {
       throw new Error(
         "A replay destination did not close cleanly. Resolve cleanup before reviewing another replay.",
       );
-    const parsed = parseRecordReplayInput(input),
-      batchInput = replayBatch(parsed);
+    const parsed = parseRecordReplayInput(input);
     const source = this.scope();
     if (!source || this.active || this.reviews.size >= 2)
       throw new Error("Connect and wait for active replay operations to finish.");
@@ -111,11 +114,24 @@ export class RecordReplayService {
           AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
         );
       } else
-        target = {
+        target = this.currentDestination?.() ?? {
           scope: source,
           close: (): Promise<void> => Promise.resolve(),
         };
       const pinned = target;
+      if (!source.isCurrent() || !pinned.scope.isCurrent() || controller.signal.aborted)
+        throw new Error("Replay authority changed while opening the destination.");
+      const encoded = this.encoding
+        ? await this.encoding.prepare(
+            parsed,
+            pinned.registryScope ?? null,
+            controller.signal,
+            continuation
+              ? { review: continuation.parent.review, startIndex: continuation.startIndex }
+              : undefined,
+          )
+        : { batch: replayBatch(parsed), revalidate: (): Promise<boolean> => Promise.resolve(true) };
+      const batchInput = encoded.batch;
       const planId = crypto.randomUUID();
       const scope = replayScope(source, pinned.scope, controller.signal);
       const current = (): boolean => scope.isCurrent();
@@ -143,8 +159,9 @@ export class RecordReplayService {
         () => scope,
         this.now,
         undefined,
-        async () => {
+        async (index) => {
           if (!current()) return false;
+          if (!(await encoded.revalidate(index)) || !current()) return false;
           const actual = await scope.reviewWrite?.(first);
           return (
             current() &&
@@ -170,7 +187,7 @@ export class RecordReplayService {
           this.plans.delete(oldest.review.planId);
         }
       }
-      const review: RecordReplayReview = {
+      const review = parseRecordReplayReview({
         planId,
         sourceName: continuation?.parent.review.sourceName ?? source.connectionName,
         targetName: target.scope.connectionName,
@@ -178,7 +195,8 @@ export class RecordReplayService {
         input: parsed,
         batch: batchInput,
         destination: identity,
-      };
+        ...(encoded.encoding === undefined ? {} : { encoding: encoded.encoding }),
+      });
       const plan: Plan = {
         review: structuredClone(review),
         batch,

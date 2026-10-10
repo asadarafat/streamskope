@@ -140,7 +140,7 @@ it("refuses a stale writer and linked parent without replacing another owner's c
   await stale.load();
   await new RepairJournal(first).begin(review);
   const committed = await readFile(file);
-  await expect(stale.commit({ schemaVersion: 2, jobs: [] })).rejects.toThrow(
+  await expect(stale.commit({ schemaVersion: 3, jobs: [] })).rejects.toThrow(
     "changed after loading",
   );
   expect(await readFile(file)).toEqual(committed);
@@ -171,21 +171,25 @@ it("inspects the protected envelope without decrypting, preserves full backup by
   expect(report.outcome).toBe("eligible");
   expect(report.documents.find((d) => d.kind === "repair-jobs")).toMatchObject({
     state: "verified",
-    formats: [2],
+    formats: [3],
     count: 1,
   });
   expect(await readFile(path)).toEqual(original);
   const backup = join(await root(), "history");
   await mkdir(backup);
   await writeFile(join(backup, "kafka-repair-jobs.json"), original, { mode: 0o600 });
-  await writeFile(path, JSON.stringify({ schemaVersion: 3, protected: "c2VjcmV0" }));
+  await writeFile(path, JSON.stringify({ schemaVersion: 4, protected: "c2VjcmV0" }));
   const blocked = await inspectBrowserData(r, { hostRelease: "v0.10.3" });
   expect(blocked.outcome).toBe("blocked");
   expect(await readFile(join(backup, "kafka-repair-jobs.json"))).toEqual(original);
 });
-async function seedLegacy(file: string, protector: ProfileProtector): Promise<Buffer> {
+async function seedLegacy(
+  file: string,
+  protector: ProfileProtector,
+  format: 1 | 2 = 1,
+): Promise<Buffer> {
   const plaintext = JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: format,
     jobs: [
       {
         id: review.planId,
@@ -196,12 +200,15 @@ async function seedLegacy(file: string, protector: ProfileProtector): Promise<Bu
         pendingIndex: 0,
         status: "running",
         cleanup: "pending",
+        ...(format === 2
+          ? { revision: 1, parentJobId: null, continuationId: null, findings: [] }
+          : {}),
       },
     ],
   });
   const bytes = Buffer.from(
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: format,
       protected: (await protector.protect(plaintext)).toString("base64"),
     }) + "\n",
   );
@@ -215,7 +222,7 @@ it("reads legacy ciphertext without mutation and preserves its exact private pre
   const metadata = await stat(file),
     store = new AtomicRepairFileStore(file, protector);
   const document = await store.load();
-  expect(document.schemaVersion).toBe(2);
+  expect(document.schemaVersion).toBe(3);
   expect(document.jobs[0]).toMatchObject({
     revision: 1,
     pendingIndex: 0,
@@ -227,7 +234,7 @@ it("reads legacy ciphertext without mutation and preserves its exact private pre
   expect((await stat(file)).ino).toBe(metadata.ino);
   await store.commit(document);
   const protectedEnvelope: unknown = JSON.parse(await readFile(file, "utf8"));
-  expect(protectedEnvelope).toMatchObject({ schemaVersion: 2 });
+  expect(protectedEnvelope).toMatchObject({ schemaVersion: 3 });
   expect(await readFile(`${file}.pre-repair-v1`)).toEqual(old);
   if (process.platform !== "win32")
     expect((await stat(`${file}.pre-repair-v1`)).mode & 0o777).toBe(0o600);
@@ -259,4 +266,34 @@ it("preserves the legacy journal if predecessor directory synchronization fails"
   await expect(store.commit(document)).rejects.toThrow("backup sync");
   expect(await readFile(file)).toEqual(old);
   expect(await readFile(`${file}.pre-repair-v1`)).toEqual(old);
+});
+
+it("reads format2 without rewriting and retains both independently encrypted predecessor generations", async () => {
+  const file = join(await root(), "repair.json"),
+    protector = protection();
+  const originalV1 = await seedLegacy(file, protector);
+  await writeFile(`${file}.pre-repair-v1`, originalV1, { mode: 0o600 });
+  const originalV2 = await seedLegacy(file, protector, 2),
+    before = await stat(file);
+  const store = new AtomicRepairFileStore(file, protector),
+    document = await store.load();
+  expect(document.schemaVersion).toBe(3);
+  expect(await readFile(file)).toEqual(originalV2);
+  expect((await stat(file)).mtimeMs).toBe(before.mtimeMs);
+  expect((await stat(file)).ino).toBe(before.ino);
+  await store.commit(document);
+  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ schemaVersion: 3 });
+  expect(await readFile(`${file}.pre-repair-v1`)).toEqual(originalV1);
+  expect(await readFile(`${file}.pre-repair-v2`)).toEqual(originalV2);
+  expect(await new AtomicRepairFileStore(file, protector).load()).toEqual(document);
+});
+it("refuses a conflicting format2 predecessor before changing the current ciphertext", async () => {
+  const file = join(await root(), "repair.json"),
+    protector = protection(),
+    before = await seedLegacy(file, protector, 2);
+  await writeFile(`${file}.pre-repair-v2`, "other owner", { mode: 0o600 });
+  const store = new AtomicRepairFileStore(file, protector),
+    document = await store.load();
+  await expect(store.commit(document)).rejects.toThrow("differs");
+  expect(await readFile(file)).toEqual(before);
 });

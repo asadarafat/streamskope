@@ -105,7 +105,7 @@ export interface BrowserVaultFixture {
   /** Uses this fixture's authenticated session and the running Kafka host's own protocol. */
   kafkaCommand(name: string, payload: unknown): Promise<Record<string, unknown>>;
   /** Independent encrypted interrupted-job fixture; call only after locking this owned host. */
-  seedRepairHistory(container: string, includeCompleted?: boolean): void;
+  seedRepairHistory(container: string, includeCompleted?: boolean, format?: 1 | 2): void;
 }
 
 /** Credentials and exact expected profile remain owned by this disposable fixture's closure. */
@@ -227,7 +227,7 @@ export async function createBrowserVaultFixture(instance: {
   return {
     verifyUnlocked,
     assertNoSecrets,
-    seedRepairHistory: (container, includeCompleted = false): void => {
+    seedRepairHistory: (container, includeCompleted = false, format = 1): void => {
       // The disposable passphrase stays in this closure and enters the owned worker
       // through stdin. Neither it nor protected contents enter a qualification receipt.
       const result = docker(
@@ -243,13 +243,13 @@ export async function createBrowserVaultFixture(instance: {
           const input={targetProfile:null,topic:'native-repair',partition:0,ratePerSecond:1,records:[{topic:'native-source',partition:0,offset:'0',timestampMs:null,original}],transform:{key:null,removeHeaders:[],appendHeaders:[],valueText:null}};
           const timestamp=new Date().toISOString();
           const review={planId:'native-interrupted-repair',sourceName:'Disposable source',targetName:'Disposable target',expiresAt:timestamp,input,batch:{topic:input.topic,partition:0,ratePerSecond:1,records:[original],timestamps:[null]},destination:{clusterId:'fixture-cluster',topicId:'fixture-topic',partitions:1}};
-          const document={schemaVersion:1,jobs:[{id:review.planId,createdAt:timestamp,updatedAt:timestamp,review,outcomes:[],pendingIndex:0,status:'running',cleanup:'pending'}]};
+          const document={schemaVersion:${String(format)},jobs:[{id:review.planId,createdAt:timestamp,updatedAt:timestamp,review,outcomes:[],pendingIndex:0,status:'running',cleanup:'pending',...(${String(format)}===2?{revision:1,parentJobId:null,continuationId:null,findings:[]}:{})}]};
           if (${JSON.stringify(includeCompleted)}) document.jobs.push({...document.jobs[0],id:'native-completed-repair',review:{...review,planId:'native-completed-repair'},pendingIndex:null,status:'complete',cleanup:'complete',outcomes:[{state:'acknowledged',detail:'Independent metadata fixture',receipt:{topic:input.topic,partition:0,offset:'17'},verification:'verified'}]});
           const nonce=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',key,nonce);cipher.setAAD(valueAad);
           const encrypted=Buffer.concat([cipher.update(JSON.stringify(document),'utf8'),cipher.final()]);
           const value=Buffer.concat([Buffer.from('SKV1'),nonce,cipher.getAuthTag(),encrypted]).toString('base64');key.fill(0);
           fs.mkdirSync('/data/history',{recursive:true,mode:0o700}); const path='/data/history/kafka-repair-jobs.json';assert.equal(fs.existsSync(path),false);
-          const fd=fs.openSync(path,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({schemaVersion:1,protected:value})+'\\n');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+          const fd=fs.openSync(path,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({schemaVersion:${String(format)},protected:value})+'\\n');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
           const directory=fs.openSync('/data/history','r');try{fs.fsyncSync(directory);}finally{fs.closeSync(directory);}
           console.log('native-repair-fixture-seeded');
         })().catch(()=>{process.exitCode=1;});

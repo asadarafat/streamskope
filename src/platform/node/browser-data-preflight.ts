@@ -88,6 +88,7 @@ const STATIC_FILES = [
   "history/kafka-observations.json",
   "history/kafka-repair-jobs.json",
   "history/kafka-repair-jobs.json.pre-repair-v1",
+  "history/kafka-repair-jobs.json.pre-repair-v2",
   "plugins/state.json",
   "plugins/network.json",
   "plugins/catalog.json",
@@ -307,6 +308,7 @@ export async function inspectBrowserData(
   const repairPaths = [
     "history/kafka-repair-jobs.json",
     "history/kafka-repair-jobs.json.pre-repair-v1",
+    "history/kafka-repair-jobs.json.pre-repair-v2",
   ].filter(exists);
   await inspect("repair-jobs", repairPaths.length > 0, async () => {
     const formats = new Set<number>();
@@ -316,7 +318,10 @@ export async function inspectBrowserData(
       });
       const envelope: unknown = JSON.parse(bytes.toString("utf8"));
       const format = repairEnvelopeFormat(envelope);
-      if (path.endsWith(".pre-repair-v1") && format !== 1)
+      if (
+        (path.endsWith(".pre-repair-v1") && format !== 1) ||
+        (path.endsWith(".pre-repair-v2") && format !== 2)
+      )
         throw new Error("Repair predecessor format differs from its declared backup.");
       assertVaultValueEnvelope(inspectRepairEnvelope(envelope));
       formats.add(format);

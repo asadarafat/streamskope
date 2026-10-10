@@ -82,8 +82,8 @@ export class StructuredRecordService {
       ...original,
       headers: Object.freeze(original.headers.map((h) => Object.freeze({ ...h }))),
     });
-    const key = await this.field(captured.key, choices.key, context, signal);
-    const value = await this.field(captured.value, choices.value, context, signal);
+    const key = await this.decodeField(captured.key, choices.key, context, signal);
+    const value = await this.decodeField(captured.value, choices.value, context, signal);
     signal.throwIfAborted();
     const headers: StructuredRecordHeader[] = captured.headers.map((h) => {
       let key: string;
@@ -133,7 +133,7 @@ export class StructuredRecordService {
     );
   }
 
-  private async field(
+  async decodeField(
     encoded: string | null,
     selection: RecordCodecSelection,
     context: KafkaClusterServiceContext | null,

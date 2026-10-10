@@ -112,6 +112,7 @@ export class RecordCodecService {
       () => this.lookup.byId(context, id, signal),
       signal,
     );
+    if (root.id !== id) throw new SchemaResolutionError("schema-unavailable");
     const dependencies: { name: string; schema: RegisteredSchema }[] = [];
     const visited = new Map<string, RegisteredSchema>();
     const names = new Map<string, number>();
@@ -170,7 +171,14 @@ export class RecordCodecService {
       () => this.lookup.byVersion(context, subject, version, signal),
       signal,
     );
-    return this.resolve(context, schema.id, signal);
+    const bundle = await this.resolve(context, schema.id, signal);
+    if (
+      bundle.root.schemaType !== schema.schemaType ||
+      bundle.root.schema !== schema.schema ||
+      JSON.stringify(bundle.root.references) !== JSON.stringify(schema.references)
+    )
+      throw new SchemaResolutionError("schema-unavailable");
+    return bundle;
   }
 
   async decode(

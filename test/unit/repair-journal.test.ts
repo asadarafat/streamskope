@@ -194,7 +194,7 @@ it("rejects inconsistent, duplicate and unknown-version stored jobs before admit
   await f.journal.begin(review);
   const valid = await f.journal.store.load(),
     job = valid.jobs[0]!;
-  expect(() => parseRepairJournalDocument({ ...valid, schemaVersion: 3 })).toThrow();
+  expect(() => parseRepairJournalDocument({ ...valid, schemaVersion: 4 })).toThrow();
   expect(() => parseRepairJournalDocument({ ...valid, jobs: [job, job] })).toThrow();
   expect(() =>
     parseRepairJournalDocument({ ...valid, jobs: [{ ...job, pendingIndex: 2 }] }),
