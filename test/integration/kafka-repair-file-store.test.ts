@@ -100,6 +100,25 @@ it("reports directory-sync uncertainty after rename and preserves the last reada
   expect((await new AtomicRepairFileStore(file, protector).load()).jobs[0]?.id).toBe("repair");
   await expect(journal.intent("repair", 0)).rejects.toThrow("unavailable");
 });
+it("does not mistake missing protection authority for an absent journal", async () => {
+  const file = join(await root(), "history", "kafka-repair-jobs.json"),
+    protector = protection();
+  await new RepairJournal(new AtomicRepairFileStore(file, protector)).begin(review);
+  const before = await readFile(file);
+  const missingAuthority: ProfileProtector = {
+    protect: (plaintext: string): Promise<Buffer> => protector.protect(plaintext),
+    unprotect: (): ReturnType<ProfileProtector["unprotect"]> =>
+      Promise.reject(
+        Object.assign(new Error("Protection authority is missing"), { code: "ENOENT" }),
+      ),
+  };
+  const reopened = new RepairJournal(new AtomicRepairFileStore(file, missingAuthority));
+  await expect(reopened.list()).rejects.toThrow("could not be read");
+  await expect(reopened.begin({ ...review, planId: "another" })).rejects.toThrow(
+    "could not be read",
+  );
+  expect(await readFile(file)).toEqual(before);
+});
 it("refuses corrupt, future and linked files without overwriting them", async () => {
   const r = await root(),
     file = join(r, "repair.json");

@@ -50,7 +50,20 @@ export class AtomicRepairFileStore implements RepairJobStore {
   ) {}
   async load(): Promise<RepairJournalDocument> {
     try {
-      const stat = await lstat(this.path);
+      const stat = await lstat(this.path).catch((error: unknown) => {
+        if (
+          error !== null &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "ENOENT"
+        )
+          return null;
+        throw error;
+      });
+      if (stat === null) {
+        this.loaded = null;
+        return { schemaVersion: 1, jobs: [] };
+      }
       if (!stat.isFile() || stat.nlink !== 1) throw new Error("Unsafe repair journal.");
       if (!(await lstat(dirname(this.path))).isDirectory())
         throw new Error("Unsafe repair directory.");
@@ -63,15 +76,6 @@ export class AtomicRepairFileStore implements RepairJobStore {
       this.loaded = bytes;
       return document;
     } catch (error) {
-      if (
-        error !== null &&
-        typeof error === "object" &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        this.loaded = null;
-        return { schemaVersion: 1, jobs: [] };
-      }
       throw new Error(
         "Protected repair history is unreadable or unsupported. Preserve it and restore the complete vault backup; no replacement was made.",
         { cause: error },
