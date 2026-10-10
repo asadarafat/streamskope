@@ -478,9 +478,10 @@ export function ReplayRecordsAction({
                       {JSON.stringify(review.encoding[Number(previewIndex)], null, 2)}
                     </StudioCodeBlock>
                     <Typography variant="body2">
-                      The host validated these exact bytes against the destination reference graph.
-                      Each send rechecks the pinned writer. Continuation uses the frozen output and
-                      skips every previously attempted position.
+                      The host prepared these exact bytes. Selected registered writers were
+                      validated against their destination reference graph; plain JSON has no
+                      registered writer. Each send rechecks any pinned writer. Continuation uses the
+                      frozen output and skips every previously attempted position.
                     </Typography>
                   </>
                 )}

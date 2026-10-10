@@ -37,6 +37,8 @@ function request(name: HostCommand["command"]): HostCommand {
   } as HostCommand;
 }
 const writes = [
+  "connect.apply",
+  "connect.offsets.apply",
   "topics.change.apply",
   "acls.change.apply",
   "records.replay.apply",

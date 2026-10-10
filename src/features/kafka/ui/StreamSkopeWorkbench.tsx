@@ -782,7 +782,7 @@ export function StreamSkopeWorkbench({
         host={host}
         connectionName={state.connectionName}
         canWrite={state.preferenceSnapshot?.preferences.protection.readOnly === false}
-        onOpenTopic={activateTopic}
+        onOpenTopic={openRecordTopic}
       />
     ) : navigation === "environments" ? (
       <EnvironmentPage
