@@ -36,6 +36,7 @@ import { KafkaReadCheckpointError, type KafkaReadCheckpoint } from "../applicati
 import { serviceConnectionContext } from "./service-connection-context";
 import { testClusterServices } from "./service-connection-test";
 import { NodeBoundedJsonHttp } from "./bounded-json-http";
+import { PlatformaticClientQuotas } from "./platformatic-client-quotas";
 import { PlatformaticGroupAdministration } from "./platformatic-group-administration";
 import { PlatformaticOffsetReset } from "./platformatic-offset-reset";
 import { PlatformaticReviewedWrites } from "./platformatic-writes";
@@ -181,6 +182,17 @@ function withCleanupFailure(
 }
 
 class ActiveKafkaEngineConnection implements KafkaEngineConnection {
+  clientQuotaSnapshot(
+    entity: import("../contracts/client-quotas").ClientQuotaEntity,
+  ): Promise<import("../contracts/client-quotas").ClientQuotaSnapshot> {
+    return this.clientQuotas.snapshot(entity);
+  }
+  applyClientQuotas(
+    input: import("../contracts/client-quotas").ClientQuotaInput,
+    baseline: import("../contracts/client-quotas").ClientQuotaSnapshot,
+  ): Promise<import("../contracts/client-quotas").ClientQuotaOutcome> {
+    return this.clientQuotas.apply(input, baseline);
+  }
   topicAdministrationSnapshot(
     topic: string,
   ): Promise<import("../contracts/topic-administration").TopicAdministrationSnapshot> {
@@ -259,6 +271,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   private readonly topicAdministration: PlatformaticTopicAdministration;
   private readonly offsetReset: PlatformaticOffsetReset;
   private readonly groupAdministration: PlatformaticGroupAdministration;
+  private readonly clientQuotas: PlatformaticClientQuotas;
 
   constructor(
     private readonly admin: KafkaAdminPort,
@@ -275,6 +288,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
     private readonly prepareRecord: StreamSkopeKafkaEngineOptions["prepareRecord"],
   ) {
+    this.clientQuotas = new PlatformaticClientQuotas(clientInput, lifecycleController.signal);
     this.groupAdministration = new PlatformaticGroupAdministration(
       clientInput,
       lifecycleController.signal,
@@ -737,6 +751,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       this.topicAdministration.close(),
       this.offsetReset.close(),
       this.groupAdministration.close(),
+      this.clientQuotas.close(),
     ]);
     const failures = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason as unknown] : [],

@@ -1,3 +1,4 @@
+import { parseClientQuotaCommand, parseClientQuotaResponse } from "./client-quota-protocol";
 import {
   parseGroupAdministrationCommand,
   parseGroupAdministrationResponse,
@@ -81,6 +82,7 @@ export function parseRecoveryCommand(
   version: HostCommand["version"],
 ): HostCommand | undefined {
   return (
+    parseClientQuotaCommand(command, id, value, version) ??
     parseGroupAdministrationCommand(command, id, value, version) ??
     parseTopicAdministrationCommand(command, id, value, version) ??
     parseOffsetResetCommand(command, id, value, version) ??
@@ -95,6 +97,7 @@ export function parseRecoveryResponse(
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
   return (
+    parseClientQuotaResponse(command, id, result, version) ??
     parseGroupAdministrationResponse(command, id, result, version) ??
     parseTopicAdministrationResponse(command, id, result, version) ??
     parseOffsetResetResponse(command, id, result, version) ??

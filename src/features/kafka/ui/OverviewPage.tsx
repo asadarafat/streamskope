@@ -1,12 +1,13 @@
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 
-import type { BackendAvailability, ConnectionState } from "../contracts";
+import type { BackendAvailability, StreamSkopeHost } from "../contracts";
 import { StudioButton as Button } from "../../../platform/ui/controls";
 
 import { DiagnosticMetric } from "./DiagnosticMetric";
+import { ClientQuotaAction } from "./ClientQuotaAction";
 import { ResourcePageHeader, resourcePageGutter } from "./ResourcePageHeader";
-import { connectionStateLabel } from "./state";
+import { connectionStateLabel, type KafkaUiState } from "./state";
 
 function backendLabel(backend: "checking" | BackendAvailability): string {
   if (backend === "ready") return "Ready";
@@ -15,22 +16,29 @@ function backendLabel(backend: "checking" | BackendAvailability): string {
 }
 
 export function OverviewPage({
-  activeConnectionName,
-  backend,
-  connectionState,
-  consumerGroupCount,
+  snapshot,
+  host,
   onOpenProfiles,
-  profileCount,
-  topicCount,
 }: {
-  readonly activeConnectionName: string | null;
-  readonly backend: "checking" | BackendAvailability;
-  readonly connectionState: ConnectionState;
-  readonly consumerGroupCount: number;
+  readonly snapshot: Pick<
+    KafkaUiState,
+    | "backend"
+    | "connectionName"
+    | "connectionState"
+    | "consumerGroupInventory"
+    | "profiles"
+    | "topics"
+    | "preferenceSnapshot"
+  >;
+  readonly host: StreamSkopeHost;
   readonly onOpenProfiles: () => void;
-  readonly profileCount: number;
-  readonly topicCount: number;
 }): React.JSX.Element {
+  const { backend, connectionState, connectionName: activeConnectionName } = snapshot;
+  const connected = connectionState === "connected",
+    canWrite = snapshot.preferenceSnapshot?.preferences.protection.readOnly === false,
+    consumerGroupCount = snapshot.consumerGroupInventory.groups.length,
+    profileCount = snapshot.profiles.length,
+    topicCount = snapshot.topics.length;
   return (
     <Box
       aria-label="Overview page"
@@ -39,9 +47,17 @@ export function OverviewPage({
     >
       <ResourcePageHeader
         action={
-          <Button onClick={onOpenProfiles} variant="outlined">
-            Connection profiles
-          </Button>
+          <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+            <ClientQuotaAction
+              host={host}
+              connected={connected}
+              connectionName={activeConnectionName}
+              canWrite={canWrite}
+            />
+            <Button onClick={onOpenProfiles} variant="outlined">
+              Connection profiles
+            </Button>
+          </Stack>
         }
         description="Confirmed local host and Kafka session state. Unavailable data is never inferred."
         title="Overview"
