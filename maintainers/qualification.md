@@ -485,3 +485,28 @@ image and source; `browser-upgrade-smoke.ts` reports the explicit format pair.
 Keep these local staged Linux ARM64 receipts separate from public delivery,
 desktop keychain migration and real-broker publication evidence. Earlier format1
 to2 receipts retain their original source and scope.
+
+### Optional external Kafka metrics
+
+`test/kafka/external-metrics-real.test.ts` joins the existing
+`.artifacts/ci/observations-real.json` runtime report. It uses pinned Kafka 4.3.1,
+JMX Exporter 1.7.0 and Prometheus 3.15.0 fixtures, checks both declared gauges and
+actual scrape timestamps, changes a real replica's availability, and verifies
+under-replicated counts recover without inventing missing exporter values.
+`test/e2e/web-external-metrics.spec.ts` joins the existing browser workbench
+report; attachment/navigation never authorize reads. Protocol, coverage, trusted
+HTTPS/client identity, cancellation/socket settlement and encrypted profile
+migration have independent unit/integration regressions.
+
+A metrics-bearing profile requires envelope5/protected payload7; existing
+format4/protected6 credentials remain readable. Qualify actual native install,
+upgrade, private predecessor, old-host refusal before downtime, complete verified
+backup, full restore and rollback on the affected architecture. The optional
+`metricsRecovery` native scenario uses protected manual profiles and independently
+fingerprints their complete decrypted values inside the disposable vault fixture.
+Managed plugin sources continue to block ordinary browser maintenance preflight;
+store and fresh live-vendor checks qualify their separate preservation behavior.
+Local staged images do not qualify public delivery or other native architectures.
+Exporter identity is not bound to the connected Kafka UUID, and this evidence does
+not establish managed-service, CPU/disk, unattended-alerting or long-duration soak
+coverage. Preserve every failed, skipped and unselected receipt.

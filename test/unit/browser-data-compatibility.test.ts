@@ -106,11 +106,13 @@ describe("closed browser data evidence", () => {
     entry.formats = [4];
     expect(() => parseBrowserDataInspection(report)).toThrow();
   });
-  it("accepts current security envelopes but rejects later unknown formats", () => {
+  it("accepts security and metrics envelopes but rejects later unknown formats", () => {
     const report = evidence();
     Object.assign(documents(report)[2]!, { state: "verified", count: 1, formats: [4] });
     expect(parseBrowserDataInspection(report).outcome).toBe("eligible");
     documents(report)[2]!.formats = [5];
+    expect(parseBrowserDataInspection(report).outcome).toBe("eligible");
+    documents(report)[2]!.formats = [6];
     expect(() => parseBrowserDataInspection(report)).toThrow();
   });
   it("accepts explicit failure and ordered supported historical Kafka envelopes", () => {

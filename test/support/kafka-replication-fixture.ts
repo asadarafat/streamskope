@@ -26,7 +26,11 @@ async function availablePort(): Promise<number> {
 }
 
 /** Three disposable KRaft nodes: stopping one leaves a real controller quorum. */
-export async function startReplicationFixture(): Promise<{
+export async function startReplicationFixture(jmx?: {
+  readonly agent: string;
+  readonly configuration: string;
+}): Promise<{
+  readonly metricsInstances: readonly string[];
   readonly admin: Admin;
   readonly connection: SecureConnectionInput;
   stopBroker(id: number): Promise<void>;
@@ -45,6 +49,11 @@ export async function startReplicationFixture(): Promise<{
   const allocated = [...reserved];
   for (let node = 0; node < 3; node++)
     ports.push({ client: allocated[node * 2]!, controller: allocated[node * 2 + 1]! });
+  const jmxPorts: number[] = [];
+  if (jmx) {
+    while (reserved.size < 9) reserved.add(await availablePort());
+    jmxPorts.push(...[...reserved].slice(6));
+  }
   const prefix = `streamskope-replication-${randomUUID()}`;
   const names = ports.map((_, index) => `${prefix}-${index + 1}`);
   const clusterId = randomBytes(16).toString("base64url");
@@ -78,6 +87,11 @@ export async function startReplicationFixture(): Promise<{
   try {
     for (const [index, p] of ports.entries()) {
       const environment: Record<string, string> = {
+        ...(jmx
+          ? {
+              KAFKA_OPTS: `-javaagent:/opt/metrics/agent.jar=127.0.0.1:${jmxPorts[index]}:/opt/metrics/exporter.yml`,
+            }
+          : {}),
         CLUSTER_ID: clusterId,
         KAFKA_PROCESS_ROLES: "broker,controller",
         KAFKA_NODE_ID: String(index + 1),
@@ -114,6 +128,14 @@ export async function startReplicationFixture(): Promise<{
           "host",
           "--memory",
           "768m",
+          ...(jmx
+            ? [
+                "--volume",
+                `${jmx.agent}:/opt/metrics/agent.jar:ro`,
+                "--volume",
+                `${jmx.configuration}:/opt/metrics/exporter.yml:ro`,
+              ]
+            : []),
           ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
           image,
         ],
@@ -153,6 +175,7 @@ export async function startReplicationFixture(): Promise<{
     if (!ready) throw new Error("The three replication fixture brokers did not become ready.");
     return {
       admin,
+      metricsInstances: jmxPorts.map((port) => `127.0.0.1:${port}`),
       connection: {
         name: "Isolated replication fixture",
         brokers: ports.map((p) => `127.0.0.1:${p.client}`),

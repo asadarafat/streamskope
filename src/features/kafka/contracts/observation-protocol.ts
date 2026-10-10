@@ -7,7 +7,16 @@ import {
 } from "./observation-validation";
 import { parseObservationWatch } from "./observation-watch";
 import type { ObservationInput } from "./observations";
+import type { ExternalMetricsInput } from "./external-metrics";
+import {
+  parseExternalMetricsInput,
+  parseExternalMetricsSnapshot,
+} from "./external-metrics-validation";
 export type ObservationCommand =
+  | (HostCommandBase & {
+      readonly command: "observations.metrics.capture";
+      readonly payload: ExternalMetricsInput;
+    })
   | (HostCommandBase & {
       readonly command: "observations.capture" | "observations.watch.start";
       readonly payload: ObservationInput;
@@ -16,6 +25,7 @@ export type ObservationCommand =
       readonly command:
         | "observations.history"
         | "observations.cancel"
+        | "observations.metrics.cancel"
         | "observations.watch.status"
         | "observations.watch.stop";
       readonly payload: Readonly<Record<string, never>>;
@@ -30,11 +40,14 @@ export function parseObservationCommand(
   value: unknown,
   version: HostCommand["version"],
 ): HostCommand | undefined {
+  if (command === "observations.metrics.capture")
+    return { command, id, version, payload: parseExternalMetricsInput(value) };
   if (command === "observations.capture" || command === "observations.watch.start")
     return { command, id, version, payload: parseObservationInput(value) };
   if (
     command === "observations.history" ||
     command === "observations.cancel" ||
+    command === "observations.metrics.cancel" ||
     command === "observations.watch.status" ||
     command === "observations.watch.stop"
   )
@@ -59,6 +72,19 @@ export function parseObservationResponse(
   result: Record<string, unknown>,
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
+  if (command === "observations.metrics.capture") {
+    exactKeys(result, ["correlationId", "snapshot"], "result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "correlationId", 128),
+        snapshot: parseExternalMetricsSnapshot(result.snapshot),
+      },
+    };
+  }
   if (
     command === "observations.watch.start" ||
     command === "observations.watch.status" ||

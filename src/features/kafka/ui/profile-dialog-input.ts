@@ -29,12 +29,28 @@ function buildServices<T extends ProtectedValueUpdateInput>(
   form: ProfileForm,
   protectedValue: (field: ProtectedFieldForm) => T,
 ): ClusterServiceEndpointsInput<T> | undefined {
+  const metrics = form.metricsUrl.trim();
   const connect = form.connectUrl.trim();
   const schemaRegistry = form.schemaRegistryUrl.trim();
   const redpandaAdmin = form.redpandaAdminUrl.trim();
-  if (connect.length === 0 && schemaRegistry.length === 0 && redpandaAdmin.length === 0)
+  if (
+    metrics.length === 0 &&
+    connect.length === 0 &&
+    schemaRegistry.length === 0 &&
+    redpandaAdmin.length === 0
+  )
     return undefined;
   return {
+    ...(metrics.length === 0
+      ? {}
+      : {
+          metrics: buildServiceEndpoint(
+            metrics,
+            form.metricsAuthentication,
+            form.metricsSecurity,
+            protectedValue,
+          ),
+        }),
     ...(connect.length === 0
       ? {}
       : {

@@ -103,6 +103,58 @@ disconnection, cancellation, cooldown and unreadable history. Follow the shown
 recovery action rather than treating every failure as an invalid topic. An
 unreadable or unsupported history file remains preserved until explicitly cleared.
 
+## Read optional Prometheus metrics
+
+A Kafka profile can include a **Prometheus metrics URL**, with its own
+credentials, certificate trust and client certificate. Configure it in the profile's
+**Cluster services**, save, and reconnect. **Test connection** checks the broker,
+Schema Registry and Connect; it does not qualify this metrics endpoint.
+
+Open **Prometheus metrics (optional)**, enter the exact exporter **job** and
+**instance** labels, then choose **Read metrics**. An edited endpoint requires reconnecting before the
+original connection can read its replacement. This is a manual snapshot of one
+selected exporter, separate from Kafka API observations. Opening the page,
+navigation, restoring settings and reconnecting never start exporter reads.
+
+| Declared gauge                                            | Unit and coverage                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `kafka_server_replicamanager_underreplicatedpartitions`   | Partition count on the selected broker exporter                                |
+| `kafka_controller_kafkacontroller_offlinepartitionscount` | Offline non-internal topic partition count on the selected controller exporter |
+
+Your JMX exporter must expose those exact gauge names. For these two Kafka MBeans,
+the exporter rules are:
+
+```yaml
+includeObjectNames:
+    - "kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions"
+    - "kafka.controller:type=KafkaController,name=OfflinePartitionsCount"
+rules:
+    - pattern: "kafka.server<type=ReplicaManager, name=UnderReplicatedPartitions><>Value"
+      name: kafka_server_replicamanager_underreplicatedpartitions
+      type: GAUGE
+    - pattern: "kafka.controller<type=KafkaController, name=OfflinePartitionsCount><>Value"
+      name: kafka_controller_kafkacontroller_offlinepartitionscount
+      type: GAUGE
+```
+
+Each gauge is paired with its actual scrape timestamp; query evaluation time is
+shown separately. A missing, ambiguous, annotated, malformed, stale or future-dated
+series remains **Unknown**. A captured value expires after 45 seconds without an
+automatic reread. The snapshot is not retained in observation history.
+
+The endpoint and labels do not establish the connected Kafka cluster's identity
+or prove that the exporter is the active controller. Positive counts describe the
+selected exporter; zero counts do not establish overall health or processing
+success. External gauges do not generate the Kafka API findings above.
+
+A read admits four bounded instant queries with a 15-second aggregate deadline.
+**Cancel metrics read** cancels them and waits for original HTTP cleanup; a lost
+browser connection alone cannot confirm settlement. Connection replacement,
+disconnect, vault lock and shutdown revoke the original service authority.
+Authentication and certificate failures use the profile's connection diagnostics.
+No arbitrary PromQL, CPU/disk metrics, managed-service coverage, continuous scrape
+or external notification is implied.
+
 ## Collection and history limits
 
 - One collection runs at a time, with a **15-second deadline** and **1–128

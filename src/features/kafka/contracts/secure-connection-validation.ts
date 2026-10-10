@@ -1,6 +1,10 @@
 import type { HostSecureConnectionInput, SecureConnectionIssue } from "./types";
 import type { ConnectionClientIdentity } from "./connection-security";
-import { CLUSTER_SERVICE_AUTHENTICATION_MODES, KAFKA_SASL_MECHANISMS } from "./profile-types";
+import {
+  CLUSTER_SERVICE_AUTHENTICATION_MODES,
+  CLUSTER_SERVICE_NAMES,
+  KAFKA_SASL_MECHANISMS,
+} from "./profile-types";
 
 function isValidServiceEndpoint(value: string): boolean {
   try {
@@ -155,12 +159,8 @@ export function validateSecureConnectionInput(
       });
     }
   }
-  const services = [
-    ["connect", connection.services?.connect],
-    ["redpandaAdmin", connection.services?.redpandaAdmin],
-    ["schemaRegistry", connection.services?.schemaRegistry],
-  ] as const;
-  for (const [serviceName, service] of services) {
+  for (const serviceName of CLUSTER_SERVICE_NAMES) {
+    const service = connection.services?.[serviceName];
     if (service === undefined) {
       continue;
     }

@@ -67,6 +67,10 @@ interface SpecificCommandResults
   };
   readonly "observations.watch.status": SpecificCommandResults["observations.watch.start"];
   readonly "observations.watch.stop": SpecificCommandResults["observations.watch.start"];
+  readonly "observations.metrics.capture": {
+    readonly correlationId: string;
+    readonly snapshot: import("./external-metrics").ExternalMetricsSnapshot;
+  };
   readonly "observations.capture": {
     readonly correlationId: string;
     readonly capture: import("./observations").ObservationCapture;
@@ -296,6 +300,7 @@ const structuredResults = {
   "observations.watch.start": true,
   "observations.watch.status": true,
   "observations.watch.stop": true,
+  "observations.metrics.capture": true,
   "observations.capture": true,
   "observations.history": true,
   "observations.clear": true,

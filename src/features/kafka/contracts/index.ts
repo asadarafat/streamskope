@@ -268,6 +268,7 @@ export {
 export { canonicalKafkaRuleName, parseKafkaRuleDefinition } from "./rule-validation";
 export {
   CLUSTER_SERVICE_AUTHENTICATION_MODES,
+  CLUSTER_SERVICE_NAMES,
   KAFKA_PROFILE_TRANSPORTS,
   PROFILE_LIMITS,
   PROFILE_STORE_DURABILITIES,

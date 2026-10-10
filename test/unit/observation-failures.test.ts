@@ -48,7 +48,11 @@ function facade(
       }
     : null;
   const scopes = new KafkaConnectionScopes(() => context);
-  return new ObservationFacade({ observationScope: () => scopes.observation() }, store, vi.fn());
+  return new ObservationFacade(
+    { observationScope: () => scopes.observation(), metricsScope: () => null },
+    store,
+    vi.fn(),
+  );
 }
 function error(response: HostCommandResponse): Exclude<HostCommandResponse, { ok: true }>["error"] {
   expect(response.ok).toBe(false);

@@ -31,4 +31,5 @@ export interface ResolvedClusterServiceEndpoints {
   readonly connect?: ResolvedClusterServiceEndpoint;
   readonly redpandaAdmin?: ResolvedClusterServiceEndpoint;
   readonly schemaRegistry?: ResolvedClusterServiceEndpoint;
+  readonly metrics?: ResolvedClusterServiceEndpoint;
 }

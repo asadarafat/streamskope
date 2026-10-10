@@ -224,6 +224,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       options.observationStore,
       this.recordActivity.bind(this),
       { publish, nextSequence },
+      options.metrics,
     );
     this.connectService = new ConnectFacade(
       session,

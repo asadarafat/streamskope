@@ -11,6 +11,8 @@ type Access = "local" | "remote-read" | "remote-write" | "profile";
 export const KAFKA_COMMAND_ACCESS = {
   "relationships.capture": "remote-read",
   "relationships.cancel": "local",
+  "observations.metrics.capture": "remote-read",
+  "observations.metrics.cancel": "local",
   "observations.capture": "remote-read",
   "observations.watch.start": "remote-read",
   "observations.watch.status": "local",

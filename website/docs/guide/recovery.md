@@ -84,6 +84,17 @@ retention from active measurements. Older hosts refuse unsupported format2, so
 restore a verified whole-data backup before rollback. Restoring saved observation
 settings does not connect, unlock or authorize collection; explicitly start again.
 
+### Metrics endpoint recovery
+
+Adding a Prometheus endpoint moves the Kafka profile envelope to format5, with
+credentials in its protected content. Existing OAuth, SASL, client certificates
+and independent service credentials are preserved. The first migration retains
+exact format4 predecessor bytes in `kafka-profiles.json.pre-metrics-v4` beside the
+profile file. This private migration copy has separate retention from active data
+and is not a complete backup. Removing the endpoint does not downgrade format5.
+Older hosts refuse unsupported profiles; restore a verified whole-data backup
+before rollback. Do not delete fields or migration copies to bypass inspection.
+
 ### Operational-preference recovery
 
 Workbench settings use `workbench/kafka-operational-preferences.json`,

@@ -55,8 +55,10 @@ const LEGACY_PROFILE_FILE_VERSION = 1 as const;
 const SERVICES_PROFILE_FILE_VERSION = 2 as const;
 const PROFILE_FILE_VERSION = 3 as const;
 const SECURITY_PROFILE_FILE_VERSION = 4 as const;
+const METRICS_PROFILE_FILE_VERSION = 5 as const;
 const SECURITY_PROTECTED_PROFILE_VERSION = 6 as const;
-type ProfileFileVersion = 1 | 2 | 3 | 4;
+const METRICS_PROTECTED_PROFILE_VERSION = 7 as const;
+type ProfileFileVersion = 1 | 2 | 3 | 4 | 5;
 const ACQUISITION_PROTECTED_PROFILE_VERSION = 4 as const;
 const TRANSPORT_PROTECTED_PROFILE_VERSION = 5 as const;
 export const KAFKA_PROFILE_FILE_MAX_BYTES = 64 * 1_048_576;
@@ -268,7 +270,7 @@ function parseSafeProfile(value: unknown, version: ProfileFileVersion): SafeStor
     "name",
     "oauth",
     "protectedValue",
-    ...(version === SECURITY_PROFILE_FILE_VERSION ? ["sasl", "clientIdentity"] : []),
+    ...(version >= SECURITY_PROFILE_FILE_VERSION ? ["sasl", "clientIdentity"] : []),
     ...(version >= PROFILE_FILE_VERSION ? ["revision", "transport", "source"] : []),
     ...(version === LEGACY_PROFILE_FILE_VERSION ? [] : ["services"]),
     ...(transport === "tls" ? ["trust"] : []),
@@ -284,7 +286,7 @@ function parseSafeProfile(value: unknown, version: ProfileFileVersion): SafeStor
     ...(Object.hasOwn(profile, "services")
       ? {
           services:
-            version === SECURITY_PROFILE_FILE_VERSION
+            version >= SECURITY_PROFILE_FILE_VERSION
               ? parseServiceSummaries(
                   profile.services,
                   "profile.services",
@@ -303,6 +305,8 @@ function parseSafeProfile(value: unknown, version: ProfileFileVersion): SafeStor
     transport,
     updatedAt: boundedText(profile.updatedAt, 128),
   };
+  if (version < METRICS_PROFILE_FILE_VERSION && base.services?.metrics !== undefined)
+    throw new KafkaProfileFileCorruptError();
   let parsedOAuth: NonNullable<SafeStoredProfile["oauth"]> | undefined;
   if (Object.hasOwn(profile, "oauth")) {
     const oauth = valueRecord(profile.oauth);
@@ -348,7 +352,8 @@ function parseDocument(value: unknown): StoredProfileDocument {
     document.version !== LEGACY_PROFILE_FILE_VERSION &&
     document.version !== SERVICES_PROFILE_FILE_VERSION &&
     document.version !== PROFILE_FILE_VERSION &&
-    document.version !== SECURITY_PROFILE_FILE_VERSION
+    document.version !== SECURITY_PROFILE_FILE_VERSION &&
+    document.version !== METRICS_PROFILE_FILE_VERSION
   ) {
     throw new KafkaProfileFileCorruptError();
   }
@@ -367,7 +372,7 @@ function parseDocument(value: unknown): StoredProfileDocument {
     if (
       rollbackGeneration.includes("/") ||
       rollbackGeneration.includes("\\") ||
-      !/\.pre-(?:transport-v2|security-v3)(?:\.[1-9]\d?)?$/u.test(rollbackGeneration)
+      !/\.pre-(?:transport-v2|security-v3|metrics-v4)(?:\.[1-9]\d?)?$/u.test(rollbackGeneration)
     ) {
       throw new KafkaProfileFileCorruptError();
     }
@@ -436,14 +441,17 @@ function parseProtectedValues(
     version !== 3 &&
     version !== ACQUISITION_PROTECTED_PROFILE_VERSION &&
     version !== TRANSPORT_PROTECTED_PROFILE_VERSION &&
-    version !== SECURITY_PROTECTED_PROFILE_VERSION
+    version !== SECURITY_PROTECTED_PROFILE_VERSION &&
+    version !== METRICS_PROTECTED_PROFILE_VERSION
   ) {
     throw new KafkaProfileFileCorruptError();
   }
   if (
     documentVersion >= PROFILE_FILE_VERSION !== version >= TRANSPORT_PROTECTED_PROFILE_VERSION ||
-    (documentVersion === SECURITY_PROFILE_FILE_VERSION) !==
-      (version === SECURITY_PROTECTED_PROFILE_VERSION)
+    documentVersion >= SECURITY_PROFILE_FILE_VERSION !==
+      version >= SECURITY_PROTECTED_PROFILE_VERSION ||
+    (documentVersion === METRICS_PROFILE_FILE_VERSION) !==
+      (version === METRICS_PROTECTED_PROFILE_VERSION)
   ) {
     throw new KafkaProfileFileCorruptError();
   }
@@ -460,7 +468,7 @@ function parseProtectedValues(
     ...(transport === "tls" && version >= 3 ? ["binding"] : []),
     "oauth",
     "profileId",
-    ...(version === SECURITY_PROTECTED_PROFILE_VERSION ? ["security"] : []),
+    ...(version >= SECURITY_PROTECTED_PROFILE_VERSION ? ["security"] : []),
     ...(version === 1 ? [] : ["revision"]),
     ...(transport === "tls" ? ["trust"] : []),
     ...(version >= TRANSPORT_PROTECTED_PROFILE_VERSION ? ["transport"] : []),
@@ -476,7 +484,7 @@ function parseProtectedValues(
     throw new KafkaProfileFileCorruptError();
   }
   const base: ProtectedProfileValues = {
-    ...(version === SECURITY_PROTECTED_PROFILE_VERSION
+    ...(version >= SECURITY_PROTECTED_PROFILE_VERSION
       ? {
           security: parseStoredProfileSecurity(protectedValues.security, transport === "plaintext"),
         }
@@ -491,6 +499,11 @@ function parseProtectedValues(
     profileId,
     transport,
   };
+  if (
+    documentVersion < METRICS_PROFILE_FILE_VERSION &&
+    base.security?.services?.metrics !== undefined
+  )
+    throw new KafkaProfileFileCorruptError();
   let parsedOAuth: NonNullable<ProtectedProfileValues["oauth"]> | undefined;
   if (Object.hasOwn(protectedValues, "oauth")) {
     const oauth = valueRecord(protectedValues.oauth);
@@ -529,7 +542,7 @@ function safeProfile(
     protectedValue: protectedValue.toString("base64"),
     ...(record.revision === undefined ? {} : { revision: record.revision }),
     ...(record.services === undefined ? {} : { services: summarizeServices(record.services) }),
-    ...(version !== SECURITY_PROFILE_FILE_VERSION || record.sasl === undefined
+    ...(version < SECURITY_PROFILE_FILE_VERSION || record.sasl === undefined
       ? {}
       : {
           sasl: {
@@ -538,7 +551,7 @@ function safeProfile(
             passwordPresent: record.sasl.password.length > 0,
           },
         }),
-    ...(version !== SECURITY_PROFILE_FILE_VERSION || record.clientIdentity === undefined
+    ...(version < SECURITY_PROFILE_FILE_VERSION || record.clientIdentity === undefined
       ? {}
       : { clientIdentity: summarizeIdentity(record.clientIdentity) }),
     ...(record.source === undefined ? {} : { source: record.source }),
@@ -588,10 +601,12 @@ function protectedProfile(record: KafkaProfileRecord, documentVersion: ProfileFi
     profileId: record.id,
     transport,
     version:
-      documentVersion === SECURITY_PROFILE_FILE_VERSION
-        ? SECURITY_PROTECTED_PROFILE_VERSION
-        : TRANSPORT_PROTECTED_PROFILE_VERSION,
-    ...(documentVersion === SECURITY_PROFILE_FILE_VERSION
+      documentVersion === METRICS_PROFILE_FILE_VERSION
+        ? METRICS_PROTECTED_PROFILE_VERSION
+        : documentVersion >= SECURITY_PROFILE_FILE_VERSION
+          ? SECURITY_PROTECTED_PROFILE_VERSION
+          : TRANSPORT_PROTECTED_PROFILE_VERSION,
+    ...(documentVersion >= SECURITY_PROFILE_FILE_VERSION
       ? { security: storedProfileSecurity(record) }
       : {}),
   };
@@ -640,7 +655,7 @@ function restoredRecord(
   }
   const security = values.security;
   if (
-    documentVersion === SECURITY_PROFILE_FILE_VERSION &&
+    documentVersion >= SECURITY_PROFILE_FILE_VERSION &&
     (security === undefined ||
       !isDeepStrictEqual(
         safe.services,
@@ -674,7 +689,7 @@ function restoredRecord(
           ]),
         );
   const services =
-    documentVersion === SECURITY_PROFILE_FILE_VERSION ? security?.services : legacyServices;
+    documentVersion >= SECURITY_PROFILE_FILE_VERSION ? security?.services : legacyServices;
   const base = {
     ...(security?.sasl === undefined ? {} : { sasl: security.sasl }),
     brokers: safe.brokers,
@@ -864,19 +879,26 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
   private async writeVersion(
     records: readonly KafkaProfileRecord[],
     signal?: AbortSignal,
-  ): Promise<3 | 4> {
-    if (records.some(hasExpandedProfileSecurity)) return SECURITY_PROFILE_FILE_VERSION;
+  ): Promise<3 | 4 | 5> {
+    const required = records.some((record) => record.services?.metrics !== undefined)
+      ? METRICS_PROFILE_FILE_VERSION
+      : records.some(hasExpandedProfileSecurity)
+        ? SECURITY_PROFILE_FILE_VERSION
+        : PROFILE_FILE_VERSION;
     try {
       const original = await readBoundedFile(this.path, this.maximumFileBytes, {
         rejectSymlinks: true,
         signal,
       });
       const version = parseDocument(JSON.parse(original.toString("utf8")) as unknown).version;
-      return version === SECURITY_PROFILE_FILE_VERSION
-        ? SECURITY_PROFILE_FILE_VERSION
-        : PROFILE_FILE_VERSION;
+      // Removing an optional endpoint must never silently downgrade an existing store.
+      return version === METRICS_PROFILE_FILE_VERSION
+        ? METRICS_PROFILE_FILE_VERSION
+        : version === SECURITY_PROFILE_FILE_VERSION && required < SECURITY_PROFILE_FILE_VERSION
+          ? SECURITY_PROFILE_FILE_VERSION
+          : required;
     } catch (error) {
-      if (isMissingFile(error)) return PROFILE_FILE_VERSION;
+      if (isMissingFile(error)) return required;
       throw error;
     }
   }
@@ -908,7 +930,7 @@ export class AtomicKafkaProfileFileStore implements KafkaProfileStore {
       parseProtectedValues(protectedValues.plaintext, profile.id, document.version);
     }
 
-    const rollbackBase = `${this.path}.${targetVersion === SECURITY_PROFILE_FILE_VERSION ? "pre-security-v3" : "pre-transport-v2"}`;
+    const rollbackBase = `${this.path}.${targetVersion === METRICS_PROFILE_FILE_VERSION ? "pre-metrics-v4" : targetVersion === SECURITY_PROFILE_FILE_VERSION ? "pre-security-v3" : "pre-transport-v2"}`;
     for (let generation = 0; generation < PROFILE_ROLLBACK_GENERATIONS; generation += 1) {
       const rollbackPath =
         generation === 0 ? rollbackBase : `${rollbackBase}.${String(generation)}`;

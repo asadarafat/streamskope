@@ -16,6 +16,7 @@ export type { KafkaMessage, KafkaExploredMessage } from "./message-types";
 import type { KafkaReadCoverage, KafkaSearchFilter, KafkaSearchProgress } from "./query-search";
 import type { HostCommandResultMap, HostAcknowledgementCommandName } from "./host-command-results";
 import type {
+  ClusterServiceName,
   ProfileCreateInput,
   ProfileStoreCapability,
   ProfileSummary,
@@ -85,7 +86,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 75 as const;
+export const HOST_PROTOCOL_VERSION = 76 as const;
 
 export { HOST_COMMANDS } from "./host-command-vocabulary";
 
@@ -232,13 +233,7 @@ export type SecureConnectionField =
   | "sasl.username"
   | "sasl.password"
   | "tls.clientIdentity"
-  | `services.${"connect" | "schemaRegistry" | "redpandaAdmin"}.${"basic" | "bearer" | "oauth" | "tls"}`
-  | "services.connect.authentication"
-  | "services.connect.baseUrl"
-  | "services.redpandaAdmin.authentication"
-  | "services.redpandaAdmin.baseUrl"
-  | "services.schemaRegistry.authentication"
-  | "services.schemaRegistry.baseUrl"
+  | `services.${ClusterServiceName}.${"basic" | "bearer" | "oauth" | "tls" | "authentication" | "baseUrl"}`
   | "tls.acquisitionId"
   | "tls.caPem"
   | "tls.enabled";

@@ -59,7 +59,7 @@ interface VerifiedDocument {
   readonly formats: readonly number[];
 }
 const BACKUP =
-  /^kafka-profiles\.json\.(?:pre-upgrade\.bak|(?:pre-transport-v2|pre-security-v3)(?:\.[1-9]\d?)?)$/u;
+  /^kafka-profiles\.json\.(?:pre-upgrade\.bak|(?:pre-transport-v2|pre-security-v3|pre-metrics-v4)(?:\.[1-9]\d?)?)$/u;
 const PREFERENCE_BACKUP =
   /^workbench\/kafka-operational-preferences\.json\.pre-codecs-v1(?:\.[1-9]\d?)?$/u;
 const QUERY_BACKUP =

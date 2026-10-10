@@ -121,7 +121,7 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
       row.count < 0 ||
       row.count > 8192 ||
       !Array.isArray(row.formats) ||
-      row.formats.length > 4
+      row.formats.length > 5
     )
       return invalid();
     let previousFormat = 0;
@@ -132,7 +132,7 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
         format < 1 ||
         format >
           (kind === "kafka-profiles" || kind === "profile-backups"
-            ? 4
+            ? 5
             : kind === "queries"
               ? 4
               : kind === "repair-jobs"

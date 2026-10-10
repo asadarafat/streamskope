@@ -35,6 +35,9 @@ export interface ProfileForm {
   readonly saslUsername: string;
   readonly saslPassword: ProtectedFieldForm;
   readonly clientIdentity: ClientIdentityForm;
+  readonly metricsSecurity: ServiceSecurityForm;
+  readonly metricsAuthentication: ClusterServiceAuthenticationMode;
+  readonly metricsUrl: string;
   readonly connectSecurity: ServiceSecurityForm;
   readonly schemaRegistrySecurity: ServiceSecurityForm;
   readonly redpandaAdminSecurity: ServiceSecurityForm;
@@ -64,6 +67,7 @@ export interface ProfileFormIssues {
   readonly clientId?: string;
   readonly clientSecret?: string;
   readonly name?: string;
+  readonly metricsUrl?: string;
   readonly connectUrl?: string;
   readonly redpandaAdminUrl?: string;
   readonly schemaRegistryUrl?: string;
@@ -86,6 +90,7 @@ export function validateProfileForm(
     clientId?: string;
     clientSecret?: string;
     name?: string;
+    metricsUrl?: string;
     connectUrl?: string;
     redpandaAdminUrl?: string;
     schemaRegistryUrl?: string;
@@ -143,6 +148,7 @@ export function validateProfileForm(
     }
   }
   for (const [field, label, value, authentication, security] of [
+    ["metricsUrl", "Prometheus", form.metricsUrl, form.metricsAuthentication, form.metricsSecurity],
     [
       "schemaRegistryUrl",
       "Schema Registry",
@@ -205,6 +211,9 @@ export function initialProfileForm(profile?: ProfileSummary): ProfileForm {
       saslUsername: "",
       saslPassword: initialProtectedField(),
       clientIdentity: initialClientIdentity(),
+      metricsSecurity: initialServiceSecurity(),
+      metricsAuthentication: "none",
+      metricsUrl: "",
       connectSecurity: initialServiceSecurity(),
       schemaRegistrySecurity: initialServiceSecurity(),
       redpandaAdminSecurity: initialServiceSecurity(),
@@ -237,6 +246,9 @@ export function initialProfileForm(profile?: ProfileSummary): ProfileForm {
     saslUsername: profile.sasl?.username ?? "",
     saslPassword: initialProtectedField(profile.sasl?.passwordPresent),
     clientIdentity: initialClientIdentity(profile.clientIdentity),
+    metricsSecurity: initialServiceSecurity(profile.services?.metrics),
+    metricsAuthentication: profile.services?.metrics?.authentication ?? "none",
+    metricsUrl: profile.services?.metrics?.baseUrl ?? "",
     connectSecurity: initialServiceSecurity(profile.services?.connect),
     schemaRegistrySecurity: initialServiceSecurity(profile.services?.schemaRegistry),
     redpandaAdminSecurity: initialServiceSecurity(profile.services?.redpandaAdmin),

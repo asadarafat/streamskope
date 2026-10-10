@@ -17,6 +17,9 @@ import type { ProfileForm, ProfileFormIssues } from "./profile-dialog-model";
 
 type ServiceForm = Pick<
   ProfileForm,
+  | "metricsUrl"
+  | "metricsAuthentication"
+  | "metricsSecurity"
   | "connectUrl"
   | "connectAuthentication"
   | "connectSecurity"
@@ -31,7 +34,10 @@ type ServiceForm = Pick<
 interface ProfileServiceFieldsProperties {
   readonly disabled: boolean;
   readonly form: ServiceForm;
-  readonly issues: Pick<ProfileFormIssues, "connectUrl" | "schemaRegistryUrl" | "redpandaAdminUrl">;
+  readonly issues: Pick<
+    ProfileFormIssues,
+    "connectUrl" | "schemaRegistryUrl" | "redpandaAdminUrl" | "metricsUrl"
+  >;
   readonly onChange: <K extends keyof ServiceForm>(field: K, value: ProfileForm[K]) => void;
 }
 
@@ -228,6 +234,14 @@ export function ProfileServiceFields({
       authentication: "redpandaAdminAuthentication",
       security: "redpandaAdminSecurity",
       placeholder: "https://redpanda.example:9644",
+    },
+    {
+      label: "Prometheus",
+      urlLabel: "Prometheus metrics URL",
+      url: "metricsUrl",
+      authentication: "metricsAuthentication",
+      security: "metricsSecurity",
+      placeholder: "https://metrics.example:9090",
     },
   ] as const;
   return (

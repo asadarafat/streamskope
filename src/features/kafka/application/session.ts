@@ -149,6 +149,10 @@ export class KafkaApplicationSession {
     return this.scopes.observation();
   }
 
+  metricsScope(): import("./connection-scope").MetricsReadScope | null {
+    return this.scopes.metrics();
+  }
+
   topicCatalogScope(): TopicCatalogScope | null {
     return this.scopes.topicCatalog();
   }
@@ -180,7 +184,7 @@ export class KafkaApplicationSession {
   }
 
   clusterServiceContext(
-    service: "connect" | "redpandaAdmin" | "schemaRegistry",
+    service: "connect" | "redpandaAdmin" | "schemaRegistry" | "metrics",
   ): KafkaClusterServiceContext | null {
     return this.currentSnapshot.state === "connected"
       ? (this.activeConnection?.clusterServiceContext?.(service) ?? null)

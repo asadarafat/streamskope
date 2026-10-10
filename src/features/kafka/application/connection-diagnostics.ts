@@ -110,7 +110,7 @@ export interface ConnectionDiagnostic {
 
 export function serviceConnectionDiagnostic(
   error: unknown,
-  service: "Schema Registry" | "Kafka Connect" | "Redpanda Admin",
+  service: "Schema Registry" | "Kafka Connect" | "Redpanda Admin" | "Prometheus",
 ): ConnectionDiagnostic | undefined {
   switch (classifyConnectionFailure(error)) {
     case "authentication":

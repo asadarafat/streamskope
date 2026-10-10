@@ -1,5 +1,6 @@
 import {
   PROFILE_LIMITS,
+  CLUSTER_SERVICE_NAMES,
   type ProfileCreateInput,
   type ProfileUpdateInput,
   type ClusterServiceEndpointInput,
@@ -75,6 +76,9 @@ export function canonicalServices(
     return undefined;
   }
   return {
+    ...(services.metrics === undefined
+      ? {}
+      : { metrics: canonicalServiceEndpoint(services.metrics) }),
     ...(services.connect === undefined
       ? {}
       : { connect: canonicalServiceEndpoint(services.connect) }),
@@ -192,12 +196,8 @@ export function createIssues(
       });
     }
   }
-  const services = [
-    ["connect", input.services?.connect],
-    ["redpandaAdmin", input.services?.redpandaAdmin],
-    ["schemaRegistry", input.services?.schemaRegistry],
-  ] as const;
-  for (const [serviceName, service] of services) {
+  for (const serviceName of CLUSTER_SERVICE_NAMES) {
+    const service = input.services?.[serviceName];
     if (service === undefined) {
       continue;
     }

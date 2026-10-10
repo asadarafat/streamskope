@@ -1,5 +1,6 @@
 import {
   CLUSTER_SERVICE_AUTHENTICATION_MODES,
+  CLUSTER_SERVICE_NAMES,
   KAFKA_SASL_MECHANISMS,
   PROFILE_LIMITS,
   PROFILE_TRUST_KINDS,
@@ -108,9 +109,14 @@ function endpoints<T>(
   value: unknown,
   path: string,
   parse: (value: unknown, path: string) => T,
-): { readonly connect?: T; readonly schemaRegistry?: T; readonly redpandaAdmin?: T } {
+): {
+  readonly connect?: T;
+  readonly schemaRegistry?: T;
+  readonly redpandaAdmin?: T;
+  readonly metrics?: T;
+} {
   const v = record(value, path);
-  exactKeys(v, ["connect", "schemaRegistry", "redpandaAdmin"], path);
+  exactKeys(v, CLUSTER_SERVICE_NAMES, path);
   return Object.fromEntries(
     Object.entries(v).map(([key, endpoint]) => [key, parse(endpoint, `${path}.${key}`)]),
   );

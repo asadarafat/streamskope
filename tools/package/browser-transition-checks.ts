@@ -11,35 +11,44 @@ export function nativeTransitionChecks(
     ? BROWSER_UPGRADE_CHECKS
     : [
         ...BROWSER_UPGRADE_CHECKS.map((check) =>
-          options.observationRecovery &&
+          (options.observationRecovery || options.metricsRecovery) &&
           check === "genuine predecessor query remains unchanged until explicit view migration"
             ? "saved-view format4 reads preserve bytes before explicit update"
-            : options.observationRecovery &&
+            : options.metricsRecovery &&
                 check === "incompatible view rollback refuses without changing the running host"
-              ? "incompatible observation rollback refuses without changing the running host"
-              : options.observationRecovery && check === "exact published predecessor"
-                ? "exact immutable local-staged observation-format1 predecessor"
-                : check === "exact published predecessor"
-                  ? `exact previously qualified local-staged version-${String(queryFormat)} predecessor`
-                  : check === "no-argument resume preserves rolled-back release"
-                    ? "exact local-staged rolled-back owner restarts with preserved installation"
-                    : options.repairRecovery &&
-                        check ===
-                          "genuine predecessor query remains unchanged until explicit view migration"
-                      ? "genuine predecessor saved view remains unchanged during repair migration"
+              ? "incompatible metrics rollback refuses without changing the running host"
+              : options.observationRecovery &&
+                  check === "incompatible view rollback refuses without changing the running host"
+                ? "incompatible observation rollback refuses without changing the running host"
+                : options.observationRecovery && check === "exact published predecessor"
+                  ? "exact immutable local-staged observation-format1 predecessor"
+                  : check === "exact published predecessor"
+                    ? options.metricsRecovery
+                      ? "exact immutable local-staged profile-format4 predecessor"
+                      : `exact previously qualified local-staged version-${String(queryFormat)} predecessor`
+                    : check === "no-argument resume preserves rolled-back release"
+                      ? "exact local-staged rolled-back owner restarts with preserved installation"
                       : options.repairRecovery &&
                           check ===
-                            "incompatible view rollback refuses without changing the running host"
-                        ? "incompatible repair rollback refuses without changing the running host"
-                        : check,
+                            "genuine predecessor query remains unchanged until explicit view migration"
+                        ? "genuine predecessor saved view remains unchanged during repair migration"
+                        : options.repairRecovery &&
+                            check ===
+                              "incompatible view rollback refuses without changing the running host"
+                          ? "incompatible repair rollback refuses without changing the running host"
+                          : check,
         ),
         options.observationRecovery
           ? "published installation upgraded to actual observation-format1 predecessor with complete backup"
-          : `published installation upgraded to actual local version-${String(queryFormat)} predecessor with complete backup`,
+          : options.metricsRecovery
+            ? "published installation upgraded to actual profile-format4 predecessor with complete backup"
+            : `published installation upgraded to actual local version-${String(queryFormat)} predecessor with complete backup`,
         queryFormat === 4
           ? options.observationRecovery
             ? "saved-view format4 preserved; observation migration qualified separately"
-            : "saved-view format4 preserved; repair recovery migration qualified separately"
+            : options.metricsRecovery
+              ? "saved-view format4 preserved; metrics profile migration qualified separately"
+              : "saved-view format4 preserved; repair recovery migration qualified separately"
           : queryFormat === 3
             ? "view-only format3-to-format4 migration; real broker catalog writes qualified separately"
             : "locator metadata persistence only; real record reload qualified separately",
@@ -63,6 +72,17 @@ export function nativeTransitionChecks(
               "exact old inspector independently refuses format2 without a new backup path",
               "whole-backup restore preserves changed format2 and predecessor in recovery",
               "rolled-back original host reads exact restored format1 bytes",
+            ]
+          : []),
+        ...(options.metricsRecovery
+          ? [
+              "actual format4 host stores OAuth mTLS Basic independent OAuth and SCRAM protected profiles",
+              "profile4-to5 migration preserves all original protected values and exact private predecessor",
+              "metrics credentials survive actual vault restart without connection or collection authority",
+              "format5 never downgrades after metrics removal",
+              "exact old inspector refuses isolated format5 before downtime without new backup paths",
+              "whole-backup restore retains changed metrics format5 and predecessor in recovery",
+              "actual old format4 host reads exact protected profiles after full restore and rollback",
             ]
           : []),
         ...(options.repairHistory

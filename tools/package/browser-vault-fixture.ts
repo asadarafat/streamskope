@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createDecipheriv, createHash, randomUUID, scrypt } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { join } from "node:path";
@@ -97,6 +97,8 @@ export async function waitForBrowser(port: number): Promise<void> {
 }
 
 export interface BrowserVaultFixture {
+  /** Independent decryption stays within this disposable vault; receipts get hashes only. */
+  fingerprintKafkaProtected(omitMetrics?: boolean): Promise<string>;
   /** Check never restarts or authenticates again, so it proves a read-only check kept the session. */
   verifyUnlocked(): Promise<void>;
   unlockAfterReplacement(): Promise<void>;
@@ -225,6 +227,71 @@ export async function createBrowserVaultFixture(instance: {
   };
   await unlock();
   return {
+    fingerprintKafkaProtected: async (omitMetrics = false): Promise<string> => {
+      const metadata = record(JSON.parse(await readFile(join(data, "vault.json"), "utf8")));
+      const key = await new Promise<Buffer>((resolve, reject) =>
+        scrypt(
+          passphrase,
+          Buffer.from(String(metadata.salt), "base64"),
+          32,
+          { ...record(metadata.kdf), maxmem: 64 * 1024 * 1024 },
+          (error, value) => (error ? reject(error) : resolve(value)),
+        ),
+      );
+      try {
+        const aad = Buffer.from(
+          JSON.stringify({
+            version: metadata.version,
+            cipher: metadata.cipher,
+            kdf: metadata.kdf,
+            salt: metadata.salt,
+            vaultId: metadata.vaultId,
+          }),
+        );
+        const document = record(
+          JSON.parse(await readFile(join(data, "kafka-profiles.json"), "utf8")),
+        );
+        assert.ok(Array.isArray(document.profiles));
+        const values = document.profiles.map((item: unknown): Record<string, unknown> => {
+          const entry = record(item),
+            bytes = Buffer.from(String(entry.protectedValue), "base64");
+          assert.equal(bytes.subarray(0, 4).toString(), "SKV1");
+          const decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(4, 16));
+          decipher.setAAD(Buffer.concat([aad, Buffer.from("\0profile-value")]));
+          decipher.setAuthTag(bytes.subarray(16, 32));
+          const value = record(
+            JSON.parse(
+              Buffer.concat([decipher.update(bytes.subarray(32)), decipher.final()]).toString(),
+            ),
+          );
+          if (document.version === 4) assert.equal(value.version, 6);
+          if (document.version === 5) assert.equal(value.version, 7);
+          delete value.version;
+          delete value.revision;
+          if (
+            omitMetrics &&
+            value.security !== undefined &&
+            record(value.security).services !== undefined
+          ) {
+            const services = record(record(value.security).services);
+            delete services.metrics;
+          }
+          return value;
+        });
+        const canonical = (value: unknown): string =>
+          Array.isArray(value)
+            ? `[${value.map(canonical).join(",")}]`
+            : value !== null && typeof value === "object"
+              ? `{${Object.entries(record(value))
+                  .sort(([a], [b]) => a.localeCompare(b, "en"))
+                  .map(([name, entry]) => `${JSON.stringify(name)}:${canonical(entry)}`)
+                  .join(",")}}`
+              : JSON.stringify(value);
+        return createHash("sha256").update(canonical(values)).digest("hex");
+      } finally {
+        key.fill(0);
+      }
+    },
     verifyUnlocked,
     assertNoSecrets,
     seedRepairHistory: (container, includeCompleted = false, format = 1): void => {
