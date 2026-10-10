@@ -308,6 +308,8 @@ export function ObservedHealthPage({
             series={series}
             analysis={analysis}
             actionable={actionable}
+            now={health.now}
+            settings={settings}
             {...navigation}
           />
           <ObservationTrends series={series} />

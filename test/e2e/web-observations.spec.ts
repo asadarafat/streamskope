@@ -33,6 +33,13 @@ test("observes real rising lag across navigation and restores stopped settings a
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
+  const browserCommands: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "POST" || !new URL(request.url()).pathname.endsWith("/commands"))
+      return;
+    const body = request.postDataJSON() as { command?: unknown } | null;
+    if (typeof body?.command === "string") browserCommands.push(body.command);
+  });
   const fixture = await startAuthorizationFixture();
   const topic = "browser-observations",
     groupId = "browser-observed-group";
@@ -206,21 +213,10 @@ test("observes real rising lag across navigation and restores stopped settings a
       health.getByRole("table", { name: "Five-minute observation summaries" }),
     ).toBeVisible();
 
-    await health.getByRole("button", { name: "Analysis details", exact: true }).click();
-    await expect(health).toContainText("Projected lag:");
-    await expect(health).toContainText("Skew suspected");
-    await expect(health).toContainText("Hot key suspected");
-    expect(
-      (await new AxeBuilder({ page }).include('[aria-label="Observed health page"]').analyze())
-        .violations,
-    ).toEqual([]);
-    await health
-      .getByRole("heading", { name: "Explain these observations" })
-      .scrollIntoViewIfNeeded();
-    await page.screenshot({
-      path: testInfo.outputPath("observation-analysis.png"),
-      animations: "disabled",
-    });
+    const evidence = health.getByRole("region", { name: "Observation evidence" });
+    await expect(evidence).toContainText("Kafka API");
+    await expect(evidence).toContainText("9 retained raw samples");
+    await expect(evidence).toContainText("Lag: 15 positions");
     const before = await backend.execute({
       command: "observations.history",
       id: "before-stop",
@@ -236,6 +232,93 @@ test("observes real rising lag across navigation and restores stopped settings a
     await testInfo.attach("observed-lag-evidence", {
       body: Buffer.from(JSON.stringify(before.result.snapshot)),
       contentType: "application/json",
+    });
+    await expect(evidence).toContainText(before.result.snapshot.series[0]!.clusterId);
+    await expect(evidence).toContainText(before.result.snapshot.series[0]!.topicId);
+    await expect(health).toContainText("Rule:");
+    const commandsBeforeSave = browserCommands.length;
+    for (const [kind, name] of [
+      ["group", "Observed group"],
+      ["topic", "Observed topic"],
+    ] as const) {
+      await health.getByRole("button", { name: `Save ${kind} investigation`, exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Saved views", exact: true });
+      await expect(dialog).toContainText(
+        "Measurements, resource identity and diagnoses remain in observation history",
+      );
+      await expect(
+        dialog.getByRole("combobox", { name: "Local connection profile", exact: true }),
+      ).toContainText("Observation fixture");
+      await dialog.getByRole("textbox", { name: "View name", exact: true }).fill(name);
+      await dialog.getByRole("button", { name: "Save current view", exact: true }).click();
+      await expect(dialog.getByRole("status")).toHaveText("View saved.");
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    }
+    const saveCommands = browserCommands.slice(commandsBeforeSave);
+    expect(saveCommands.filter((command) => command === "queries.put")).toHaveLength(2);
+    expect(
+      saveCommands.filter((command) =>
+        [
+          "profiles.connect",
+          "connection.connect",
+          "messages.start",
+          "messages.continue",
+          "latency.start",
+          "records.locator.load",
+          "observations.capture",
+          "observations.watch.start",
+        ].includes(command),
+      ),
+    ).toEqual([]);
+    const library = await backend.execute({
+      command: "queries.list",
+      id: "saved-investigations",
+      version: HOST_PROTOCOL_VERSION,
+      payload: {},
+    });
+    if (!library.ok) throw new Error("No investigation library");
+    const savedTopic = library.result.snapshot.queries.find(
+      (view) => view.name === "Observed topic",
+    )!;
+    const savedGroup = library.result.snapshot.queries.find(
+      (view) => view.name === "Observed group",
+    )!;
+    expect(savedTopic.configuration?.request).toMatchObject({
+      topic,
+      mode: "time-window",
+      maxMessages: 100,
+    });
+    expect(savedTopic.view.destination).toEqual({ kind: "topic", workspace: "messages" });
+    expect(savedTopic.records).toEqual({ selected: null, comparison: null, bookmarks: [] });
+    expect(savedTopic.profileId).toBeTruthy();
+    expect(savedGroup.configuration).toBeNull();
+    expect(savedGroup.view.destination).toEqual({ kind: "consumer-group", groupId });
+    expect(savedGroup.records).toEqual({ selected: null, comparison: null, bookmarks: [] });
+    await testInfo.attach("prepared-investigation-controls", {
+      body: Buffer.from(
+        JSON.stringify({
+          source: "real-kafka-browser",
+          savedTopic,
+          savedGroup,
+          browserCommands: saveCommands,
+        }),
+      ),
+      contentType: "application/json",
+    });
+    await health.getByRole("button", { name: "Analysis details", exact: true }).click();
+    await expect(health).toContainText("Projected lag:");
+    await expect(health).toContainText("Skew suspected");
+    await expect(health).toContainText("Hot key suspected");
+    expect(
+      (await new AxeBuilder({ page }).include('[aria-label="Observed health page"]').analyze())
+        .violations,
+    ).toEqual([]);
+    await health
+      .getByRole("heading", { name: "Explain these observations" })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("observation-analysis.png"),
+      animations: "disabled",
     });
     await page.waitForTimeout(11_000);
     const after = await backend.execute({

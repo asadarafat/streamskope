@@ -8,6 +8,7 @@ export const OBSERVATION_LIMITS = {
   retentionMs: 86_400_000,
   series: 8,
   samples: 240,
+  analysisSamples: 24,
   partitions: 128,
   fileBytes: 4 * 1_048_576,
   sampleRecords: 200,

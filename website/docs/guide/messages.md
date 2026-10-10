@@ -178,6 +178,13 @@ unsupported library is preserved and reported as unavailable. Restore a valid
 backup before retrying. Back up the entire [application data](recovery.md),
 including predecessor files; hosts supporting only versions 1–3 cannot read version 4.
 
+### Start from observed health
+
+[Observed health](observed-health.md#save-a-repeatable-investigation) can prepare
+a saved topic or group investigation after showing its source and coverage.
+Review and explicitly save its controls in the same library. These views contain
+no measurements or diagnosis; re-evaluate current evidence when you reopen them.
+
 ### Bookmark and reload a record
 
 1. Read a record and open its inspector. Choose **Bookmark record**. This action

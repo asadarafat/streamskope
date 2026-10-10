@@ -23,7 +23,7 @@ import { ConnectPage } from "./ConnectPage";
 import { EnvironmentPage } from "./EnvironmentPage";
 import { useInvestigationRecords, workbenchRecordScope } from "./use-investigation-records";
 import { SavedRecordPositions } from "./SavedRecordPositions";
-import { SavedViewsDialog } from "./SavedViewsDialog";
+import { WorkbenchSavedViews } from "./WorkbenchSavedViews";
 import { ReviewedWriteAction } from "./ReviewedWriteAction";
 import { useLocalTopicNotesDialog } from "./use-local-topic-notes-dialog";
 import { useInvestigationViews } from "./use-investigation-views";
@@ -753,6 +753,10 @@ export function StreamSkopeWorkbench({
           void requestTopics();
           requestConsumerGroups();
         }}
+        onSaveInvestigation={(investigation) => {
+          setBookmarkCandidate(undefined);
+          views.prepare(investigation);
+        }}
         onOpenTopic={(topic) => {
           dispatch({ type: "messages.filters.cleared" });
           activateTopic(topic);
@@ -918,33 +922,16 @@ export function StreamSkopeWorkbench({
       }
       overlays={
         <>
-          {views.open ? (
-            <SavedViewsDialog
-              host={host}
-              transfer={textDocumentTransfer}
-              initialImport={views.queryImport}
-              profiles={state.profiles}
-              currentResource={views.currentResource}
-              currentQueryAvailable={selectedTopic !== null}
-              readActive={views.readActive}
-              captureCurrent={views.capture}
-              bookmarkCandidate={bookmarkCandidate}
-              onClose={() => {
-                setBookmarkCandidate(undefined);
-                views.close();
-              }}
-              onRestore={(settings, profileId) => {
-                setBookmarkCandidate(undefined);
-                views.restore(settings, profileId);
-              }}
-              restoreError={views.error}
-              onOpenTopicNotes={() => {
-                setBookmarkCandidate(undefined);
-                views.close();
-                topicNotes.openLibrary();
-              }}
-            />
-          ) : null}
+          <WorkbenchSavedViews
+            host={host}
+            transfer={textDocumentTransfer}
+            profiles={state.profiles}
+            views={views}
+            selectedTopic={selectedTopic}
+            bookmarkCandidate={bookmarkCandidate}
+            clearBookmark={() => setBookmarkCandidate(undefined)}
+            onOpenTopicNotes={topicNotes.openLibrary}
+          />
           {topicNotes.dialog}
           <WorkbenchCommandPalette
             actions={investigationCommands({

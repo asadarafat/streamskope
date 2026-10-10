@@ -2,11 +2,15 @@ import { Stack, Typography } from "@mui/material";
 
 import { StudioAlert as Alert, StudioButton as Button } from "../../../platform/ui/controls";
 import type { ObservationAnalysis } from "../contracts/observation-analysis";
-import type { ObservationSeries } from "../contracts/observations";
+import type { ObservationSeries, ObservationSettings } from "../contracts/observations";
 
 import { findingPriority } from "./observation-presentation";
+import { ObservationEvidence } from "./ObservationEvidence";
+import { findingEvidence, prepareObservationInvestigation } from "./observation-investigations";
+import type { PreparedKafkaInvestigation } from "./investigation-view-settings";
 
 export interface ObservationNavigation {
+  readonly onSaveInvestigation?: (investigation: PreparedKafkaInvestigation) => void;
   readonly onOpenTopic?: (topic: string) => void;
   readonly onOpenGroup?: (groupId: string) => void;
   readonly onOpenRecord?: (locator: {
@@ -21,28 +25,38 @@ export function ObservationFindings({
   series,
   analysis,
   actionable,
+  now,
+  settings,
+  onSaveInvestigation,
   onOpenTopic,
   onOpenGroup,
 }: {
   readonly series: ObservationSeries;
   readonly analysis: ObservationAnalysis;
   readonly actionable: boolean;
+  readonly now: number;
+  readonly settings: ObservationSettings | null;
 } & ObservationNavigation): React.JSX.Element {
   const latest = series.samples.at(-1)!;
   const hints = [...analysis.hints].sort((a, b) => findingPriority(a) - findingPriority(b));
-  const timestamps = (ids: readonly string[]): string =>
-    ids
-      .slice(-3)
-      .map((id) => series.samples.find((s) => s.id === id)?.observedAt)
-      .filter((at): at is number => at !== undefined)
-      .map((at) => new Date(at).toLocaleTimeString())
-      .join(", ");
+  const support = hints.map((hint) => findingEvidence(series, hint.evidence, now));
+  const canAct =
+    actionable &&
+    findingEvidence(series, [latest.id], now).fresh &&
+    support.every((evidence) => evidence.complete && evidence.fresh);
   return (
     <Stack component="section" aria-label="Observation findings" spacing={1}>
       <Typography component="h2" variant="h6">
         Investigate findings
       </Typography>
-      {!actionable && (
+      <ObservationEvidence
+        series={series}
+        analysis={analysis}
+        actionable={actionable}
+        now={now}
+        settings={settings}
+      />
+      {!canAct && (
         <Typography variant="body2">
           Refresh this connection’s evidence to evaluate current findings.
         </Typography>
@@ -75,28 +89,53 @@ export function ObservationFindings({
           cluster.
         </Typography>
       )}
-      {hints.map((hint) => (
+      {hints.map((hint, index) => (
         <Alert severity={findingPriority(hint) <= 1 ? "warning" : "info"} key={hint.title}>
           <Typography component="h3" variant="subtitle2">
             {hint.title}
           </Typography>
-          {hint.detail}
+          {support[index]!.complete
+            ? hint.detail
+            : "Supporting observations are unavailable; this finding cannot be verified."}
           <Typography variant="caption" sx={{ display: "block" }}>
-            Evidence collected at {timestamps(hint.evidence)}
-            {hint.evidence.length > 3 ? `; ${hint.evidence.length} observations total` : ""}. A
-            hypothesis, not an established cause.
+            Rule: {hint.criteria}
+          </Typography>
+          <Typography variant="caption" sx={{ display: "block", overflowWrap: "anywhere" }}>
+            {support[index]!.complete
+              ? `${hint.evidence.length} supporting observations · ${new Date(support[index]!.firstAt!).toISOString()} – ${new Date(support[index]!.lastAt!).toISOString()} · ${support[index]!.fresh && actionable ? "current evidence" : "historical or unverified evidence"}`
+              : "Evidence incomplete"}
+            . Support IDs: {hint.evidence.join(", ") || "none"}. A hypothesis, not an established
+            cause.
           </Typography>
         </Alert>
       ))}
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
         {onOpenTopic && (
-          <Button disabled={!actionable} onClick={() => onOpenTopic(series.topic)}>
+          <Button disabled={!canAct} onClick={() => onOpenTopic(series.topic)}>
             Inspect topic {series.topic}
           </Button>
         )}
         {onOpenGroup && series.groupId !== null && (
-          <Button disabled={!actionable} onClick={() => onOpenGroup(series.groupId!)}>
+          <Button disabled={!canAct} onClick={() => onOpenGroup(series.groupId!)}>
             Inspect consumer group {series.groupId}
+          </Button>
+        )}
+        {onSaveInvestigation && (
+          <Button
+            disabled={!canAct}
+            onClick={() => onSaveInvestigation(prepareObservationInvestigation(series, "topic"))}
+          >
+            Save topic investigation
+          </Button>
+        )}
+        {onSaveInvestigation && series.groupId !== null && (
+          <Button
+            disabled={!canAct}
+            onClick={() =>
+              onSaveInvestigation(prepareObservationInvestigation(series, "consumer-group"))
+            }
+          >
+            Save group investigation
           </Button>
         )}
       </Stack>

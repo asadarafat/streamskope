@@ -219,3 +219,36 @@ it("does not replace a running latency probe with restored setup", () => {
   expect(result.current.readActive).toBe(true);
   expect(props.restoreQuery).not.toHaveBeenCalled();
 });
+
+it("prepares a reviewed investigation without navigation, reads, unrelated positions or persistence", () => {
+  const captureRecords = vi.fn(() => ({ ...settings.records, bookmarks: [] }));
+  const { result, props } = setup({
+    navigation: "observations",
+    selectedTopic: null,
+    captureRecords,
+  });
+  const prepared = {
+    name: "Observed events",
+    resource: "events · messages",
+    settings: {
+      ...settings,
+      configuration: {
+        ...query,
+        request: { topic: "events", mode: "earliest" as const, maxMessages: 100 },
+      },
+    },
+  };
+  act(() => result.current.prepare(prepared));
+  expect(result.current.open).toBe(true);
+  expect(result.current.prepared?.name).toBe("Observed events");
+  expect(result.current.currentResource).toBe("events · messages");
+  expect(result.current.capture()).toEqual(prepared.settings);
+  expect(props.captureQuery).not.toHaveBeenCalled();
+  expect(captureRecords).not.toHaveBeenCalled();
+  expect(props.restoreQuery).not.toHaveBeenCalled();
+  expect(props.setNavigation).not.toHaveBeenCalled();
+  expect(props.dispatch).not.toHaveBeenCalled();
+  act(() => result.current.close());
+  expect(result.current.prepared).toBeUndefined();
+  expect(result.current.currentResource).toBeNull();
+});
