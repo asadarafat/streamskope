@@ -405,15 +405,22 @@ test.describe("real StreamSkope browser connection", () => {
     await expect(page.getByRole("heading", { name: config.schemaSubject })).toBeVisible();
     await expect(page.getByText("StreamSkopeFixtureEvent", { exact: false })).toBeVisible();
 
-    await page.getByRole("button", { name: "Register schema" }).click();
-    const registration = page.getByRole("dialog", { name: "Register schema version" });
+    await page.getByRole("button", { name: "Create subject" }).click();
+    const registration = page.getByRole("dialog", { name: "Create schema subject" });
     await registration.getByRole("textbox", { name: "Subject" }).fill(subject);
-    await registration.getByRole("textbox", { name: "Schema" }).fill(schema);
-    await registration.getByRole("button", { name: "Check compatibility" }).click();
-    await expect(
-      registration.getByText("Compatible with the latest registered version."),
-    ).toBeVisible();
-    await registration.getByRole("button", { name: "Register", exact: true }).click();
+    await registration.getByRole("textbox", { name: "Proposed schema" }).fill(schema);
+    await registration.getByRole("button", { name: "Review schema change" }).click();
+    await expect(registration.getByText(/New subject: no existing writer/)).toBeVisible();
+    await registration
+      .getByRole("textbox", { name: `Type ${subject} to confirm registration` })
+      .fill(subject);
+    await registration
+      .getByRole("button", { name: "Register reviewed schema", exact: true })
+      .click();
+    await expect(registration.getByRole("status")).toContainText(
+      "Registry acknowledged registration",
+    );
+    await registration.getByRole("button", { name: "Refresh subject", exact: true }).click();
 
     await expect(page.getByRole("heading", { name: subject })).toBeVisible();
     await expect(page.getByText("StreamSkopeE2EEvent", { exact: false })).toBeVisible();

@@ -7,12 +7,8 @@ import Typography from "@mui/material/Typography";
 
 import {
   HOST_PROTOCOL_VERSION,
-  parseHostCommand,
-  type HostCommand,
-  type SchemaCompatibilitySnapshot,
   type SchemaRegistryDetailSnapshot,
   type SchemaRegistryInventorySnapshot,
-  type SchemaRegistryType,
   type StreamSkopeHost,
 } from "../contracts";
 import {
@@ -31,6 +27,7 @@ import {
 } from "../../../platform/ui/controls";
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
 
+import { SchemaEvolutionDialog } from "./SchemaEvolutionDialog";
 import { SchemaClientPanel } from "./SchemaClientPanel";
 import { SchemaSamplesPanel } from "./SchemaSamplesPanel";
 import { SchemaAuthorPanel } from "./SchemaAuthorPanel";
@@ -40,7 +37,7 @@ import { WorkbenchIcon } from "./WorkbenchIcons";
 import { useHostCommand } from "./use-host-command";
 
 interface SchemaRegistryPageProperties {
-  readonly compatibility: SchemaCompatibilitySnapshot | null;
+  readonly compatibility: import("../contracts").SchemaCompatibilitySnapshot | null;
   readonly connected: boolean;
   readonly detail: SchemaRegistryDetailSnapshot;
   readonly host: StreamSkopeHost;
@@ -48,7 +45,6 @@ interface SchemaRegistryPageProperties {
 }
 
 export function SchemaRegistryPage({
-  compatibility,
   connected,
   detail,
   host,
@@ -57,18 +53,12 @@ export function SchemaRegistryPage({
   const [filter, setFilter] = useState("");
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [schemaType, setSchemaType] = useState<SchemaRegistryType>("AVRO");
-  const [schema, setSchema] = useState("");
-  const [references, setReferences] = useState("[]");
-  const [checkedDraft, setCheckedDraft] = useState<string>();
-  const draftIdentity = JSON.stringify([subject.trim(), schemaType, schema, references]);
-  const compatibilityCurrent =
-    checkedDraft === draftIdentity && compatibility?.subject === subject.trim();
+  const [evolution, setEvolution] = useState<import("../contracts").SchemaVersionDetail | null>(
+    null,
+  );
   const {
     busy,
     requestError,
-    setRequestError,
     run: execute,
   } = useHostCommand(
     host,
@@ -91,7 +81,6 @@ export function SchemaRegistryPage({
   };
 
   useEffect(() => {
-    setCheckedDraft(undefined);
     if (connected) refresh();
     else setSelectedSubject(null);
     // The active connection owns this refresh lifecycle.
@@ -120,42 +109,6 @@ export function SchemaRegistryPage({
     deletion?.kind === "version" && deletion.version !== undefined
       ? `${selectedSubject ?? ""}@${String(deletion.version)}`
       : (selectedSubject ?? "");
-  const registrationCommand = (
-    command: "schemas.compatibility.check" | "schemas.register",
-  ): HostCommand | null => {
-    try {
-      const parsedReferences = JSON.parse(references) as unknown;
-      return parseHostCommand({
-        command,
-        id: globalThis.crypto.randomUUID(),
-        payload:
-          command === "schemas.register"
-            ? {
-                normalize: true,
-                references: parsedReferences,
-                schema,
-                schemaType,
-                subject: subject.trim(),
-                version: "latest",
-              }
-            : {
-                references: parsedReferences,
-                schema,
-                schemaType,
-                subject: subject.trim(),
-                version: "latest",
-              },
-        version: HOST_PROTOCOL_VERSION,
-      });
-    } catch (error) {
-      setRequestError(
-        error instanceof Error
-          ? `Schema registration input is invalid: ${error.message}`
-          : "Schema registration input is invalid.",
-      );
-      return null;
-    }
-  };
 
   return (
     <Box
@@ -167,11 +120,14 @@ export function SchemaRegistryPage({
           <Stack direction="row" spacing={1}>
             <Button
               disabled={!connected || busy}
-              onClick={() => setRegisterOpen(true)}
+              onClick={() => {
+                setEvolution(null);
+                setRegisterOpen(true);
+              }}
               startIcon={<WorkbenchIcon name="add" />}
               variant="contained"
             >
-              Register schema
+              Create subject
             </Button>
             <Button
               disabled={!connected || busy}
@@ -339,6 +295,16 @@ export function SchemaRegistryPage({
                   >
                     {selectedSchema.schema}
                   </StudioCodeBlock>
+                  <Button
+                    variant="outlined"
+                    disabled={!connected || busy || detail.state !== "ready"}
+                    onClick={() => {
+                      setEvolution(selectedSchema);
+                      setRegisterOpen(true);
+                    }}
+                  >
+                    Evolve selected schema
+                  </Button>
                   <SchemaClientPanel
                     schema={selectedSchema}
                     host={host}
@@ -394,106 +360,26 @@ export function SchemaRegistryPage({
         </Box>
       </Box>
 
-      <Dialog
-        fullWidth
-        maxWidth="md"
-        onClose={() => !busy && setRegisterOpen(false)}
-        open={registerOpen}
-      >
-        <DialogTitle>Register schema version</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2} sx={{ pt: 0.5 }}>
-            <TextField
-              autoFocus
-              fullWidth
-              label="Subject"
-              onChange={(event) => setSubject(event.target.value)}
-              value={subject}
-            />
-            <FormControl fullWidth>
-              <InputLabel id="new-schema-type-label">Schema type</InputLabel>
-              <Select
-                label="Schema type"
-                labelId="new-schema-type-label"
-                onChange={(event) => setSchemaType(event.target.value)}
-                value={schemaType}
-              >
-                <MenuItem value="AVRO">Avro</MenuItem>
-                <MenuItem value="JSON">JSON Schema</MenuItem>
-                <MenuItem value="PROTOBUF">Protobuf</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
-              fullWidth
-              label="Schema"
-              minRows={14}
-              multiline
-              onChange={(event) => setSchema(event.target.value)}
-              value={schema}
-            />
-            <TextField
-              fullWidth
-              helperText='JSON array: [{"name":"Customer","subject":"customer-value","version":2}]'
-              label="References"
-              minRows={3}
-              multiline
-              onChange={(event) => setReferences(event.target.value)}
-              value={references}
-            />
-            {compatibilityCurrent && compatibility !== null ? (
-              <Alert severity={compatibility.compatible ? "success" : "warning"}>
-                {compatibility.compatible
-                  ? compatibility.messages.join(" ") ||
-                    "The Registry accepted compatibility for this draft against the latest version."
-                  : compatibility.messages.join(" ") || "The proposed schema is incompatible."}
-              </Alert>
-            ) : null}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button disabled={busy} onClick={() => setRegisterOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={busy || subject.trim().length === 0 || schema.length === 0}
-            onClick={() => {
-              const command = registrationCommand("schemas.compatibility.check");
-              if (command !== null) {
-                const submitted = draftIdentity;
-                setCheckedDraft(undefined);
-                void execute(command).then((ok) => {
-                  if (ok) setCheckedDraft(submitted);
-                });
-              }
-            }}
-            variant="outlined"
-          >
-            Check compatibility
-          </Button>
-          <Button
-            disabled={
-              busy ||
-              subject.trim().length === 0 ||
-              schema.length === 0 ||
-              !compatibilityCurrent ||
-              compatibility?.compatible !== true
-            }
-            onClick={() => {
-              const command = registrationCommand("schemas.register");
-              if (command !== null)
-                void execute(command).then((ok) => {
-                  if (ok) {
-                    setRegisterOpen(false);
-                    setSelectedSubject(subject.trim());
-                  }
-                });
-            }}
-            variant="contained"
-          >
-            Register
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {registerOpen ? (
+        <SchemaEvolutionDialog
+          key={inventory.connectionName}
+          host={host}
+          initial={evolution}
+          enabled={
+            connected &&
+            !busy &&
+            (evolution === null ||
+              (detail.state === "ready" &&
+                selectedSchema?.id === evolution.id &&
+                selectedSchema.version === evolution.version))
+          }
+          onClose={() => setRegisterOpen(false)}
+          onRegistered={(next) => {
+            setRegisterOpen(false);
+            selectSubject(next);
+          }}
+        />
+      ) : null}
 
       <Dialog
         fullWidth

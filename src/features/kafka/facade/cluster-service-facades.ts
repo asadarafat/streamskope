@@ -4,7 +4,9 @@ import type {
   RedpandaTransformPort,
   SchemaRegistryPort,
 } from "../application";
+import type { SchemaRegistryReviewPort } from "../application/schema-registry-types";
 
+import { SchemaChangeFacade } from "./schema-change-facade";
 import { AclFacadeController } from "./acl-facade";
 import type { ActivityInput } from "./facade-support";
 import { SchemaRegistryFacadeController } from "./schema-registry-facade";
@@ -14,6 +16,8 @@ type ClusterServiceHostCommand = Extract<
   HostCommand,
   {
     readonly command:
+      | "schemas.change.review"
+      | "schemas.change.apply"
       | "schemas.list"
       | "schemas.load"
       | "schemas.compatibility.check"
@@ -34,7 +38,7 @@ interface ClusterServiceFacadeOptions {
   readonly now: () => Date;
   readonly publish: (event: HostEvent) => void;
   readonly recordActivity: (activity: ActivityInput) => void;
-  readonly schemaRegistry?: SchemaRegistryPort;
+  readonly schemaRegistry?: SchemaRegistryPort & Partial<SchemaRegistryReviewPort>;
   readonly session: KafkaApplicationSession;
   readonly transforms?: RedpandaTransformPort;
 }
@@ -42,6 +46,7 @@ interface ClusterServiceFacadeOptions {
 export class ClusterServiceFacadeController {
   private readonly acls: AclFacadeController;
   private readonly schemaRegistry: SchemaRegistryFacadeController;
+  private readonly schemaChanges: SchemaChangeFacade;
   private readonly transforms: TransformFacadeController;
 
   constructor(options: ClusterServiceFacadeOptions) {
@@ -52,6 +57,11 @@ export class ClusterServiceFacadeController {
       recordActivity: options.recordActivity,
       session: options.session,
     };
+    this.schemaChanges = new SchemaChangeFacade(
+      options.session,
+      options.schemaRegistry,
+      options.recordActivity,
+    );
     this.acls = new AclFacadeController({
       ...common,
       available: (): boolean => true,
@@ -68,6 +78,9 @@ export class ClusterServiceFacadeController {
 
   execute(command: ClusterServiceHostCommand, correlationId: string): Promise<HostCommandResponse> {
     switch (command.command) {
+      case "schemas.change.review":
+      case "schemas.change.apply":
+        return this.schemaChanges.execute(command, correlationId);
       case "schemas.list":
       case "schemas.load":
       case "schemas.compatibility.check":
@@ -89,6 +102,7 @@ export class ClusterServiceFacadeController {
 
   invalidate(): void {
     this.schemaRegistry.invalidate();
+    this.schemaChanges.invalidate();
     this.acls.invalidate();
     this.transforms.invalidate();
   }

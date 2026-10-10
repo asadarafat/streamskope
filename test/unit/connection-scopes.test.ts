@@ -125,6 +125,43 @@ function fixture(): {
 }
 
 describe("connection-scoped authorities", () => {
+  it("fences Registry reads and new writes across reconnect while preserving an admitted receipt", async () => {
+    const f = fixture();
+    const service = {
+      baseUrl: "http://registry",
+      authorization: (): Promise<undefined> => Promise.resolve(undefined),
+    };
+    Object.assign(f.connection, { clusterServiceContext: () => service });
+    const scope = f.scopes.schemaRegistry()!;
+    const read = deferred<number>(),
+      receipt = deferred<{ id: number }>();
+    const pending = scope.read(() => read.promise, AbortSignal.timeout(1000));
+    const admitted = scope.tryDispatch(() => receipt.promise);
+    expect(admitted.started).toBe(true);
+    f.reconnect();
+    read.resolve(1);
+    await expect(pending).rejects.toThrow("connection changed");
+    expect(scope.tryDispatch(() => Promise.resolve({ id: 3 }))).toEqual({ started: false });
+    receipt.resolve({ id: 2 });
+    if (!admitted.started) throw new Error("Admission missing");
+    expect(await admitted.result).toEqual({ id: 2 });
+  });
+  it("rejects Registry reads after service authorization is revoked", async () => {
+    const f = fixture(),
+      authority = new AbortController();
+    Object.assign(f.connection, {
+      clusterServiceContext: () => ({
+        baseUrl: "http://registry",
+        signal: authority.signal,
+        authorization: (): Promise<undefined> => Promise.resolve(undefined),
+      }),
+    });
+    const scope = f.scopes.schemaRegistry()!;
+    authority.abort();
+    const run = vi.fn(() => Promise.resolve(1));
+    await expect(scope.read(run, AbortSignal.timeout(1000))).rejects.toThrow();
+    expect(run).not.toHaveBeenCalled();
+  });
   it("exposes only connection-fenced finite reader authority and forwards the private checkpoint", async () => {
     const f = fixture();
     const scope = f.scopes.recordRead()!;

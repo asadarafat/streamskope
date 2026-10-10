@@ -5,8 +5,29 @@ import type {
   SchemaSubjectVersionIdentity,
   SchemaVersionDetail,
 } from "../contracts";
+import type { SchemaCompatibilityPolicy } from "../contracts/schema-changes";
 
 import type { KafkaClusterServiceContext } from "./types";
+
+/** Additional capabilities required for reviewed registration; legacy browsing remains independent. */
+export interface SchemaRegistryReviewPort {
+  loadReviewSchema(
+    context: KafkaClusterServiceContext,
+    identity: SchemaSubjectVersionIdentity,
+    signal: AbortSignal,
+  ): Promise<SchemaVersionDetail | null>;
+  loadCompatibilityPolicy(
+    context: KafkaClusterServiceContext,
+    subject: string,
+    signal: AbortSignal,
+  ): Promise<SchemaCompatibilityPolicy>;
+  checkProposedCompatibility(
+    context: KafkaClusterServiceContext,
+    input: SchemaRegistrationInput,
+    versions: readonly number[],
+    signal: AbortSignal,
+  ): Promise<SchemaRegistryCompatibilityResult>;
+}
 
 export interface SchemaRegistrySubjectInventory {
   readonly omittedSubjects: number;

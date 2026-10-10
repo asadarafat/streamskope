@@ -19,7 +19,12 @@ import type { KafkaWriteDestination } from "../contracts/reviewed-writes";
 
 import { ObservationOperationError, observationAborted } from "./observation-errors";
 import type { KafkaReadCheckpoint } from "./read-checkpoint";
-import type { KafkaActiveConnection, KafkaClusterMetadata, KafkaMessageStream } from "./types";
+import type {
+  KafkaActiveConnection,
+  KafkaClusterMetadata,
+  KafkaMessageStream,
+  KafkaClusterServiceContext,
+} from "./types";
 
 export interface ConnectionScopeContext {
   readonly connection: KafkaActiveConnection;
@@ -35,6 +40,15 @@ export type WriteDispatch = MutationDispatch<KafkaWriteOutcome>;
 export interface ReviewAuthority {
   readonly connectionName: string;
   isCurrent(): boolean;
+}
+
+/** Captured service authority; successful mutations survive connection revocation. */
+export interface SchemaRegistryReviewScope extends ReviewAuthority {
+  read<T>(
+    run: (context: KafkaClusterServiceContext, signal: AbortSignal) => Promise<T>,
+    signal: AbortSignal,
+  ): Promise<T>;
+  tryDispatch<T>(run: (context: KafkaClusterServiceContext) => Promise<T>): MutationDispatch<T>;
 }
 
 /** Authorizes one reviewed attempt without exposing the adapter or its lifecycle. */
@@ -110,6 +124,32 @@ export class KafkaConnectionScopes {
   private readonly identities = new WeakMap<KafkaActiveConnection, object>();
 
   constructor(private readonly context: () => ConnectionScopeContext | null) {}
+
+  schemaRegistry(): SchemaRegistryReviewScope | null {
+    const active = this.context();
+    if (active === null) return null;
+    const context = { ...active };
+    const service = context.connection.clusterServiceContext?.("schemaRegistry");
+    if (!service) return null;
+    return {
+      connectionName: context.connectionName,
+      isCurrent: (): boolean => this.current(context),
+      read: async <T>(
+        run: (value: KafkaClusterServiceContext, signal: AbortSignal) => Promise<T>,
+        signal: AbortSignal,
+      ): Promise<T> => {
+        const combined =
+          service.signal === undefined ? signal : AbortSignal.any([signal, service.signal]);
+        combined.throwIfAborted();
+        const result = await this.readReviewed(context, () => run(service, combined));
+        combined.throwIfAborted();
+        return result;
+      },
+      tryDispatch: <T>(
+        run: (value: KafkaClusterServiceContext) => Promise<T>,
+      ): MutationDispatch<T> => this.dispatch(context, () => run(service)),
+    };
+  }
 
   topicCatalog(): TopicCatalogScope | null {
     const active = this.context();

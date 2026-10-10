@@ -26,7 +26,8 @@ export interface KafkaBackendFacadeOptions {
   readonly now?: () => Date;
   readonly preferences?: KafkaOperationalPreferenceService;
   readonly scheduleMessageFlush?: (flush: () => void, delayMs: number) => (() => void) | void;
-  readonly schemaRegistry?: SchemaRegistryPort;
+  readonly schemaRegistry?: SchemaRegistryPort &
+    Partial<import("../application/schema-registry-types").SchemaRegistryReviewPort>;
   readonly transforms?: RedpandaTransformPort;
   readonly trustAcquisitions?: KafkaTrustAcquisitionServicePort;
 }
