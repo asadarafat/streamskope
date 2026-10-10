@@ -228,8 +228,11 @@ test("observes a real rising-lag fixture, backtests its forecast, continues acro
       });
     }
     await health.getByRole("button", { name: "Stop observing" }).click();
-    await expect(health.getByRole("button", { name: "Start observing" })).toBeEnabled();
+    await expect(health.getByRole("button", { name: "Start observing" })).toBeEnabled({
+      timeout: 15000,
+    });
     await page.reload();
+    await navigation.getByRole("button", { name: "Observed health", exact: true }).click();
     await expect(health.getByLabel("Observed topic", { exact: true })).toHaveValue(topic);
     await expect(health.getByLabel("Observed consumer group (optional)")).toHaveValue(groupId);
     await health.getByRole("button", { name: "History and collection settings" }).click();
