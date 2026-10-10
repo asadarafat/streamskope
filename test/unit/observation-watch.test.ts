@@ -73,6 +73,34 @@ afterEach((): void => {
   vi.useRealTimers();
 });
 
+it("does not manufacture changes when an empty watch is stopped or invalidated repeatedly", async () => {
+  const changed = vi.fn();
+  const f = fixture(undefined, changed);
+  f.watch.invalidate();
+  await f.watch.stop();
+  f.watch.invalidate();
+  expect(f.watch.snapshot()).toEqual(emptyObservationWatch());
+  expect(changed).not.toHaveBeenCalled();
+  expect(f.observe).not.toHaveBeenCalled();
+});
+
+it("publishes evidence revocation once after a completed capture without acquiring another scope", async () => {
+  const changed = vi.fn();
+  const f = fixture(undefined, changed);
+  await f.watch.capture(input);
+  expect(f.watch.snapshot().current).toBe(true);
+  changed.mockClear();
+  f.watch.invalidate();
+  const revoked = f.watch.snapshot();
+  expect(revoked).toMatchObject({ phase: "stopped", current: false, nextCaptureAt: null });
+  expect(changed).toHaveBeenCalledOnce();
+  f.watch.invalidate();
+  await f.watch.stop();
+  expect(f.watch.snapshot()).toEqual(revoked);
+  expect(changed).toHaveBeenCalledOnce();
+  expect(f.observe).toHaveBeenCalledOnce();
+});
+
 it("collects only after opt-in, keeps one completion-relative deadline and stops without another read", async () => {
   vi.useFakeTimers();
   const f = fixture();

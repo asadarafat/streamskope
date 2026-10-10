@@ -151,6 +151,7 @@ export class ObservationWatch {
   }
 
   private revoke(clearEvidence: boolean): void {
+    const wasCurrent = this.snapshot().current;
     if (this.owner) this.owner.revoked = true;
     if (this.manual) this.manual.revoked = true;
     if (clearEvidence) this.lastScope = undefined;
@@ -158,13 +159,16 @@ export class ObservationWatch {
     this.timer = undefined;
     this.service.cancel();
     if (this.operation === undefined && !this.service.busy) this.owner = undefined;
-    this.update({
-      phase:
-        this.operation !== undefined || this.manual !== undefined || this.service.busy
-          ? "stopping"
-          : "stopped",
-      nextCaptureAt: null,
-    });
+    const phase =
+      this.operation !== undefined || this.manual !== undefined || this.service.busy
+        ? "stopping"
+        : "stopped";
+    if (
+      this.value.phase !== phase ||
+      this.value.nextCaptureAt !== null ||
+      (clearEvidence && wasCurrent)
+    )
+      this.update({ phase, nextCaptureAt: null });
   }
 
   async idle(): Promise<void> {
