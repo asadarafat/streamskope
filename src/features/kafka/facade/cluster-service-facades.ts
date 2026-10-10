@@ -4,8 +4,13 @@ import type {
   RedpandaTransformPort,
   SchemaRegistryPort,
 } from "../application";
-import type { SchemaRegistryReviewPort } from "../application/schema-registry-types";
+import type {
+  SchemaRegistryReviewPort,
+  SchemaRegistryPolicyPort,
+} from "../application/schema-registry-types";
+import { SchemaReviewOperations } from "../application/schema-review-operations";
 
+import { SchemaPolicyFacade } from "./schema-policy-facade";
 import { SchemaChangeFacade } from "./schema-change-facade";
 import { AclFacadeController } from "./acl-facade";
 import type { ActivityInput } from "./facade-support";
@@ -16,6 +21,9 @@ type ClusterServiceHostCommand = Extract<
   HostCommand,
   {
     readonly command:
+      | "schemas.policy.load"
+      | "schemas.policy.review"
+      | "schemas.policy.apply"
       | "schemas.change.review"
       | "schemas.change.apply"
       | "schemas.list"
@@ -38,7 +46,8 @@ interface ClusterServiceFacadeOptions {
   readonly now: () => Date;
   readonly publish: (event: HostEvent) => void;
   readonly recordActivity: (activity: ActivityInput) => void;
-  readonly schemaRegistry?: SchemaRegistryPort & Partial<SchemaRegistryReviewPort>;
+  readonly schemaRegistry?: SchemaRegistryPort &
+    Partial<SchemaRegistryReviewPort & SchemaRegistryPolicyPort>;
   readonly session: KafkaApplicationSession;
   readonly transforms?: RedpandaTransformPort;
 }
@@ -47,6 +56,8 @@ export class ClusterServiceFacadeController {
   private readonly acls: AclFacadeController;
   private readonly schemaRegistry: SchemaRegistryFacadeController;
   private readonly schemaChanges: SchemaChangeFacade;
+  private readonly schemaPolicies: SchemaPolicyFacade;
+  private readonly schemaOperations: SchemaReviewOperations;
   private readonly transforms: TransformFacadeController;
 
   constructor(options: ClusterServiceFacadeOptions) {
@@ -57,10 +68,19 @@ export class ClusterServiceFacadeController {
       recordActivity: options.recordActivity,
       session: options.session,
     };
+    this.schemaOperations = new SchemaReviewOperations(() =>
+      options.session.schemaRegistryReviewScope(),
+    );
+    this.schemaPolicies = new SchemaPolicyFacade(
+      options.schemaRegistry,
+      this.schemaOperations,
+      options.recordActivity,
+    );
     this.schemaChanges = new SchemaChangeFacade(
       options.session,
       options.schemaRegistry,
       options.recordActivity,
+      this.schemaOperations,
     );
     this.acls = new AclFacadeController({
       ...common,
@@ -78,6 +98,10 @@ export class ClusterServiceFacadeController {
 
   execute(command: ClusterServiceHostCommand, correlationId: string): Promise<HostCommandResponse> {
     switch (command.command) {
+      case "schemas.policy.load":
+      case "schemas.policy.review":
+      case "schemas.policy.apply":
+        return this.schemaPolicies.execute(command, correlationId);
       case "schemas.change.review":
       case "schemas.change.apply":
         return this.schemaChanges.execute(command, correlationId);
@@ -102,7 +126,7 @@ export class ClusterServiceFacadeController {
 
   invalidate(): void {
     this.schemaRegistry.invalidate();
-    this.schemaChanges.invalidate();
+    this.schemaOperations.invalidate();
     this.acls.invalidate();
     this.transforms.invalidate();
   }

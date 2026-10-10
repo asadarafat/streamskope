@@ -436,3 +436,17 @@ browser reads back the new writer before authoring and independently decoding it
 published record. Controlled faults cover denied writes, connection revocation,
 lost acknowledgements and unavailable/mismatched readback; the anonymous Registry
 fixture does not establish vendor RBAC or managed-service certification.
+
+Reviewed subject compatibility changes are qualified by
+`test/kafka/schema-policy-real.test.ts` and `test/e2e/web-schema-policy.spec.ts`,
+using the same owned Registry. They exercise review without mutation, exact
+confirmation, stale global policy and writer refusal, retained repeat receipts,
+explicit no-op, subject override, inheritance and independent HTTP readback.
+Policy and registration share reviewed write admission; unit regressions qualify
+its serialization, bounded reads, expired authority, denied/uncertain writes and
+acknowledgements preserved after connection/invalidation/readback loss. The browser
+checks the policy table and confirmation, refresh without mutation, and restoration
+of inherited policy. The anonymous Registry does not certify vendor RBAC or
+managed-service permissions. Global changes and advanced Registry rules are outside
+policy-write support. These cases join existing runtime report groups and add no
+qualification lane.

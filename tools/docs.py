@@ -78,7 +78,10 @@ def inspect_message_limits(page=None):
         "const {KAFKA_ORIGINAL_RECORD_LIMITS:o}=require('./src/features/kafka/contracts/record-bytes.ts');"
         "const {RECORD_EXPORT_LIMITS:r}=require('./src/features/kafka/contracts/record-export.ts');"
         "const {RECORD_ANALYSIS_LIMITS:a}=require('./src/features/kafka/contracts/record-analysis.ts');"
+        "const {SCHEMA_AUTHORING_LIMITS:sa}=require('./src/features/kafka/contracts/schema-authoring.ts');"
+        "const {SCHEMA_CHANGE_LIMITS:sc,SCHEMA_REVIEW_LIMITS:sr}=require('./src/features/kafka/contracts/schema-changes.ts');"
         "process.stdout.write(JSON.stringify({"
+        "schemaAuthor:sa.payloadBytes,schemaDraft:sc.draftBytes,schemaSnapshot:sc.snapshotBytes,schemaNodes:sc.referenceNodes,schemaDepth:sc.referenceDepth,schemaOperationMs:sr.operationMs,schemaReadSlots:sr.pendingReads,"
         "retained:m.retainedMessages,bytes:m.retainedBytes,record:m.messageBytes,"
         "preview:m.previewBytes,fetch:f.maxMessages,original:o.bytes,"
         "content:e.exportContentBytes,document:e.exportBytes,window:f.defaultTimeWindowMs,"
@@ -92,6 +95,10 @@ def inspect_message_limits(page=None):
         "queries:l.queries,libraryBytes:l.fileBytes,queryBytes:t.documentBytes,bookmarksPerView:b.bookmarksPerView,bookmarksPerLibrary:b.bookmarksPerLibrary}));",
     ], cwd=ROOT, text=True))
     expected = {
+        "Schema record authoring": f"{limits['schemaAuthor'] / 1024:g} KiB",
+        "Schema change draft": f"{limits['schemaDraft'] / 1024:g} KiB UTF-8",
+        "Schema change snapshot": f"{limits['schemaSnapshot'] / 1024:g} KiB / {limits['schemaNodes']} nodes / {limits['schemaDepth']} levels",
+        "Reviewed Registry operation": f"{limits['schemaOperationMs'] / 1000:g} seconds / {limits['schemaReadSlots']} pending reads",
         "Retained message count": f"{limits['retained']:,}",
         "Retained message bytes": f"{limits['bytes'] / 1_048_576:g} MiB",
         "Full record content": f"{limits['record'] / 1_048_576:g} MiB",
