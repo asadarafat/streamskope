@@ -19,6 +19,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/application/record-batch-service.ts",
     // Two-minute review expiry closes idle isolated destination connections.
     "src/features/kafka/application/record-replay-service.ts",
+    // Each explicit destination observation owns one deadline, cleared before owned cleanup.
+    "src/features/kafka/application/repair-reconciliation-reader.ts",
     "src/features/kafka/application/trust-acquisition-lifecycle.ts",
     // Protected sampling owns one five-second deadline, cleared on settlement.
     "src/features/kafka/application/observation-record-sample.ts",
