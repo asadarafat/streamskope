@@ -1,5 +1,10 @@
 import type { HostCommand, HostCommandResponse } from "./types";
 import { HostContractValidationError } from "./validation-error";
+import {
+  parseConnectOffsetsCommand,
+  parseConnectOffsetsResponse,
+  assertConnectOffsetsResponse,
+} from "./connect-offset-protocol";
 import { record, exactKeys, text, emptyRecord } from "./validation-primitives";
 import {
   connectName,
@@ -12,6 +17,7 @@ import {
 } from "./connect";
 export function assertConnectResponse(response: HostCommandResponse, command: HostCommand): void {
   if (!response.ok) return;
+  assertConnectOffsetsResponse(response, command);
   if (
     response.command === "connect.load" &&
     command.command === "connect.load" &&
@@ -50,6 +56,8 @@ export function parseConnectCommand(
   value: unknown,
   version: HostCommand["version"],
 ): HostCommand | undefined {
+  const offsets = parseConnectOffsetsCommand(command, id, value, version);
+  if (offsets) return offsets;
   if (command === "connect.list")
     return { command, id, version, payload: emptyRecord(value, "payload") };
   if (command === "connect.load") {
@@ -80,6 +88,8 @@ export function parseConnectResponse(
   result: Record<string, unknown>,
   version: HostCommand["version"],
 ): HostCommandResponse | undefined {
+  const offsets = parseConnectOffsetsResponse(command, id, result, version);
+  if (offsets) return offsets;
   if (!command.startsWith("connect.")) return undefined;
   const correlationId = text(result.correlationId, "correlationId", 128);
   switch (command) {

@@ -100,3 +100,154 @@ it("dispatches only the documented failed-task restart endpoint and never retrie
     }),
   );
 });
+it.each([false, true])(
+  "reads the supported offset mapping and dispatches one bounded PATCH or reset (source=%s)",
+  async (source) => {
+    let body: unknown = {
+      offsets: [
+        {
+          partition: source
+            ? { filename: "/host-only/source" }
+            : { kafka_topic: "orders", kafka_partition: 0 },
+          offset: source ? { position: 12 } : { kafka_offset: 12 },
+        },
+      ],
+    };
+    const request = vi.fn<BoundedJsonHttpPort["request"]>().mockImplementation((input) => {
+      if (input.method !== "GET") return Promise.resolve({ status: 202, body: undefined });
+      if (input.url.endsWith("/config"))
+        return Promise.resolve({
+          status: 200,
+          body: {
+            name: "orders",
+            "connector.class": source
+              ? "org.apache.kafka.connect.file.FileStreamSourceConnector"
+              : "org.apache.kafka.connect.file.FileStreamSinkConnector",
+            file: "/host-only/source",
+          },
+        });
+      if (input.url.endsWith("/status"))
+        return Promise.resolve({
+          status: 200,
+          body: { name: "orders", connector: { state: "STOPPED" }, tasks: [] },
+        });
+      if (input.url.endsWith("/offsets")) return Promise.resolve({ status: 200, body });
+      return Promise.resolve({
+        status: 200,
+        body: { version: "4.3.1", kafka_cluster_id: "cluster-A" },
+      });
+    });
+    const adapter = new ConnectHttpAdapter(transport(request)),
+      state = await adapter.inspectOffsets(context, "orders", AbortSignal.timeout(1000));
+    expect(state).toMatchObject({
+      status: "available",
+      mapping: source ? "file-source" : "kafka-sink",
+      offsets: [{ position: 12 }],
+    });
+    if (state.status !== "available") throw new Error("Missing supported mapping");
+    const before = request.mock.calls.length;
+    expect(
+      await adapter.applyOffsets(
+        context,
+        { name: "orders", action: "remove", partition: state.offsets[0]!.partition, offset: null },
+        AbortSignal.timeout(1000),
+      ),
+    ).toMatchObject({ state: "acknowledged", cleanup: "confirmed" });
+    expect(request.mock.calls.length - before).toBe(1);
+    expect(request.mock.lastCall?.[0]).toMatchObject({
+      method: "PATCH",
+      url: "https://connect.example/prefix/connectors/orders/offsets",
+      body: { offsets: [{ partition: state.offsets[0]!.partition, offset: null }] },
+      authorization: "Bearer protected",
+      caPem: "ca",
+    });
+    await adapter.applyOffsets(
+      context,
+      { name: "orders", action: "reset", partition: null, offset: null },
+      AbortSignal.timeout(1000),
+    );
+    expect(request.mock.lastCall?.[0]).toMatchObject({
+      method: "DELETE",
+      url: "https://connect.example/prefix/connectors/orders/offsets",
+    });
+    body = { offsets: [] };
+    expect(
+      await adapter.inspectOffsets(context, "orders", AbortSignal.timeout(1000)),
+    ).toMatchObject({ status: "available", offsets: [] });
+  },
+);
+it.each([401, 403, 404, 405, 501, 500])(
+  "distinguishes offset inspection HTTP%s from an empty offset set",
+  async (status) => {
+    const adapter = new ConnectHttpAdapter(
+      transport(
+        vi
+          .fn<BoundedJsonHttpPort["request"]>()
+          .mockResolvedValue({ status, body: { secret: "withheld" } }),
+      ),
+    );
+    expect(await adapter.inspectOffsets(context, "orders", AbortSignal.timeout(1000))).toEqual({
+      status: [401, 403].includes(status)
+        ? "denied"
+        : [404, 405, 501].includes(status)
+          ? "unsupported"
+          : "unavailable",
+    });
+  },
+);
+it.each(["duplicate", "unsafe", "extra", "unknown", "routing", "foreign-source"])(
+  "refuses %s offset mappings without a mutation",
+  async (mode) => {
+    const source = mode === "foreign-source",
+      entry = {
+        partition: source
+          ? { filename: "/foreign-source" }
+          : { kafka_topic: "orders", kafka_partition: 0 },
+        offset: source
+          ? { position: 4 }
+          : { kafka_offset: mode === "unsafe" ? Number.MAX_SAFE_INTEGER + 1 : 4 },
+      };
+    const request = vi.fn<BoundedJsonHttpPort["request"]>().mockImplementation((input) =>
+      Promise.resolve({
+        status: 200,
+        body: input.url.endsWith("/config")
+          ? {
+              name: "orders",
+              "connector.class":
+                mode === "unknown"
+                  ? "custom.SourceConnector"
+                  : source
+                    ? "org.apache.kafka.connect.file.FileStreamSourceConnector"
+                    : "org.apache.kafka.connect.file.FileStreamSinkConnector",
+              file: "/host-only/source",
+              ...(mode === "routing"
+                ? { "consumer.override.bootstrap.servers": "different-cluster" }
+                : {}),
+            }
+          : input.url.endsWith("/status")
+            ? { name: "orders", connector: { state: "STOPPED" }, tasks: [] }
+            : input.url.endsWith("/offsets")
+              ? {
+                  offsets:
+                    mode === "duplicate"
+                      ? [entry, entry]
+                      : [
+                          {
+                            ...entry,
+                            ...(mode === "extra" ? { unrecognized: "partition-guess" } : {}),
+                          },
+                        ],
+                }
+              : { version: "4.3.1", kafka_cluster_id: "cluster-A" },
+      }),
+    );
+    expect(
+      await new ConnectHttpAdapter(transport(request)).inspectOffsets(
+        context,
+        "orders",
+        AbortSignal.timeout(1000),
+      ),
+    ).toEqual({ status: "unsupported" });
+    expect(request.mock.calls.every(([input]) => input.method === "GET")).toBe(true);
+  },
+);

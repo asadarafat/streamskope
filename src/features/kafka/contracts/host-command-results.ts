@@ -90,6 +90,18 @@ interface SpecificCommandResults
     readonly correlationId: string;
     readonly outcome: import("./connect").ConnectOutcome;
   };
+  readonly "connect.offsets.inspect": {
+    readonly correlationId: string;
+    readonly snapshot: import("./connect-offsets").ConnectOffsetsSnapshot;
+  };
+  readonly "connect.offsets.review": {
+    readonly correlationId: string;
+    readonly review: import("./connect-offsets").ConnectOffsetsReview;
+  };
+  readonly "connect.offsets.apply": {
+    readonly correlationId: string;
+    readonly outcome: import("./connect-offsets").ConnectOffsetsOutcome;
+  };
   readonly "environments.capture": {
     readonly correlationId: string;
     readonly snapshot: import("./environment-snapshot").EnvironmentSnapshot;
@@ -283,6 +295,9 @@ const structuredResults = {
   "connect.validate": true,
   "connect.review": true,
   "connect.apply": true,
+  "connect.offsets.inspect": true,
+  "connect.offsets.review": true,
+  "connect.offsets.apply": true,
   "environments.capture": true,
   "environments.review": true,
   "environments.apply": true,

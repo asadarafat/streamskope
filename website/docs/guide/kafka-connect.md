@@ -41,7 +41,7 @@ An empty update, duplicate removal, absent removal or oversized merged configura
 
 ## Review and apply
 
-Choose create, update, pause, resume, restart failed tasks or delete. **Review action** validates the configuration where applicable, captures the complete canonical configuration/task state and expires after two minutes. The review names the connected profile and lists set and removal keys without their secret values. Confirm the exact action and name before applying. Read-only mode prevents application. Keep the receipt until you choose **Dismiss receipt and start another review**; refreshing inventory does not resend the action.
+Choose create, update, pause, stop, resume, restart failed tasks or delete. **Review action** validates the configuration where applicable, captures the complete canonical configuration/task state and expires after two minutes. The review names the connected profile and lists set and removal keys without their secret values. Confirm the exact action and name before applying. Read-only mode prevents application. Keep the receipt until you choose **Dismiss receipt and start another review**; refreshing inventory does not resend the action.
 
 A changed connector, connection or expired review is rejected before dispatch. Reconnecting to a profile with the same name also clears its edited form and prior review. One review identifier permits one attempt. A successful HTTP response means **acknowledged**; asynchronous task transitions can still be pending. Refresh until the expected state appears. An interrupted request can be **unknown**: inspect the connector before making another review. StreamSkope does not automatically resend mutations. Concurrent changes after the final read cannot be made atomic by the Connect REST API.
 
@@ -58,6 +58,21 @@ An acknowledged action can therefore have unavailable readback or unresolved cle
 
 Delete removes the connector configuration, not its Kafka topics or external data. Restart failed tasks requests `includeTasks=true&onlyFailed=true`; it does not rewind offsets, repair a converter or guarantee delivery.
 
+## Inspect and change connector offsets
+
+Select a connector, then choose **Inspect connector offsets**. The panel shows the responding worker version, matching Kafka cluster identity, connector state and observation time. An available empty set means no saved positions were observed; it does not mean position zero. Denied, unsupported, missing and unavailable results cannot authorize an edit.
+
+Offset editing currently supports the Apache FileStream source and sink mappings. Sink positions are the next Kafka offset for a topic partition. Source positions use the FileStream connector's own position semantics; its source-file partition stays protected in the host. Other source mappings, custom connector classes, unsafe numeric positions and connector-level broker routing overrides remain unsupported. This is not a generic source rewind or poison-record skip tool.
+
+1. Choose **stop** in the connector lifecycle form, review and confirm the action. **pause** keeps task resources allocated and does not permit offset edits. Inspect again until the worker positively reports `STOPPED` with no running tasks.
+2. Choose **Set one position**, **Remove one position**, or **Reset all positions**. Set accepts a nonnegative safe integer for one observed partition. Removal clears only that saved position; reset clears all saved positions for this connector.
+3. Choose **Review offset change**. Check the named connector/profile, cluster identity, affected partitions, before/after positions and two-minute expiry. Type the exact confirmation, then choose **Apply reviewed offset change**.
+4. Keep the separate dispatch, acknowledgement, readback and original-request cleanup receipt. **Dismiss offset receipt** permits a fresh inspection; unresolved cleanup prevents dismissal and new admission. No action is automatically resent.
+
+The host rechecks the full configuration, task state, worker/broker identity and offset baseline before one PATCH or reset request. A local write gate coordinates lifecycle/configuration and offset changes; other administrators can still race the REST API, which provides no atomic compare-and-set. Read-only mode blocks application.
+
+Offset changes can reprocess or omit records when you later resume the connector. Resume policy and external-system behavior belong to the connector; changing an offset does not delete Kafka records or establish exactly-once delivery. StreamSkope does not automatically resume the connector. Inspect an uncertain outcome before making a new review.
+
 ## Investigate a dead-letter queue
 
 When a connector declares `errors.deadletterqueue.topic.name`, **Browse DLQ** opens that topic. For sink connectors that support Connect error handling, enable `errors.deadletterqueue.context.headers.enable` to include original topic, partition, offset, connector, task and processing stage.
@@ -66,4 +81,4 @@ The message inspector interprets complete, unmasked Connect context headers as *
 
 Use [Copy or replay records](record-replay.md) to choose an explicit destination and inspect exact original/transformed bytes. The same bounded replay preserves key, value, nulls and ordered headers and reports acknowledged, rejected, unknown and unsent records. Copying back to a source can fail again or loop. This workflow does not skip a task's bad record, delete the DLQ record or commit a source offset. Connector-specific DLQ support must be verified with that connector.
 
-REST behavior follows the [Apache Kafka Connect guide](https://kafka.apache.org/43/kafka-connect/user-guide/). Real-worker qualification uses Apache Kafka/Connect 4.3.1 with its FileStream sink; it does not qualify every connector plugin.
+REST behavior follows the [Apache Kafka Connect guide](https://kafka.apache.org/43/kafka-connect/user-guide/). Real-worker qualification uses Apache Kafka/Connect 4.3.1 with its FileStream source and sink; it does not qualify every connector plugin.

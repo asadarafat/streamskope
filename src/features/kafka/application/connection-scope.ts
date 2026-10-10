@@ -75,7 +75,9 @@ export interface ClusterServiceReviewScope extends ReviewAuthority {
 }
 
 export type SchemaRegistryReviewScope = Omit<ClusterServiceReviewScope, "cleanupUnresolved">;
-export type ConnectReviewScope = ClusterServiceReviewScope;
+export type ConnectReviewScope = ClusterServiceReviewScope & {
+  readonly brokerClusterId?: (signal: AbortSignal) => Promise<string | null>;
+};
 
 /** Authorizes one reviewed attempt without exposing the adapter or its lifecycle. */
 export interface ReviewedWriteScope extends ReviewAuthority {
@@ -171,7 +173,7 @@ export class KafkaConnectionScopes {
     return this.clusterService("connect");
   }
 
-  private clusterService(name: "schemaRegistry" | "connect"): ClusterServiceReviewScope | null {
+  private clusterService(name: "schemaRegistry" | "connect"): ConnectReviewScope | null {
     const active = this.context();
     if (active === null) return null;
     const context = { ...active };
@@ -185,6 +187,20 @@ export class KafkaConnectionScopes {
       connectionName: context.connectionName,
       isCurrent: current,
       cleanupUnresolved: (): boolean => service.requestOwner?.cleanupUnresolved === true,
+      ...(name !== "connect"
+        ? {}
+        : {
+            brokerClusterId: async (signal: AbortSignal): Promise<string | null> => {
+              signal.throwIfAborted();
+              if (!current()) throw new Error("Original Connect authority is unavailable.");
+              const result = await this.readReviewed(context, () =>
+                context.connection.describeClusterMetadata(signal),
+              );
+              signal.throwIfAborted();
+              if (!current()) throw new Error("Original Connect authority is unavailable.");
+              return result.clusterId;
+            },
+          }),
       read: async <T>(
         run: (value: KafkaClusterServiceContext, signal: AbortSignal) => Promise<T>,
         signal: AbortSignal,

@@ -85,7 +85,7 @@ import type {
 export { HOST_ERROR_CODES, HOST_ERROR_STAGES } from "./host-errors";
 export type { HostError, HostErrorCode, HostErrorStage } from "./host-errors";
 
-export const HOST_PROTOCOL_VERSION = 72 as const;
+export const HOST_PROTOCOL_VERSION = 73 as const;
 
 export { HOST_COMMANDS } from "./host-command-vocabulary";
 
@@ -264,6 +264,7 @@ type HostCommandDefinition =
   | import("./record-analysis-protocol").RecordAnalysisCommand
   | import("./record-export-protocol").RecordExportCommand
   | import("./connect").ConnectHostCommand
+  | import("./connect-offsets").ConnectOffsetsCommand
   | import("./environment-protocol").EnvironmentHostCommand
   | import("./relationship-protocol").RelationshipCommand
   | import("./observation-protocol").ObservationCommand

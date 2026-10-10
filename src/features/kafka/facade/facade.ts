@@ -435,6 +435,9 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "connect.validate":
       case "connect.review":
       case "connect.apply":
+      case "connect.offsets.inspect":
+      case "connect.offsets.review":
+      case "connect.offsets.apply":
         return this.connectService.execute(command, correlationId);
       case "environments.capture":
       case "environments.review":

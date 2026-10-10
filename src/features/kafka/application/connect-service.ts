@@ -11,6 +11,7 @@ import { connectConfig, parseConnectInput } from "../contracts/connect";
 import type { KafkaClusterServiceContext } from "./types";
 import { ConnectionPlans } from "./connection-plans";
 import type { ConnectReviewScope } from "./connection-scope";
+import { ConnectWriteAdmission } from "./connect-write-admission";
 
 export interface ConnectState {
   readonly detail: ConnectDetail;
@@ -72,11 +73,11 @@ function baseline(state: ConnectState | null): string {
 }
 export class ConnectService {
   private readonly plans: ConnectionPlans<PlanValue, ConnectOutcome, ConnectReviewScope>;
-  private applying = false;
   constructor(
     private readonly context: () => ConnectReviewScope | null,
     private readonly port: ConnectPort,
     private readonly now = Date.now,
+    private readonly admission = new ConnectWriteAdmission(),
   ) {
     this.plans = new ConnectionPlans(context, (scope) => scope.isCurrent(), now);
   }
@@ -182,9 +183,9 @@ export class ConnectService {
           detail,
           observed,
         });
-        if (this.applying)
+        const release = this.admission.acquire();
+        if (!release)
           return rejected("Another Connect action is in progress. Review again afterwards.");
-        this.applying = true;
         try {
           const signal = AbortSignal.timeout(
             Math.max(1, Math.min(20000, Date.parse(plan.expiresAt) - this.now())),
@@ -254,7 +255,7 @@ export class ConnectService {
             observed: observed?.detail ?? null,
           };
         } finally {
-          this.applying = false;
+          release();
         }
       },
     );
@@ -267,7 +268,8 @@ function connectActionObserved(input: ConnectInput, observed: ConnectState | nul
     return (
       JSON.stringify(connectConfig(observed.config)) === JSON.stringify(connectConfig(input.config))
     );
-  const expected = input.action === "pause" ? "PAUSED" : "RUNNING";
+  const expected =
+    input.action === "pause" ? "PAUSED" : input.action === "stop" ? "STOPPED" : "RUNNING";
   return (
     observed.detail.state === expected &&
     observed.detail.tasks.every((task) => task.state === expected)

@@ -125,6 +125,35 @@ function fixture(): {
 }
 
 describe("connection-scoped authorities", () => {
+  it("does not return original Connect broker identity after same-name connection replacement", async () => {
+    const metadata = deferred<KafkaClusterMetadata>();
+    const describeMetadata = vi
+      .fn<() => Promise<KafkaClusterMetadata>>()
+      .mockReturnValue(metadata.promise);
+    const connection = Object.assign(new RecordingActiveConnection(), {
+      clusterServiceContext: () => ({
+        baseUrl: "https://connect.example",
+        authorization: (): Promise<undefined> => Promise.resolve(undefined),
+      }),
+      describeClusterMetadata: describeMetadata,
+    });
+    let context: ConnectionScopeContext = {
+      connection,
+      generation: 1,
+      connectionName: "Same profile",
+    };
+    const scopes = new KafkaConnectionScopes(() => context),
+      original = scopes.connect()!;
+    const pending = original.brokerClusterId!(new AbortController().signal);
+    context = { ...context, generation: 2 };
+    metadata.resolve({ clusterId: "original-cluster", controllerId: 0, brokers: [] });
+    await expect(pending).rejects.toThrow();
+    await expect(original.brokerClusterId!(new AbortController().signal)).rejects.toThrow();
+    expect(describeMetadata).toHaveBeenCalledTimes(1);
+    expect(await scopes.connect()!.brokerClusterId!(new AbortController().signal)).toBe(
+      "original-cluster",
+    );
+  });
   it("fences Registry reads and new writes across reconnect while preserving an admitted receipt", async () => {
     const f = fixture();
     const service = {
