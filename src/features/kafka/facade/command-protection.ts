@@ -42,6 +42,7 @@ export const KAFKA_COMMAND_ACCESS = {
   "records.decode": "remote-read",
   "schemas.inspect": "remote-read",
   "schemas.samples": "remote-read",
+  "schemas.author": "remote-read",
   "records.batch.review": "remote-read",
   "records.batch.apply": "remote-write",
   "records.batch.cancel": "local",

@@ -1,4 +1,5 @@
 import type { HostCommand, HostCommandResponse } from "./types";
+import { parseSchemaAuthoringInput, parseSchemaAuthoringResult } from "./schema-authoring";
 import { exactKeys, text, record } from "./validation-primitives";
 import {
   parseSchemaSampleInput,
@@ -14,6 +15,19 @@ export function parseSampleResponse(
   version: HostCommand["version"],
   result: Record<string, unknown>,
 ): HostCommandResponse | undefined {
+  if (command === "schemas.author") {
+    exactKeys(result, ["correlationId", "authoring"], "response.result");
+    return {
+      command,
+      id,
+      version,
+      ok: true,
+      result: {
+        correlationId: text(result.correlationId, "response.result.correlationId", 128),
+        authoring: parseSchemaAuthoringResult(result.authoring),
+      },
+    };
+  }
   if (command === "schemas.samples") {
     exactKeys(result, ["correlationId", "samples"], "response.result");
     return {
@@ -63,6 +77,8 @@ export function parseSampleCommand(
   version: HostCommand["version"],
 ): HostCommand | undefined {
   switch (command) {
+    case "schemas.author":
+      return { command, id, version, payload: parseSchemaAuthoringInput(value) };
     case "schemas.samples":
       return { command, id, version, payload: parseSchemaSampleInput(value) };
     case "records.batch.review":

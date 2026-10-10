@@ -13,7 +13,8 @@ export interface KafkaBackendFacadeOptions {
   readonly observationStore?: import("../application/observation-store").ObservationStore;
   readonly connect?: import("../application/connect-service").ConnectPort;
   readonly replayConnections?: import("../application").KafkaConnectionPort;
-  readonly sampleGenerator?: import("../application/record-codec-types").SchemaSamplePort;
+  readonly sampleGenerator?: import("../application/record-codec-types").SchemaSamplePort &
+    Partial<import("../application/record-codec-types").SchemaAuthoringPort>;
   readonly recordCodec?: import("../application/record-codec-types").RecordCodecPort;
   readonly schemaLookup?: import("../application/record-codec-types").SchemaLookupPort;
   readonly queries?: KafkaQueryLibrary;

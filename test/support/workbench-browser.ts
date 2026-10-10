@@ -45,7 +45,7 @@ export async function approvePluginReview(
 
 export async function openWorkbenchResource(
   page: Page,
-  resource: "Connection Profiles" | "Consumer Groups" | "Overview" | "Topics",
+  resource: "Connection Profiles" | "Consumer Groups" | "Overview" | "Topics" | "Schema Registry",
 ): Promise<void> {
   const navigation = page.getByRole("navigation", { name: "StreamSkope resources" });
   if (!(await navigation.isVisible())) {

@@ -1,6 +1,6 @@
-import Ajv from "ajv";
-
 import type { CodecSchemaBundle } from "../application/record-codec-types";
+
+import { compileJsonSchema } from "./schema-json-validation";
 
 const keywords = new Set([
   "$schema",
@@ -61,17 +61,6 @@ export function jsonSampleGenerator(
 ): () => unknown {
   const root = parseSchema(bundle.root.schema);
   const documents = new Map<string, unknown>([["", root]]);
-  const validator = new Ajv({
-    strict: true,
-    allErrors: false,
-    allowUnionTypes: true,
-    logger: false,
-    code: { optimize: false },
-  });
-  validator.addMetaSchema(
-    { $ref: "http://json-schema.org/draft-07/schema#" },
-    "https://json-schema.org/draft-07/schema#",
-  );
   const checkKeywords = (schema: unknown, depth: number): void => {
     if (depth > 32) throw new Error("JSON Schema is too deeply nested.");
     if (typeof schema === "boolean") return;
@@ -101,9 +90,8 @@ export function jsonSampleGenerator(
     const parsed = parseSchema(schema.schema);
     checkKeywords(parsed, 0);
     documents.set(name, parsed);
-    validator.addSchema(parsed as object, name);
   }
-  const validate = validator.compile(root as object);
+  const validate = compileJsonSchema(bundle);
   const sample = (schema: unknown, currentDocument: unknown, depth: number): unknown => {
     if (depth > 8) throw new Error("JSON samples exceed the eight-level generation limit.");
     if (schema === true) return null;

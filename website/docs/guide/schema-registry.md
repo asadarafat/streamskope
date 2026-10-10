@@ -55,9 +55,12 @@ A new subject reports **no registered version**, not compatibility with an exist
 schema. Registration checks compatibility again before sending the write.
 
 References name another subject and an exact version; their supported formats
-depend on the Registry. The Karapace 5.0.3 fixture qualifies Protobuf references
-and Avro compatibility. It does not support Avro references; newer Karapace versions
-add that capability ([vendor support](https://aiven.io/docs/products/kafka/karapace)).
+depend on the Registry. The isolated authoring fixture pins Karapace 6.1.0, including Avro and
+Protobuf references ([vendor support](https://aiven.io/docs/products/kafka/karapace)).
+JSON Schema validation resolves declared references in the worker; that does not
+claim JSON reference registration support in this Registry vendor. The AIO
+development fixture remains Karapace 5.0.3, which supports Protobuf references
+and Avro compatibility but cannot register Avro reference graphs.
 
 If registration or deletion is acknowledged but the follow-up read fails, Activity
 retains the successful write and warns that refresh is unavailable. Refresh the
@@ -112,3 +115,37 @@ and cancellation outcomes](structured-events.md#generate-schema-valid-samples).
 ## Generate a validating client
 
 For a supported JSON Schema version, use **Generate JavaScript client** to create a Node 24 record codec and producer helper with pinned Registry framing and provenance. See [Generate a schema client](schema-clients.md) for supported keywords, runtime installation and limits.
+
+## Author a record
+
+Select an exact registered schema version and choose **Author record**. Edit
+**Record payload JSON**, or use **Start from one sample** as an editable starting
+point. For Protobuf, choose the fully qualified message type; leaving it empty
+selects the first top-level writer message.
+
+1. Choose **Validate payload**. Validation reads the registered writer and its
+   pinned references, then compiles and encodes the value in an isolated worker.
+   It does not register a schema or publish a Kafka record.
+2. Review the **Encoded projection**, writer schema ID and encoding. Avro and
+   Protobuf use their Confluent wire headers. JSON Schema produces UTF-8 JSON
+   without a wire header. JSON `null` is an encoded value, not a Kafka tombstone.
+3. Enter the destination topic, partition and maximum publication rate, then
+   choose **Review batch destination**. Type the exact topic name to confirm
+   **Publish reviewed batch**. Review acknowledged, rejected, uncertain and
+   unsent counts before considering another attempt.
+
+Editing the payload invalidates validation and destination review. Changing the
+destination invalidates its review. Reconnecting or locking clears the current
+validation. If the selected writer ID changed after deletion/recreation, reload
+the subject before authoring. Schema IDs from another Registry cannot be assumed
+to identify the same writer; publication currently uses the active connection.
+
+Values are limited to 16 KiB UTF-8 and 16 KiB encoded bytes, with bounded depth,
+reference resolution and worker time. Keys are null and headers empty in this
+authoring workflow. Use decimal strings for 64-bit fields; unsafe integer JSON
+numbers are rejected. Avro uses named union branches and byte strings, with
+logical types expressed through underlying storage values. Protobuf uses Base64
+bytes and declared enum names, and rejects unknown fields or conflicting oneof
+members. JSON Schema validation supports draft-07 with declared references and
+no external URL fetching. Unsupported schemas produce explicit validation errors
+rather than substituting an unvalidated value.

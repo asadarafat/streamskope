@@ -158,6 +158,7 @@ export async function startNativeKafkaFixture(
 ): Promise<{
   readonly authentication?: KafkaAuthenticationFixture;
   readonly environment: Record<string, string>;
+  readonly internalBroker: string;
   readonly metadata: { kafkaVersion: string; archiveSha512: string; transport: string };
   dispose(): Promise<void>;
 }> {
@@ -461,6 +462,7 @@ export async function startNativeKafkaFixture(
     if (!ready) throw new Error("Native Kafka fixture did not become ready.");
     return {
       ...(authentication === undefined ? {} : { authentication: authentication.fixture }),
+      internalBroker: `127.0.0.1:${internalPort}`,
       environment: {
         STREAMSKOPE_TEST_KAFKA_ENDPOINT: `127.0.0.1:${clientPort}`,
         STREAMSKOPE_TEST_OAUTH_ENDPOINT: `${oauthRoot}/rest-gateway/rest/api/v1/auth/token`,

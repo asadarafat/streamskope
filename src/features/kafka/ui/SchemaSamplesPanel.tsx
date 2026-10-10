@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Stack, Typography } from "@mui/material";
 
 import {
@@ -6,13 +6,7 @@ import {
   type SchemaVersionDetail,
   type StreamSkopeHost,
 } from "../contracts";
-import {
-  parseSchemaSampleInput,
-  parseRecordBatchInput,
-  type SchemaSamples,
-  type RecordBatchReview,
-  type RecordBatchOutcome,
-} from "../contracts/schema-samples";
+import { parseSchemaSampleInput, type SchemaSamples } from "../contracts/schema-samples";
 import {
   StudioAlert as Alert,
   StudioButton as Button,
@@ -24,6 +18,8 @@ import {
   StudioMenuItem as MenuItem,
 } from "../../../platform/ui/controls";
 import { StudioCodeBlock } from "../../../platform/ui/StudioCodeBlock";
+
+import { SchemaRecordPublication } from "./SchemaRecordPublication";
 
 export function SchemaSamplesPanel({
   schema,
@@ -38,69 +34,30 @@ export function SchemaSamplesPanel({
   const [seed, setSeed] = useState("1");
   const [count, setCount] = useState("5");
   const [messageType, setMessageType] = useState("");
-  const [topic, setTopic] = useState("");
-  const [partition, setPartition] = useState("0");
-  const [rate, setRate] = useState("1");
   const [samples, setSamples] = useState<SchemaSamples>();
   const [selected, setSelected] = useState(0);
-  const [review, setReview] = useState<RecordBatchReview>();
-  const [outcome, setOutcome] = useState<RecordBatchOutcome>();
-  const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState<"generate" | "review" | "publish">();
-  const [cancelling, setCancelling] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const generation = useRef(0);
-  const activePlan = useRef<string | undefined>(undefined);
-  const cancel = async (): Promise<void> => {
-    const planId = activePlan.current;
-    if (!planId) return;
-    setCancelling(true);
-    try {
-      const response = await host.execute({
-        command: "records.batch.cancel",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: { planId },
-      });
-      if (!response.ok) setError(response.error.summary);
-    } catch {
-      setError("Cancellation could not reach the host. Inspect Kafka before another attempt.");
-    }
-  };
+  const records = useMemo(() => samples?.samples.map((sample) => sample.record), [samples]);
   useEffect(() => {
     generation.current++;
     setSamples(undefined);
-    setReview(undefined);
-    setOutcome(undefined);
-    setBusy(undefined);
+    setGenerating(false);
     setError(undefined);
     return (): void => {
       generation.current++;
-      const planId = activePlan.current;
-      if (planId) {
-        activePlan.current = undefined;
-        void host
-          .execute({
-            command: "records.batch.cancel",
-            id: crypto.randomUUID(),
-            version: HOST_PROTOCOL_VERSION,
-            payload: { planId },
-          })
-          .catch(() => undefined);
-      }
     };
   }, [schema, enabled, host]);
   const reset = (): void => {
-    setReview(undefined);
-    setOutcome(undefined);
-    setConfirmation("");
+    setSamples(undefined);
     setError(undefined);
   };
   const generate = async (): Promise<void> => {
     const request = ++generation.current;
-    setBusy("generate");
+    setGenerating(true);
     reset();
-    setSamples(undefined);
     try {
       const payload = parseSchemaSampleInput({
         subject: schema.subject,
@@ -119,75 +76,14 @@ export function SchemaSamplesPanel({
       if (!response.ok) throw new Error(`${response.error.summary} ${response.error.recovery}`);
       setSamples(response.result.samples);
       setSelected(0);
-    } catch (error) {
+    } catch (failure) {
       if (request === generation.current)
-        setError(error instanceof Error ? error.message : "Generation failed.");
+        setError(failure instanceof Error ? failure.message : "Generation failed.");
     } finally {
-      if (request === generation.current) setBusy(undefined);
+      if (request === generation.current) setGenerating(false);
     }
   };
-  const reviewBatch = async (): Promise<void> => {
-    if (!samples) return;
-    const request = ++generation.current;
-    setBusy("review");
-    reset();
-    try {
-      const input = parseRecordBatchInput({
-        topic,
-        partition: Number(partition),
-        ratePerSecond: Number(rate),
-        records: samples.samples.map((sample) => sample.record),
-      });
-      const response = await host.execute({
-        command: "records.batch.review",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: input,
-      });
-      if (request !== generation.current) return;
-      if (!response.ok) throw new Error(`${response.error.summary} ${response.error.recovery}`);
-      setReview(response.result.review);
-    } catch (error) {
-      if (request === generation.current)
-        setError(error instanceof Error ? error.message : "Review failed.");
-    } finally {
-      if (request === generation.current) setBusy(undefined);
-    }
-  };
-  const publish = async (): Promise<void> => {
-    if (!review || confirmation !== review.input.topic || activePlan.current) return;
-    const request = ++generation.current;
-    activePlan.current = review.planId;
-    setBusy("publish");
-    setError(undefined);
-    setCancelling(false);
-    try {
-      const response = await host.execute({
-        command: "records.batch.apply",
-        id: crypto.randomUUID(),
-        version: HOST_PROTOCOL_VERSION,
-        payload: { planId: review.planId },
-      });
-      if (request !== generation.current) return;
-      if (!response.ok) {
-        setError(`${response.error.summary} ${response.error.recovery}`);
-        return;
-      }
-      setOutcome(response.result.outcome);
-    } catch {
-      if (request === generation.current)
-        setError(
-          "The batch result is unavailable. Inspect the destination; do not automatically resend this batch.",
-        );
-    } finally {
-      if (activePlan.current === review.planId) activePlan.current = undefined;
-      if (request === generation.current) {
-        setBusy(undefined);
-        setReview(undefined);
-      }
-    }
-  };
-  const locked = busy !== undefined;
+  const locked = generating || publishing;
   return (
     <>
       <Button variant="outlined" disabled={!enabled} onClick={() => setOpen(true)}>
@@ -210,7 +106,7 @@ export function SchemaSamplesPanel({
               Generate a reproducible preview from this exact schema. Preview writes nothing.
               Publishing requires a separate destination review and confirmation.
             </Typography>
-            <Stack direction="row" spacing={2}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
                 label="Seed"
                 type="number"
@@ -218,7 +114,6 @@ export function SchemaSamplesPanel({
                 disabled={locked}
                 onChange={(event) => {
                   setSeed(event.target.value);
-                  setSamples(undefined);
                   reset();
                 }}
               />
@@ -230,7 +125,6 @@ export function SchemaSamplesPanel({
                 disabled={locked}
                 onChange={(event) => {
                   setCount(event.target.value);
-                  setSamples(undefined);
                   reset();
                 }}
               />
@@ -243,7 +137,6 @@ export function SchemaSamplesPanel({
                 disabled={locked}
                 onChange={(event) => {
                   setMessageType(event.target.value);
-                  setSamples(undefined);
                   reset();
                 }}
               />
@@ -254,9 +147,9 @@ export function SchemaSamplesPanel({
                 void generate();
               }}
             >
-              {busy === "generate" ? "Generating…" : "Generate preview"}
+              {generating ? "Generating…" : "Generate preview"}
             </Button>
-            {samples ? (
+            {samples && records ? (
               <>
                 <Alert severity="info">
                   {samples.encoding}. Seed {samples.seed}; {samples.samples.length} valid samples.
@@ -280,99 +173,13 @@ export function SchemaSamplesPanel({
                 >
                   {samples.samples[selected]?.json}
                 </StudioCodeBlock>
-                <TextField
-                  label="Destination topic"
-                  value={topic}
-                  disabled={locked}
-                  onChange={(event) => {
-                    setTopic(event.target.value);
-                    reset();
-                  }}
+                <SchemaRecordPublication
+                  host={host}
+                  records={records}
+                  enabled={enabled}
+                  onBusyChange={setPublishing}
                 />
-                <Stack direction="row" spacing={2}>
-                  <TextField
-                    label="Destination partition"
-                    type="number"
-                    value={partition}
-                    disabled={locked}
-                    onChange={(event) => {
-                      setPartition(event.target.value);
-                      reset();
-                    }}
-                  />
-                  <TextField
-                    label="Maximum records per second"
-                    type="number"
-                    value={rate}
-                    helperText="1–10; publication is sequential"
-                    disabled={locked}
-                    onChange={(event) => {
-                      setRate(event.target.value);
-                      reset();
-                    }}
-                  />
-                </Stack>
-                <Button
-                  disabled={!enabled || locked}
-                  onClick={() => {
-                    void reviewBatch();
-                  }}
-                >
-                  Review batch destination
-                </Button>
               </>
-            ) : null}
-            {review ? (
-              <>
-                <Alert severity="warning">
-                  Publish {review.input.records.length} records to {review.connectionName} →{" "}
-                  {review.input.topic}, partition {review.input.partition}, at most{" "}
-                  {review.input.ratePerSecond}/s. This adds records to Kafka. Review expires at{" "}
-                  {review.expiresAt}.
-                </Alert>
-                <TextField
-                  label="Type destination topic to confirm"
-                  value={confirmation}
-                  disabled={locked}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                />
-                <Button
-                  variant="contained"
-                  disabled={!enabled || locked || confirmation !== review.input.topic}
-                  onClick={() => {
-                    void publish();
-                  }}
-                >
-                  Publish reviewed batch
-                </Button>
-              </>
-            ) : null}
-            {busy === "publish" ? (
-              <>
-                <Typography role="status">
-                  {cancelling
-                    ? "Stopping after the in-flight record settles…"
-                    : "Publishing sequentially. No automatic retries."}
-                </Typography>
-                <Button
-                  disabled={cancelling}
-                  onClick={() => {
-                    void cancel();
-                  }}
-                >
-                  Cancel remaining records
-                </Button>
-              </>
-            ) : null}
-            {outcome ? (
-              <Alert severity={outcome.stopReason === "complete" ? "success" : "warning"}>
-                Batch {outcome.stopReason}:{" "}
-                {outcome.outcomes.filter((item) => item.state === "acknowledged").length}{" "}
-                acknowledged, {outcome.outcomes.filter((item) => item.state === "rejected").length}{" "}
-                rejected, {outcome.outcomes.filter((item) => item.state === "unknown").length}{" "}
-                uncertain, {outcome.unsent} unsent / {outcome.total} total. Inspect Kafka before a
-                new attempt.
-              </Alert>
             ) : null}
             {error ? <Alert severity="error">{error}</Alert> : null}
           </Stack>

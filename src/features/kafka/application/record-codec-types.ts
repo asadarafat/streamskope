@@ -52,3 +52,11 @@ export interface SchemaClientPort {
     signal: AbortSignal,
   ): Promise<import("../contracts/schema-client").SchemaClient>;
 }
+
+export interface SchemaAuthoringPort {
+  author(
+    input: import("../contracts/schema-authoring").SchemaAuthoringInput,
+    bundle: CodecSchemaBundle,
+    signal: AbortSignal,
+  ): Promise<import("../contracts/schema-authoring").SchemaAuthoringResult>;
+}
