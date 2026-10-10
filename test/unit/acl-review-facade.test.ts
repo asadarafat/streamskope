@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 
+import { KafkaConnectionScopes } from "../../src/features/kafka/application/connection-scope";
 import {
   HOST_PROTOCOL_VERSION,
   HostContractValidationError,
@@ -13,7 +14,6 @@ import {
 } from "../../src/features/kafka/contracts";
 import {
   InMemoryKafkaOperationalPreferenceStore,
-  KafkaApplicationSession,
   KafkaOperationalPreferenceService,
 } from "../../src/features/kafka/application";
 import { aclChangeConfirmation } from "../../src/features/kafka/contracts/acl-review";
@@ -196,7 +196,7 @@ it.each(["create", "delete"] as const)(
 
 it("permits read-only explanation and review but rejects a valid apply before acquiring a scope or reading the adapter", async () => {
   const f = fixture(true);
-  const scope = vi.spyOn(KafkaApplicationSession.prototype, "aclReviewScope");
+  const scope = vi.spyOn(KafkaConnectionScopes.prototype, "aclReview");
   await execute(f.facade, command("connection.connect", "connect"));
   expect(
     await execute(f.facade, {

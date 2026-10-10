@@ -31,6 +31,14 @@ import type {
   KafkaClusterServiceContext,
 } from "./types";
 
+export interface GroupAdministrationScope extends ReviewAuthority {
+  readonly snapshot?: (
+    groupId: string,
+  ) => Promise<import("../contracts/group-administration").GroupAdministrationSnapshot>;
+  readonly tryDelete?: (
+    baseline: import("../contracts/group-administration").GroupAdministrationSnapshot,
+  ) => MutationDispatch<import("../contracts/group-administration").GroupAdministrationOutcome>;
+}
 export interface ConnectionScopeContext {
   readonly connection: KafkaActiveConnection;
   readonly generation: number;
@@ -74,6 +82,9 @@ export interface AclReviewScope extends ReviewAuthority {
 }
 
 export interface OffsetResetScope extends ReviewAuthority {
+  readonly resolveOffsetReset?: (
+    input: import("../contracts/offset-reset").OffsetResetSelectionInput,
+  ) => Promise<OffsetResetInput>;
   readonly offsetResetSnapshot?: (input: OffsetResetInput) => Promise<OffsetResetSnapshot>;
   readonly offsetResetExamples?: (
     input: OffsetResetInput,
@@ -81,6 +92,7 @@ export interface OffsetResetScope extends ReviewAuthority {
   readonly tryResetGroupOffset?: (
     groupId: string,
     target: OffsetResetTarget,
+    baseline?: OffsetResetSnapshot,
   ) => MutationDispatch<OffsetResetResult>;
 }
 
@@ -287,6 +299,29 @@ export class KafkaConnectionScopes {
     };
   }
 
+  groupAdministration(): GroupAdministrationScope | null {
+    const active = this.context();
+    if (!active) return null;
+    const context = { ...active },
+      { connection } = context;
+    return {
+      connectionName: context.connectionName,
+      isCurrent: () => this.current(context),
+      ...(connection.groupAdministrationSnapshot === undefined
+        ? {}
+        : {
+            snapshot: (groupId: string) =>
+              this.readReviewed(context, () => connection.groupAdministrationSnapshot!(groupId)),
+          }),
+      ...(connection.deleteConsumerGroup === undefined
+        ? {}
+        : {
+            tryDelete: (
+              baseline: import("../contracts/group-administration").GroupAdministrationSnapshot,
+            ) => this.dispatch(context, () => connection.deleteConsumerGroup!(baseline)),
+          }),
+    };
+  }
   offsetReset(): OffsetResetScope | null {
     const active = this.context();
     if (active === null) return null;
@@ -295,6 +330,14 @@ export class KafkaConnectionScopes {
     return {
       connectionName: context.connectionName,
       isCurrent: (): boolean => this.current(context),
+      ...(connection.resolveOffsetReset === undefined
+        ? {}
+        : {
+            resolveOffsetReset: (
+              input: import("../contracts/offset-reset").OffsetResetSelectionInput,
+            ): Promise<OffsetResetInput> =>
+              this.readReviewed(context, () => connection.resolveOffsetReset!(input)),
+          }),
       ...(connection.offsetResetSnapshot === undefined
         ? {}
         : {
@@ -315,8 +358,13 @@ export class KafkaConnectionScopes {
             tryResetGroupOffset: (
               groupId: string,
               target: OffsetResetTarget,
+              baseline?: OffsetResetSnapshot,
             ): MutationDispatch<OffsetResetResult> =>
-              this.dispatch(context, () => connection.resetGroupOffset!(groupId, target)),
+              this.dispatch(context, () =>
+                baseline === undefined
+                  ? connection.resetGroupOffset!(groupId, target)
+                  : connection.resetGroupOffset!(groupId, target, baseline),
+              ),
           }),
     };
   }

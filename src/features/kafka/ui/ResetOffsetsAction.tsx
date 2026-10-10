@@ -7,7 +7,7 @@ import {
   type StreamSkopeHost,
 } from "../contracts";
 import {
-  parseOffsetResetInput,
+  parseOffsetResetRequest,
   type OffsetResetReview,
   type OffsetResetOutcome,
 } from "../contracts/offset-reset";
@@ -20,6 +20,10 @@ import {
   StudioDialogActions as DialogActions,
   StudioTextField as TextField,
   StudioCheckbox as Checkbox,
+  StudioFormControl as FormControl,
+  StudioInputLabel as InputLabel,
+  StudioSelect as Select,
+  StudioMenuItem as MenuItem,
 } from "../../../platform/ui/controls";
 
 export function ResetOffsetsAction({
@@ -34,6 +38,10 @@ export function ResetOffsetsAction({
   readonly canWrite: boolean;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<"explicit" | "earliest" | "latest" | "timestamp">(
+    "explicit",
+  );
+  const [timestamp, setTimestamp] = useState("");
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [review, setReview] = useState<OffsetResetReview>();
   const [outcome, setOutcome] = useState<OffsetResetOutcome>();
@@ -46,6 +54,9 @@ export function ResetOffsetsAction({
     generation.current++;
     setOpen(false);
     setTargets({});
+    setPosition("explicit");
+    setTimestamp("");
+    setConfirmation("");
     setReview(undefined);
     setOutcome(undefined);
     setBusy(false);
@@ -54,7 +65,7 @@ export function ResetOffsetsAction({
     return (): void => {
       generation.current++;
     };
-  }, [group?.id, enabled, host]);
+  }, [group?.id, enabled, host, canWrite]);
   const rows = group?.offsets.slice(0, 32) ?? [];
   const prepare = async (): Promise<void> => {
     if (!group) return;
@@ -66,13 +77,33 @@ export function ResetOffsetsAction({
     setConfirmation("");
     setAttempted(false);
     try {
-      const input = parseOffsetResetInput({
-        groupId: group.id,
-        targets: rows.flatMap((r) => {
-          const offset = targets[`${r.topic}:${r.partition}`];
-          return offset === undefined ? [] : [{ topic: r.topic, partition: r.partition, offset }];
-        }),
-      });
+      if (
+        position === "timestamp" &&
+        (!/Z$/iu.test(timestamp) ||
+          !Number.isSafeInteger(Date.parse(timestamp)) ||
+          Date.parse(timestamp) < 0)
+      )
+        throw new Error("Enter a nonnegative UTC timestamp ending in Z.");
+      const selected = rows.filter((r) => targets[`${r.topic}:${r.partition}`] !== undefined);
+      const input = parseOffsetResetRequest(
+        position === "explicit"
+          ? {
+              groupId: group.id,
+              targets: selected.map((r) => ({
+                topic: r.topic,
+                partition: r.partition,
+                offset: targets[`${r.topic}:${r.partition}`],
+              })),
+            }
+          : {
+              groupId: group.id,
+              partitions: selected.map((r) => ({ topic: r.topic, partition: r.partition })),
+              position:
+                position === "timestamp"
+                  ? { kind: position, timestampMs: String(Date.parse(timestamp)) }
+                  : { kind: position },
+            },
+      );
       const response = await host.execute({
         command: "consumerGroups.reset.review",
         id: crypto.randomUUID(),
@@ -84,13 +115,15 @@ export function ResetOffsetsAction({
       else setError(`${response.error.summary} ${response.error.recovery}`);
     } catch {
       if (current === generation.current)
-        setError("Select partitions and enter non-negative integer offsets, then preview again.");
+        setError(
+          "Select partitions and valid offsets or an ISO 8601 UTC time ending in Z, then preview again.",
+        );
     } finally {
       if (current === generation.current) setBusy(false);
     }
   };
   const apply = async (): Promise<void> => {
-    if (!review || busy || attempted) return;
+    if (!review || busy || attempted || !canWrite || confirmation !== review.input.groupId) return;
     const current = generation.current;
     setBusy(true);
     setAttempted(true);
@@ -121,8 +154,10 @@ export function ResetOffsetsAction({
       (p) => BigInt(p.offset) >= BigInt(p.low) && BigInt(p.offset) <= BigInt(p.high),
     );
   const clearReview = (): void => {
+    generation.current++;
     setReview(undefined);
     setOutcome(undefined);
+    setConfirmation("");
     setAttempted(false);
     setError(undefined);
   };
@@ -130,7 +165,10 @@ export function ResetOffsetsAction({
     <>
       <Button
         disabled={!enabled || !group || !rows.length}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          clearReview();
+          setOpen(true);
+        }}
         variant="outlined"
       >
         Reset offsets…
@@ -164,6 +202,42 @@ export function ResetOffsetsAction({
                 additional partitions.
               </Alert>
             )}
+            <FormControl fullWidth size="small">
+              <InputLabel id="reset-position">Reset position</InputLabel>
+              <Select
+                labelId="reset-position"
+                label="Reset position"
+                disabled={busy || attempted}
+                value={position}
+                onChange={(e) => {
+                  clearReview();
+                  setPosition(e.target.value);
+                }}
+              >
+                <MenuItem value="explicit">Explicit offsets</MenuItem>
+                <MenuItem value="earliest">Earliest retained</MenuItem>
+                <MenuItem value="latest">Current end</MenuItem>
+                <MenuItem value="timestamp">At or after UTC time</MenuItem>
+              </Select>
+            </FormControl>
+            {position === "timestamp" && (
+              <TextField
+                disabled={busy || attempted}
+                label="UTC time (ISO 8601)"
+                helperText="Include Z, for example 2026-10-10T14:00:00Z. No matching retained record requires another preview."
+                value={timestamp}
+                onChange={(e) => {
+                  clearReview();
+                  setTimestamp(e.target.value);
+                }}
+              />
+            )}
+            {position === "latest" && (
+              <Alert severity="warning">
+                Moving to the current end skips all retained records before the reviewed end
+                offsets. New records may arrive after this preview.
+              </Alert>
+            )}
             <Table size="small" aria-label="Select reset partitions">
               <TableHead>
                 <TableRow>
@@ -181,7 +255,7 @@ export function ResetOffsetsAction({
                     <TableRow key={key}>
                       <TableCell>
                         <Checkbox
-                          disabled={busy}
+                          disabled={busy || attempted}
                           checked={targets[key] !== undefined}
                           aria-label={`Reset ${key}`}
                           onChange={(_, checked) => {
@@ -202,9 +276,21 @@ export function ResetOffsetsAction({
                       <TableCell>{r.endOffset ?? "Unknown"}</TableCell>
                       <TableCell>
                         <TextField
-                          disabled={busy || targets[key] === undefined}
+                          disabled={
+                            busy ||
+                            attempted ||
+                            position !== "explicit" ||
+                            targets[key] === undefined
+                          }
                           label={`Next offset ${key}`}
-                          value={targets[key] ?? ""}
+                          value={
+                            position === "explicit"
+                              ? (targets[key] ?? "")
+                              : (review?.input.targets.find(
+                                  (target) =>
+                                    target.topic === r.topic && target.partition === r.partition,
+                                )?.offset ?? "")
+                          }
                           onChange={(e) => {
                             clearReview();
                             setTargets({ ...targets, [key]: e.target.value });
@@ -265,8 +351,9 @@ export function ResetOffsetsAction({
                   guarantee it.
                 </Typography>
                 <Typography variant="body2">
-                  Examples: {review.exampleStatus}. Up to three records from the proposed positions;
-                  key/value previews below are Base64 prefixes, at most 192 bytes each.
+                  Examples: {review.exampleStatus}. Up to three decoded, protected records from the
+                  proposed positions; key/value text is limited to 512 characters each and uses the
+                  same decoding and masking pipeline as the message grid.
                 </Typography>
                 {review.examples.map((e) => (
                   <Typography
@@ -286,16 +373,22 @@ export function ResetOffsetsAction({
             {outcome && (
               <>
                 <Alert
-                  severity={outcome.partitions.every((p) => p.verified) ? "success" : "warning"}
+                  severity={
+                    outcome.partitions.every((p) => p.verified && p.cleanup === "confirmed")
+                      ? "success"
+                      : "warning"
+                  }
                 >
                   {outcome.detail}
                 </Alert>
                 <Table size="small" aria-label="Offset reset results">
                   <TableHead>
                     <TableRow>
-                      {["Partition", "Requested", "Outcome", "Observed", "Verified"].map((h) => (
-                        <TableCell key={h}>{h}</TableCell>
-                      ))}
+                      {["Partition", "Requested", "Outcome", "Observed", "Verified", "Cleanup"].map(
+                        (h) => (
+                          <TableCell key={h}>{h}</TableCell>
+                        ),
+                      )}
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -308,6 +401,7 @@ export function ResetOffsetsAction({
                         <TableCell>{p.state}</TableCell>
                         <TableCell>{p.observed ?? "Unknown"}</TableCell>
                         <TableCell>{p.verified ? "Yes" : "No"}</TableCell>
+                        <TableCell>{p.cleanup}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -331,7 +425,7 @@ export function ResetOffsetsAction({
             Close
           </Button>
           <Button
-            disabled={busy || !enabled || Object.keys(targets).length === 0}
+            disabled={busy || attempted || !enabled || Object.keys(targets).length === 0}
             onClick={() => {
               void prepare();
             }}
@@ -340,7 +434,12 @@ export function ResetOffsetsAction({
           </Button>
           <Button
             disabled={
-              !canWrite || !ready || busy || attempted || confirmation !== review?.input.groupId
+              !canWrite ||
+              !ready ||
+              busy ||
+              attempted ||
+              confirmation !== review?.input.groupId ||
+              (review !== undefined && Date.now() >= Date.parse(review.expiresAt))
             }
             onClick={() => {
               void apply();

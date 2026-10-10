@@ -1,5 +1,7 @@
 import {
   parseOffsetResetInput,
+  parseOffsetResetRequest,
+  type OffsetResetRequest,
   type OffsetResetInput,
   type OffsetResetReview,
   type OffsetResetOutcome,
@@ -23,11 +25,27 @@ export class OffsetResetService {
   ) {
     this.plans = new ConnectionPlans(context, (scope) => scope.isCurrent(), now);
   }
-  async review(input: OffsetResetInput): Promise<OffsetResetReview> {
-    const parsed = parseOffsetResetInput(input);
+  async review(input: OffsetResetRequest): Promise<OffsetResetReview> {
+    const request = parseOffsetResetRequest(input);
     const context = this.plans.context();
     if (!context?.offsetResetSnapshot || !context.tryResetGroupOffset)
       throw new Error("Offset resets are unavailable.");
+    const selection = "position" in request ? request : undefined;
+    if (selection && !context.resolveOffsetReset)
+      throw new Error("Broker offset selection is unavailable.");
+    const parsed = parseOffsetResetInput(
+      selection ? await context.resolveOffsetReset!(selection) : request,
+    );
+    if (
+      parsed.groupId !== request.groupId ||
+      (selection &&
+        (parsed.targets.length !== selection.partitions.length ||
+          selection.partitions.some(
+            (p, i) =>
+              p.topic !== parsed.targets[i]?.topic || p.partition !== parsed.targets[i]?.partition,
+          )))
+    )
+      throw new Error("Resolved offsets do not match the selected group and partitions.");
     const baseline = await context.offsetResetSnapshot(parsed);
     const samples = await context
       .offsetResetExamples?.(parsed)
@@ -39,6 +57,7 @@ export class OffsetResetService {
       expiresAt: plan.expiresAt,
       input: parsed,
       baseline,
+      ...(selection === undefined ? {} : { selection }),
       ...(samples ?? { examples: [], exampleStatus: "unavailable" }),
     };
   }
@@ -78,6 +97,8 @@ export class OffsetResetService {
             }
             if (
               !this.plans.current(plan.context) ||
+              baseline.clusterId !== fresh.clusterId ||
+              JSON.stringify(baseline.topics) !== JSON.stringify(fresh.topics) ||
               !baseline.inactive ||
               !fresh.inactive ||
               fresh.groupRead === "denied" ||
@@ -97,18 +118,28 @@ export class OffsetResetService {
             }
             let result: OffsetResetResult;
             try {
-              const dispatched = plan.context.tryResetGroupOffset!(input.groupId, target);
+              const dispatched = plan.context.tryResetGroupOffset!(input.groupId, target, fresh);
               if (!dispatched.started) {
                 detail = "Connection changed before dispatch; remaining partitions were not sent.";
                 break;
               }
               result = await dispatched.result;
             } catch {
-              result = { ...target, state: "unknown", observed: null, verified: false };
+              result = {
+                ...target,
+                state: "unknown",
+                observed: null,
+                verified: false,
+                cleanup: "unresolved",
+              };
             }
             results.push(result);
             expected[index] = target.offset;
-            if (result.state !== "acknowledged" || !result.verified) {
+            if (
+              result.state !== "acknowledged" ||
+              !result.verified ||
+              result.cleanup !== "confirmed"
+            ) {
               detail =
                 "Stopped after an unverified or failed result. Inspect committed offsets before another attempt; no automatic retry was made.";
               break;
@@ -123,6 +154,7 @@ export class OffsetResetService {
                 state: "unsent",
                 observed: null,
                 verified: false,
+                cleanup: "confirmed",
               })),
             ],
             detail,

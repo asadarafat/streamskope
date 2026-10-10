@@ -38,12 +38,9 @@ import type { KafkaLatencyProbeMeasurement } from "./latency-types";
 import type { KafkaReadCheckpoint } from "./read-checkpoint";
 import {
   KafkaConnectionScopes,
-  type AclReviewScope,
   type ObservationScope,
-  type OffsetResetScope,
   type RecordReadScope,
   type TopicCatalogScope,
-  type TopicAdministrationScope,
   type ReviewedWriteScope,
   type SchemaRegistryReviewScope,
 } from "./connection-scope";
@@ -136,12 +133,11 @@ export class KafkaApplicationSession {
     return this.scopes.reviewedWrite();
   }
 
-  aclReviewScope(): AclReviewScope | null {
-    return this.scopes.aclReview();
-  }
-
-  offsetResetScope(): OffsetResetScope | null {
-    return this.scopes.offsetReset();
+  get administrationScopes(): Pick<
+    KafkaConnectionScopes,
+    "aclReview" | "offsetReset" | "topicAdministration" | "groupAdministration"
+  > {
+    return this.scopes;
   }
 
   observationScope(): ObservationScope | null {
@@ -150,10 +146,6 @@ export class KafkaApplicationSession {
 
   topicCatalogScope(): TopicCatalogScope | null {
     return this.scopes.topicCatalog();
-  }
-
-  topicAdministrationScope(): TopicAdministrationScope | null {
-    return this.scopes.topicAdministration();
   }
 
   recordReadScope(): RecordReadScope | null {

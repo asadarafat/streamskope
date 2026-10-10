@@ -76,6 +76,15 @@ export interface KafkaActiveConnection {
   describeTopicIdentity?(
     topic: string,
   ): Promise<import("../contracts/reviewed-writes").KafkaWriteDestination>;
+  groupAdministrationSnapshot?(
+    groupId: string,
+  ): Promise<import("../contracts/group-administration").GroupAdministrationSnapshot>;
+  deleteConsumerGroup?(
+    baseline: import("../contracts/group-administration").GroupAdministrationSnapshot,
+  ): Promise<import("../contracts/group-administration").GroupAdministrationOutcome>;
+  resolveOffsetReset?(
+    input: import("../contracts/offset-reset").OffsetResetSelectionInput,
+  ): Promise<import("../contracts/offset-reset").OffsetResetInput>;
   offsetResetSnapshot?(
     input: import("../contracts/offset-reset").OffsetResetInput,
   ): Promise<import("../contracts/offset-reset").OffsetResetSnapshot>;
@@ -87,6 +96,7 @@ export interface KafkaActiveConnection {
   resetGroupOffset?(
     groupId: string,
     target: import("../contracts/offset-reset").OffsetResetTarget,
+    baseline?: import("../contracts/offset-reset").OffsetResetSnapshot,
   ): Promise<import("../contracts/offset-reset").OffsetResetResult>;
   reviewWrite?(
     input: import("../contracts").KafkaWriteInput,

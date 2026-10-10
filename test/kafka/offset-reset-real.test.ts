@@ -53,7 +53,7 @@ it("retains a real topic authorization rejection and leaves subsequent partition
       )
       .toBe(true);
     await session.connect(fixture.connection);
-    const service = new OffsetResetService(() => session.offsetResetScope());
+    const service = new OffsetResetService(() => session.administrationScopes.offsetReset());
     const review = await service.review({
       groupId,
       targets: [
@@ -118,7 +118,7 @@ it("previews real positions without committing, resets and reads back a stopped 
         tokenEndpoint: fixture.oauthEndpoint,
       },
     });
-    const service = new OffsetResetService(() => session.offsetResetScope());
+    const service = new OffsetResetService(() => session.administrationScopes.offsetReset());
     const input = { groupId, targets: [{ topic, partition: 0, offset: "0" }] };
     const review = await service.review(input);
     expect(review.baseline).toMatchObject({
@@ -131,7 +131,15 @@ it("previews real positions without committing, resets and reads back a stopped 
     expect((await session.describeConsumerGroup(groupId)).offsets[0]?.committedOffset).toBe("1");
     const outcome = await service.apply(review.planId, groupId);
     expect(outcome.partitions).toEqual([
-      { topic, partition: 0, offset: "0", state: "acknowledged", observed: "0", verified: true },
+      {
+        topic,
+        partition: 0,
+        offset: "0",
+        state: "acknowledged",
+        observed: "0",
+        verified: true,
+        cleanup: "confirmed",
+      },
     ]);
     const stale = await service.review(input);
     await commit(1n);

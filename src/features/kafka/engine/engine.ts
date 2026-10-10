@@ -36,6 +36,7 @@ import { KafkaReadCheckpointError, type KafkaReadCheckpoint } from "../applicati
 import { serviceConnectionContext } from "./service-connection-context";
 import { testClusterServices } from "./service-connection-test";
 import { NodeBoundedJsonHttp } from "./bounded-json-http";
+import { PlatformaticGroupAdministration } from "./platformatic-group-administration";
 import { PlatformaticOffsetReset } from "./platformatic-offset-reset";
 import { PlatformaticReviewedWrites } from "./platformatic-writes";
 import { PlatformaticTopicAdministration } from "./platformatic-topic-administration";
@@ -191,30 +192,39 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   ): Promise<import("../contracts/topic-administration").TopicAdministrationOutcome> {
     return this.topicAdministration.apply(input, baseline);
   }
+  groupAdministrationSnapshot(
+    groupId: string,
+  ): Promise<import("../contracts/group-administration").GroupAdministrationSnapshot> {
+    return this.groupAdministration.snapshot(groupId);
+  }
+  deleteConsumerGroup(
+    baseline: import("../contracts/group-administration").GroupAdministrationSnapshot,
+  ): Promise<import("../contracts/group-administration").GroupAdministrationOutcome> {
+    return this.groupAdministration.apply(baseline);
+  }
+  resolveOffsetReset(
+    input: import("../contracts/offset-reset").OffsetResetSelectionInput,
+  ): Promise<import("../contracts/offset-reset").OffsetResetInput> {
+    return this.offsetReset.resolve(input);
+  }
   offsetResetSnapshot(
     input: import("../contracts/offset-reset").OffsetResetInput,
   ): Promise<import("../contracts/offset-reset").OffsetResetSnapshot> {
-    return new PlatformaticOffsetReset(this.clientInput, this.lifecycleController.signal).snapshot(
-      input,
-    );
+    return this.offsetReset.snapshot(input);
   }
   offsetResetExamples(
     input: import("../contracts/offset-reset").OffsetResetInput,
   ): Promise<
     Pick<import("../contracts/offset-reset").OffsetResetReview, "examples" | "exampleStatus">
   > {
-    return new PlatformaticOffsetReset(this.clientInput, this.lifecycleController.signal).examples(
-      input,
-    );
+    return this.offsetReset.examples(input);
   }
   resetGroupOffset(
     groupId: string,
     target: import("../contracts/offset-reset").OffsetResetTarget,
+    baseline?: import("../contracts/offset-reset").OffsetResetSnapshot,
   ): Promise<import("../contracts/offset-reset").OffsetResetResult> {
-    return new PlatformaticOffsetReset(this.clientInput, this.lifecycleController.signal).apply(
-      groupId,
-      target,
-    );
+    return this.offsetReset.apply(groupId, target, baseline);
   }
   describeTopicIdentity(
     topic: string,
@@ -247,6 +257,8 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
   private readonly lateReaders = new Set<KafkaReadOpenCleanup>();
   private readonly serviceContexts = new Map<string, KafkaClusterServiceContext>();
   private readonly topicAdministration: PlatformaticTopicAdministration;
+  private readonly offsetReset: PlatformaticOffsetReset;
+  private readonly groupAdministration: PlatformaticGroupAdministration;
 
   constructor(
     private readonly admin: KafkaAdminPort,
@@ -263,6 +275,15 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     private readonly protectRecord: (message: KafkaMessage) => KafkaMessage,
     private readonly prepareRecord: StreamSkopeKafkaEngineOptions["prepareRecord"],
   ) {
+    this.groupAdministration = new PlatformaticGroupAdministration(
+      clientInput,
+      lifecycleController.signal,
+    );
+    this.offsetReset = new PlatformaticOffsetReset(
+      clientInput,
+      lifecycleController.signal,
+      (raw, signal) => this.prepareMessage(raw, raw.topic, signal),
+    );
     this.topicAdministration = new PlatformaticTopicAdministration(
       clientInput,
       lifecycleController.signal,
@@ -481,19 +502,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       const workSignal = consumerSignal
         ? AbortSignal.any([recordSignal, consumerSignal])
         : recordSignal;
-      const operation = (async (): Promise<KafkaMessage> => {
-        workSignal.throwIfAborted();
-        const translated = translateKafkaRecord(raw, parsedRequest.topic);
-        const projected = this.prepareRecord
-          ? await this.prepareRecord(
-              translated,
-              this.clusterServiceContext("schemaRegistry"),
-              workSignal,
-            )
-          : translated;
-        workSignal.throwIfAborted();
-        return this.protectRecord(projected);
-      })();
+      const operation = this.prepareMessage(raw, parsedRequest.topic, workSignal);
       prepared.set(raw, operation);
       return operation;
     };
@@ -700,6 +709,20 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     }
   }
 
+  private async prepareMessage(
+    raw: KafkaRawMessage,
+    topic: string,
+    signal: AbortSignal,
+  ): Promise<KafkaMessage> {
+    signal.throwIfAborted();
+    const translated = translateKafkaRecord(raw, topic);
+    const projected = this.prepareRecord
+      ? await this.prepareRecord(translated, this.clusterServiceContext("schemaRegistry"), signal)
+      : translated;
+    signal.throwIfAborted();
+    return this.protectRecord(projected);
+  }
+
   private async closeResources(): Promise<void> {
     // Opens admitted before revocation can still return a reader. Join their cleanup before
     // taking the final inventory, including late readers whose first close failed.
@@ -712,6 +735,8 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       }),
       this.admin.close(),
       this.topicAdministration.close(),
+      this.offsetReset.close(),
+      this.groupAdministration.close(),
     ]);
     const failures = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason as unknown] : [],

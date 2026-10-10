@@ -15,6 +15,7 @@ function setup(): PlatformaticOffsetReset {
   return new PlatformaticOffsetReset(
     { brokers: ["127.0.0.1:1"], tlsEnabled: false, operationTimeoutMs: 10_000 },
     new AbortController().signal,
+    (): Promise<never> => Promise.reject(new Error("No fixture records")),
   );
 }
 
@@ -39,5 +40,5 @@ it("waits for preview consumer cleanup before reporting unavailable examples", a
 it("rejects the preview when consumer cleanup cannot be confirmed", async () => {
   const reset = setup();
   vi.spyOn(Consumer.prototype, "close").mockRejectedValue(new Error("Consumer close failed"));
-  await expect(reset.examples(input)).rejects.toThrow("Consumer close failed");
+  await expect(reset.examples(input)).rejects.toThrow("cleanup remains unresolved");
 });

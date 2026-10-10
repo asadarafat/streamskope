@@ -283,7 +283,7 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 68 includes closed topic-administration reviews/outcomes alongside
+Host protocol 69 includes closed topic and consumer-group administration reviews/outcomes alongside
 the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,
 and refuses structured evidence mislabeled as a legacy document. Browser
@@ -296,3 +296,13 @@ cleanup, joins them on connection close and fences new work after unresolved
 cleanup. Deletion uses the SDK's public UUID-based wire API; expansion uses Kafka's
 name-based API after fresh identity/assignment checks, with its concurrent
 replacement limitation explicit. Readback never invents an acknowledgement.
+
+Consumer-group resets resolve bounded earliest/end/time selectors through the
+broker, freeze explicit offsets, and pin cluster and topic UUIDs. Examples use the
+same record preparation and protection path as grid records. Inactive deletion
+pins the group's complete bounded committed-offset fingerprint; groups have no
+UUID, so identical concurrent recreation remains a documented limit. Each
+review/apply adapter uses `OwnedKafkaResources` to drain original clients and
+preserve admitted replies through revocation. ACK, readback and cleanup remain
+separate; failed cleanup fences the owner. No durable format or plugin API changes
+are introduced by these protocol commands.

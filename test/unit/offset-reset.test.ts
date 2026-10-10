@@ -50,6 +50,8 @@ function fixture(): {
     inactive: true,
     state: "Empty",
     groupRead: "allowed",
+    clusterId: "fixture-cluster",
+    topics: [{ topic: "events", topicId: "11111111-1111-1111-1111-111111111111" }],
     partitions: input.targets.map((t) => ({
       ...t,
       before: "8",
@@ -67,6 +69,7 @@ function fixture(): {
         state: "acknowledged",
         observed: target.offset,
         verified: true,
+        cleanup: "confirmed",
       });
     },
   );
@@ -179,6 +182,7 @@ it("retains acknowledged but unverified positions and stops the remainder", asyn
     state: "acknowledged",
     observed: null,
     verified: false,
+    cleanup: "confirmed",
   });
   const review = await f.service.review(input);
   const result = await f.service.apply(review.planId, input.groupId);
@@ -245,6 +249,7 @@ it.each(["acknowledged", "unknown"] as const)(
         state,
         observed: input.targets[0]!.offset,
         verified: true,
+        cleanup: "confirmed",
       });
     else writing.reject(new Error("Acknowledgement lost"));
     expect((await pending).partitions.map((p) => p.state)).toEqual([state, "unsent"]);
@@ -253,3 +258,92 @@ it.each(["acknowledged", "unknown"] as const)(
     expect(f.read).toHaveBeenCalledTimes(2);
   },
 );
+
+it("resolves broker selectors once, freezes explicit positions and refuses unrelated resolutions", async () => {
+  const f = fixture(),
+    resolve = vi.fn(() => Promise.resolve(input));
+  const connection = Object.assign(new RecordingActiveConnection(), {
+    resolveOffsetReset: resolve,
+    offsetResetSnapshot: f.read,
+    resetGroupOffset: f.send,
+  });
+  const scopes = new KafkaConnectionScopes(() => ({
+    connection,
+    generation: 1,
+    connectionName: "Selector fixture",
+  }));
+  const service = new OffsetResetService(() => scopes.offsetReset());
+  const selector = {
+    groupId: input.groupId,
+    partitions: input.targets.map((t) => ({ topic: t.topic, partition: t.partition })),
+    position: { kind: "earliest" as const },
+  };
+  const review = await service.review(selector);
+  expect(review.selection).toEqual(selector);
+  expect(review.input).toEqual(input);
+  expect(parseOffsetResetReview(review)).toEqual(review);
+  await service.apply(review.planId, input.groupId);
+  expect(resolve).toHaveBeenCalledOnce();
+  resolve.mockResolvedValueOnce({ ...input, groupId: "unrelated" });
+  await expect(service.review(selector)).rejects.toThrow("do not match");
+});
+it("refuses a replacement topic even when its committed offsets happen to match", async () => {
+  const f = fixture(),
+    review = await f.service.review(input);
+  Object.assign(f.snapshot.topics[0]!, { topicId: "22222222-2222-2222-2222-222222222222" });
+  expect(
+    (await f.service.apply(review.planId, input.groupId)).partitions.every(
+      (p) => p.state === "unsent",
+    ),
+  ).toBe(true);
+  expect(f.send).not.toHaveBeenCalled();
+});
+it("stops after acknowledged and verified writes with unresolved original cleanup", async () => {
+  const f = fixture();
+  f.send.mockResolvedValueOnce({
+    ...input.targets[0]!,
+    state: "acknowledged",
+    observed: "2",
+    verified: true,
+    cleanup: "unresolved",
+  });
+  const review = await f.service.review(input),
+    outcome = await f.service.apply(review.planId, input.groupId);
+  expect(outcome.partitions.map((p) => p.state)).toEqual(["acknowledged", "unsent"]);
+  expect(outcome.partitions[0]?.cleanup).toBe("unresolved");
+  expect(f.send).toHaveBeenCalledOnce();
+});
+it("requires bounded closed selectors and Kafka int32 partition indexes", () => {
+  const selector = {
+    groupId: "g",
+    partitions: [{ topic: "events", partition: 0 }],
+    position: { kind: "timestamp", timestampMs: "1" },
+  };
+  expect(
+    parseHostCommand({
+      command: "consumerGroups.reset.review",
+      id: "t",
+      version: HOST_PROTOCOL_VERSION,
+      payload: selector,
+    }).payload,
+  ).toEqual(selector);
+  for (const position of [
+    { kind: "timestamp", timestampMs: "-1" },
+    { kind: "latest", timestampMs: "1" },
+    { kind: "timestamp", timestampMs: "9223372036854775808" },
+  ])
+    expect(() =>
+      parseHostCommand({
+        command: "consumerGroups.reset.review",
+        id: "t",
+        version: HOST_PROTOCOL_VERSION,
+        payload: { ...selector, position },
+      }),
+    ).toThrow();
+  expect(() =>
+    parseOffsetResetInput({
+      ...input,
+      targets: [{ topic: "events", partition: 2147483648, offset: "0" }],
+    }),
+  ).toThrow("int32");
+});

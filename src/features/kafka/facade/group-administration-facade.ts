@@ -1,46 +1,43 @@
 import { HOST_PROTOCOL_VERSION, type HostCommand, type HostCommandResponse } from "../contracts";
-import {
-  parseTopicAdministrationReview,
-  parseTopicAdministrationOutcome,
-} from "../contracts/topic-administration";
-import { TopicAdministrationService } from "../application/topic-administration-service";
+import { GroupAdministrationService } from "../application/group-administration-service";
 import type { KafkaApplicationSession } from "../application";
 
 import { failureResponse, type ActivityInput } from "./facade-support";
 
-export class TopicAdministrationFacade {
-  private readonly service: TopicAdministrationService;
+export class GroupAdministrationFacade {
+  private readonly service: GroupAdministrationService;
   constructor(
     session: KafkaApplicationSession,
     private readonly activity: (input: ActivityInput) => void,
   ) {
-    this.service = new TopicAdministrationService(() =>
-      session.administrationScopes.topicAdministration(),
+    this.service = new GroupAdministrationService(() =>
+      session.administrationScopes.groupAdministration(),
     );
   }
   async execute(
-    command: Extract<HostCommand, { command: "topics.change.review" | "topics.change.apply" }>,
+    command: Extract<
+      HostCommand,
+      { command: "consumerGroups.delete.review" | "consumerGroups.delete.apply" }
+    >,
     correlationId: string,
   ): Promise<HostCommandResponse> {
     try {
-      if (command.command === "topics.change.review")
+      if (command.command === "consumerGroups.delete.review")
         return {
           command: command.command,
           id: command.id,
           version: HOST_PROTOCOL_VERSION,
           ok: true,
-          result: {
-            correlationId,
-            review: parseTopicAdministrationReview(await this.service.review(command.payload)),
-          },
+          result: { correlationId, review: await this.service.review(command.payload) },
         };
-      const outcome = parseTopicAdministrationOutcome(
-        await this.service.apply(command.payload.planId, command.payload.confirmation),
+      const outcome = await this.service.apply(
+        command.payload.planId,
+        command.payload.confirmation,
       );
       this.activity({
         correlationId,
-        operation: "Apply reviewed topic change",
-        object: outcome.input.topic,
+        operation: "Apply reviewed consumer group deletion",
+        object: outcome.groupId,
         detail: outcome.detail,
         outcome: outcome.state === "acknowledged" ? "succeeded" : "failed",
         severity:
@@ -64,9 +61,9 @@ export class TopicAdministrationFacade {
         correlationId,
         retryable: false,
         activeStateChanged: false,
-        summary: "The topic change review could not be accepted.",
+        summary: "The consumer group deletion review could not be accepted.",
         recovery:
-          "Check topic DESCRIBE and DELETE/ALTER permissions, supported identity APIs, partition counts and exact confirmation, then review again. Internal topics, stale reviews and changed connections are refused. Inspect any uncertain outcome before another attempt.",
+          "Stop all consumers. Check group DESCRIBE/DELETE permission and consumer coordination support, then review again. Changed offsets, expired reviews and changed connections are refused. Inspect an uncertain outcome before another attempt.",
       });
     }
   }
