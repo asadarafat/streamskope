@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { Producer } from "@platformatic/kafka";
 import { build } from "vite";
 
@@ -17,6 +17,26 @@ import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
 import { observeBrowserDiagnostics, openWorkbenchResource } from "../support/workbench-browser";
 
 test.use({ trace: "off", viewport: { width: 1440, height: 1000 } });
+async function settledDialog(dialog: Locator): Promise<void> {
+  // Audit the visible result, including its ancestor fade and floating labels.
+  // Every finding from the settled audit still fails the test.
+  await expect
+    .poll(() =>
+      dialog.evaluate((element) => {
+        for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+          if (
+            getComputedStyle(parent).opacity !== "1" ||
+            parent.getAnimations().some((animation) => animation.playState === "running")
+          )
+            return false;
+        }
+        return element
+          .getAnimations({ subtree: true })
+          .every((animation) => animation.playState !== "running");
+      }),
+    )
+    .toBe(true);
+}
 test("keyboard-operable reviewed group selectors and deletion preserve visible receipts and refresh real inventory", async ({
   page,
 }, info) => {
@@ -132,6 +152,7 @@ test("keyboard-operable reviewed group selectors and deletion preserve visible r
       )[0]!.topics[0]!.partitions[0]!.committedOffset,
     ).toBe(1n);
     expect(commands.filter((c) => c === "consumerGroups.reset.apply")).toHaveLength(0);
+    await settledDialog(dialog);
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
@@ -161,6 +182,7 @@ test("keyboard-operable reviewed group selectors and deletion preserve visible r
       deletion.getByRole("textbox", { name: "Confirm exact group deletion" }),
     ).toBeVisible();
     expect((await fixture.admin.listGroups()).has(groupId)).toBe(true);
+    await settledDialog(deletion);
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
