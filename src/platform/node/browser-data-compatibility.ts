@@ -137,7 +137,7 @@ export function parseBrowserDataInspection(value: unknown): BrowserDataInspectio
               ? 4
               : kind === "repair-jobs"
                 ? 3
-                : kind === "preferences"
+                : kind === "preferences" || kind === "observations"
                   ? 2
                   : 1) ||
         format <= previousFormat

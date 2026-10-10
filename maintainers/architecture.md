@@ -283,7 +283,7 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 74 adds closed host-owned observation watch start/status/stop and revisioned watch events, retaining original connection and positive broker/topic identity across page navigation. It also carries stopped connector offset inspection/review/application and separate Connect dispatch, acknowledgement, readback and original-request cleanup evidence to explicit configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
+Host protocol 75 adds retained observation settings and coverage-aware five-minute summaries to the history response, preserving legacy format1 inspection and refusing older paired peers. Host-owned watch start/status/stop and revisioned watch events retain original connection authority. It includes positive broker/topic identity across page navigation. It also carries stopped connector offset inspection/review/application and separate Connect dispatch, acknowledgement, readback and original-request cleanup evidence to explicit configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
 the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,
 and refuses structured evidence mislabeled as a legacy document. Browser
@@ -333,4 +333,10 @@ state are rechecked before one attempt. Only supported FileStream source/sink
 mappings are admitted. Raw source partitions and complete configuration remain
 host-only behind short-lived opaque snapshot/partition references. Actual ACK,
 readback and cleanup remain separate; no automatic resend or atomic-CAS claim.
-PluginAPI3 and durable storage formats are unchanged by this protocol revision.
+Connect offset workflows retain their plugin API and protected profile/repair formats.
+Observation history format2 separately stores desired settings and bounded direct
+summaries. File load and preflight inspect legacy format1 without writing; the
+serialized application history owner migrates and physically prunes expired data.
+Atomic writes compare predecessor bytes, preserve an exact private format1 copy
+and sync the directory. Explicit Clear is separate discard authority; old-host
+rollback requires complete backup restoration.

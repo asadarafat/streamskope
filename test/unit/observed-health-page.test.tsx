@@ -141,7 +141,11 @@ function fixture(initial: readonly ObservationSeries[] = []): ObservationFixture
     execute: testHostExecute(async (command) => {
       commands.push(command);
       const base = { command: command.command, id: command.id, version: command.version };
-      const snapshot: ObservationSnapshot = { schemaVersion: 1, durability: "session", series };
+      const snapshot: ObservationSnapshot = {
+        schemaVersion: 1,
+        durability: "session",
+        series,
+      };
       if (command.command === "observations.watch.status")
         return { ...base, ok: true, result: { correlationId: "c", watch } };
       if (command.command === "observations.watch.stop") {

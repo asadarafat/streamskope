@@ -13,6 +13,7 @@ import {
   parseHostCommandResponse,
   type HostCommandResponse,
 } from "../../src/features/kafka/contracts";
+import { emptyObservationHistory } from "../../src/features/kafka/contracts/observations";
 import type { ObservationCommand } from "../../src/features/kafka/contracts/observation-protocol";
 import { KafkaEngineFailure } from "../../src/features/kafka/engine/failure";
 import { RecordingActiveConnection } from "../support/kafka-backend-facade-fixture";
@@ -164,7 +165,7 @@ it.each(["AUTHORIZATION_DENIED", "TIMEOUT"] as const)(
 it("preserves a late history read failure as storage error without overwriting retained evidence", async () => {
   const load = vi
     .fn<ObservationStore["load"]>()
-    .mockResolvedValueOnce({ schemaVersion: 1, series: [] })
+    .mockResolvedValueOnce(emptyObservationHistory())
     .mockRejectedValueOnce(new Error("password=private history failure after collection"));
   const commit = vi.fn<ObservationStore["commit"]>(() => Promise.resolve());
   const observe = vi.fn(() => Promise.resolve(health));
@@ -187,4 +188,28 @@ it("preserves a late history read failure as storage error without overwriting r
 
 it("rejects the previous host protocol explicitly rather than accepting a mismatched renderer", () => {
   expect(() => parseHostCommand({ ...capture, version: HOST_PROTOCOL_VERSION - 1 })).toThrow();
+});
+
+it("reports storage reconciliation rather than falsely claiming a renamed file was preserved, including explicit Clear failure", async () => {
+  const host = facade(null, {
+    durability: "durable",
+    load: () => Promise.resolve({ schemaVersion: 1, series: [] }),
+    commit: () => Promise.reject(new Error("private path: directory sync failed after rename")),
+    clear: () => Promise.reject(new Error("private path: directory sync failed after clear")),
+  });
+  for (const command of [
+    { id: "migration", command: "observations.history" as const, payload: {} },
+    {
+      id: "clear",
+      command: "observations.clear" as const,
+      payload: { confirmation: "CLEAR HISTORY" as const },
+    },
+  ]) {
+    const failure = error(
+      await host.execute({ ...command, version: HOST_PROTOCOL_VERSION }, "storage"),
+    );
+    expect(failure).toMatchObject({ code: "OBSERVATION_HISTORY_UNAVAILABLE", stage: "storage" });
+    expect(failure.recovery).toContain("Reload history to reconcile");
+    expect(JSON.stringify(failure)).not.toMatch(/private path|preserved|capture again/);
+  }
 });

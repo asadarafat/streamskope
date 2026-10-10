@@ -97,7 +97,13 @@ export function parseObservationResponse(
   if (command === "observations.history" || command === "observations.clear") {
     exactKeys(result, ["correlationId", "snapshot"], "result");
     const s = record(result.snapshot, "snapshot");
-    exactKeys(s, ["schemaVersion", "series", "durability"], "snapshot");
+    exactKeys(
+      s,
+      s.schemaVersion === 2
+        ? ["schemaVersion", "series", "settings", "rollups", "durability"]
+        : ["schemaVersion", "series", "durability"],
+      "snapshot",
+    );
     return {
       command,
       id,
@@ -106,7 +112,11 @@ export function parseObservationResponse(
       result: {
         correlationId: text(result.correlationId, "correlationId", 128),
         snapshot: {
-          ...parseObservationHistory({ schemaVersion: s.schemaVersion, series: s.series }),
+          ...parseObservationHistory({
+            schemaVersion: s.schemaVersion,
+            series: s.series,
+            ...(s.schemaVersion === 2 ? { settings: s.settings, rollups: s.rollups } : {}),
+          }),
           durability: declaredValue(s.durability, ["session", "durable"] as const, "durability"),
         },
       },

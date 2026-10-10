@@ -74,10 +74,15 @@ recovered. Never attach a full backup to an issue report.
 
 [Observed health](observed-health.md) retains bounded local history under `history/`;
 it is covered by the full backup above. **Clear all observation history** removes observations
-for every profile in this app-data directory and cannot be undone without a backup.
+and saved settings for every profile in this app-data directory and cannot be undone without a backup.
 It does not erase copies in backups or change Kafka data. Older desktop versions
 without Observed health do not display this history; a new history file does not
-by itself migrate the profile format.
+by itself migrate the profile format. Observation history format2 retains desired
+settings and direct summaries. Its first migration preserves exact format1 bytes
+in `history/kafka-observations.json.pre-observation-v1`; this copy has separate
+retention from active measurements. Older hosts refuse unsupported format2, so
+restore a verified whole-data backup before rollback. Restoring saved observation
+settings does not connect, unlock or authorize collection; explicitly start again.
 
 ### Operational-preference recovery
 

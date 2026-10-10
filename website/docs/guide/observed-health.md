@@ -84,22 +84,41 @@ unreadable or unsupported history file remains preserved until explicitly cleare
   The host can add local threshold Activity entries while the page is closed.
   No external notification service is configured. Stopping collection preserves
   completed evidence for inspection while its original connection remains current.
-- Desktop history is stored privately in `history/kafka-observations.json` inside
-  application data. Browser development retains history only for the host session.
-- History loaded or updated by the host is bounded by eight resource identities, **240 samples per identity**,
-  24 hours of age and 4 MiB total. At a ten-second cadence, the sample cap holds
-  approximately **40 minutes plus collection time**, rather than a full day of
-  continuous readings. Older evidence is evicted first.
+- Desktop and installed browser hosts store history privately in
+  `history/kafka-observations.json` inside application data. Browser development
+  retains history only for the host session.
+- Active history is bounded by eight resource identities, **240 raw samples and
+  288 summaries per identity**, 24 hours of age and 4 MiB total. At a ten-second
+  cadence, the raw sample cap holds approximately **40 minutes plus collection
+  time**. Direct lag and collection-time ranges can remain in five-minute summaries
+  after their raw samples are evicted. Summaries never supply rates or forecasts.
+- A gap over 45 seconds, restart, offset reset, partition change, incomplete read
+  or group-state change starts a separate summary. Multiple rows can share a
+  five-minute window. Each row shows actual first/last times, sample count,
+  known lag coverage and its boundary. No missing interval is filled with zeroes.
+- The last successful topic/group selection, thresholds and sampling choice
+  survive restart on a persistent host. They contain no credentials or connection
+  authority. Reconnect and explicitly choose Start; a changed saved broker/topic
+  identity requires a deliberate one-shot capture to accept the new resource.
 
-The 24-hour cutoff filters loaded history; it does not schedule deletion. On
-desktop, expired entries remain on disk until a successful capture rewrites
-history or you explicitly clear it. There is no background erasure.
+The host physically prunes expired raw samples and whole expired summaries from
+its active file on history access or capture. It does not run background erasure.
+Future timestamps after a clock rollback remain bounded historical evidence and
+cannot qualify a current finding. An unsupported or unreadable file is preserved;
+an ordinary write cannot reset it.
 
-Only aggregates, offsets and Kafka resource identities are retained. Payloads,
-raw keys, member identities and credentials are excluded. Clear history through
-its explicit confirmation action; clearing removes all retained series,
-including other profiles. See [backup and recovery](recovery.md) before managing
-application data.
+The first migration from history format1 to format2 preserves the exact private
+predecessor in `history/kafka-observations.json.pre-observation-v1`. Migration
+copies and installer whole-data backups have a **separate retention policy**:
+they are retained until you deliberately remove them after confirming your
+recovery needs. The active 24-hour limit does not erase those copies.
+
+Only aggregates, offsets, Kafka resource identities and desired settings are
+retained. Payloads, raw keys, member identities and credentials are excluded.
+Clear history through its explicit confirmation action; this discards active
+measurements and saved settings for all profiles, while separate backups remain.
+Restore a complete compatible backup before rolling back to a host that cannot
+read format2. See [backup and recovery](recovery.md).
 
 ## Optional record sampling
 

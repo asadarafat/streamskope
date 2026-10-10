@@ -7,6 +7,7 @@ import {
 } from "../../features/kafka/contracts";
 import { isPluginCompatibleWithHost, parseReleaseVersion } from "../../plugins/compatibility";
 import { STREAMSKOPE_RELEASE } from "../../plugins/host-release";
+import { observationResources } from "../../features/kafka/contracts/observations";
 
 import {
   inspectRepairEnvelope,
@@ -86,6 +87,7 @@ const STATIC_FILES = [
   "queries/kafka-queries.json",
   "templates/trust-acquisition-recipes.json",
   "history/kafka-observations.json",
+  "history/kafka-observations.json.pre-observation-v1",
   "history/kafka-repair-jobs.json",
   "history/kafka-repair-jobs.json.pre-repair-v1",
   "history/kafka-repair-jobs.json.pre-repair-v2",
@@ -299,12 +301,22 @@ export async function inspectBrowserData(
       )?.recipes.length ?? 0,
     formats: [1],
   }));
-  await inspect("observations", exists("history/kafka-observations.json"), async () => ({
-    count: (
-      await new AtomicObservationFileStore(join(root, "history/kafka-observations.json")).load()
-    ).series.length,
-    formats: [1],
-  }));
+  const observationPaths = [
+    "history/kafka-observations.json",
+    "history/kafka-observations.json.pre-observation-v1",
+  ].filter(exists);
+  await inspect("observations", observationPaths.length > 0, async () => {
+    const formats = new Set<number>();
+    let count = 0;
+    for (const path of observationPaths) {
+      const history = await new AtomicObservationFileStore(join(root, path)).load();
+      if (path.endsWith(".pre-observation-v1") && history.schemaVersion !== 1)
+        fail("unsupported-format");
+      formats.add(history.schemaVersion);
+      if (path === "history/kafka-observations.json") count = observationResources(history).length;
+    }
+    return { count, formats: [...formats].sort() };
+  });
   const repairPaths = [
     "history/kafka-repair-jobs.json",
     "history/kafka-repair-jobs.json.pre-repair-v1",

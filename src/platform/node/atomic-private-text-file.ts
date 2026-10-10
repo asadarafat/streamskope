@@ -5,6 +5,17 @@ export function createAtomicPrivateFileTempId(): string {
   return globalThis.crypto.randomUUID();
 }
 
+/** Confirm a published directory entry on platforms with directory fsync support. */
+export async function syncPrivateFileDirectory(directory: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(directory, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
 export interface AtomicPrivateTextFileInput {
   readonly beforeCommit?: () => Promise<void>;
   readonly contents: string;

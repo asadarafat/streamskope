@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 import { AtomicObservationFileStore } from "../../src/platform/node/kafka-observation-file-store";
-import type { ObservationHistory } from "../../src/features/kafka/contracts/observations";
+import {
+  emptyObservationHistory,
+  type ObservationHistory,
+} from "../../src/features/kafka/contracts/observations";
 import { parseObservationHistory } from "../../src/features/kafka/contracts/observation-validation";
 
 it("retains only validated bounded history across restart with private permissions and preserves corrupt bytes", async () => {
@@ -13,7 +16,7 @@ it("retains only validated bounded history across restart with private permissio
     path = join(dir, "history", "observations.json");
   try {
     const store = new AtomicObservationFileStore(path);
-    expect(await store.load()).toEqual({ schemaVersion: 1, series: [] });
+    expect(await store.load()).toEqual(emptyObservationHistory());
     const history: ObservationHistory = {
       schemaVersion: 1,
       series: [
@@ -67,7 +70,7 @@ it("retains only validated bounded history across restart with private permissio
       store.commit({ ...history, series: [...history.series, ...history.series] }),
     ).rejects.toThrow();
     expect(await readFile(path, "utf8")).toContain("do not overwrite");
-    await store.commit({ schemaVersion: 1, series: [] });
+    await store.clear();
     expect((await store.load()).series).toEqual([]);
   } finally {
     await rm(dir, { recursive: true, force: true });

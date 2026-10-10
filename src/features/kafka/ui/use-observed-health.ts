@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { HOST_PROTOCOL_VERSION, type HostError, type StreamSkopeHost } from "../contracts";
 import {
   OBSERVATION_LIMITS as limits,
   observationIdentity,
+  observationResources,
+  type ObservationResource,
   type ObservationInput,
   type ObservationSnapshot,
   type ObservationSeries,
@@ -24,6 +26,7 @@ export interface ObservationRequestError {
 
 interface ObservedHealthController {
   readonly snapshot: ObservationSnapshot;
+  readonly resources: readonly ObservationResource[];
   readonly watch: ObservationWatchSnapshot;
   readonly selected: string;
   readonly setSelected: (value: string) => void;
@@ -54,6 +57,7 @@ export function useObservedHealth(
   backendAvailable = true,
 ): ObservedHealthController {
   const [snapshot, setSnapshot] = useState(emptyHistory);
+  const resources = useMemo(() => observationResources(snapshot), [snapshot]);
   const [selected, setSelected] = useState("");
   const attachment = useObservationWatch(host, backendAvailable);
   const { watch } = attachment;
@@ -87,11 +91,13 @@ export function useObservedHealth(
   const update = useCallback((next: ObservationSnapshot): void => {
     setSnapshot(next);
     setSelected((previous) =>
-      next.series.some((value) => observationIdentity(value) === previous)
+      observationResources(next).some((value) => observationIdentity(value) === previous)
         ? previous
         : next.series.at(-1)
           ? observationIdentity(next.series.at(-1)!)
-          : "",
+          : next.schemaVersion === 2 && next.rollups.at(-1)
+            ? observationIdentity(next.rollups.at(-1)!)
+            : "",
     );
   }, []);
   const failure = useCallback((kind: Operation, hostError?: HostError): void => {
@@ -220,7 +226,7 @@ export function useObservedHealth(
         }
         const next = response.result.capture;
         setSnapshot((previous) => ({
-          schemaVersion: 1,
+          ...previous,
           durability: next.durability,
           series: [
             ...previous.series.filter(
@@ -319,6 +325,7 @@ export function useObservedHealth(
   };
   return {
     snapshot,
+    resources,
     watch,
     selected,
     setSelected,
