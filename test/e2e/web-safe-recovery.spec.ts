@@ -1,13 +1,18 @@
-import { createServer } from "node:net";
-import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { Producer } from "@platformatic/kafka";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { build } from "vite";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
-import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { launchProductWebFixture } from "../support/product-web-fixture";
+import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
+import { startWebGateway, type WebGatewayRuntime } from "../../src/platform/node/web-gateway";
+import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
+import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
 import {
   fetchTopicMessages,
@@ -15,19 +20,6 @@ import {
   openWorkbenchResource,
 } from "../support/workbench-browser";
 
-async function port(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
-  if (address === null || typeof address === "string") throw new Error("No fixture port");
-  return address.port;
-}
 test.use({ actionTimeout: 10_000, trace: "off", viewport: { width: 1440, height: 1000 } });
 test("reviews and applies replay, offset recovery and ACL changes through the real browser host", async ({
   page,
@@ -37,15 +29,22 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
   const topic = "recovery-source",
     target = "recovery-copy",
     groupId = "recovery-owned-group";
-  const backend = createKafkaBackend();
+  const dataRoot = await mkdtemp(join(tmpdir(), "streamskope-repair-browser-"));
+  const rendererRoot = await mkdtemp(join(resolve("dist"), "renderer-repair-"));
+  let runtime: WebGatewayRuntime | undefined;
   const diagnostics = observeBrowserDiagnostics(page);
   const httpProblems: string[] = [];
   page.on("response", (response) => {
     if (response.status() >= 400)
       httpProblems.push(`${response.status()} ${new URL(response.url()).pathname}`);
   });
-  let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
+  let gateway: Awaited<ReturnType<typeof startWebGateway>> | undefined;
   try {
+    await build({
+      configFile: resolve("config/vite.config.ts"),
+      logLevel: "silent",
+      build: { outDir: rendererRoot },
+    });
     await fixture.admin.createTopics({ topics: [topic, target], partitions: 1, replicas: 1 });
     await expect
       .poll(
@@ -84,15 +83,29 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
     } finally {
       await producer.close();
     }
-    launch = await launchProductWebFixture({
-      backend,
-      hostPort: await port(),
-      rendererPort: await port(),
-      rendererRoot: resolve(process.cwd()),
+    gateway = await startWebGateway({
+      port: 0,
+      hostname: "127.0.0.1",
+      publicOrigin: "http://127.0.0.1:0",
+      rendererRoot,
+      dataRoot,
+      inspectVault: () => inspectPassphraseVault(dataRoot),
+      openRuntime: async (value, mode) => {
+        runtime = await openBrowserRuntime(dataRoot, value, mode);
+        return runtime;
+      },
     });
-    await page.goto(launch.browserUrl);
+    if (!gateway.setupCodePath) throw new Error("Fresh vault omitted setup code");
+    await page.goto(gateway.origin);
+    const passphrase = `test-vault-${randomUUID()}`;
+    await page
+      .getByLabel("Setup code", { exact: true })
+      .fill((await readFile(gateway.setupCodePath, "utf8")).trim());
+    await page.getByLabel("Vault passphrase", { exact: true }).fill(passphrase);
+    await page.getByLabel("Confirm vault passphrase", { exact: true }).fill(passphrase);
+    await page.getByRole("button", { name: "Create vault", exact: true }).click();
     await expect(page.getByRole("button", { name: "Add connection" })).toBeVisible();
-    const created = await backend.execute({
+    const created = await runtime!.providers.get("kafka")!.dispatch({
       command: "profiles.create",
       id: "owned-recovery-profile",
       version: HOST_PROTOCOL_VERSION,
@@ -104,7 +117,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
         },
       },
     });
-    expect(created.ok).toBe(true);
+    expect(created).toMatchObject({ ok: true });
     await page
       .getByRole("button", { name: "Connect insecure plaintext profile Owned recovery" })
       .click();
@@ -146,18 +159,21 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
 
     await page.getByRole("button", { name: "Repair history", exact: true }).click();
     const history = page.getByRole("dialog", { name: "Repair jobs and receipts" });
-    await expect(history.getByText(/Session only/u)).toBeVisible();
+    await expect(history.getByText(/Protected, durable host storage/u)).toBeVisible();
     await expect(
       history.getByText(`Owned recovery / ${target} / 0`, { exact: true }),
     ).toBeVisible();
     await expect(history.getByRole("cell", { name: "acknowledged", exact: true })).toBeVisible();
     await expect(history.getByRole("cell", { name: `${target}/0@0`, exact: true })).toBeVisible();
+    // Contrast checks require the dialog's entrance fade to have finished.
+    await expect(history.locator("..")).toHaveCSS("opacity", "1");
     expect(
       (await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations,
     ).toEqual([]);
     await history.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(history.getByRole("cell", { name: `${target}/0@0`, exact: true })).toBeVisible();
     await history.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(history).not.toBeVisible();
 
     await openWorkbenchResource(page, "Consumer Groups");
     await page.getByRole("button", { name: groupId, exact: true }).click();
@@ -212,8 +228,11 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
       body: Buffer.from(JSON.stringify({ problems: diagnostics.problems, httpProblems }, null, 2)),
       contentType: "application/json",
     });
-    await launch?.close();
-    await backend.shutdown();
-    await fixture.dispose();
+    await disposeNativeFixtureResources([
+      (): Promise<void> => gateway?.close() ?? Promise.resolve(),
+      (): Promise<void> => fixture.dispose(),
+      (): Promise<void> => rm(rendererRoot, { recursive: true, force: true }),
+      (): Promise<void> => rm(dataRoot, { recursive: true, force: true }),
+    ]);
   }
 });

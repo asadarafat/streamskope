@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Admin } from "@platformatic/kafka";
 import { expect, it } from "vitest";
 
+import { startNativeKafkaFixture } from "../support/native-kafka-fixture";
 import {
   MemoryRepairJobStore,
   RepairJournal,
@@ -24,7 +25,7 @@ import {
 } from "../../src/features/kafka/contracts/record-replay";
 import {
   fixtureClientOptions,
-  loadFixtureConnection,
+  type FixtureConnection,
   provisionSeededFixtureTopic,
 } from "../support/kafka-fixture";
 import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
@@ -52,8 +53,20 @@ async function read(connection: KafkaActiveConnection, topic: string): Promise<R
   return records;
 }
 it("replays frozen original bytes to the same topic, another topic and a separately authenticated broker, retaining tombstones, headers and timestamps", async () => {
-  const seeded = await provisionSeededFixtureTopic(),
-    fixture = await loadFixtureConnection();
+  const native = await startNativeKafkaFixture();
+  try {
+    await qualifyReplay({
+      kafkaEndpoint: native.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
+      oauthEndpoint: native.environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT!,
+      caPath: native.environment.STREAMSKOPE_TEST_CA_PATH!,
+    });
+  } finally {
+    await native.dispose();
+  }
+}, 120_000);
+
+async function qualifyReplay(fixture: FixtureConnection): Promise<void> {
+  const seeded = await provisionSeededFixtureTopic(fixture);
   const admin = new Admin(await fixtureClientOptions(fixture, seeded.config, "replay-real-setup"));
   const engine = new StreamSkopeKafkaEngine(),
     session = new KafkaApplicationSession(engine);
@@ -83,6 +96,19 @@ it("replays frozen original bytes to the same topic, another topic and a separat
         async () => {
           try {
             await target.admin.findCoordinator({ keyType: 0, keys: ["replay-readback-readiness"] });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 15_000, interval: 250 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        async () => {
+          try {
+            await admin.findCoordinator({ keyType: 0, keys: ["replay-source-readiness"] });
             return true;
           } catch {
             return false;
@@ -195,4 +221,4 @@ it("replays frozen original bytes to the same topic, another topic and a separat
     await seeded.dispose();
     await target.dispose();
   }
-}, 120_000);
+}
