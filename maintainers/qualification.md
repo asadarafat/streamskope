@@ -405,3 +405,25 @@ restore metadata to a published release.
 Review the report, `SHA256SUMS`, source and remaining gaps, then publish the draft
 through the normal release process. The published documentation links the exact
 qualification asset delivered with that release.
+
+## Schema record authoring
+
+The existing structured-record runtime report also includes
+`test/kafka/schema-authoring-real.test.ts`. It starts the pinned Karapace 6.1.0
+server against an isolated Kafka broker, registers exact Avro and Protobuf
+reference graphs and a JSON Schema writer, then validates edited values using
+the production isolated worker. It checks that validation and sample generation
+leave the destination empty, publishes a reviewed finite batch, compares original
+broker bytes and decodes them using separately compiled libraries. A deleted and
+recreated subject/version must reject the former writer ID. This is vendor
+reference-registration evidence for Avro/Protobuf; JSON reference validation is
+covered independently at worker level, not claimed as vendor registration.
+
+`test/e2e/web-schema-authoring.spec.ts` uses the built browser renderer, encrypted
+vault gateway, isolated real Kafka and a controlled read-only Registry endpoint.
+It edits a generated starting value, validates it, invalidates a destination
+review by editing, and explicitly confirms a fresh review before publication.
+An independent broker reader checks the resulting writer framing and exact int64
+value. Its browser scope and controlled Registry limitation remain distinct from
+the real Registry case. Both cases run in the existing runtime lane and reports;
+no new CI lane or npm command is introduced.

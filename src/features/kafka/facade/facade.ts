@@ -39,7 +39,7 @@ import { AclReviewFacade } from "./acl-review-facade";
 import { RecordReplayFacade } from "./record-replay-facade";
 import { OffsetResetFacade } from "./offset-reset-facade";
 import { CorrelationTraceFacade } from "./correlation-trace-facade";
-import { SchemaSamplesFacade } from "./schema-samples-facade";
+import { SchemaSamplesFacade, isSchemaSamplesCommand } from "./schema-samples-facade";
 import { SchemaInspectionFacade } from "./schema-inspection-facade";
 import { executeWriteCommand } from "./write-facade";
 import { RecordCodecFacade } from "./record-codec-facade";
@@ -392,6 +392,7 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       return this.recordRanges.execute(command, correlationId, suppressedLocatorLoad);
     if (isPluginHostCommand(command)) return this.plugins.execute(command, correlationId);
     if (isAclReviewCommand(command)) return this.aclReviews.execute(command, correlationId);
+    if (isSchemaSamplesCommand(command)) return this.schemaSamples.execute(command, correlationId);
 
     const recipeBindings = {
       available: (): boolean => this.available,
@@ -442,12 +443,6 @@ export class KafkaBackendFacade implements StreamSkopeBackend {
       case "records.trace":
       case "records.trace.cancel":
         return this.correlationTrace.execute(command, correlationId);
-      case "schemas.client":
-      case "schemas.samples":
-      case "records.batch.review":
-      case "records.batch.apply":
-      case "records.batch.cancel":
-        return this.schemaSamples.execute(command, correlationId);
       case "schemas.inspect":
         return this.schemaInspection.execute(command, correlationId);
       case "records.decode":

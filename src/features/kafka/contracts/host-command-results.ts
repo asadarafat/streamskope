@@ -107,6 +107,10 @@ interface SpecificCommandResults
     readonly correlationId: string;
     readonly trace: import("./correlation-trace").CorrelationTraceResult;
   };
+  readonly "schemas.author": {
+    readonly correlationId: string;
+    readonly authoring: import("./schema-authoring").SchemaAuthoringResult;
+  };
   readonly "schemas.samples": {
     readonly correlationId: string;
     readonly samples: import("./schema-samples").SchemaSamples;
@@ -226,6 +230,7 @@ const structuredResults = {
   "records.decode": true,
   "schemas.inspect": true,
   "schemas.samples": true,
+  "schemas.author": true,
   "records.batch.review": true,
   "records.batch.apply": true,
   "writes.review": true,

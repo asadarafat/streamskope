@@ -6,6 +6,7 @@ import type {
   RecordCodecPort,
   SchemaSamplePort,
   SchemaClientPort,
+  SchemaAuthoringPort,
 } from "../application/record-codec-types";
 import type { KafkaApplicationSession } from "../application";
 
@@ -13,20 +14,34 @@ import { failureResponse, successResponse, type ActivityInput } from "./facade-s
 
 type Command = Extract<
   HostCommand,
-  { command: "schemas.client" | "schemas.samples" | `records.batch.${string}` }
+  { command: "schemas.client" | "schemas.samples" | "schemas.author" | `records.batch.${string}` }
 >;
+export function isSchemaSamplesCommand(command: HostCommand): command is Command {
+  return [
+    "schemas.client",
+    "schemas.samples",
+    "schemas.author",
+    "records.batch.review",
+    "records.batch.apply",
+    "records.batch.cancel",
+  ].includes(command.command);
+}
 export class SchemaSamplesFacade {
   private readonly service: RecordCodecService | undefined;
+  private readonly authoringResolver: (() => RecordCodecService) | undefined;
   private readonly pending = new Set<AbortController>();
   private readonly batches: RecordBatchService;
   constructor(
     private readonly session: KafkaApplicationSession,
     codec?: RecordCodecPort,
     lookup?: SchemaLookupPort,
-    private readonly generator?: SchemaSamplePort & Partial<SchemaClientPort>,
+    private readonly generator?: SchemaSamplePort & Partial<SchemaClientPort & SchemaAuthoringPort>,
     private readonly recordActivity?: (input: ActivityInput) => void,
   ) {
-    if (codec && lookup) this.service = new RecordCodecService(lookup, codec);
+    if (codec && lookup) {
+      this.service = new RecordCodecService(lookup, codec);
+      this.authoringResolver = (): RecordCodecService => new RecordCodecService(lookup, codec);
+    }
     this.batches = new RecordBatchService(() => session.reviewedWriteScope());
   }
   invalidate(): void {
@@ -72,6 +87,7 @@ export class SchemaSamplesFacade {
           };
         }
         case "schemas.client":
+        case "schemas.author":
         case "schemas.samples": {
           const context = this.session.clusterServiceContext("schemaRegistry");
           if (
@@ -86,10 +102,17 @@ export class SchemaSamplesFacade {
             );
           const controller = new AbortController();
           this.pending.add(controller);
-          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+          const { signal: contextSignal, ...requestContext } = context;
+          const signal = AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(15_000),
+            ...(contextSignal ? [contextSignal] : []),
+          ]);
           try {
-            const bundle = await this.service.resolveVersion(
-              context,
+            const resolver =
+              command.command === "schemas.author" ? this.authoringResolver!() : this.service;
+            const bundle = await resolver.resolveVersion(
+              command.command === "schemas.author" ? requestContext : context,
               command.payload.subject,
               command.payload.version,
               signal,
@@ -104,6 +127,18 @@ export class SchemaSamplesFacade {
                 version: HOST_PROTOCOL_VERSION,
                 ok: true,
                 result: { correlationId, client },
+              };
+            }
+            if (command.command === "schemas.author") {
+              if (!this.generator.author) throw new Error("Authoring worker unavailable.");
+              const authoring = await this.generator.author(command.payload, bundle, signal);
+              signal.throwIfAborted();
+              return {
+                command: command.command,
+                id: command.id,
+                version: HOST_PROTOCOL_VERSION,
+                ok: true,
+                result: { correlationId, authoring },
               };
             }
             const samples = await this.generator.generate(command.payload, bundle, signal);
@@ -127,11 +162,16 @@ export class SchemaSamplesFacade {
         correlationId,
         retryable: false,
         activeStateChanged: false,
-        summary: "The schema sample or batch request could not complete.",
+        summary:
+          command.command === "schemas.author"
+            ? "Record validation could not complete."
+            : "The schema sample or batch request could not complete.",
         recovery:
-          command.command === "schemas.samples" && error instanceof Error
-            ? `Generation is unsupported or exceeded its limits: ${error.message.slice(0, 256)}. Check the declared schema and active Registry.`
-            : "Check the destination, permissions and active connection, then review again. Inspect Kafka before repeating any uncertain write; no automatic resend occurs.",
+          command.command === "schemas.author"
+            ? "Check the active connection and Registry permissions, reload the selected schema, then validate again. Validation publishes no records."
+            : command.command === "schemas.samples" && error instanceof Error
+              ? `Generation is unsupported or exceeded its limits: ${error.message.slice(0, 256)}. Check the declared schema and active Registry.`
+              : "Check the destination, permissions and active connection, then review again. Inspect Kafka before repeating any uncertain write; no automatic resend occurs.",
       });
     }
   }

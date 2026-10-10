@@ -1,6 +1,11 @@
 import { Worker } from "node:worker_threads";
 
 import type { SchemaInspectionInput } from "../contracts/schema-inspection";
+import {
+  parseSchemaAuthoringResult,
+  type SchemaAuthoringInput,
+  type SchemaAuthoringResult,
+} from "../contracts/schema-authoring";
 import { parseSchemaClient, type SchemaClient } from "../contracts/schema-client";
 import {
   RECORD_CODEC_LIMITS,
@@ -17,13 +22,15 @@ import type {
   CodecSchemaBundle,
   RecordCodecPort,
   SchemaSamplePort,
+  SchemaAuthoringPort,
   RecordCodecWorkerInput,
 } from "../application/record-codec-types";
 
 import type { SchemaClientWorkerInput } from "./schema-client-generator";
 import type { SchemaSampleWorkerInput, SchemaSampleWorkerResult } from "./schema-sample-parser";
+import type { SchemaAuthoringWorkerInput } from "./schema-record-encoder";
 
-export class BoundedRecordCodec implements RecordCodecPort, SchemaSamplePort {
+export class BoundedRecordCodec implements RecordCodecPort, SchemaSamplePort, SchemaAuthoringPort {
   private active = 0;
   constructor(private readonly worker: { script: string; execArgv: readonly string[] }) {}
 
@@ -61,8 +68,19 @@ export class BoundedRecordCodec implements RecordCodecPort, SchemaSamplePort {
   ): Promise<SchemaClient> {
     return this.run({ kind: "client", input, bundle }, signal, parseSchemaClient);
   }
+  author(
+    input: SchemaAuthoringInput,
+    bundle: CodecSchemaBundle,
+    signal: AbortSignal,
+  ): Promise<SchemaAuthoringResult> {
+    return this.run({ kind: "author", input, bundle }, signal, parseSchemaAuthoringResult);
+  }
   private run<T>(
-    data: RecordCodecWorkerInput | SchemaSampleWorkerInput | SchemaClientWorkerInput,
+    data:
+      | RecordCodecWorkerInput
+      | SchemaSampleWorkerInput
+      | SchemaClientWorkerInput
+      | SchemaAuthoringWorkerInput,
     signal: AbortSignal,
     parse: (value: unknown) => T,
   ): Promise<T> {

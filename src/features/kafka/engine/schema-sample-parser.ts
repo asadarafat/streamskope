@@ -10,7 +10,8 @@ import {
 } from "../contracts/schema-samples";
 import type { CodecSchemaBundle } from "../application/record-codec-types";
 
-import { avroType, protobufTypes, boundedJson } from "./record-codec-parser";
+import { avroType, boundedJson } from "./record-codec-parser";
+import { createSchemaRecordEncoder, selectProtobufMessage } from "./schema-record-encoder";
 import { jsonSampleGenerator } from "./schema-sample-json";
 
 export interface SchemaSampleWorkerInput {
@@ -126,12 +127,8 @@ export function generateSchemaSamples({
           }),
       );
     };
-    const frame = (body: Uint8Array): Buffer => {
-      const header = Buffer.alloc(5);
-      header.writeUInt32BE(bundle.root.id, 1);
-      return Buffer.concat([header, body]);
-    };
     let next: () => { json: string; wire: Buffer };
+    const encode = createSchemaRecordEncoder(bundle, input.messageType);
     let encoding: string;
     if (bundle.root.schemaType === "AVRO") {
       const checkLogical = (value: unknown, depth: number): void => {
@@ -148,66 +145,26 @@ export function generateSchemaSamples({
       next = (): { json: string; wire: Buffer } => {
         const value = avroValue(type, 0);
         if (!type.isValid(value)) throw new Error("Generated Avro did not validate.");
-        return {
-          json: type.toString(value),
-          wire: frame(type.typeName === "bytes" ? (value as Buffer) : type.toBuffer(value)),
-        };
+        return encode(type.toString(value));
       };
     } else if (bundle.root.schemaType === "PROTOBUF") {
-      const types = protobufTypes(bundle);
-      let selected: { type: protobuf.Type; indexes: number[] } | undefined;
-      const find = (candidates: readonly protobuf.Type[], path: readonly number[]): void => {
-        for (const [index, type] of candidates.entries()) {
-          const indexes = [...path, index];
-          if (
-            (!input.messageType && path.length === 0 && index === 0) ||
-            type.fullName.replace(/^\./u, "") === input.messageType.replace(/^\./u, "")
-          )
-            selected = { type, indexes };
-          if (path.length < 8)
-            find(
-              type.nestedArray.filter(
-                (entry): entry is protobuf.Type => entry instanceof protobuf.Type,
-              ),
-              indexes,
-            );
-        }
-      };
-      find(types, []);
-      if (!selected) throw new Error("Choose a message type declared in the writer schema.");
-      const { type, indexes } = selected;
-      const varint = (value: number): number[] => {
-        let remaining = value * 2;
-        const bytes: number[] = [];
-        do {
-          const part = remaining & 127;
-          remaining >>>= 7;
-          bytes.push(part | (remaining ? 128 : 0));
-        } while (remaining);
-        return bytes;
-      };
-      const prefix = Buffer.from(
-        indexes.length === 1 && indexes[0] === 0
-          ? [0]
-          : [indexes.length, ...indexes].flatMap(varint),
-      );
+      const { type } = selectProtobufMessage(bundle, input.messageType);
       encoding = `Confluent Protobuf ${type.fullName} (writer schema ID and message indexes)`;
       next = (): { json: string; wire: Buffer } => {
         const value = type.fromObject(protoValue(type, 0));
         if (type.verify(value)) throw new Error("Generated Protobuf did not validate.");
-        return {
-          json: boundedJson(
+        return encode(
+          boundedJson(
             type.toObject(value, { longs: String, enums: String, bytes: String, defaults: false }),
           ),
-          wire: frame(Buffer.concat([prefix, type.encode(value).finish()])),
-        };
+        );
       };
     } else {
       const generate = jsonSampleGenerator(bundle, random);
       encoding = "UTF-8 JSON validated against JSON Schema draft-07 (no wire header)";
       next = (): { json: string; wire: Buffer } => {
         const json = boundedJson(generate());
-        return { json, wire: Buffer.from(json) };
+        return encode(json);
       };
     }
     const samples = Array.from({ length: input.count }, () => {

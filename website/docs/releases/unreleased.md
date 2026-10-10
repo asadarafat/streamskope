@@ -82,3 +82,9 @@ The first view or note mutation adopts investigation-library format 4 and preser
 the exact earlier file. Older hosts require a complete compatible backup before
 rollback; reading old libraries alone does not migrate them. See
 [library recovery](../guide/recovery.md#saved-view-library-recovery).
+
+Schema Registry adds **Author record** for edited values under an exact registered
+Avro, Protobuf or JSON Schema writer. Validation and seeded starting samples
+share the bounded encoder; publication requires a separate destination review
+and exact topic confirmation. Writer identity changes, precision loss and
+unsupported forms remain explicit. See [record authoring](../guide/schema-registry.md#author-a-record).
