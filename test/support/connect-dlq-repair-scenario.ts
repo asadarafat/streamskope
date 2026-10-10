@@ -78,6 +78,30 @@ export async function qualifyConnectDlqRepair(input: {
     expect(response.ok).toBe(true);
     return response.json();
   };
+  const knownTaskIds = async (): Promise<string[]> => {
+    const response = await fetch(`${input.workerUrl}/connectors/${input.connector}/status`);
+    expect(response.ok).toBe(true);
+    const status: unknown = await response.json();
+    if (
+      status === null ||
+      typeof status !== "object" ||
+      !("tasks" in status) ||
+      !Array.isArray(status.tasks)
+    )
+      throw new Error("The actual worker did not report connector tasks.");
+    return status.tasks.map((task: unknown): string => {
+      if (
+        task === null ||
+        typeof task !== "object" ||
+        !("id" in task) ||
+        typeof task.id !== "number" ||
+        !Number.isSafeInteger(task.id) ||
+        task.id < 0
+      )
+        throw new Error("The actual worker reported an invalid task identity.");
+      return String(task.id);
+    });
+  };
   const codec = createHostRecordCodec();
   const encoding = new StructuredReplayService(
     () => session.schemaRegistryReviewScope(),
@@ -107,18 +131,23 @@ export async function qualifyConnectDlqRepair(input: {
       )
       .toBe(2);
     const immutable = structuredClone(deadLetters);
+    const taskIds = await knownTaskIds();
+    expect(taskIds.length).toBeGreaterThan(0);
     deadLetters.forEach((record, index) => {
-      expect(inspectConnectDlqEvidence(record)).toMatchObject({
+      const evidence = inspectConnectDlqEvidence(record);
+      expect(evidence).toMatchObject({
         state: "reported",
         context: {
           topic: "connect-input",
           partition: "0",
           offset: String(index + 2),
           connector: input.connector,
-          task: "0",
           stage: "VALUE_CONVERTER",
         },
       });
+      if (evidence.state !== "reported") throw new Error("No complete reported DLQ context.");
+      // Multiple actual tasks can own partition zero after a rebalance; never infer task ID.
+      expect(taskIds).toContain(evidence.context.task);
       expect(record.original).toMatchObject({
         key: original[index]!.key,
         value: original[index]!.value,
