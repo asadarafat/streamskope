@@ -238,9 +238,24 @@ def publication_qualification(content, release, revision):
         and asset.get("browser_download_url") == url and asset.get("state") == "uploaded"
         and type(asset.get("size")) is int and asset["size"] > 0
         for asset in assets)
+    def retire_previous(section):
+        body = section[0]
+        if (f"## Published release: {tag}\n" in body
+                and f"{repository}/commit/{revision}" in body):
+            return ""  # Rebuilding this identity must not duplicate it as historical.
+        return body.replace("<!-- publication-qualification -->", "").replace(
+            "<!-- /publication-qualification -->", "")
     content = re.sub(r"<!-- publication-qualification -->[\s\S]*?"
-                     r"<!-- /publication-qualification -->\n*", "", content)
+                     r"<!-- /publication-qualification -->\n*", retire_previous, content)
     content = re.sub(r"^## Published release:", "## Historical qualification:", content, flags=re.M)
+    # A retired release describes its own source, never all pages in a newer site
+    # or development preview. Keep the report body and failed results untouched.
+    content = re.sub(
+        r"(^## Historical qualification:[^\n]*\n)([\s\S]*?)(?=^## |\Z)",
+        lambda section: section[1] + re.sub(
+            r"These pages describe (\[[^\n]+?\]\([^)]+\)) at source ",
+            r"Release \1 was published from source ", section[2]),
+        content, flags=re.M)
     if not re.search(r"^## Historical qualification:", content, re.M):
         raise ValueError("Qualification page needs a release evidence section")
     report = (f"The [source-specific qualification report]({url}) was included in the "
@@ -251,7 +266,7 @@ def publication_qualification(content, release, revision):
               "Live tests and other local rehearsals are unrecorded here; publication does "
               "not mark them as passed.")
     block = (f"<!-- publication-qualification -->\n## Published release: {tag}\n\n"
-             f"These pages describe [{tag}](../releases/{tag}.md) at source "
+             f"Release [{tag}](../releases/{tag}.md) was published from source "
              f"[`{revision[:7]}`]({repository}/commit/{revision}). The release notes link "
              "the packaging workflow; earlier release results below are historical.\n\n"
              f"{report}\n<!-- /publication-qualification -->\n\n")

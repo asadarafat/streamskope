@@ -127,7 +127,7 @@ file must enclose the exact primary bytes. Inspect `plugin-release-notes` and th
 component's target/host compatibility before publishing. Plugin packaging has no
 cluster access and does not validate an advertised target interval by itself.
 
-Publish the reviewed draft in GitHub. For a stable desktop release, select
+Publish the reviewed draft in GitHub. For a non-prerelease app release, select
 **Set as the latest release** so the browser quick-install entry point resolves
 to it. Publish prereleases and independent plugins without changing that desktop
 destination. A SemVer prerelease is marked as such automatically; signing status
@@ -208,7 +208,7 @@ an existing snapshot. Normal PR CI qualifies its exact head before a protected
 merge. Closely spaced component publications converge on the same serialized PR.
 
 The [Pages workflow](../.github/workflows/docs.yml) deploys only the highest
-published stable desktop SemVer. It ignores publication dates, plugin versions
+published non-prerelease app SemVer. It ignores publication dates, plugin versions
 and GitHub's mutable **Latest** designation. PRs, main pushes, tag creation,
 drafts, prereleases and plugin publication do not deploy Pages; there is no
 manual Pages dispatch. Prereleases remain downloadable on GitHub.
@@ -223,7 +223,7 @@ or replace release-pinned Pages deployment. See
 assets and authoring checks.
 
 To recover deployment, inspect the failed Pages job and rerun that release's run
-if it still represents the highest stable desktop. Configure Pages source as
+if it still represents the highest non-prerelease app version. Configure Pages source as
 **GitHub Actions** and allow desktop tags (`v*`) in the `github-pages` environment.
 Existing runs retain their original workflow revision.
 

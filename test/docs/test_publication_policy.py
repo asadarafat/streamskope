@@ -170,6 +170,42 @@ class ArchivedQualificationTests(unittest.TestCase):
                     publication.archived_qualification(root, self.plan())
             self.assertEqual(page.read_text(), before)
 
+    def test_retired_release_copy_preserves_failed_evidence_without_claiming_current_pages(self):
+        content = ("# Qualification evidence\n\n"
+                   "## Published release: v0.10.0\n\n"
+                   "These pages describe [v0.10.0](../releases/v0.10.0.md) at source `old`.\n"
+                   "Live NSP failed; no native recovery evidence was recorded.\n\n"
+                   "## Historical qualification: v0.9.2\n\n"
+                   "These pages describe [v0.9.2](../releases/v0.9.2.md) at source `older`.\n"
+                   "Retained report SHA-256: abc.\n")
+        updated = publication.publication_qualification(
+            content, self.plan()["latestStableDesktop"]["release"], self.revision)
+        self.assertEqual(updated.count("## Published release:"), 1)
+        self.assertNotIn("These pages describe", updated)
+        self.assertIn("Release [v0.11.0]", updated)
+        self.assertIn("Release [v0.10.0]", updated)
+        self.assertIn("Release [v0.9.2]", updated)
+        self.assertIn("Live NSP failed; no native recovery evidence was recorded.", updated)
+        self.assertIn("Retained report SHA-256: abc.", updated)
+
+    def test_publication_retains_marked_previous_report_and_is_idempotent(self):
+        previous = ("# Qualification evidence\n\n"
+                    "<!-- publication-qualification -->\n## Published release: v0.10.0\n\n"
+                    "These pages describe [v0.10.0](../releases/v0.10.0.md) at source `old`.\n"
+                    "Live NSP failed. Native recovery was not run. Receipt hash: abc.\n"
+                    "<!-- /publication-qualification -->\n\n"
+                    "## Historical qualification: v0.9.2\n\nOther retained evidence.\n")
+        release = self.plan()["latestStableDesktop"]["release"]
+        updated = publication.publication_qualification(previous, release, self.revision)
+        self.assertIn("## Historical qualification: v0.10.0", updated)
+        self.assertIn("Live NSP failed. Native recovery was not run. Receipt hash: abc.", updated)
+        self.assertNotIn("These pages describe", updated)
+        repeated = publication.publication_qualification(updated, release, self.revision)
+        self.assertEqual(repeated.count("## Published release: v0.11.0"), 1)
+        self.assertNotIn("## Historical qualification: v0.11.0", repeated)
+        self.assertEqual(repeated.count("## Historical qualification: v0.10.0"), 1)
+        self.assertIn("Live NSP failed. Native recovery was not run. Receipt hash: abc.", repeated)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@ Never reuse them for production or expose this fixture to untrusted networks.
 
 ## Prerequisites
 
-- Node.js 24
+- Node.js 24.21.0 or newer in the 24.x line
 - Docker
 - Containerlab
 - `keytool` from a JDK or JRE

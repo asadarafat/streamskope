@@ -32,6 +32,15 @@ The initial target is **JavaScript CommonJS on Node.js 24** using **Ajv 8.20.0 s
 
 `encode` validates and adds the Registry magic-byte/schema-ID prefix to UTF-8 JSON. `decode` requires that exact ID and validates the decoded value. Records are limited to 64 KiB before framing. Registry IDs are local to a Registry: register or select the corresponding schema and regenerate for another environment. The generated file never contains Registry authentication or Kafka credentials.
 
+**Workbench decoding limitation:** this encoder emits Confluent JSON Schema-ID
+framed JSON. StreamSkope currently decodes plain JSON and Confluent Avro/Protobuf,
+not Confluent JSON Schema framing. Its message grid will not show this client's
+JSON fields as a decoded projection. Use **Bytes (Base64)** to inspect the framed
+record when original bytes are available under your protection settings, and this
+client's `decode` function to validate its payload. Saving a JSON
+encoding override does not add support for the frame. See
+[supported record framing](structured-events.md#choose-how-records-are-interpreted).
+
 The optional `await client.send(producer, topic, record, key)` helper accepts a configured `@platformatic/kafka` producer, requires broker acknowledgement, disables topic auto-creation and does not retry stale metadata automatically. Configure that producer with `retries: 0` if a single attempt is required. A lost acknowledgement can still mean the record was written; do not blindly retry. The helper does not manage credentials, create topics or close your producer. Use the [sandbox](developer-sandbox.md) for a small consumer/transform exercise.
 
 ## Provenance and limits

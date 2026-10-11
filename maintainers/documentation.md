@@ -7,7 +7,7 @@ a successful preview build does not update GitHub Pages.
 
 ## Preview and qualify
 
-Prepare the [checkout](development.md#prepare-a-checkout) with Node 24.x and
+Prepare the [checkout](development.md#prepare-a-checkout) with Node 24.21.0 or newer in the 24.x line and
 `npm ci`, plus Python 3.11 or newer with venv support. The docs command installs
 the exact [Python requirements](../website/requirements.txt) into
 `.cache/zensical/` and refreshes them when their fingerprint changes. A global

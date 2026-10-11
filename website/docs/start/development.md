@@ -14,7 +14,7 @@ Already running StreamSkope with your own cluster? Go to
 
 ## Before you start
 
-Use a local checkout of StreamSkope with **Node 24.x**, npm, Docker,
+Use a local checkout of StreamSkope with **Node 24.21.0 or newer in the 24.x line**, npm, Docker,
 Containerlab, Java `keytool` and OpenSSL available where you run the
 commands. Docker must be running. The first launch builds or downloads the
 fixture images and can take several minutes.

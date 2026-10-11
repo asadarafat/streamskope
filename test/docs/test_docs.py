@@ -370,6 +370,7 @@ class DocumentationArtifactTests(unittest.TestCase):
             "lifecycle-2026-10-04.json", "topic-monitor-2026-10-04.json",
             "pre-release-2026-10-06.json",
             "containerlab-2026-10-07.json",
+            "development-2026-10-11.json",
         )
         for name in names:
             (directory / name).write_text('{"schemaVersion":1}')

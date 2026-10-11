@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-11",
+  "scope": "Unreleased development source; separate from published app/plugin qualification",
+  "source": {
+    "qualifiedHead": "27a55d5e4f9891932127e6531c0b3d2c8f9f6b2b",
+    "mergedMain": "b546214dc0a2e36b2e792ac6a1e0d384c75e4f63",
+    "tree": "91ef21a983f7e324af2606b15725089e8bc1015c",
+    "mergeTreeEquivalent": true
+  },
+  "ci": {
+    "runId": "38101118494",
+    "url": "https://github.com/asadarafat/streamskope/actions/runs/38101118494",
+    "testedMerge": "7502731aba4a8ed3c462d9efd4de527fca4116a8",
+    "attempt": 1,
+    "outcome": "passed",
+    "verifiedReports": 13
+  },
+  "metrics": {
+    "realKafka": "4.3.1",
+    "jmxExporter": "1.7.0",
+    "prometheus": "3.15.0",
+    "outcome": "passed",
+    "scenarios": [
+      "Original sample value/time pairs",
+      "Real ISR loss and recovery",
+      "Missing series stays unknown",
+      "Owned fixture absence"
+    ],
+    "scope": "Pinned local fixtures, not managed services or atomic cluster snapshots"
+  },
+  "browser": {
+    "outcome": "passed",
+    "scenarios": [
+      "Explicit metrics read",
+      "Navigation and disconnect fences",
+      "Missing series stays unknown",
+      "Readable source details",
+      "Zero accessibility findings",
+      "Sensitive-artifact scan"
+    ],
+    "scope": "Production-built web workbench; not native desktop"
+  },
+  "nativeMetrics": {
+    "outcome": "passed",
+    "checks": 24,
+    "platform": "Linux ARM64",
+    "imageId": "sha256:b3b019a3f4a301615ac4f44a52d433cdf76af7bac17538c432ee0d82e9de152d",
+    "verifiedBackupInventories": 3,
+    "scenarios": [
+      "Format4 to5 migration",
+      "Exact protected values and predecessor",
+      "Vault restart",
+      "Old-host refusal before downtime",
+      "Complete restore and rollback"
+    ],
+    "scope": "Local staged source image; not published delivery, desktop packages, other architectures or managed-plugin-source maintenance"
+  },
+  "liveEda": {
+    "outcome": "passed",
+    "checks": 12,
+    "target": "26.8.2",
+    "apiCertificateVerification": "Provided CA",
+    "scope": "Source-host against an existing cluster app, lifecycle, known record and owned cleanup; no fresh app installation or published plugin upgrade"
+  },
+  "liveNsp": {
+    "outcome": "passed",
+    "checks": 23,
+    "target": "26.4.0",
+    "apiCertificateVerification": false,
+    "brokerCertificateVerification": true,
+    "scope": "Local lab workflow lifecycle, profile reuse, known record, interruption and owned cleanup; does not qualify API certificate trust"
+  },
+  "soak": {
+    "outcome": "passed",
+    "durationMs": 60019.839091,
+    "generatedAcceptedPublished": 59999,
+    "offered": 60000,
+    "hostDisplayDrops": 0,
+    "cpuPercentOneCore": 28.750931794130025,
+    "eventLoopP99Ms": 23.478271,
+    "peakRssBytes": 721018880,
+    "unchangedBudgets": {
+      "maximumCpuPercentOneCore": 60,
+      "maximumPeakRssBytes": 805306368,
+      "maximumEventLoopP99Ms": 150,
+      "maximumDisplayDropRatio": 0.02,
+      "maximumIngestToReducerP95Ms": 1000,
+      "maximumIngestToReducerP99Ms": 2000,
+      "minimumGeneratedRatio": 0.99
+    }
+  },
+  "limitations": [
+    "Selected-live unselected stages remain not-run",
+    "Soak is synthetic application pipeline, not broker/network, actual IPC, React or long-term endurance",
+    "No release assigned",
+    "Private raw native artifacts and full receipts retained locally; this public projection is not the full evidence bundle",
+    "Earlier failed and superseded attempts retain their own outcomes; old hosted Kafka startup cause is unestablished"
+  ],
+  "receiptHashes": {
+    "ci": {
+      "sha256": "100d29da59e0d4fb8938fbba1e874b546ad3280b017d3cbff383d972cc8a56f6"
+    },
+    "realMetrics": {
+      "sha256": "1a469f210de482dc48816bf8590ef5330c1b3b3fe3c4457a930f91bc993f1046"
+    },
+    "browser": {
+      "sha256": "a6c9ae83b2a2244e195cc4e31857eee4e5f6d6094d3efd99854f4a8c9f0c7ec3"
+    },
+    "nativeMetrics": {
+      "sha256": "9dc3e03022096eb2f38964af2b1bec51bcb7050eed3c43012c1afde8daaeae30"
+    },
+    "live": {
+      "sha256": "0670fc18813914632e5cc23148be4d49169c37097740f9f99cdd6810f390ce16"
+    },
+    "soak": {
+      "sha256": "449435f27f7062e3bfeacf625a7f211c3a946a8da955f24a02737899a6a8e838"
+    }
+  }
+}

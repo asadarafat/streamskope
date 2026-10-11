@@ -9,7 +9,7 @@ Use this sandbox to try a Node.js consumer or a simple consume/transform/produce
 
 ## Start and connect
 
-Use the source archive for your desktop release, or a matching Git checkout. Install **Node 24.x**, npm and Docker with the **Compose v2** command available. Docker must be running. The pinned images need an initial download; no production credentials are required.
+Use the source archive for your desktop release, or a matching Git checkout. Install **Node 24.21.0 or newer in the 24.x line**, npm and Docker with the **Compose v2** command available. Docker must be running. The pinned images need an initial download; no production credentials are required.
 
 ```sh
 npm ci

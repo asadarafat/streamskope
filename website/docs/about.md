@@ -1,17 +1,23 @@
 # About StreamSkope
 
-StreamSkope is an open-source desktop workbench for Kafka operators and developers.
+StreamSkope is an open-source workbench for Kafka and NATS operators and developers,
+available as a desktop app or a browser workbench on a Linux Docker host.
 It brings connection setup, message inspection and operational evidence into one
 window. The source is licensed under Apache-2.0.
 
 ## Current scope
 
-Kafka is the core broker integration. Schema Registry is a separate service;
-Kafka Connect uses a configured Connect REST endpoint, and Redpanda transform inspection requires the Redpanda Admin API. Support for other
-event systems is not implied by the product name.
+Kafka and NATS are built-in providers connecting to the remote servers you supply;
+StreamSkope does not embed either server. Kafka workflows can use a separate
+Schema Registry, Connect REST endpoint or Redpanda Admin API.
+[NATS inspection](guide/core-nats.md) subscribes to live subjects; JetStream history,
+stream administration and consumer replay are outside its current scope.
+EDA and NSP are optional [Kafka connection plugins](plugins/index.md).
 
 See [installation](start/installation.md) for desktop packages, supported build
-targets and platform security requirements.
+targets and platform security requirements. For browser delivery, follow
+[Install the browser workbench](start/containerlab.md) and
+[Use the browser workbench](guide/browser-host.md).
 
 ## Website and media
 

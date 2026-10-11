@@ -90,7 +90,9 @@ A saved profile does not guarantee that its temporary capture still exists.
 Install NSP Connector, then use your NSP API URL and credentials to create a tested
 Kafka profile. Follow [Connect via NSP](../plugins/nsp.md) for the workflow,
 permissions and cleanup behavior. Check each plugin's [desktop and target requirements](../plugins/versioning.md); the original
-v0.1.0+build.1 packages and development API 4 packages have different host requirements.
+v0.1.0+build.1 API 3 packages and later API 4 packages have different host
+requirements. The official catalog selects a compatible published package; source
+declarations do not establish that the latest development changes have shipped.
 
 ## Next: inspect a message
 

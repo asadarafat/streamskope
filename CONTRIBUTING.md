@@ -5,7 +5,7 @@ StreamSkope uses TypeScript, React and Node, with separate Kafka and NATS provid
 
 ## Start with your task
 
-Use Node **24.21 or newer in the 24.x line**, then run `npm ci` from the repository
+Use Node **24.21.0 or newer in the 24.x line**, then run `npm ci` from the repository
 root. Additional prerequisites depend on the task: see
 [development setup](maintainers/development.md) for fixtures, native builds and
 source execution, or [documentation work](maintainers/documentation.md) for docs.

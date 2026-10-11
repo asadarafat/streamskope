@@ -1,12 +1,12 @@
 # Qualification evidence
 
-Use the exact desktop release and plugin identity when deciding whether a
+Use the exact app release and plugin identity when deciding whether a
 procedure has been exercised for your environment. A passing documentation build
 checks the site; it does not establish live integration, permissions or recovery.
 
 ## Find evidence for your version
 
-Open the exact desktop version in [release history](../releases/index.md). New
+Open the exact app version in [release history](../releases/index.md). New
 release notes include a **Build evidence** link to the executed release workflow
 and its source commit. That run records shared CI, each native installer and the
 unsigned EDA application build. Use its job results and the release's `SHA256SUMS`
@@ -36,6 +36,39 @@ installers. Results from an earlier revision do not qualify changed source.
 | NSP 26.4.0 setup and cleanup                              | API version, profile reuse, Kafka access and execution removal in the exact source-specific report                                                            |
 | API 2/3 to API 4 upgrade and rollback                     | Installed desktop, old/new package digests, profiles and rollback backup; no installed native rehearsal is recorded                                           |
 | Native plugin dialogs and credential-backed restore       | Source-specific candidate lifecycle/recovery evidence, with release-source equivalence and exact artifact limits                                              |
+
+<span id="development-source-qualification"></span>
+
+## Unreleased development qualification: 2026-10-11
+
+The [sanitized development summary](../assets/qualification/development-2026-10-11.json)
+records clean candidate [`27a55d5`](https://github.com/asadarafat/streamskope/commit/27a55d5e4f9891932127e6531c0b3d2c8f9f6b2b),
+merged as [`b546214`](https://github.com/asadarafat/streamskope/commit/b546214dc0a2e36b2e792ac6a1e0d384c75e4f63)
+with the same Git tree. [CI 38101118494](https://github.com/asadarafat/streamskope/actions/runs/38101118494)
+passed all three lanes and the aggregate; all 13 report hashes and source identities
+were verified. These checks cover that development source, not the published
+v0.10.3 app or a subsequently changed checkout.
+
+| Check                           | Executed result and limit                                                                                                                                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exporter metrics                | Pinned Kafka 4.3.1 / JMX 1.7.0 / Prometheus 3.15.0: original sample pairs, actual ISR loss/recovery, missing evidence and owned cleanup passed                                                                 |
+| Browser metrics                 | Explicit reads, unknown evidence, navigation/disconnect fencing, readable source details, zero accessibility findings and sensitive-artifact scanning passed                                                   |
+| Native metrics-profile recovery | 24 checks on a local-staged Linux ARM64 image: format 4→5, complete protected values, exact predecessor, restart, old-host refusal before downtime, three complete verified backups, full restore and rollback |
+| Live EDA 26.8.2                 | 12 source-host lifecycle, known-record and owned-cleanup checks passed with a provided API CA                                                                                                                  |
+| Live NSP 26.4.0                 | 23 workflow, profile reuse, known-record, interruption and owned-cleanup checks passed; API certificate verification was disabled in this local lab, broker verification enabled                               |
+| 60-second pipeline soak         | 59,999 records generated, accepted and published; zero display drops, 28.8% one-core CPU, 23.5 ms event-loop p99, 721,018,880-byte peak RSS within the unchanged 768 MiB budget                                |
+
+The native rehearsal does not establish public image delivery, desktop-native
+recovery, another architecture or maintenance of managed-plugin-source profiles;
+that maintenance still refuses managed sources. The selected-live bundle leaves
+unselected stages **not-run**. The soak measures the synthetic production
+application pipeline, not broker/network traffic, actual IPC, rendered UI or
+long-term endurance. Earlier failed/canceled attempts remain distinct. One earlier
+hosted disposable Kafka startup failure has an unestablished cause because its
+original log tail omitted the error; a later pass does not prove its cause.
+
+The dated rehearsal below retains its historical anchor because older release
+notes link to it. Its results do not qualify the newer source above.
 
 <span id="current-source-qualification"></span>
 
@@ -189,26 +222,26 @@ historical evidence, rather than qualification of this candidate.
 
 ## Published release: v0.10.3
 
-These pages describe [v0.10.3](../releases/v0.10.3.md) at source [`0899807`](https://github.com/asadarafat/streamskope/commit/089980705afaffc1a6135a9347eb1bff68b27206). The release notes link the packaging workflow; earlier release results below are historical.
+Release [v0.10.3](../releases/v0.10.3.md) was published from source [`0899807`](https://github.com/asadarafat/streamskope/commit/089980705afaffc1a6135a9347eb1bff68b27206). The release notes link the packaging workflow; earlier release results below are historical.
 
 The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.10.3/qualification-v0.10.3.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
 <!-- /publication-qualification -->
 
 ## Historical qualification: v0.10.2
 
-These pages describe [v0.10.2](../releases/v0.10.2.md) at source [`a6996f1`](https://github.com/asadarafat/streamskope/commit/a6996f10cc931724115449c93f76961e040a9ae6). The release notes link the packaging workflow; earlier release results below are historical.
+Release [v0.10.2](../releases/v0.10.2.md) was published from source [`a6996f1`](https://github.com/asadarafat/streamskope/commit/a6996f10cc931724115449c93f76961e040a9ae6). The release notes link the packaging workflow; earlier release results below are historical.
 
 The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.10.2/qualification-v0.10.2.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
 
 ## Historical qualification: v0.10.1
 
-These pages describe [v0.10.1](../releases/v0.10.1.md) at source [`7350cf1`](https://github.com/asadarafat/streamskope/commit/7350cf1c98e7b59a8558a2ca81812ae9b1b1bb91). The release notes link the packaging workflow; earlier release results below are historical.
+Release [v0.10.1](../releases/v0.10.1.md) was published from source [`7350cf1`](https://github.com/asadarafat/streamskope/commit/7350cf1c98e7b59a8558a2ca81812ae9b1b1bb91). The release notes link the packaging workflow; earlier release results below are historical.
 
 The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.10.1/qualification-v0.10.1.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
 
 ## Historical qualification: v0.10.0
 
-These pages describe [v0.10.0](../releases/v0.10.0.md) at source [`0e12476`](https://github.com/asadarafat/streamskope/commit/0e12476bf0f79c46de8cf5a1212374f8d8923af0). The release notes link the packaging workflow; earlier release results below are historical.
+Release [v0.10.0](../releases/v0.10.0.md) was published from source [`0e12476`](https://github.com/asadarafat/streamskope/commit/0e12476bf0f79c46de8cf5a1212374f8d8923af0). The release notes link the packaging workflow; earlier release results below are historical.
 
 The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.10.0/qualification-v0.10.0.json) records exact source and artifact identities, executed checks, resolved failed attempts and remaining limits. Its digest is included in `SHA256SUMS`.
 
@@ -229,7 +262,7 @@ live capture and upgrade/rollback were not rehearsed for this release.
 
 ## Historical qualification: v0.9.2
 
-These pages describe [v0.9.2](../releases/v0.9.2.md) at source [`0acc38c`](https://github.com/asadarafat/streamskope/commit/0acc38c2d5db9c7592cf9adfe835de6d8f0ded93). The release notes link the packaging workflow; earlier release results below are historical.
+Release [v0.9.2](../releases/v0.9.2.md) was published from source [`0acc38c`](https://github.com/asadarafat/streamskope/commit/0acc38c2d5db9c7592cf9adfe835de6d8f0ded93). The release notes link the packaging workflow; earlier release results below are historical.
 
 The [source-specific qualification report](https://github.com/asadarafat/streamskope/releases/download/v0.9.2/qualification-v0.9.2.json) was included in the publication event. Read its executed checks, source identity, environment and limitations; the link alone does not establish that every check passed.
 
