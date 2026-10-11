@@ -14,6 +14,14 @@ additional release highlights, not a complete list of pending changes.
 
 ## Release highlights
 
+The updated EDA and NSP Connector packages require StreamSkope 0.11.x and use
+the expanded protected connection-profile model. Older published packages keep
+their original host bounds. Upgrade the host first, then install a compatible
+plugin through **Plugins**. For offline upgrades, download the compatible signed
+portable packages ahead of time and import them after upgrading the host. See
+[plugin compatibility](../plugins/versioning.md) and
+[offline installation](../plugins/offline.md).
+
 Observed health adds an explicit host-owned watch, persisted desired settings,
 bounded coverage summaries and evidence-linked investigations. Saving settings
 does not resume watching after restart or reconnect. History format 2 preserves

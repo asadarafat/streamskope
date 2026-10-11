@@ -8,8 +8,8 @@
   "renderer": "renderer.js",
   "compatibility": {
     "streamskope": {
-      "minimum": "0.9.0",
-      "maximumExclusive": "0.11.0"
+      "minimum": "0.11.0",
+      "maximumExclusive": "0.12.0"
     },
     "target": {
       "system": "nsp",

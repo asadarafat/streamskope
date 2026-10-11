@@ -39,7 +39,7 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
 }
 
 function pluginVersion(patch: number): string {
-  return `0.1.${patch}`;
+  return `0.2.${patch}`;
 }
 
 function bundle(patch: number): { readonly bytes: Uint8Array; readonly sha256: string } {
@@ -100,7 +100,7 @@ it("hot update drains the old NSP retrieval before the new backend reads recover
   vi.spyOn(NspApiClient.prototype, "close").mockResolvedValue();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.9.1",
+    hostRelease: "v0.11.1",
     catalog: {
       list: (): Promise<[]> => Promise.resolve([]),
       download: (): Promise<ReturnType<typeof bundle>> => Promise.resolve(bundle(2)),
@@ -249,7 +249,7 @@ it("direct host shutdown permits final NSP cleanup and journal writes while reje
   const closeClient = vi.spyOn(NspApiClient.prototype, "close").mockResolvedValue();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.9.1",
+    hostRelease: "v0.11.1",
     loadModule: (): Promise<PluginBackendModule> =>
       Promise.resolve({
         activate: (host: PluginBackendHost): PluginBackend => {
@@ -333,7 +333,7 @@ it("discarding a staged update cannot overwrite the active plugin's unresolved r
   const attemptedWrite = vi.fn();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.9.1",
+    hostRelease: "v0.11.1",
     catalog: {
       list: (): Promise<[]> => Promise.resolve([]),
       download: (): Promise<ReturnType<typeof bundle>> => Promise.resolve(bundle(2)),

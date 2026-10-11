@@ -69,11 +69,11 @@ async function reconnectSavedProfile(
 }
 
 // Explicit operator rehearsal: requires a real, unlocked OS credential service
-// and the disposable AIO fixture. Never substitute deterministic safeStorage.
+// and an owned topic on the shared AIO broker. Never substitute deterministic safeStorage.
 test("restores a full backup with native credential protection and reconnects", async () => {
   test.skip(
     process.env.STREAMSKOPE_NATIVE_RECOVERY !== "1",
-    "Opt in with an unlocked OS credential service and disposable Kafka fixture.",
+    "Opt in with an unlocked OS credential service and a shared AIO connection.",
   );
   test.setTimeout(360_000);
   expect(process.env.STREAMSKOPE_RENDERER_URL).toBeUndefined();
@@ -177,7 +177,7 @@ test("restores a full backup with native credential protection and reconnects", 
     if (plan !== undefined || previousExecutable !== undefined)
       expect(baselineQueryDocument.schemaVersion).toBe(1);
 
-    // Copy the previous release's full backup before the installer replacement.
+    // Preserve the complete baseline before replacement or the source-app restart.
     await cp(active, join(root, "pre-upgrade"), { recursive: true, preserveTimestamps: true });
     expect((await stat(join(active, "Preferences"))).isFile()).toBe(true);
     if (candidateSourceRevision === undefined) {
@@ -216,10 +216,11 @@ test("restores a full backup with native credential protection and reconnects", 
     await queries.getByRole("button", { name: /^Open (?:query|view)$/ }).click();
     await expect(page.getByLabel("Connection status")).toContainText("Disconnected");
     reconnects.push(
-      await reconnectSavedProfile(page, "after installer replacement", [
-        config.oauthClientSecret,
-        config.seedPayload,
-      ]),
+      await reconnectSavedProfile(
+        page,
+        plan === undefined ? "candidate launch" : "after installer replacement",
+        [config.oauthClientSecret, config.seedPayload],
+      ),
     );
     await expect(page.getByRole("textbox", { name: "Start time (inclusive)" })).toHaveValue(
       startTime,
@@ -239,7 +240,7 @@ test("restores a full backup with native credential protection and reconnects", 
       await readFile(join(active, "queries/kafka-queries.json"), "utf8"),
     ) as unknown;
     expect(migrated).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       queries: [
         {
           name: "Native incident",
@@ -253,6 +254,10 @@ test("restores a full backup with native credential protection and reconnects", 
       );
     if (baselineQueryDocument.schemaVersion === 2)
       expect(await readFile(join(active, "queries/kafka-queries.json.pre-records-v2"))).toEqual(
+        baselineQueryBytes,
+      );
+    if (baselineQueryDocument.schemaVersion === 3)
+      expect(await readFile(join(active, "queries/kafka-queries.json.pre-catalog-v3"))).toEqual(
         baselineQueryBytes,
       );
     await application.close();
@@ -403,21 +408,23 @@ test("restores a full backup with native credential protection and reconnects", 
       upgradedSavedQueryRetained: true,
       savedViewMigration: {
         baselineFormat: baselineQueryDocument.schemaVersion,
-        currentFormat: 3,
+        currentFormat: 4,
         legacyInspectionPreservedBytes: true,
-        exactPredecessorPreserved: baselineQueryDocument.schemaVersion < 3,
+        exactPredecessorPreserved: baselineQueryDocument.schemaVersion < 4,
         filterLayoutRetainedAcrossRestart: true,
       },
       candidateRestarted: true,
       savedQueryRestored: true,
-      backupCreatedWithBaselineRelease: true,
+      backupCreatedWithBaselineRelease: plan !== undefined || previousExecutable !== undefined,
       explicitAbsoluteBoundsRestored: true,
       restoredProfileReconnected: true,
       credentialsReentered: false,
       reconnects,
       historicalFilteredExportVerified: true,
       scope:
-        "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring.",
+        plan !== undefined
+          ? "Same OS user and credential service; complete backup restored after installer replacement. Does not transfer credentials to another account or replace a lost OS keyring."
+          : "Same OS user and credential service; complete backup restored in the candidate runtime. Installer replacement was not run. Does not transfer credentials to another account or replace a lost OS keyring.",
     };
     await writeFile(
       resolve("test-results/electron/native-recovery.json"),
