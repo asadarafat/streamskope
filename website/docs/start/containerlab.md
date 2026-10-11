@@ -10,8 +10,10 @@ start a broker. Saved credentials use an encrypted vault.
 
 Run the installer **inside Linux**, using an account with `sudo` and `curl`.
 The Linux host can be your computer or a VM. The installer reuses existing Docker
-and Containerlab and can install missing prerequisites on Ubuntu 22.04/24.04 and
-Debian 12/13. It preserves conflicting runtimes for you to review.
+and can install missing host prerequisites on Ubuntu 22.04/24.04 and Debian 12/13.
+It downloads a verified Containerlab 0.79.0 binary into its private tools cache;
+your system Containerlab and other labs are unchanged. The cached tool is reused
+for installation, upgrade and rollback. It preserves conflicting runtimes for you to review.
 For offline installation, another distribution or custom networking, use
 [manual deployment](../guide/browser-deployment.md).
 

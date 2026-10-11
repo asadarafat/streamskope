@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
@@ -15,7 +15,7 @@ import type { BrowserInstallerTarget } from "./browser-installer-evidence";
 import { nativeTransitionChecks } from "./browser-transition-checks";
 import { seedNativeMetricsRecovery } from "./browser-metrics-recovery-fixture";
 import { seedNativeObservationRecovery } from "./browser-observation-recovery-fixture";
-import { run, replaceConstant } from "./browser-qualification-process";
+import { run, replaceConstant, prepareBrowserContainerlab } from "./browser-qualification-process";
 import {
   createBrowserVaultFixture,
   verifyBrowserNativeWorkers,
@@ -271,6 +271,7 @@ export async function verifyTransition(
     DOCKER_HOST: "unix:///var/run/docker.sock",
     DOCKER_CONTEXT: "default",
     DOCKER_CONFIG: join(temporary, "docker-config"),
+    PATH: options.environment?.PATH ?? process.env.PATH ?? "",
   };
   const savedEnvironment = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"].map(
     (key) => [key, process.env[key]] as const,
@@ -301,6 +302,14 @@ export async function verifyTransition(
     | "pinned-resume"
     | "cleanup" = "target-identity";
   try {
+    // Bootstrap the unchanged predecessor with the same verified deployment
+    // runtime as the current installer, independently of the host's global CLI.
+    const pinnedTool = await prepareBrowserContainerlab(
+      temporary,
+      target.platform.split("/")[1]!,
+      environment,
+    );
+    environment.PATH = `${dirname(pinnedTool)}${delimiter}${environment.PATH}`;
     await verifyImage(target, environment);
     const absent = await run("docker", ["inspect", container], environment, true);
     assert.ok(absent.code !== 0 && /No such object/u.test(absent.stderr));

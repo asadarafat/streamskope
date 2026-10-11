@@ -13,7 +13,8 @@ export const INSTALL_SOURCE = "a".repeat(40);
 export const INSTALL_DIGEST = `sha256:${"b".repeat(64)}`;
 export const INSTALL_SETUP_CODE = "owner-only-fixture-setup-code".padEnd(43, "x");
 const owner = { uid: process.getuid?.() ?? 1000, gid: process.getgid?.() ?? 1000 };
-const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
+const hash = (value: string | Uint8Array): string =>
+  createHash("sha256").update(value).digest("hex");
 const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 export interface InstallerControl {
@@ -21,6 +22,7 @@ export interface InstallerControl {
   corruptDownload?: string;
   failedDownload?: string;
   failedDeploy?: boolean;
+  globalContainerlabBroken?: boolean;
   setupRequired?: boolean;
   container?: Record<string, unknown> | undefined;
   firstPort?: number;
@@ -180,6 +182,7 @@ if (command === "id") {
 } else if (command === "containerlab" || command === "clab") {
   if (args.includes("version") || args.includes("--version")) out("0.79.1");
   else if (args.includes("deploy")) {
+    if (control.globalContainerlabBroken && !process.argv[1].startsWith(stateRoot + "/tools/")) fail("Host CLI has incompatible IPAM.");
     if (control.failedDeploy) fail("Fixture deployment interrupted.");
     const flag = args.findIndex(value => value === "--topo" || value === "-t" || value === "--topology");
     if (flag < 0) fail("Deployment must provide its pinned topology.");
@@ -228,7 +231,8 @@ if (command === "id") {
     if (control.failedDownload === file) fail("Fixture HTTP 404", 22);
     const release = parsed.pathname.match(/\/download\/v([^/]+)\//)?.[1];
     if (!release) fail("Fixture requires immutable release downloads.");
-    const asset = join(root, "assets", release, file);
+    const asset = parsed.pathname.startsWith("/srl-labs/containerlab/")
+      ? join(root, "tool-assets", file) : join(root, "assets", release, file);
     if (!existsSync(asset)) fail("Unexpected release asset: " + file, 22);
     contents = readFileSync(asset);
     if (control.corruptDownload === file) contents = Buffer.concat([Buffer.from(contents), Buffer.from("corruption")]);
@@ -261,6 +265,24 @@ export async function browserInstallerFixture(
   const mock = join(root, "mock-command.mjs");
   await writeFile(mock, `#!${process.execPath}\n${commandMock}`);
   await chmod(mock, 0o755);
+  // Isolated command bytes replace only fixture trust anchors, never public
+  // delivery evidence. Real native installer qualification uses upstream pins.
+  const toolAssets = join(root, "tool-assets");
+  await mkdir(toolAssets);
+  const archive = join(toolAssets, "containerlab_0.79.0_linux_amd64.tar.gz");
+  await execute("python3", [
+    "-c",
+    "import tarfile,sys; t=tarfile.open(sys.argv[2],'w:gz'); t.add(sys.argv[1],arcname='containerlab'); t.close()",
+    mock,
+    archive,
+  ]);
+  const archiveDigest = hash(await readFile(archive));
+  const binaryDigest = hash(await readFile(mock));
+  const binarySize = (await readFile(mock)).length;
+  await writeFile(
+    join(toolAssets, "containerlab_0.79.0_linux_arm64.tar.gz"),
+    await readFile(archive),
+  );
   for (const name of [
     "id",
     "uname",
@@ -392,13 +414,16 @@ export async function browserInstallerFixture(
       await readFile("tools/package/install-browser-workbench.sh", "utf8"),
       await readFile("tools/package/browser-maintenance.py", "utf8"),
     );
+    source = source.replace(
+      /CONTAINERLAB_PINS = \{[\s\S]*?\n\}/u,
+      `CONTAINERLAB_PINS = {"amd64": ("${archiveDigest}", "${binaryDigest}", ${binarySize}), "arm64": ("${archiveDigest}", "${binaryDigest}", ${binarySize})}`,
+    );
     for (const [constant, value] of Object.entries({
       INSTALL_ROOT: join(root, "state"),
       OS_RELEASE: join(root, "os-release"),
       TTY_DEVICE: join(root, "absent-tty"),
       APT_KEYRING: join(root, "etc/docker-key"),
       DOCKER_APT_SOURCE: join(root, "etc/docker-source"),
-      CLAB_APT_SOURCE: join(root, "etc/clab-source"),
     })) {
       const pattern = new RegExp(`^${constant}=.*$`, "m");
       if (!pattern.test(source))
