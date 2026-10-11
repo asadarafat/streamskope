@@ -152,11 +152,20 @@ export async function startReplicationFixture(jmx?: {
             { timeout: 5_000 },
           );
           if (stdout.trim() !== "true") {
-            const logs = await execute("docker", ["logs", "--tail", "60", name], {
-              timeout: 5_000,
-            });
+            const [state, logs] = await Promise.all([
+              execute(
+                "docker",
+                ["inspect", "--format", "exit={{.State.ExitCode}} oom={{.State.OOMKilled}}", name],
+                { timeout: 5_000 },
+              ),
+              execute("docker", ["logs", "--tail", "200", name], { timeout: 5_000 }),
+            ]);
+            const lines = `${logs.stdout}${logs.stderr}`.split("\n");
+            const causes = lines
+              .filter((line) => /ERROR|FATAL|Exception|Caused by|OutOfMemory/u.test(line))
+              .slice(-30);
             throw new Error(
-              `An isolated replication node exited during startup. ${logs.stdout}${logs.stderr}`,
+              `An isolated replication node exited during startup (${state.stdout.trim()}).\n${causes.join("\n")}\n${lines.slice(-20).join("\n")}`,
             );
           }
         }
