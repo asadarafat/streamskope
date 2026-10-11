@@ -4,7 +4,11 @@ import { resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
+import {
+  HOST_PROTOCOL_VERSION,
+  parseHostCommandResponse,
+  type ExternalMetricsSnapshot,
+} from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
 import { startPrometheusFixture } from "../support/prometheus-fixture";
@@ -28,11 +32,29 @@ test("reads real optional metrics with honest source coverage and no automatic e
   const diagnostics = observeBrowserDiagnostics(page),
     commands: string[] = [];
   const rejectedRequests: { command: string; status: number }[] = [];
+  const metricsResponses: unknown[] = [],
+    responseReads: Promise<void>[] = [];
   page.on("response", (response): void => {
-    if (response.status() < 400 || !new URL(response.url()).pathname.endsWith("/commands")) return;
+    if (!new URL(response.url()).pathname.endsWith("/commands")) return;
     const body = response.request().postDataJSON() as { command?: unknown } | null;
-    if (typeof body?.command === "string")
+    if (response.status() >= 400 && typeof body?.command === "string")
       rejectedRequests.push({ command: body.command, status: response.status() });
+    if (body?.command === "observations.metrics.capture") {
+      responseReads.push(
+        (async (): Promise<void> => {
+          try {
+            const result = parseHostCommandResponse(await response.json());
+            if (!result.ok) metricsResponses.push({ ok: false, code: result.error.code });
+            else if (result.command === "observations.metrics.capture") {
+              const snapshot: ExternalMetricsSnapshot = result.result.snapshot;
+              metricsResponses.push({ ok: true, snapshot });
+            }
+          } catch {
+            metricsResponses.push({ parsed: false, status: response.status() });
+          }
+        })(),
+      );
+    }
   });
   page.on("request", (request) => {
     if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/commands")) {
@@ -115,8 +137,19 @@ test("reads real optional metrics with honest source coverage and no automatic e
     expect(commands.filter((c) => c === "observations.metrics.capture")).toHaveLength(attempts);
     expect(diagnostics.problems).toEqual([]);
   } finally {
+    await Promise.all(responseReads);
+    const panelText = await page
+      .getByRole("main", { name: "Observed health page" })
+      .innerText()
+      .catch(() => "Observed health is not mounted.");
     await testInfo.attach("metrics-browser-diagnostics", {
-      body: JSON.stringify({ problems: diagnostics.problems, rejectedRequests, commands }),
+      body: JSON.stringify({
+        problems: diagnostics.problems,
+        rejectedRequests,
+        commands,
+        metricsResponses,
+        panelText,
+      }),
       contentType: "application/json",
     });
     try {
