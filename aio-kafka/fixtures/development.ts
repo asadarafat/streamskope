@@ -58,14 +58,43 @@ export async function loadFixtureConfig(): Promise<FixtureConfig> {
   return candidate as FixtureConfig;
 }
 
-export async function loadFixtureConnection(): Promise<FixtureConnection> {
-  const explicitKafka = process.env.STREAMSKOPE_TEST_KAFKA_ENDPOINT;
-  const explicitOAuth = process.env.STREAMSKOPE_TEST_OAUTH_ENDPOINT;
-  const explicitCa = process.env.STREAMSKOPE_TEST_CA_PATH;
-  const explicitSchemaRegistry = process.env.STREAMSKOPE_TEST_SCHEMA_REGISTRY_ENDPOINT;
-  if (explicitKafka !== undefined || explicitOAuth !== undefined || explicitCa !== undefined) {
+/** Explicit attachment settings work identically on every client OS. */
+export function explicitFixtureConnection(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): FixtureConnection | undefined {
+  const explicitKafka = environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT?.trim();
+  const explicitOAuth = environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT?.trim();
+  const explicitCa = environment.STREAMSKOPE_TEST_CA_PATH?.trim();
+  const explicitSchemaRegistry = environment.STREAMSKOPE_TEST_SCHEMA_REGISTRY_ENDPOINT?.trim();
+  if (
+    explicitKafka !== undefined ||
+    explicitOAuth !== undefined ||
+    explicitCa !== undefined ||
+    explicitSchemaRegistry !== undefined
+  ) {
     if (explicitKafka === undefined || explicitOAuth === undefined || explicitCa === undefined) {
       throw new Error("All three STREAMSKOPE_TEST_* connection variables must be provided.");
+    }
+    if (!explicitKafka || !explicitOAuth || !explicitCa || explicitSchemaRegistry === "")
+      throw new Error("Explicit AIO fixture connection settings must not be empty.");
+    const broker = new URL(`kafka://${explicitKafka}`);
+    if (
+      !broker.hostname ||
+      !broker.port ||
+      Number(broker.port) < 1 ||
+      Number(broker.port) > 65535 ||
+      broker.username ||
+      broker.password ||
+      broker.pathname ||
+      broker.search ||
+      broker.hash
+    )
+      throw new Error("The AIO Kafka endpoint must be a host and port.");
+    for (const endpoint of [explicitOAuth, explicitSchemaRegistry]) {
+      if (endpoint === undefined) continue;
+      const url = new URL(endpoint);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash)
+        throw new Error("AIO HTTP endpoints require an HTTP(S) URL without embedded credentials.");
     }
     return {
       caPath: explicitCa,
@@ -76,6 +105,12 @@ export async function loadFixtureConnection(): Promise<FixtureConnection> {
         : { schemaRegistryEndpoint: explicitSchemaRegistry }),
     };
   }
+  return undefined;
+}
+
+export async function loadFixtureConnection(): Promise<FixtureConnection> {
+  const explicit = explicitFixtureConnection();
+  if (explicit !== undefined) return explicit;
 
   const fixtureName = process.env.STREAMSKOPE_TEST_FIXTURE_NAME ?? "streamskope-kafka";
   const ownershipPath = join(

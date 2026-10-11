@@ -70,15 +70,15 @@ async function read(connection: KafkaActiveConnection, topic: string): Promise<R
   return records;
 }
 it("replays frozen original bytes to the same topic, another topic and a separately authenticated broker, retaining tombstones, headers and timestamps", async () => {
-  const native = await startKafkaFixture();
+  const broker = await startKafkaFixture();
   try {
     await qualifyReplay({
-      kafkaEndpoint: native.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
-      oauthEndpoint: native.environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT!,
-      caPath: native.environment.STREAMSKOPE_TEST_CA_PATH!,
+      kafkaEndpoint: broker.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
+      oauthEndpoint: broker.environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT!,
+      caPath: broker.environment.STREAMSKOPE_TEST_CA_PATH!,
     });
   } finally {
-    await native.dispose();
+    await broker.dispose();
   }
 }, 120_000);
 

@@ -19,12 +19,11 @@ import {
   type KafkaAuthenticationFixture,
 } from "./authentication";
 import { createContainerBrokerRuntime } from "./container-runtime";
-import { createNativeBrokerRuntime } from "./native-runtime";
 import { disposeFixtureResources } from "./resources";
 import type { BrokerRuntime } from "./runtime";
 import { loopbackPorts } from "./loopback";
 
-/** Shared TLS/OAuth configuration; Docker by default, native only when explicitly selected. */
+/** Isolated AIO Docker broker with shared TLS/OAuth configuration. */
 export async function startKafkaFixture(
   suppliedRuntime:
     | {
@@ -35,7 +34,6 @@ export async function startKafkaFixture(
     | undefined = undefined,
   options: {
     readonly authenticationMatrix?: boolean;
-    readonly backend?: "container" | "native";
   } = {},
 ): Promise<{
   readonly authentication?: KafkaAuthenticationFixture;
@@ -45,8 +43,7 @@ export async function startKafkaFixture(
   dispose(): Promise<void>;
 }> {
   const runtime = suppliedRuntime ?? {
-    prepare:
-      options.backend === "native" ? createNativeBrokerRuntime : createContainerBrokerRuntime,
+    prepare: createContainerBrokerRuntime,
     directory: (): Promise<string> => mkdtemp(join(tmpdir(), "streamskope-aio-kafka-")),
     configuration: loadFixtureConfig,
   };

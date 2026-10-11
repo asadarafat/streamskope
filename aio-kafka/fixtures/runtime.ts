@@ -1,9 +1,8 @@
 export interface BrokerRuntime {
   readonly metadata: {
-    readonly backend: "container" | "native";
+    readonly backend: "container";
     readonly kafkaVersion: string;
     readonly image?: string;
-    readonly archiveSha512?: string;
   };
   tool(
     command: string,

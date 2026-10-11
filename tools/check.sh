@@ -52,7 +52,7 @@ docs() {
 
 runtime() {
   patch_dependencies
-  npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/connection-profiles-real.json test/kafka/production-connection-profiles-real.test.ts
+  npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/connection-profiles-real.json test/kafka/production-connection-profiles-real.test.ts test/kafka/remote-aio-real.test.ts
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/structured-records-real.json test/kafka/structured-records-real.test.ts test/kafka/resumable-search-real.test.ts test/kafka/streaming-export-real.test.ts test/kafka/record-locators-real.test.ts test/kafka/schema-authoring-real.test.ts test/kafka/schema-evolution-real.test.ts test/kafka/schema-policy-real.test.ts test/kafka/record-replay-real.test.ts test/kafka/topic-administration-real.test.ts test/kafka/group-administration-real.test.ts test/kafka/client-quotas-real.test.ts test/kafka/connect-real.test.ts
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/observations-real.json test/kafka/observations-real.test.ts test/kafka/external-metrics-real.test.ts test/kafka/observation-replication-real.test.ts test/kafka/provider-stream-stop-real.test.ts
   npx --no-install vitest run --config config/vitest.config.ts --maxWorkers=1 --outputFile=.artifacts/ci/nats-real.json test/nats/provider-real.test.ts
