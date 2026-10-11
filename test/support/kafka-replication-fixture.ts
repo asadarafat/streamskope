@@ -73,7 +73,7 @@ export async function startReplicationFixture(jmx?: {
     const results = await Promise.allSettled([
       admin.close(),
       ...[...created].map((name) =>
-        execute("docker", ["rm", "--force", name], { timeout: 30_000 }),
+        execute("docker", ["rm", "--force", "--volumes", name], { timeout: 30_000 }),
       ),
     ]);
     if (results.some((result) => result.status === "rejected"))

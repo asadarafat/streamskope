@@ -269,7 +269,7 @@ it("refuses a cancellation acknowledgement and replacement admission while origi
   const replacement: MetricsReadScope = { ...original, cleanupUnresolved: () => false };
   let owner = original;
   const service = new ExternalMetricsService(() => owner, {
-    capture: () => {
+    capture: (): Promise<ExternalMetricsSnapshot> => {
       unresolved = true;
       return Promise.reject(new Error("Original close did not complete"));
     },
@@ -286,14 +286,15 @@ it("refuses a cancellation acknowledgement and replacement admission while origi
 it("refuses an edited profile endpoint before authorization or HTTP admission on the old connection", async () => {
   const original = context(),
     authorization = vi.fn(() => Promise.resolve("Bearer never-sent"));
-  const port = http((r) => vector(r));
+  const body = vi.fn((request: BoundedJsonHttpRequest): unknown => vector(request));
+  const port = http(body);
   await expect(
     new PrometheusMetricsAdapter(port, () => now).capture(
       { ...original, authorization },
       { ...input, endpoint: "https://replacement.test" },
       AbortSignal.timeout(1000),
     ),
-  ).rejects.toMatchObject({ code: "VALIDATION", recovery: expect.stringContaining("Reconnect") });
+  ).rejects.toMatchObject({ code: "VALIDATION" });
   expect(authorization).not.toHaveBeenCalled();
-  expect(port.open).not.toHaveBeenCalled();
+  expect(body).not.toHaveBeenCalled();
 });

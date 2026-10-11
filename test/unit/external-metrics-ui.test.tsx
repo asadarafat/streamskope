@@ -104,11 +104,13 @@ it("never starts remote work on attachment, reads explicitly and expires the dis
   });
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Read metrics" }));
+    await Promise.resolve();
   });
   expect(screen.getAllByText("0", { exact: true })).toHaveLength(2);
   expect(screen.getByText(/identity is not bound/)).toBeVisible();
   await act(async () => {
     vi.advanceTimersByTime(45_001);
+    await Promise.resolve();
   });
   expect(screen.queryByText("0", { exact: true })).toBeNull();
   expect(screen.getAllByText("Unknown", { exact: true })).toHaveLength(2);

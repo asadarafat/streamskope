@@ -38,12 +38,12 @@ async function agent(): Promise<string> {
     );
     if (!response.ok)
       throw new Error("Pinned JMX agent could not be downloaded.", {
-        cause: { status: response.status },
+        cause,
       });
     bytes = Buffer.from(await response.arrayBuffer());
     if (createHash("sha256").update(bytes).digest("hex") !== JMX_SHA256)
       throw new Error("JMX agent digest differs.", {
-        cause: "Downloaded artifact did not match its declared SHA-256",
+        cause,
       });
     await mkdir(join(path, ".."), { recursive: true });
     await writeFile(path, bytes, { mode: 0o644 });
