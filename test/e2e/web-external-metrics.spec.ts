@@ -7,7 +7,6 @@ import { expect, test } from "@playwright/test";
 import {
   HOST_PROTOCOL_VERSION,
   parseHostCommandResponse,
-  type ExternalMetricsSnapshot,
 } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
@@ -46,7 +45,7 @@ test("reads real optional metrics with honest source coverage and no automatic e
             const result = parseHostCommandResponse(await response.json());
             if (!result.ok) metricsResponses.push({ ok: false, code: result.error.code });
             else if (result.command === "observations.metrics.capture") {
-              const snapshot: ExternalMetricsSnapshot = result.result.snapshot;
+              const snapshot = result.result.snapshot;
               metricsResponses.push({ ok: true, snapshot });
             }
           } catch {
@@ -107,7 +106,7 @@ test("reads real optional metrics with honest source coverage and no automatic e
     const table = panel.getByRole("table", { name: "External Kafka metrics" });
     await expect(async () => {
       await panel.getByRole("button", { name: "Read metrics", exact: true }).click();
-      await expect(table.getByText("Captured", { exact: true })).toHaveCount(2);
+      await expect(table.getByRole("cell", { name: /^Captured\b/u })).toHaveCount(2);
     }).toPass({ timeout: 20_000, intervals: [1000] });
     await expect(table.getByRole("cell", { name: "0", exact: true })).toHaveCount(2);
     await expect(panel).toContainText("identity is not bound to your connected cluster");
