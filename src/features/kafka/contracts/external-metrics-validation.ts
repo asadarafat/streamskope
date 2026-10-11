@@ -95,25 +95,25 @@ export function parseExternalMetricsSnapshot(value: unknown): ExternalMetricsSna
     );
   const metrics = s.metrics.map((raw: unknown, index) => {
     const m = record(raw, "metric");
-    exactKeys(m, ["name", "state", "value", "scrapedAt"], "metric");
+    exactKeys(m, ["name", "state", "value", "sampledAt"], "metric");
     const name = declaredValue(m.name, [EXTERNAL_METRICS[index]!.name], "metric.name");
     const state = declaredValue(m.state, EXTERNAL_METRIC_STATES, "metric.state");
     const value = m.value === null ? null : nonNegativeInteger(m.value, "metric.value");
-    const scrapedAt = m.scrapedAt === null ? null : timestamp(m.scrapedAt, "metric.scrapedAt");
+    const sampledAt = m.sampledAt === null ? null : timestamp(m.sampledAt, "metric.sampledAt");
     if (
       (state === "ready") !== (value !== null) ||
-      (value !== null && scrapedAt === null) ||
-      ((state === "stale" || state === "future") && scrapedAt === null) ||
+      (value !== null && sampledAt === null) ||
+      ((state === "stale" || state === "future") && sampledAt === null) ||
       (state === "ready" &&
-        (scrapedAt! > collectedAt || collectedAt - scrapedAt! > EXTERNAL_METRIC_LIMITS.staleMs)) ||
-      (state === "stale" && collectedAt - scrapedAt! <= EXTERNAL_METRIC_LIMITS.staleMs) ||
-      (state === "future" && scrapedAt! <= collectedAt)
+        (sampledAt! > collectedAt || collectedAt - sampledAt! > EXTERNAL_METRIC_LIMITS.staleMs)) ||
+      (state === "stale" && collectedAt - sampledAt! <= EXTERNAL_METRIC_LIMITS.staleMs) ||
+      (state === "future" && sampledAt! <= collectedAt)
     )
       throw new HostContractValidationError(
         "metric",
         "value, source time and coverage state must agree",
       );
-    return { name, state, value, scrapedAt };
+    return { name, state, value, sampledAt };
   });
   return {
     source: declaredValue(s.source, ["prometheus"], "metrics.source"),

@@ -44,8 +44,8 @@ it("reads actual JMX partition gauges with actual Prometheus scrape times, obser
     });
     expect(zero.metrics[0]).toMatchObject({ state: "ready", value: 0 });
     expect(zero.metrics[1]).toMatchObject({ state: "ready", value: 0 });
-    expect(zero.metrics[0]!.scrapedAt).toBeLessThanOrEqual(zero.collectedAt);
-    expect(zero.collectedAt - zero.metrics[0]!.scrapedAt!).toBeLessThan(45_000);
+    expect(zero.metrics[0]!.sampledAt).toBeLessThanOrEqual(zero.collectedAt);
+    expect(zero.collectedAt - zero.metrics[0]!.sampledAt!).toBeLessThan(45_000);
     await fixture.broker.stopBroker(2);
     await expect
       .poll(async () => (await service.capture(selection)).metrics[0]?.value, {
@@ -63,7 +63,7 @@ it("reads actual JMX partition gauges with actual Prometheus scrape times, obser
     const missing = await service.capture({ ...selection, instance: "unconfigured-exporter:9404" });
     expect(
       missing.metrics.every(
-        (m) => m.state === "missing" && m.value === null && m.scrapedAt === null,
+        (m) => m.state === "missing" && m.value === null && m.sampledAt === null,
       ),
     ).toBe(true);
     await session.disconnect();

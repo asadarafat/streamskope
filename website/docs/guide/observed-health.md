@@ -137,8 +137,11 @@ rules:
       type: GAUGE
 ```
 
-Each gauge is paired with its actual scrape timestamp; query evaluation time is
-shown separately. A missing, ambiguous, annotated, malformed, stale or future-dated
+Each value and source timestamp come from the same original Prometheus sample;
+query evaluation time is shown separately. An exporter can supply its own sample
+timestamps; these do not independently prove when a scrape succeeded or that the
+target is currently reachable. The two gauges are read independently
+and do not establish an atomic cluster snapshot. A missing, ambiguous, annotated, malformed, stale or future-dated
 series remains **Unknown**. A captured value expires after 45 seconds without an
 automatic reread. The snapshot is not retained in observation history.
 
@@ -147,7 +150,12 @@ or prove that the exporter is the active controller. Positive counts describe th
 selected exporter; zero counts do not establish overall health or processing
 success. External gauges do not generate the Kafka API findings above.
 
-A read admits four bounded instant queries with a 15-second aggregate deadline.
+A read admits two bounded instant queries with a 15-second aggregate deadline.
+Each requests the declared gauge's original samples from the preceding five minutes
+and displays only its latest timestamp/value pair. A response permits at most two
+series and 500 samples per series; a larger or unsupported response remains unknown.
+The 45-second freshness limit still applies. Prometheus manages its own configured
+scraping; StreamSkope does not start a scrape or an automatic metrics-read loop.
 **Cancel metrics read** cancels them and waits for original HTTP cleanup; a lost
 browser connection alone cannot confirm settlement. Connection replacement,
 disconnect, vault lock and shutdown revoke the original service authority.

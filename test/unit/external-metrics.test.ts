@@ -35,7 +35,7 @@ const snapshot: ExternalMetricsSnapshot = {
     name,
     state: "ready",
     value: 0,
-    scrapedAt: now - 1000,
+    sampledAt: now - 1000,
   })),
 };
 function context(): KafkaClusterServiceContext {
@@ -58,7 +58,7 @@ function http(body: (request: BoundedJsonHttpRequest) => unknown): OwnedJsonHttp
     })),
   };
 }
-function vector(
+function samples(
   request: BoundedJsonHttpRequest,
   value = "0",
   time = now - 1000,
@@ -66,20 +66,19 @@ function vector(
 ): unknown {
   const url = new URL(request.url),
     query = url.searchParams.get("query")!;
-  const stamp = query.startsWith("timestamp(");
   const name = EXTERNAL_METRICS.find((m) => query.includes(m.name))!.name;
   return {
     status: "success",
     data: {
-      resultType: "vector",
+      resultType: "matrix",
       result: [
         {
           metric: {
-            ...(stamp ? {} : { __name__: name }),
+            __name__: name,
             job: input.job,
             instance: input.instance,
           },
-          value: [now / 1000, stamp ? String(time / 1000) : value],
+          values: [[time / 1000, value]],
         },
       ],
     },
@@ -120,33 +119,53 @@ it("closes the protocol inventory, source identity, metric units, selectors and 
     }),
   ).toThrow();
 });
-it("escapes literal selectors, pairs actual scrape time and sends only four owned bounded gauge queries", async () => {
+it("escapes literal selectors and keeps each value with its original scrape time using only two owned bounded queries", async () => {
   const requests: BoundedJsonHttpRequest[] = [];
   const port = http((r) => {
     requests.push(r);
-    return vector(r, "3");
+    return samples(r, "3");
   });
   const result = await new PrometheusMetricsAdapter(port, () => now).capture(
     context(),
     input,
     AbortSignal.timeout(1000),
   );
-  expect(result.metrics.map((m) => [m.state, m.value, m.scrapedAt])).toEqual([
+  expect(result.metrics.map((m) => [m.state, m.value, m.sampledAt])).toEqual([
     ["ready", 3, now - 1000],
     ["ready", 3, now - 1000],
   ]);
-  expect(requests).toHaveLength(4);
+  expect(requests).toHaveLength(2);
   for (const request of requests) {
     const url = new URL(request.url);
     expect(url.pathname).toBe("/api/v1/query");
     expect(url.searchParams.get("query")).toContain(
       `{job=${JSON.stringify(input.job)},instance=${JSON.stringify(input.instance)}}`,
     );
+    expect(url.searchParams.get("query")).toMatch(/\[300s\]$/u);
+    expect(url.searchParams.get("query")).not.toContain("timestamp(");
     expect(url.searchParams.get("limit")).toBe("2");
     expect(url.searchParams.get("time")).toBe(String(now / 1000));
     expect(request.authorization).toBe("Bearer fixture-private");
   }
   expect(JSON.stringify(result)).not.toContain("fixture-private");
+});
+it("selects the latest original sample without attaching a newer timestamp to an older gauge value", async () => {
+  const port = http((request) => {
+    const body = samples(request, "0", now - 2000) as {
+      data: { result: { values: [number, string][] }[] };
+    };
+    body.data.result[0]!.values.push([(now - 1000) / 1000, "7"]);
+    return body;
+  });
+  const result = await new PrometheusMetricsAdapter(port, () => now).capture(
+    context(),
+    input,
+    AbortSignal.timeout(1000),
+  );
+  expect(result.metrics.map((row) => [row.value, row.sampledAt])).toEqual([
+    [7, now - 1000],
+    [7, now - 1000],
+  ]);
 });
 it.each([
   ["annotated", "0", now - 1000, { warnings: ["remote secret"] }],
@@ -157,12 +176,12 @@ it.each([
   ["invalid", "-1", now - 1000, {}],
   ["invalid", "9007199254740992", now - 1000, {}],
   ["stale", "0", now - 45_001, {}],
-  ["future", "0", now + 1000, {}],
+  ["invalid", "0", now + 1000, {}],
 ] as const)(
   "keeps %s coverage explicit rather than manufacturing a zero",
   async (state, value, time, extra) => {
     const result = await new PrometheusMetricsAdapter(
-      http((r) => vector(r, value, time, extra)),
+      http((r) => samples(r, value, time, extra)),
       () => now,
     ).capture(context(), input, AbortSignal.timeout(1000));
     expect(result.metrics.every((m) => m.state === state && m.value === null)).toBe(true);
@@ -175,18 +194,22 @@ it.each([
   "ambiguous",
   "wrong labels",
   "wrong name",
-  "wrong evaluation",
+  "out of window",
   "scalar",
+  "instant vector",
   "histogram",
   "mixed histogram",
-  "NaN evaluation",
-  "different label sets",
+  "NaN source time",
+  "unordered samples",
+  "duplicate source times",
+  "empty samples",
+  "too many samples",
 ])("rejects %s instead of treating it as complete evidence", async (kind) => {
   const port = http((r) => {
-    const body = vector(r) as {
+    const body = samples(r) as {
       data: {
         resultType: string;
-        result: { metric: Record<string, string>; value?: unknown; histogram?: unknown }[];
+        result: { metric: Record<string, string>; values?: unknown; histograms?: unknown }[];
       };
     };
     const row = body.data.result[0]!;
@@ -195,19 +218,28 @@ it.each([
       body.data.result.push({ ...row, metric: { ...row.metric, broker: "another" } });
     if (kind === "wrong labels") row.metric.instance = "another";
     if (kind === "wrong name") row.metric.__name__ = "arbitrary_metric";
-    if (kind === "wrong evaluation") row.value = [now / 1000 - 1, "0"];
+    if (kind === "out of window") row.values = [[(now - 300_000) / 1000, "0"]];
     if (kind === "scalar") body.data.resultType = "scalar";
-    if (kind === "mixed histogram") row.histogram = [now / 1000, {}];
-    if (kind === "NaN evaluation") row.value = [NaN, "0"];
+    if (kind === "instant vector") body.data.resultType = "vector";
+    if (kind === "mixed histogram") row.histograms = [[now / 1000, {}]];
+    if (kind === "NaN source time") row.values = [[NaN, "0"]];
     if (kind === "histogram") {
-      delete row.value;
-      row.histogram = [now / 1000, {}];
+      delete row.values;
+      row.histograms = [[now / 1000, {}]];
     }
-    if (
-      kind === "different label sets" &&
-      new URL(r.url).searchParams.get("query")!.startsWith("timestamp(")
-    )
-      row.metric.broker = "another";
+    if (kind === "unordered samples")
+      row.values = [
+        [now / 1000, "0"],
+        [(now - 1000) / 1000, "1"],
+      ];
+    if (kind === "duplicate source times")
+      row.values = [
+        [now / 1000, "0"],
+        [now / 1000, "1"],
+      ];
+    if (kind === "empty samples") row.values = [];
+    if (kind === "too many samples")
+      row.values = Array.from({ length: 501 }, (_, i) => [(now - 1000 + i) / 1000, "0"]);
     return body;
   });
   const result = await new PrometheusMetricsAdapter(port, () => now).capture(
@@ -286,7 +318,7 @@ it("refuses a cancellation acknowledgement and replacement admission while origi
 it("refuses an edited profile endpoint before authorization or HTTP admission on the old connection", async () => {
   const original = context(),
     authorization = vi.fn(() => Promise.resolve("Bearer never-sent"));
-  const body = vi.fn((request: BoundedJsonHttpRequest): unknown => vector(request));
+  const body = vi.fn((request: BoundedJsonHttpRequest): unknown => samples(request));
   const port = http(body);
   await expect(
     new PrometheusMetricsAdapter(port, () => now).capture(

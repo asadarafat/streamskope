@@ -122,9 +122,9 @@ export function ExternalMetricsPanel({
                 const row = metrics.snapshot?.metrics[index];
                 const current =
                   row?.state === "ready" &&
-                  row.scrapedAt !== null &&
-                  now >= row.scrapedAt &&
-                  now - row.scrapedAt <= EXTERNAL_METRIC_LIMITS.staleMs;
+                  row.sampledAt !== null &&
+                  now >= row.sampledAt &&
+                  now - row.sampledAt <= EXTERNAL_METRIC_LIMITS.staleMs;
                 return (
                   <TableRow key={definition.name}>
                     <TableCell>
@@ -145,10 +145,10 @@ export function ExternalMetricsPanel({
                           ? "Expired capture"
                           : states[row.state]
                         : "Not read"}
-                      {row?.scrapedAt !== null && row?.scrapedAt !== undefined && (
+                      {row?.sampledAt !== null && row?.sampledAt !== undefined && (
                         <Typography variant="caption" sx={{ display: "block" }}>
-                          {new Date(row.scrapedAt).toISOString()} ·{" "}
-                          {Math.max(0, Math.floor((now - row.scrapedAt) / 1000))} s ago
+                          {new Date(row.sampledAt).toISOString()} ·{" "}
+                          {Math.max(0, Math.floor((now - row.sampledAt) / 1000))} s ago
                         </Typography>
                       )}
                     </TableCell>

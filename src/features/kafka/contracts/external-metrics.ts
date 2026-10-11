@@ -28,6 +28,8 @@ export const EXTERNAL_METRIC_LIMITS = {
   selectorCharacters: 256,
   labels: 32,
   queryRows: 2,
+  sourceWindowMs: 300_000,
+  samplesPerSeries: 500,
 } as const;
 export interface ExternalMetricsInput {
   /** Configured URL fence: never read an old connected service after its URL was edited. */
@@ -39,7 +41,8 @@ export interface ExternalMetric {
   readonly name: (typeof EXTERNAL_METRICS)[number]["name"];
   readonly state: (typeof EXTERNAL_METRIC_STATES)[number];
   readonly value: number | null;
-  readonly scrapedAt: number | null;
+  /** Original Prometheus sample time, possibly exporter-supplied; not verified scrape success. */
+  readonly sampledAt: number | null;
 }
 export interface ExternalMetricsSnapshot extends ExternalMetricsInput {
   readonly source: "prometheus";

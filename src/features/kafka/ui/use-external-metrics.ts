@@ -50,7 +50,7 @@ export function useExternalMetrics(
   useEffect(() => {
     const stamps =
       snapshot?.metrics.flatMap((row) =>
-        row.state === "ready" && row.scrapedAt !== null ? [row.scrapedAt] : [],
+        row.state === "ready" && row.sampledAt !== null ? [row.sampledAt] : [],
       ) ?? [];
     // At most two expiry boundaries update coverage; they never read or scrape the endpoint.
     const timers = [...new Set(stamps)]

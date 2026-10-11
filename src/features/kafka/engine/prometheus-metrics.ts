@@ -20,10 +20,10 @@ class PrometheusHttpError extends Error {
   }
 }
 interface GaugeRow {
-  readonly labels: Readonly<Record<string, string>>;
   readonly value: number;
+  readonly sampledAt: number;
 }
-type Vector =
+type Samples =
   | { readonly state: "usable"; readonly rows: readonly GaugeRow[] }
   | { readonly state: "annotated" | "invalid"; readonly rows: readonly [] };
 function object(value: unknown): Record<string, unknown> {
@@ -38,12 +38,12 @@ function numeric(value: unknown): number {
   if (!Number.isFinite(number)) throw new Error("Non-finite Prometheus number.");
   return number;
 }
-function vector(
+function samples(
   body: unknown,
   input: ExternalMetricsInput,
   evaluatedAt: number,
-  expectedName?: string,
-): Vector {
+  expectedName: string,
+): Samples {
   try {
     const envelope = object(body);
     if (envelope.status !== "success") return { state: "invalid", rows: [] };
@@ -54,7 +54,7 @@ function vector(
     }
     const data = object(envelope.data);
     if (
-      data.resultType !== "vector" ||
+      data.resultType !== "matrix" ||
       !Array.isArray(data.result) ||
       data.result.length > limits.queryRows
     )
@@ -62,12 +62,7 @@ function vector(
     const rows = data.result.map((raw: unknown): GaugeRow => {
       const row = object(raw),
         labels = object(row.metric);
-      if (
-        expectedName === undefined
-          ? labels.__name__ !== undefined
-          : labels.__name__ !== expectedName
-      )
-        throw new Error("Prometheus metric name differs.");
+      if (labels.__name__ !== expectedName) throw new Error("Prometheus metric name differs.");
       if (
         Object.keys(labels).length > limits.labels ||
         labels.job !== input.job ||
@@ -80,69 +75,65 @@ function vector(
         )
       )
         throw new Error("Invalid Prometheus labels.");
-      if (Object.keys(row).some((key) => key !== "metric" && key !== "value"))
+      if (Object.keys(row).some((key) => key !== "metric" && key !== "values"))
         throw new Error("Unsupported Prometheus row fields.");
       if (
-        !Array.isArray(row.value) ||
-        row.value.length !== 2 ||
-        typeof row.value[0] !== "number" ||
-        !Number.isFinite(row.value[0]) ||
-        Math.abs(row.value[0] * 1000 - evaluatedAt) > 1
+        !Array.isArray(row.values) ||
+        row.values.length < 1 ||
+        row.values.length > limits.samplesPerSeries
       )
-        throw new Error("Prometheus evaluation time differs.");
-      const value = numeric(row.value[1]);
-      // timestamp() removes __name__; no arbitrary remote labels leave the host.
-      const normalized = Object.fromEntries(
-        Object.entries(labels).filter(([key]) => key !== "__name__"),
-      ) as Record<string, string>;
-      return { labels: normalized, value };
+        throw new Error("Prometheus sample inventory is unsupported.");
+      let previous = -1;
+      const points = row.values.map((point: unknown): GaugeRow => {
+        if (
+          !Array.isArray(point) ||
+          point.length !== 2 ||
+          typeof point[0] !== "number" ||
+          !Number.isFinite(point[0])
+        )
+          throw new Error("Invalid Prometheus sample pair.");
+        const sampledAt = Math.round(point[0] * 1000);
+        if (
+          !Number.isSafeInteger(sampledAt) ||
+          sampledAt < 0 ||
+          sampledAt > 8_640_000_000_000_000 ||
+          sampledAt <= previous ||
+          sampledAt <= evaluatedAt - limits.sourceWindowMs ||
+          sampledAt > evaluatedAt
+        )
+          throw new Error("Prometheus source samples differ from the requested window.");
+        previous = sampledAt;
+        return { value: numeric(point[1]), sampledAt };
+      });
+      // Value and source time belong to one original sample, never separate evaluations.
+      return points.at(-1)!;
     });
     return { state: "usable", rows };
   } catch {
     return { state: "invalid", rows: [] };
   }
 }
-function sameLabels(left: GaugeRow, right: GaugeRow): boolean {
-  const keys = Object.keys(left.labels);
-  return (
-    keys.length === Object.keys(right.labels).length &&
-    keys.every((key) => left.labels[key] === right.labels[key])
-  );
-}
 function measurement(
   name: ExternalMetric["name"],
-  raw: Vector,
-  times: Vector,
+  raw: Samples,
   collectedAt: number,
 ): ExternalMetric {
   const absent = (
     state: ExternalMetric["state"],
-    scrapedAt: number | null = null,
-  ): ExternalMetric => ({ name, state, value: null, scrapedAt });
-  if (raw.state !== "usable" || times.state !== "usable")
-    return absent(
-      raw.state === "annotated" || times.state === "annotated" ? "annotated" : "invalid",
-    );
-  if (!raw.rows.length || !times.rows.length) return absent("missing");
-  if (raw.rows.length !== 1 || times.rows.length !== 1) return absent("ambiguous");
-  const sample = raw.rows[0]!,
-    stamp = times.rows[0]!;
-  if (
-    !sameLabels(sample, stamp) ||
-    !Number.isSafeInteger(sample.value) ||
-    sample.value < 0 ||
-    stamp.value < 0
-  )
-    return absent("invalid");
-  const scrapedAt = Math.round(stamp.value * 1000);
-  if (!Number.isSafeInteger(scrapedAt) || scrapedAt > 8_640_000_000_000_000)
-    return absent("invalid");
-  if (scrapedAt > collectedAt) return absent("future", scrapedAt);
-  if (collectedAt - scrapedAt > limits.staleMs) return absent("stale", scrapedAt);
-  return { name, state: "ready", value: sample.value, scrapedAt };
+    sampledAt: number | null = null,
+  ): ExternalMetric => ({ name, state, value: null, sampledAt });
+  if (raw.state !== "usable") return absent(raw.state);
+  if (!raw.rows.length) return absent("missing");
+  if (raw.rows.length !== 1) return absent("ambiguous");
+  const sample = raw.rows[0]!;
+  if (!Number.isSafeInteger(sample.value) || sample.value < 0) return absent("invalid");
+  const sampledAt = sample.sampledAt;
+  if (sampledAt > collectedAt) return absent("future", sampledAt);
+  if (collectedAt - sampledAt > limits.staleMs) return absent("stale", sampledAt);
+  return { name, state: "ready", value: sample.value, sampledAt };
 }
 
-/** Declared instant gauges paired with actual scrape timestamps, through original owned HTTP. */
+/** Latest original gauge samples from bounded range selectors, through original owned HTTP. */
 export class PrometheusMetricsAdapter implements ExternalMetricsPort {
   constructor(
     private readonly http: BoundedJsonHttpPort,
@@ -167,7 +158,7 @@ export class PrometheusMetricsAdapter implements ExternalMetricsPort {
         });
       if (!context.requestOwner) throw new Error("Original HTTP request ownership is unavailable.");
       const selectors = `{job=${JSON.stringify(input.job)},instance=${JSON.stringify(input.instance)}}`;
-      const read = async (query: string, expectedName?: string): Promise<Vector> => {
+      const read = async (query: string, expectedName: string): Promise<Samples> => {
         const params = new URLSearchParams({
           query,
           time: String(evaluatedAt / 1000),
@@ -183,15 +174,14 @@ export class PrometheusMetricsAdapter implements ExternalMetricsPort {
         );
         if (response.status < 200 || response.status >= 300)
           throw new PrometheusHttpError(response.status);
-        return vector(response.body, input, evaluatedAt, expectedName);
+        return samples(response.body, input, evaluatedAt, expectedName);
       };
       // Keep all admitted reads under the original authorization/socket owner and join every close.
       const result = await context.requestOwner.runWork(() =>
         Promise.allSettled(
-          EXTERNAL_METRICS.flatMap((metric) => [
-            read(metric.name + selectors, metric.name),
-            read(`timestamp(${metric.name + selectors})`),
-          ]),
+          EXTERNAL_METRICS.map((metric) =>
+            read(`${metric.name}${selectors}[${limits.sourceWindowMs / 1000}s]`, metric.name),
+          ),
         ),
       );
       const failures = result.flatMap((entry) =>
@@ -213,7 +203,7 @@ export class PrometheusMetricsAdapter implements ExternalMetricsPort {
         evaluatedAt,
         collectedAt,
         metrics: EXTERNAL_METRICS.map((metric, index) =>
-          measurement(metric.name, values[index * 2]!, values[index * 2 + 1]!, collectedAt),
+          measurement(metric.name, values[index]!, collectedAt),
         ),
       };
     } catch (cause) {

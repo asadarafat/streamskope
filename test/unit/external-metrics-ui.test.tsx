@@ -46,7 +46,7 @@ function snapshot(): ExternalMetricsSnapshot {
       name,
       state: "ready",
       value: 0,
-      scrapedAt: at,
+      sampledAt: at,
     })),
   };
 }

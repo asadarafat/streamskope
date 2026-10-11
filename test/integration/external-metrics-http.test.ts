@@ -39,26 +39,20 @@ it("uses independent trusted HTTPS and client identity, rejects credentials and 
         return;
       }
       const url = new URL(request.url!, "https://fixture");
-      const query = url.searchParams.get("query")!,
-        stamp = query.startsWith("timestamp(");
+      const query = url.searchParams.get("query")!;
       response.end(
         JSON.stringify({
           status: "success",
           data: {
-            resultType: "vector",
+            resultType: "matrix",
             result: [
               {
                 metric: {
-                  ...(stamp
-                    ? {}
-                    : { __name__: EXTERNAL_METRICS.find((m) => query.includes(m.name))!.name }),
+                  __name__: EXTERNAL_METRICS.find((m) => query.includes(m.name))!.name,
                   job: "kafka",
                   instance: "broker:9404",
                 },
-                value: [
-                  Number(url.searchParams.get("time")),
-                  stamp ? String(Date.now() / 1000) : "0",
-                ],
+                values: [[Number(url.searchParams.get("time")) - 1, "0"]],
               },
             ],
           },
@@ -128,7 +122,7 @@ it("joins every admitted HTTP socket after cancellation before allowing original
     controller.signal,
   );
   const rejected = expect(operation).rejects.toMatchObject({ code: "CANCELLED" });
-  await expect.poll(() => sockets.size).toBe(4);
+  await expect.poll(() => sockets.size).toBe(2);
   controller.abort();
   await rejected;
   await expect.poll(() => sockets.size).toBe(0);
