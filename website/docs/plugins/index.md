@@ -158,8 +158,8 @@ The API 4 format gives each plugin an independent Semantic Version.
 Its manifest separately declares an inclusive minimum/exclusive maximum desktop
 interval, plugin API, target system and inclusive target versions. The
 [manifest-derived source declarations](versioning.md#declared-packages) show these
-requirements. API 4 support in the desktop does not mean an API 4 plugin package
-has been published. The original published release retains API 3 packages; see the
+requirements. Download availability comes from the official catalog, independently
+of this source snapshot. The original v0.1.0+build.1 release retains API 3 packages; see the
 [migration steps](versioning.md#upgrade-from-the-original-packages).
 
 Read [Versioning and compatibility](versioning.md) to interpret requirements,

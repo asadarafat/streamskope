@@ -35,7 +35,7 @@ when approving deployment.
 Only one unexpired capture session is accepted across the cluster. The desktop
 requests a 900-second lease and renews every 300 seconds; exiting stops renewal.
 Expiry requires a functioning reconciler to complete deletion. Follow the
-[EDA operator runbook](https://asadarafat.github.io/streamskope/guide/eda/)
+[EDA operator runbook](https://asadarafat.github.io/streamskope/plugins/eda/)
 for installation prerequisites, capacity and exact cleanup verification.
 
 Session requests are limited to 32 KiB. Leases range from 30 to 900 seconds. The

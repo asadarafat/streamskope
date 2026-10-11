@@ -14,6 +14,20 @@ additional release highlights, not a complete list of pending changes.
 
 ## Release highlights
 
+Observed health adds an explicit host-owned watch, persisted desired settings,
+bounded coverage summaries and evidence-linked investigations. Saving settings
+does not resume watching after restart or reconnect. History format 2 preserves
+its private format-1 predecessor and physically prunes expired entries.
+
+An optional protected Prometheus endpoint supplies two declared Kafka exporter
+gauges through **Read metrics**. Each value retains its original source time;
+missing, stale or ambiguous evidence remains unknown. Independent gauges do not
+establish an atomic cluster snapshot or the exporter's identity with Kafka.
+Saving this service adopts profile format 5 and preserves its private format-4
+predecessor; removing it does not downgrade. Both new formats require a complete
+compatible backup for older-host recovery. See [Observed health](../guide/observed-health.md)
+and [rollback snapshot rules](../guide/recovery.md#choose-the-correct-rollback-snapshot).
+
 Installer-managed browser hosts gain explicit `check`, `upgrade`, `rollback` and
 `recover` operations. Normal installer reruns still retain the installed release.
 Maintenance preserves the saved owner and URL, backs up consistent stopped data,

@@ -47,7 +47,7 @@ compatibility before retrying.
 | Producer        | Exporter in an EDA namespace | Match the namespace, resource name and listed export topics         |
 | ClusterProducer | Cluster-scoped exporter      | Match the resource name and export topics; it is not a Kafka broker |
 
-Select the exporter for the data you need, not the kind that sounds more powerful.
+Choose the exporter that publishes the data you need.
 For example, a namespaced Producer `eda/kafka-export` may export `eda-nodes` and
 `eda-current-alarms`; choose it only if those are the intended streams. Names and
 topic lists depend on your EDA configuration. The two kinds are exporter resources,
@@ -212,6 +212,10 @@ The [source-bound rehearsal record](../guide/qualification.md#current-source-qua
 describes the installed API 4 lifecycle exercised on Linux ARM64 against an
 already installed EDA 26.8.2 cluster app. That result does not qualify a fresh
 cluster-app installation or a published plugin upgrade.
+
+A later [development-source check](../guide/qualification.md#development-source-qualification)
+records integrated live behavior on the exact newer source. It is separate from
+the installed desktop rehearsal and does not qualify a public plugin upgrade.
 
 ## Administrator prerequisites
 

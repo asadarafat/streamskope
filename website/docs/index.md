@@ -6,8 +6,9 @@ hide:
 <section id="__skip" tabindex="-1" class="launch-hero" aria-labelledby="launch-title">
   <div class="hero-introduction">
     <h1 id="launch-title">Connect Kafka.<br>Read your first message.</h1>
-    <p class="hero-description">Install the desktop app, connect your Kafka cluster and inspect one record with its value and headers.</p>
+    <p class="hero-description">Install StreamSkope, connect your Kafka cluster and inspect one record with its value and headers.</p>
     <a class="md-button md-button--primary" href="start/quickstart/">Start here</a>
+    <p class="existing-cluster"><a href="start/containerlab/">Install the browser workbench →</a></p>
     <p class="existing-cluster">Already have a cluster? <a href="guide/connections/">Connect your Kafka →</a></p>
   </div>
   <nav class="start-index" aria-label="Your first session">

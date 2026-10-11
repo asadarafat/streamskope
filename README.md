@@ -61,8 +61,10 @@ supported provider capabilities.
 - Save TLS/mutual TLS and OAuth, PLAIN or SCRAM connection profiles, with optional SSH or HTTPS secret retrieval.
 
 Kafka authentication supports **OAUTHBEARER, PLAIN, SCRAM-SHA-256/512 or no SASL**. Schema Registry and Connect have independent credentials and certificate trust. Avro/Protobuf inspection
-requires a separate Schema Registry and an explicit encoding selection in
-[Message details → Decoded](website/docs/guide/structured-events.md).
+uses the configured Schema Registry and the saved key/value settings in
+[Preferences → Records](website/docs/guide/structured-events.md). **Detect encoding**
+is the default; an explicit choice overrides detection for subsequent reads.
+Message details shows the interpretation captured when the record was read.
 Transform operations require Redpanda. Check the [compatibility matrix](website/docs/start/compatibility.md)
 for implemented capabilities, tested environments and limitations.
 
@@ -105,7 +107,7 @@ Development builds use the neutral `0.0.0-dev` version. Release CI assigns the
 selected version to its build checkout; PR checks qualify changes for `main`.
 This placeholder does not indicate pending product changes. Changes awaiting
 future releases are derived from merged PRs after each component's last published
-stable release. Run `npm run docs -- pending` for the current committed-source
+non-prerelease release. Run `npm run docs -- pending` for the current committed-source
 inventory. [Release highlights](website/docs/releases/unreleased.md) provide
 additional context when an upgrade needs explanation.
 

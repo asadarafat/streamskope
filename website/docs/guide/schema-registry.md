@@ -4,8 +4,9 @@ Connect a Schema Registry and read a subject's schema version. You need the
 Registry endpoint and permission to read its subjects, as well as a Kafka profile.
 
 Browsing a definition is separate from decoding a record. Use
-[Message details → Decoded](structured-events.md) for explicit JSON, Confluent
-Avro or Protobuf inspection with original bytes preserved. See the
+[Preferences → Records](structured-events.md) to save key/value detection or a
+manual encoding choice, then reconnect and read records. **Message details → Decoded**
+shows that captured interpretation with original bytes preserved. See the
 [compatibility matrix](../start/compatibility.md) for supported framing.
 
 ## Connect the service

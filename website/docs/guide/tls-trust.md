@@ -1,6 +1,6 @@
 # Configure certificate trust
 
-Choose trust for the endpoint the desktop host is contacting. Browser sign-in,
+Choose trust for the endpoint the StreamSkope host is contacting. Browser sign-in,
 successful API authentication and a successful Kafka connection establish different
 things. A truststore password unlocks certificates; it is not a Kafka login.
 
@@ -13,6 +13,7 @@ things. A truststore password unlocks certificates; it is not a Kafka login.
 | Broker OAuth token endpoint           | Broker trust bundle; host default HTTPS trust for a plaintext broker profile               | Does not borrow the Kafka client identity                                     |
 | HTTPS Schema Registry or Connect      | Each service selects system authorities, broker trust or a separate CA/truststore          | Optional independent service identity; never implicitly copies the broker key |
 | Separate service OAuth token endpoint | That service's selected trust                                                              | That service's selected client identity                                       |
+| HTTPS Prometheus endpoint             | Independent metrics system authorities, broker trust or separate CA/truststore             | Optional metrics PEM client identity, separate from the broker                |
 | HTTPS Redpanda Admin API              | Existing profiles inherit broker trust                                                     | Existing behavior is preserved                                                |
 | EDA or NSP setup API                  | Host default HTTPS trust, independent of Kafka profile settings                            | Controlled by the plugin, not the broker profile                              |
 
@@ -45,6 +46,12 @@ fall back to plaintext.
 5. Test the profile. Broker, token and configured service checks report their own
    failures. Save, reconnect and perform the intended operation in each workspace;
    a successful inventory read does not establish write permission.
+
+The optional Prometheus endpoint has its own authentication, trust and client
+identity, including its separate OAuth token request. **Test connection** checks
+Kafka and configured Registry/Connect services; it does not read Prometheus.
+Connect Kafka and choose **Read metrics** in [Observed health](observed-health.md#read-optional-prometheus-metrics)
+to test that endpoint explicitly.
 
 Adding a CA does not fix a hostname mismatch. Check every broker address returned
 by Kafka metadata, not just the bootstrap address.

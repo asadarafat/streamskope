@@ -165,7 +165,7 @@ before attaching evidence.
 
 ## Browser development does not start
 
-1. Check `node --version`; use Node 24.x.
+1. Check `node --version`; use Node 24.21.0 or newer in the 24.x line.
 2. Confirm Docker is running and Containerlab and Java `keytool` are available.
 3. Use dependencies installed for this operating system and CPU. The development
    bootstrap can isolate an incompatible shared installation under `.cache/`.

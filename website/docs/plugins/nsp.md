@@ -117,6 +117,10 @@ states which environment and operations were actually exercised.
 The installed API 4 checks use an isolated local package catalog; they do not
 establish qualification of a published plugin upgrade or NSP Kafka OAuth.
 
+A later [development-source check](../guide/qualification.md#development-source-qualification)
+records integrated live behavior on the exact newer source. It is separate from
+the installed desktop rehearsal and does not qualify a public plugin upgrade.
+
 ### Compatibility package
 
 The source API 4 package targets **NSP 26.4.0**. Its version is assigned when

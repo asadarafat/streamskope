@@ -90,10 +90,12 @@ Review confirmation and expiry stay with the feature that owns the plan.
 
 Saved replay destinations own a narrow reviewed scope and a coalesced close.
 Closing revokes new work; cleanup failures remain observable. Observation sampling
-owns its bounded record reader. Connect, environment comparison and other legacy
-context consumers have not all migrated to these scopes. Extend them deliberately,
-with evidence for cancellation, stale results and begun writes, rather than exposing
-an unrestricted connection under a new interface name.
+owns its bounded record reader. Connect services capture a dedicated authority
+whose lease retains the original HTTP request/socket and initial or refreshed
+OAuth work until cleanup settles. Environment comparison still captures a
+`ReviewContext` for the active cluster and uses an isolated saved-destination scope
+for the other cluster. Extend that boundary with actual stale-result and
+begun-operation evidence; do not assume every feature has an identical scope.
 
 Connection-bound features register invalidation and drain together in
 [FeatureLifecycle](../src/features/kafka/facade/feature-lifecycle.ts). Connection
@@ -242,8 +244,8 @@ establish identity.
 local identities and contain no record bodies, credentials or catalog notes.
 Parsing and review do not create IDs or dispatch host operations. Explicit opening
 creates new transient bookmark IDs and uses the existing passive restore/confirmed
-stop path; only Save changes durable storage. Host protocol 61 adds the catalog
-commands; older paired hosts/renderers are rejected by the strict protocol parser.
+stop path; only Save changes durable storage. Paired hosts/renderers are checked
+by the strict protocol parser; mismatched protocol versions are rejected.
 Plugin API compatibility is unchanged.
 
 ## Choose a safe first change
@@ -283,14 +285,34 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
-Host protocol 76 adds explicit optional metrics capture/cancel with a closed two-gauge snapshot. The application metrics reader retains original service authority until HTTP settlement and refuses a successful cancellation acknowledgement while original cleanup is unresolved. Its read scope exposes no mutation dispatch. Metrics use the existing protected service credential/trust pipeline; profile envelope5/protected payload7 preserves format4 security and an exact private predecessor. Exporter identity remains unbound to Kafka identity, and external snapshots are neither persisted in observation history nor used for its findings.
+Protected repair journal format 3 accepts read-only legacy formats 1/2, preserves
+the exact encrypted predecessor on the first explicit mutation, and refuses
+structured evidence mislabeled as a legacy document. Browser inspection and
+maintenance recognize both encrypted predecessor generations; older installed
+format-2 hosts refuse format 3 before stopping their current owner.
 
-Host protocol 75 adds retained observation settings and coverage-aware five-minute summaries to the history response, preserving legacy format1 inspection and refusing older paired peers. Host-owned watch start/status/stop and revisioned watch events retain original connection authority. It includes positive broker/topic identity across page navigation. It also carries stopped connector offset inspection/review/application and separate Connect dispatch, acknowledgement, readback and original-request cleanup evidence to explicit configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
-the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
-1/2, preserves the exact encrypted predecessor on the first explicit mutation,
-and refuses structured evidence mislabeled as a legacy document. Browser
-inspection and maintenance recognize both encrypted predecessor generations;
-old installed format2 hosts refuse format3 before stopping their current owner.
+## Observation ownership and retained evidence
+
+Host-owned watch start/status/stop and revisioned events retain the original
+connection authority across page navigation. Saved settings express the desired
+configuration; restart, reconnect or browser unlock does not grant authority to
+start another watch. History format 2 stores bounded direct summaries and
+coverage-aware five-minute windows. Legacy format 1 inspection is read-only; the
+history owner preserves its exact private predecessor on migration and physically
+prunes expired data. Clear is separate discard authority; older-host recovery
+requires a complete compatible backup.
+
+Optional metrics reads capture protected service authority through original HTTP
+settlement, including cancellation and its deadline. Unresolved cleanup cannot
+produce a successful cancellation acknowledgement. The bounded parser accepts
+only the two declared gauges with exact job/instance selection and original
+sample value/time pairs. Exporters may supply timestamps; this does not establish
+scrape success, an atomic snapshot or identity with the connected Kafka cluster.
+External snapshots are neither persisted in observation history nor used in its
+findings. Profile envelope 5 / protected payload 7 retains format-4 security and
+an exact private predecessor. Removal never downgrades that format.
+
+## Reviewed administration ownership
 
 Topic administration reuses the bounded connection-pinned review owner. Its
 dedicated adapter owns admitted clients through acknowledgement and confirmed
@@ -324,8 +346,9 @@ protected. Reviews include the connection name and exact field lists and compare
 canonical config/task state before one attempt. The shared reply-correlation owner
 checks command identity and workflow-specific scope. The renderer fences stale
 connection responses and requires explicit receipt dismissal before another edit.
-Actual HTTP acknowledgement and asynchronous worker state remain distinct; original
-HTTP request drain and connector-offset recovery are subsequent work.
+Actual HTTP acknowledgement, asynchronous worker state and confirmed original
+request cleanup remain distinct. Configuration and lifecycle writes use the same
+original HTTP ownership as the offset workflow below.
 
 Connector offset reviews use the same captured Connect authority and original HTTP
 lease as lifecycle changes. A shared local write-admission gate prevents those
@@ -336,9 +359,3 @@ mappings are admitted. Raw source partitions and complete configuration remain
 host-only behind short-lived opaque snapshot/partition references. Actual ACK,
 readback and cleanup remain separate; no automatic resend or atomic-CAS claim.
 Connect offset workflows retain their plugin API and protected profile/repair formats.
-Observation history format2 separately stores desired settings and bounded direct
-summaries. File load and preflight inspect legacy format1 without writing; the
-serialized application history owner migrates and physically prunes expired data.
-Atomic writes compare predecessor bytes, preserve an exact private format1 copy
-and sync the directory. Explicit Clear is separate discard authority; old-host
-rollback requires complete backup restoration.

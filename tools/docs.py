@@ -19,7 +19,7 @@ from docs.publication import documentation_context, publication_identity, verify
 from docs.media import media_inputs, media_selection
 from docs.downloads import desktop_downloads, container_downloads
 from docs.plugins import SNAPSHOT, capture_publications, plugin_context
-from docs.procedures import inspect_retrieval_procedure
+from docs.procedures import inspect_record_procedure, inspect_retrieval_procedure
 from docs.releases import configure_release_navigation
 from docs.qualification import write_qualification
 
@@ -181,6 +181,7 @@ def inspect_site(root, base_path="/"):
             "assets/qualification/topic-monitor-2026-10-04.json",
             "assets/qualification/pre-release-2026-10-06.json",
             "assets/qualification/containerlab-2026-10-07.json",
+            "assets/qualification/development-2026-10-11.json",
         } or file.name == "LICENSE"
         if not special and file.suffix not in ALLOWED_SUFFIXES:
             raise ValueError(f"Unexpected publication file: {relative}")
@@ -354,6 +355,7 @@ def main():
         inspect_repository_commands()
         inspect_message_limits()
         inspect_retrieval_procedure(ROOT)
+        inspect_record_procedure(ROOT)
         python = setup()
         run([python, "-m", "unittest", "discover", "-s", "test/docs", "-p", "test_*.py"])
         run(["node", "--test", "test/docs/accessibility.test.mjs"])

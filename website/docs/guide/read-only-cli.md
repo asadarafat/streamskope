@@ -5,7 +5,7 @@ description: Use bounded inspect, query and export commands with shared Kafka re
 
 # Inspect and export with the CLI
 
-The source distribution includes a Node 24 command-line entry for **inspect**, **query** and **export**. Use the source archive or checkout matching your desktop release, then run `npm ci`. There is no separate CLI executable bundled into the desktop installer. Mutation commands, desktop profile-store access, plugin activation and continuous tailing are unsupported.
+The source distribution includes a Node 24 command-line entry for **inspect**, **query** and **export**. Use the source archive or checkout matching your app release, install Node 24.21.0 or newer in the 24.x line, then run `npm ci`. There is no separate CLI executable bundled into the desktop installer. Mutation commands, desktop profile-store access, plugin activation and continuous tailing are unsupported.
 
 The CLI uses the desktop Kafka engine, shared record interpretation, finite-query parser and record-protection policy. It reads explicit host configuration; it does not inherit a desktop session's profiles or masking preferences.
 

@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
-from docs.procedures import inspect_retrieval_procedure
+from docs.procedures import inspect_record_procedure, inspect_retrieval_procedure
 
 
 class RetrievalProcedureTests(unittest.TestCase):
@@ -63,6 +63,44 @@ class RetrievalProcedureTests(unittest.TestCase):
                                                            'label="Saved retrieval"'))
         with self.assertRaisesRegex(ValueError, "UI control changed: Retrieval preset"):
             inspect_retrieval_procedure(self.root)
+
+
+class RecordProcedureTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.page = self.root / "website/docs/guide/structured-events.md"
+        self.page.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / self.page.relative_to(self.root), self.page)
+        ui = Path("src/features/kafka/ui")
+        (self.root / ui).mkdir(parents=True)
+        for component in ("OperationalPreferencesDialog.tsx", "RecordCodecPreferencesPanel.tsx",
+                          "record-presentation.ts"):
+            shutil.copyfile(ROOT / ui / component, self.root / ui / component)
+
+    def test_accepts_saved_encoding_procedure_and_actual_ui(self):
+        inspect_record_procedure(self.root)
+
+    def test_rejects_missing_save_even_if_mentioned_elsewhere(self):
+        self.page.write_text(self.page.read_text().replace("**Save record encodings**.", "Save."))
+        with self.assertRaisesRegex(ValueError, "missing procedure step: Save record encodings"):
+            inspect_record_procedure(self.root)
+
+    def test_rejects_loading_before_preferences_are_saved(self):
+        text = self.page.read_text()
+        save = text.index("3. Choose **Default key encoding**")
+        load = text.index("4. Reconnect, load messages")
+        end = text.index("\n\n", load)
+        self.page.write_text(text[:save] + text[load:end] + "\n" + text[save:load] + text[end:])
+        with self.assertRaisesRegex(ValueError, "procedure step out of order: Reconnect and load"):
+            inspect_record_procedure(self.root)
+
+    def test_rejects_a_renamed_control_in_the_implementation(self):
+        component = self.root / "src/features/kafka/ui/RecordCodecPreferencesPanel.tsx"
+        component.write_text(component.read_text().replace("Save record encodings", "Apply encodings"))
+        with self.assertRaisesRegex(ValueError, "UI control changed: Save record encodings"):
+            inspect_record_procedure(self.root)
 
 
 if __name__ == "__main__":

@@ -172,7 +172,7 @@ Registry/Connect vendor deployments. The existing vendor fixtures qualify their
 own feature scope. Vault restart does not establish native OS keychain migration,
 installed-package upgrade or managed-service certification.
 
-## Structured record consistency
+## Topic administration
 
 The existing runtime report group also includes
 `test/kafka/topic-administration-real.test.ts`: an isolated pinned Kafka 4.3.1
@@ -185,6 +185,8 @@ browser workbench suite includes `web-topic-administration.spec.ts` for keyboard
 entry, review/confirmation, visible receipts, real inventory and dialog accessibility.
 These cases do not certify managed services, older unsupported topic APIs or
 atomic exclusion of concurrent name-based partition expansion.
+
+## Structured record consistency
 
 The runtime lane includes `test/kafka/structured-records-real.test.ts` and retains
 `.artifacts/ci/structured-records-real.json`. It uses an isolated real Kafka broker,

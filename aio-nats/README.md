@@ -11,7 +11,7 @@ packages. Keep it on loopback and do not reuse its credentials for production.
 ## Prerequisites
 
 - Linux arm64 or amd64, including an OrbStack guest
-- Node.js 24 and `npm ci`
+- Node.js 24.21.0 or newer in the 24.x line and `npm ci`
 - Docker, OpenSSL and Containerlab (verified with 0.79.0) with permission to manage labs
 
 Run commands from the repository root. The persistent lab is deployed from
