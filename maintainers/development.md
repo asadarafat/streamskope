@@ -198,7 +198,9 @@ Apple signing/notarization, other platforms or live EDA/NSP support. Follow
 
 Source deployment is separate from the [released browser
 installer](../website/docs/start/containerlab.md). Use a non-root account on a
-Linux AMD64 or ARM64 Docker host with Containerlab. Image builds need access to
+Linux AMD64 or ARM64 Docker host with Containerlab 0.79.0 for the supplied
+auto-subnet topology. Installer-managed deployment uses a private verified copy
+independently of the system CLI. Image builds need access to
 the pinned base images and registries, or approved mirrors/caches.
 
 ```sh

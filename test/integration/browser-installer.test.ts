@@ -56,6 +56,63 @@ async function occupiedPort(port = 0): Promise<number> {
 }
 
 describe.skipIf(process.platform !== "linux")("released browser installer", () => {
+  it("uses verified private tooling independently of an incompatible global CLI and reuses it", async () => {
+    const host = await fixture({ globalContainerlabBroken: true });
+    const installer = await host.installer();
+    const first = await host.run(installer.file);
+    expect(first.exitCode, first.stderr).toBe(0);
+    const tool = join(host.state, "tools/containerlab");
+    const original = await readFile(tool);
+    expect((await stat(tool)).mode & 0o777).toBe(0o500);
+    const second = await host.run(installer.file);
+    expect(second.exitCode, second.stderr).toBe(0);
+    expect(await readFile(tool)).toEqual(original);
+    const downloads = (await host.calls()).filter(
+      ({ command, args }) =>
+        command === "curl" && args.some((a) => a.includes("/srl-labs/containerlab/")),
+    );
+    expect(downloads).toHaveLength(1);
+    expect(deployments(await host.calls())).toHaveLength(1);
+  });
+
+  it("rejects an altered tool archive before deploying or caching an executable", async () => {
+    const host = await fixture({ corruptDownload: "containerlab_0.79.0_linux_amd64.tar.gz" });
+    const installer = await host.installer();
+    const result = await host.run(installer.file);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("verified deployment tooling");
+    expect(deployments(await host.calls())).toHaveLength(0);
+    await expect(access(join(host.state, "tools/containerlab"))).rejects.toThrow();
+  });
+
+  it.each(["modified", "symlink"])(
+    "refuses a %s cache without changing the installed data or running the tool",
+    async (kind) => {
+      const host = await fixture();
+      const installer = await host.installer();
+      const first = await host.run(installer.file);
+      expect(first.exitCode, first.stderr).toBe(0);
+      const tool = join(host.state, "tools/containerlab");
+      const state = await readFile(join(host.state, "installation.json"));
+      const setup = await readFile(join(host.data, "setup-code"));
+      if (kind === "symlink") {
+        await rm(tool);
+        await symlink(join(host.root, "mock-command.mjs"), tool);
+      } else {
+        await chmod(tool, 0o700);
+        await writeFile(tool, "altered executable");
+        await chmod(tool, 0o500);
+      }
+      const before = await host.calls();
+      const result = await host.run(installer.file);
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("verified deployment tooling");
+      expect(await readFile(join(host.state, "installation.json"))).toEqual(state);
+      expect(await readFile(join(host.data, "setup-code"))).toEqual(setup);
+      expect(deployments((await host.calls()).slice(before.length))).toHaveLength(0);
+    },
+  );
+
   it("waits for the Docker API after asynchronous daemon startup before deploying", async () => {
     const host = await fixture({ dockerInfoFailures: 2 });
     const installer = await host.installer();

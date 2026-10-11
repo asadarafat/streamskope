@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BROWSER_DATA_COMPATIBILITY } from "../../src/platform/node/browser-data-compatibility";
@@ -271,6 +271,7 @@ export async function verifyTransition(
     DOCKER_HOST: "unix:///var/run/docker.sock",
     DOCKER_CONTEXT: "default",
     DOCKER_CONFIG: join(temporary, "docker-config"),
+    PATH: options.environment?.PATH ?? process.env.PATH ?? "",
   };
   const savedEnvironment = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"].map(
     (key) => [key, process.env[key]] as const,
@@ -301,6 +302,25 @@ export async function verifyTransition(
     | "pinned-resume"
     | "cleanup" = "target-identity";
   try {
+    // Bootstrap the unchanged predecessor with the same verified deployment
+    // runtime as the current installer, independently of the host's global CLI.
+    const toolStage = join(temporary, ".install-tools");
+    await mkdir(toolStage, { mode: 0o700 });
+    const pinnedTool = await run(
+      "python3",
+      [
+        "-c",
+        await readFile("tools/package/browser-maintenance.py", "utf8"),
+        "prepare-containerlab",
+        temporary,
+        String(process.getuid()),
+        String(process.getgid!()),
+        target.platform.split("/")[1]!,
+        toolStage,
+      ],
+      environment,
+    );
+    environment.PATH = `${dirname(pinnedTool.stdout.trim())}${delimiter}${environment.PATH ?? ""}`;
     await verifyImage(target, environment);
     const absent = await run("docker", ["inspect", container], environment, true);
     assert.ok(absent.code !== 0 && /No such object/u.test(absent.stderr));

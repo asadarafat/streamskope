@@ -90,6 +90,10 @@ vault/profile persistence, workers, repeated installation, graceful resume and
 upgrade/rollback. See [browser qualification](qualification.md#browser-data-compatibility)
 for exact evidence requirements and the limits of local staged-image rehearsal.
 
+Browser installers cache the checksum-pinned Containerlab 0.79.0 binary privately.
+Advancing this pin requires native install, upgrade and rollback qualification on
+AMD64 and ARM64; a host CLI upgrade does not change installer-managed deployment.
+
 Before publishing a desktop draft, verify:
 
 - Three unsigned installers and six browser payloads: AMD64/ARM64 Docker save

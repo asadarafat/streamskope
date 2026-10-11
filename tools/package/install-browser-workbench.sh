@@ -20,7 +20,6 @@ OS_RELEASE='/etc/os-release'
 TTY_DEVICE='/dev/tty'
 APT_KEYRING='/etc/apt/keyrings/streamskope-docker.asc'
 DOCKER_APT_SOURCE='/etc/apt/sources.list.d/streamskope-docker.sources'
-CLAB_APT_SOURCE='/etc/apt/sources.list.d/streamskope-containerlab.list'
 STAGING=''
 
 fail() { printf 'StreamSkope: %s\n' "$*" >&2; exit 1; }
@@ -99,7 +98,7 @@ if [[ "$operation" == install && ( -e "$STATE_ROOT/maintenance.json" || -L "$STA
 fi
 
 # Docker repositories: https://docs.docker.com/engine/install/{ubuntu,debian}/
-# Containerlab repository: https://containerlab.dev/install/#package-managers
+# Containerlab is cached privately from exact upstream release bytes.
 
 prerequisite_package_installed() {
   [[ "$(dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null || true)" == ii* ]]
@@ -149,16 +148,13 @@ prerequisite_guard_destination() {
 # Read-only preflight; call before creating installation state or doing any apt writes.
 check_prerequisites() {
   local key value package conflicts=()
-  INSTALL_NEED_DOCKER=0 INSTALL_NEED_CLAB=0 INSTALL_NEED_BOOTSTRAP=0
+  INSTALL_NEED_DOCKER=0 INSTALL_NEED_BOOTSTRAP=0
   INSTALL_OS_ID='' INSTALL_OS_VERSION='' INSTALL_OS_CODENAME=''
   command -v docker >/dev/null 2>&1 || INSTALL_NEED_DOCKER=1
-  if ! command -v containerlab >/dev/null 2>&1 && ! command -v clab >/dev/null 2>&1; then
-    INSTALL_NEED_CLAB=1
-  fi
   for value in curl python3 flock; do
     command -v "$value" >/dev/null 2>&1 || INSTALL_NEED_BOOTSTRAP=1
   done
-  if (( INSTALL_NEED_DOCKER + INSTALL_NEED_CLAB + INSTALL_NEED_BOOTSTRAP == 0 )); then
+  if (( INSTALL_NEED_DOCKER + INSTALL_NEED_BOOTSTRAP == 0 )); then
     return
   fi
   [[ -r "$OS_RELEASE" ]] ||
@@ -198,15 +194,12 @@ check_prerequisites() {
     prerequisite_guard_destination "$APT_KEYRING"
     prerequisite_guard_destination "$DOCKER_APT_SOURCE"
   fi
-  if (( INSTALL_NEED_CLAB )); then
-    prerequisite_existing_repository_guard '^[[:space:]]*(deb[[:space:]]|URIs:[[:space:]]).*https?://netdevops\.fury\.site/apt/' "$CLAB_APT_SOURCE"
-    prerequisite_guard_destination "$CLAB_APT_SOURCE"
-  fi
+
 }
 
 install_missing_prerequisites() (
   local temporary packages=()
-  (( INSTALL_NEED_DOCKER + INSTALL_NEED_CLAB + INSTALL_NEED_BOOTSTRAP > 0 )) || return 0
+  (( INSTALL_NEED_DOCKER + INSTALL_NEED_BOOTSTRAP > 0 )) || return 0
   log 'Installing missing host prerequisites from their package repositories.'
   apt-get update
   for package in ca-certificates curl python3 util-linux; do
@@ -235,21 +228,9 @@ install_missing_prerequisites() (
       install -m 0644 -- "$temporary/docker.sources" "$DOCKER_APT_SOURCE"
     fi
   fi
-  if (( INSTALL_NEED_CLAB )); then
-    install -d -m 0755 -- "$(dirname -- "$CLAB_APT_SOURCE")"
-    # This is the official HTTPS package repository. It uses trusted=yes and has
-    # no repository signing key; do not describe it as signed package delivery.
-    printf 'deb [trusted=yes] https://netdevops.fury.site/apt/ /\n' > "$temporary/containerlab.list"
-    if [[ -e "$CLAB_APT_SOURCE" ]]; then
-      cmp -s -- "$temporary/containerlab.list" "$CLAB_APT_SOURCE" || fail 'The existing StreamSkope Containerlab apt source differs; review it manually before retrying.'
-    else
-      install -m 0644 -- "$temporary/containerlab.list" "$CLAB_APT_SOURCE"
-    fi
-  fi
   apt-get update
   packages=()
   (( INSTALL_NEED_DOCKER )) && packages+=(docker-ce docker-ce-cli containerd.io)
-  (( INSTALL_NEED_CLAB )) && packages+=(containerlab)
   if (( ${#packages[@]} )); then
     DEBIAN_FRONTEND=noninteractive apt-get --no-remove --no-upgrade install -y --no-install-recommends "${packages[@]}"
   fi
@@ -260,8 +241,7 @@ install_missing_prerequisites() (
   for package in curl python3 flock docker; do
     command -v "$package" >/dev/null 2>&1 || fail "Prerequisite installation did not provide $package."
   done
-  command -v containerlab >/dev/null 2>&1 || command -v clab >/dev/null 2>&1 ||
-    fail 'Prerequisite installation did not provide Containerlab.'
+
 )
 
 safe_directory() {
@@ -285,8 +265,6 @@ if [[ "$operation" != install ]]; then
     command -v "$prerequisite" >/dev/null 2>&1 ||
       fail 'Browser maintenance requires the existing host prerequisites. Restore the missing tool, then retry; no packages were installed.'
   done
-  command -v containerlab >/dev/null 2>&1 || command -v clab >/dev/null 2>&1 ||
-    fail 'Browser maintenance requires the existing Containerlab installation; no packages were installed.'
   safe_directory "$(dirname "$STATE_ROOT")" "$STATE_OWNER_UID"
   safe_directory "$STATE_ROOT" "$STATE_OWNER_UID"
   [[ $(stat -c '%a' "$STATE_ROOT") == 700 ]] || fail 'Deployment state must have mode 0700.'
@@ -295,6 +273,7 @@ if [[ "$operation" != install ]]; then
   exec 9<>"$STATE_ROOT/installer.lock"
   flock --nonblock 9 || fail 'Another StreamSkope installer is running. Wait for it to finish and retry.'
   STAGING=$(mktemp -d "$STATE_ROOT/.install-XXXXXXXX")
+  clab=$(browser_maintenance prepare-containerlab "$STATE_ROOT" "$STATE_OWNER_UID" "$STATE_OWNER_GID" "$ARCHITECTURE" "$STAGING") || fail 'Cannot prepare verified deployment tooling. Preserve the installation and check GitHub/proxy access or the private tools cache.'
   if receipt=$(browser_maintenance maintain "$operation" "$STATE_ROOT" "$STATE_OWNER_UID" "$STATE_OWNER_GID" \
     "$ARCHITECTURE" "$LAB_NAME" "$NETWORK_NAME" "$CONTAINER_NAME" "$STREAMSKOPE_INSTALL_VERSION" \
     "$STREAMSKOPE_INSTALL_SOURCE" "$STREAMSKOPE_TOPOLOGY_SHA256" "$STREAMSKOPE_MANIFEST_SHA256" "$STAGING" 2>"$STAGING/maintenance-error"); then
@@ -319,6 +298,7 @@ if [[ -e "$lock" || -L "$lock" ]]; then safe_file "$lock"; fi
 exec 9<>"$lock"
 flock --nonblock 9 || fail 'Another StreamSkope installer is running. Wait for it to finish and retry.'
 STAGING=$(mktemp -d "$STATE_ROOT/.install-XXXXXXXX")
+clab=$(browser_maintenance prepare-containerlab "$STATE_ROOT" "$STATE_OWNER_UID" "$STATE_OWNER_GID" "$ARCHITECTURE" "$STAGING") || fail 'Cannot prepare verified deployment tooling. Preserve the installation and check GitHub/proxy access or the private tools cache.'
 state="$STATE_ROOT/installation.json"
 data="$STATE_ROOT/streamskope-data"
 saved=false
@@ -528,7 +508,6 @@ path,identity,version,source,arch=sys.argv[1:]; value=json.load(open(path))[0]; 
 if value.get('Id')!=identity or value.get('Os')!='linux' or value.get('Architecture')!=arch or labels.get('org.opencontainers.image.version')!=version or labels.get('org.opencontainers.image.revision')!=source:
     sys.exit('The local image does not match the qualified release and architecture; no container was deployed.')
 PY
-  if command -v containerlab >/dev/null; then clab=containerlab; else clab=clab; fi
   (cd "$STATE_ROOT" && "$clab" --runtime docker deploy --topo "$STATE_ROOT/$topology" --name "$LAB_NAME" --network "$NETWORK_NAME" --max-workers 1) >&2 || fail 'Containerlab could not deploy. Pinned state and private data remain available for a retry; do not remove vault data.'
 fi
 [[ $(inspect_owned_container) == running ]] || fail 'The pinned container is not running; inspect its health and retry without removing data.'

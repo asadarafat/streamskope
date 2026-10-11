@@ -15,6 +15,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import uuid
@@ -454,6 +455,77 @@ def decode(content):
         return result
 
     return json.loads(content, object_pairs_hook=unique)
+
+
+
+# Verified upstream 0.79.0 release bytes. Deployment tooling is private to this
+# installation: another lab's CLI upgrades must not change network allocation.
+CONTAINERLAB_PINS = {
+    "amd64": ("f90d36d58bb6c4afd3b3a4dca006b81594c6d16f7a04be0184b03f44291085a2",
+              "2e1e0c609a09ca1b6c7abded5d57e1236f43ee2a32f63facda205b6a0ea76d6a", 43597986),
+    "arm64": ("e89e051f71fad7ad1c74c0189fb260539c1f5637e5c10fe53f74fa6b4dbe5298",
+              "6348bc18bfb6a29415b817039c62becb5c198e7670d103fc4c264872828c9667", 40370338),
+}
+
+
+def prepare_containerlab(root, uid, gid, arch, stage, run=command):
+    root, stage = Path(root), Path(stage)
+    safe_directory(root, uid, gid)
+    safe_directory(stage, uid, gid)
+    require(stage.parent == root and stage.name.startswith(".install-"))
+    require(arch in CONTAINERLAB_PINS)
+    archive_hash, binary_hash, binary_size = CONTAINERLAB_PINS[arch]
+    directory = root / "tools"
+    if not os.path.lexists(directory):
+        directory.mkdir(mode=0o700)
+        os.chown(directory, uid, gid)
+    safe_directory(directory, uid, gid)
+    require(stat.S_IMODE(directory.lstat().st_mode) == 0o700, "ownership-unconfirmed")
+    binary = directory / "containerlab"
+
+    def verified(path):
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                and info.st_uid == uid and info.st_gid == gid
+                and stat.S_IMODE(info.st_mode) == 0o500
+                and info.st_size == binary_size, "ownership-unconfirmed")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as source:
+            require(os.fstat(source.fileno()) == info, "ownership-unconfirmed")
+            checksum = hashlib.sha256()
+            for block in iter(lambda: source.read(1024 * 1024), b""):
+                checksum.update(block)
+            require(checksum.hexdigest() == binary_hash,
+                    "ownership-unconfirmed")
+
+    if os.path.lexists(binary):
+        verified(binary)
+        return str(binary)
+    archive = stage / ("containerlab-" + str(uuid.uuid4()) + ".tar.gz")
+    run(["curl", "--proto", "=https", "--proto-redir", "=https", "--tlsv1.2",
+         "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "15",
+         "--max-time", "120", "--max-filesize", "33554432", "--output", str(archive),
+         "https://github.com/srl-labs/containerlab/releases/download/v0.79.0/"
+         + "containerlab_0.79.0_linux_" + arch + ".tar.gz"], timeout=130)
+    content = private_read(archive, uid, gid, 32 * 1024 * 1024)
+    require(digest(content) == archive_hash, "candidate-unavailable")
+    pending = stage / ("containerlab-" + str(uuid.uuid4()))
+    with tarfile.open(archive, "r:gz") as package:
+        members = [item for item in package.getmembers() if item.name == "containerlab"]
+        require(len(members) == 1 and members[0].isreg()
+                and members[0].size == binary_size, "candidate-unavailable")
+        source = package.extractfile(members[0])
+        require(source is not None, "candidate-unavailable")
+        with source, pending.open("xb") as destination:
+            shutil.copyfileobj(source, destination, 1024 * 1024)
+            destination.flush()
+            os.fsync(destination.fileno())
+    os.chown(pending, uid, gid)
+    pending.chmod(0o500)
+    verified(pending)
+    os.rename(pending, binary)
+    fsync_directory(directory)
+    return str(binary)
 
 
 class Maintenance:
@@ -1399,8 +1471,8 @@ class Maintenance:
             "STREAMSKOPE_HOST_PORT": str(self.state["port"]),
             "STREAMSKOPE_PUBLIC_ORIGIN": self.origin,
         }
-        clab = shutil.which("containerlab") or shutil.which("clab")
-        require(clab is not None, "candidate-unavailable")
+        clab = prepare_containerlab(self.root, self.uid, self.gid, self.config["arch"],
+                                   self.stage, self.run)
         self.run(
             [
                 clab,
@@ -1682,6 +1754,11 @@ def main(arguments):
     engine, operation = None, "unknown"
     try:
         os.umask(0o077)
+        if arguments and arguments[0] == "prepare-containerlab":
+            require(len(arguments) == 6)
+            print(prepare_containerlab(arguments[1], int(arguments[2]), int(arguments[3]),
+                                       arguments[4], arguments[5]))
+            return 0
         if arguments and arguments[0] == "read-current":
             require(len(arguments) == 4)
             for value in read_current(arguments[1], int(arguments[2]), int(arguments[3])):
@@ -1747,7 +1824,7 @@ def main(arguments):
                 else "invalid-state"
             )
         )
-        if arguments and arguments[0] == "read-current":
+        if arguments and arguments[0] in ("read-current", "prepare-containerlab"):
             sys.stderr.write(
                 "StreamSkope: " + reason + "; preserve deployment data and use explicit recovery.\n"
             )

@@ -20,7 +20,9 @@ The EDA application image is a separate component and cannot run this workbench.
 
 ## Manual deployment
 
-Use an already prepared Linux AMD64 or ARM64 Docker host with Containerlab.
+Use an already prepared Linux AMD64 or ARM64 Docker host with **Containerlab 0.79.0**.
+The supplied auto-subnet topology requires its runtime address allocation;
+Containerlab 0.80 changes that default and is not qualified for manual deployment.
 Manual deployment does not require Node, npm or a source build. Keep the release
 files together in a private directory owned by your non-root Linux account.
 
@@ -277,8 +279,9 @@ automatically reconnect brokers or resume an EDA capture.
 ## Maintenance limits and recovery
 
 Installer-managed maintenance retains the saved owner, account home, port,
-loopback origin and data location. It requires the local Docker daemon, existing
-Containerlab and the original Linux account. It does not install prerequisites,
+loopback origin and data location. It requires the local Docker daemon and the
+original Linux account. The installer uses its private, verified Containerlab
+0.79.0 cache, downloading it if an older installation has no cache. It does not install host packages,
 change networking or migrate a manual deployment. Metadata and image downloads
 may need GitHub/GHCR access; cached bytes must still match the exact release.
 
