@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const topology = fileURLToPath(new URL("../topology.clab.yml", import.meta.url));
+// Fixture commands run from the repository root. Avoid import.meta because
+// Playwright also loads these helpers through its CommonJS transformer.
+const topology = resolve("aio-kafka/topology.clab.yml");
 
 /** The interactive lab and every isolated broker use the same image pin. */
 export async function kafkaPin(): Promise<{ image: string; version: string }> {

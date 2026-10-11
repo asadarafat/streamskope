@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import { FixtureContainerOwner, dockerCommand } from "./container-owner";
 import { kafkaPin } from "./pins";
 import type { BrokerRuntime } from "./runtime";
 
-const context = fileURLToPath(new URL("../images/qualification-broker/", import.meta.url));
+const context = resolve("aio-kafka/images/qualification-broker");
 
 /** A cached thin image; all executable Kafka/JDK bytes come from the lab's digest pin. */
 export async function qualificationBrokerImage(): Promise<{ image: string; version: string }> {
