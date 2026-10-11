@@ -42,6 +42,13 @@ test("reads real optional metrics with honest source coverage and no automatic e
   });
   let launch: Awaited<ReturnType<typeof launchProductWebFixture>> | undefined;
   try {
+    // These JMX gauges are registered when a real user topic initializes partition metadata.
+    await fixture.broker.admin.createTopics({
+      topics: ["browser-metrics-replicated"],
+      replicas: -1,
+      partitions: -1,
+      assignments: [{ partition: 0, brokers: [1, 2] }],
+    });
     launch = await launchProductWebFixture({
       backend,
       hostPort: await port(),
