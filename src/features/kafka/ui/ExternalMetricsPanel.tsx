@@ -51,7 +51,7 @@ export function ExternalMetricsPanel({
     }
   };
   return (
-    <Accordion>
+    <Accordion slotProps={{ heading: { component: "h2" } }}>
       <AccordionSummary
         expandIcon={<ExpandMoreIcon />}
         id="external-metrics-title"
