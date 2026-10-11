@@ -2,11 +2,8 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { startNativeKafkaFixture } from "../../test/support/native-kafka-fixture";
-import {
-  NativeKafkaFixtureError,
-  type NativeFixtureDiagnostic,
-} from "../../test/support/native-fixture-error";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { KafkaFixtureError, type KafkaFixtureDiagnostic } from "../../aio-kafka/fixtures/error";
 
 import {
   downloadNativeInstaller,
@@ -64,9 +61,9 @@ async function main(): Promise<void> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "streamskope native-recovery-")));
   let plan: NativeRecoveryPlan | undefined;
   let report: Record<string, unknown> | undefined;
-  let fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>> | undefined;
+  let fixture: Awaited<ReturnType<typeof startKafkaFixture>> | undefined;
   let phase = "target installer";
-  let failure: { phase: string; code: string; fixture?: NativeFixtureDiagnostic } | undefined;
+  let failure: { phase: string; code: string; fixture?: KafkaFixtureDiagnostic } | undefined;
   const cleanup: Record<string, { outcome: "passed" | "failed"; code?: string }> = {};
   const clean = async (name: string, action: () => Promise<void>): Promise<void> => {
     try {
@@ -81,7 +78,7 @@ async function main(): Promise<void> {
   try {
     if (supplied.length === 0) {
       phase = "disposable Kafka fixture";
-      fixture = await startNativeKafkaFixture();
+      fixture = await startKafkaFixture(undefined, { backend: "native" });
     }
     phase = "target installer";
     const target = candidate
@@ -117,7 +114,7 @@ async function main(): Promise<void> {
     failure = {
       phase,
       code: failureCode(error),
-      ...(error instanceof NativeKafkaFixtureError ? { fixture: error.diagnostic } : {}),
+      ...(error instanceof KafkaFixtureError ? { fixture: error.diagnostic } : {}),
     };
   } finally {
     const ownedPlan = plan;

@@ -10,7 +10,7 @@ import {
 } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
-import { startPrometheusFixture } from "../support/prometheus-fixture";
+import { startPrometheusFixture } from "../../aio-kafka/fixtures/metrics";
 import { observeBrowserDiagnostics } from "../support/workbench-browser";
 
 async function port(): Promise<number> {

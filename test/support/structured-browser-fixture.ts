@@ -3,8 +3,10 @@ import {
   provisionSeededFixtureTopic,
   type FixtureConnection,
   type SeededFixtureTopic,
-} from "./kafka-fixture";
-import { disposeNativeFixtureResources, startNativeKafkaFixture } from "./native-kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
+
 import { createSchemaRegistryProtocolFixture } from "./schema-registry-protocol-fixture";
 
 /** Each run owns its broker, topic and Registry endpoint; no local AIO deployment is required. */
@@ -14,7 +16,7 @@ export async function startStructuredBrowserFixture(): Promise<
   }
 > {
   const config = await loadFixtureConfig();
-  const native = await startNativeKafkaFixture();
+  const kafka = await startKafkaFixture();
   const registry = createSchemaRegistryProtocolFixture([
     {
       id: 1,
@@ -27,16 +29,16 @@ export async function startStructuredBrowserFixture(): Promise<
   ]);
   let seeded: SeededFixtureTopic | undefined;
   const dispose = (): Promise<void> =>
-    disposeNativeFixtureResources([
+    disposeFixtureResources([
       (): Promise<void> => seeded?.dispose() ?? Promise.resolve(),
       (): Promise<void> => registry.close(),
-      (): Promise<void> => native.dispose(),
+      (): Promise<void> => kafka.dispose(),
     ]);
   try {
     const connection: FixtureConnection = {
-      kafkaEndpoint: native.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
-      oauthEndpoint: native.environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT!,
-      caPath: native.environment.STREAMSKOPE_TEST_CA_PATH!,
+      kafkaEndpoint: kafka.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
+      oauthEndpoint: kafka.environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT!,
+      caPath: kafka.environment.STREAMSKOPE_TEST_CA_PATH!,
       schemaRegistryEndpoint: await registry.listen(),
     };
     seeded = await provisionSeededFixtureTopic(connection);

@@ -11,8 +11,8 @@ import { inspectKafkaQueryLibraryDocument } from "../../src/features/kafka/contr
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
-import { fixtureClientOptions } from "../support/kafka-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { fixtureClientOptions } from "../../aio-kafka/fixtures/development";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { startStructuredBrowserFixture } from "../support/structured-browser-fixture";
 import { connectLocalProfile } from "../support/web-profile-workflow";
 import {
@@ -282,7 +282,7 @@ test("restores durable topic and group views after a production vault host resta
     if (!page.isClosed() && info.status !== info.expectedStatus)
       await page.screenshot({ path: info.outputPath("view-failure.png") }).catch(() => undefined);
     await page.close();
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => gateway?.close() ?? Promise.resolve(),
       async (): Promise<void> => {
         if (admin !== undefined && groupCreated) await admin.deleteGroups({ groups: [groupId] });

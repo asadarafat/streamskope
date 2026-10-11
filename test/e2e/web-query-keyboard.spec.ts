@@ -12,7 +12,7 @@ import {
   loadFixtureConnection,
   provisionSeededFixtureTopic,
   type SeededFixtureTopic,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 import { configureLocalConnection } from "../support/web-profile-workflow";
 
 test.use({ trace: "off" });

@@ -12,7 +12,7 @@ import {
   loadFixtureConfig,
   loadFixtureConnection,
   provisionSeededFixtureTopic,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 async function main(): Promise<void> {
   const packaged = JSON.parse(await readFile("dist/package/verification.json", "utf8")) as {

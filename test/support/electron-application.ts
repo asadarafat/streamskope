@@ -10,8 +10,7 @@ import {
 import { build } from "vite";
 
 import { PACKAGED_RENDERER_URL } from "../../src/platform/electron/main/packaged-renderer-origin";
-
-import type { FixtureConfig, FixtureConnection } from "./kafka-fixture";
+import type { FixtureConfig, FixtureConnection } from "../../aio-kafka/fixtures/development";
 
 const repositoryRoot = process.cwd();
 const require = createRequire(join(repositoryRoot, "package.json"));

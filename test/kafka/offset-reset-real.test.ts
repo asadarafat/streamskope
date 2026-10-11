@@ -17,8 +17,8 @@ import {
   fixtureClientOptions,
   loadFixtureConnection,
   provisionSeededFixtureTopic,
-} from "../support/kafka-fixture";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+} from "../../aio-kafka/fixtures/development";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 
 it("retains a real topic authorization rejection and leaves subsequent partitions unsent", async () => {
   const fixture = await startAuthorizationFixture();

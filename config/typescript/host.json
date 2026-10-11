@@ -41,6 +41,7 @@
     "../../src/features/nats/contracts/**/*.ts",
     "../../src/features/nats/application/**/*.ts",
     "../../src/features/nats/engine/**/*.ts",
-    "../../src/features/nats/facade/**/*.ts"
+    "../../src/features/nats/facade/**/*.ts",
+    "../../aio-kafka/fixtures/**/*.ts"
   ]
 }

@@ -11,8 +11,8 @@ import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway, type WebGatewayRuntime } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { observeBrowserDiagnostics, openWorkbenchResource } from "../support/workbench-browser";
 
 test.use({ trace: "off", viewport: { width: 1440, height: 1000 } });
@@ -172,7 +172,7 @@ test("keyboard-operable reviewed topic expansion and UUID deletion preserve visi
       contentType: "application/json",
     });
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => page.close(),
         (): Promise<void> => gateway?.close() ?? Promise.resolve(),
         (): Promise<void> => fixture.dispose(),

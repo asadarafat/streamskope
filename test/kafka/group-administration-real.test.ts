@@ -19,8 +19,8 @@ import {
 import { OffsetResetService } from "../../src/features/kafka/application/offset-reset-service";
 import { KafkaApplicationSession } from "../../src/features/kafka/application";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 
 it("reviews real earliest/end/time offsets with protected examples, rejects stale/active/denied groups and deletes an inactive group exactly once", async () => {
   const fixture = await startAuthorizationFixture(),
@@ -303,7 +303,7 @@ it("reviews real earliest/end/time offsets with protected examples, rejects stal
   } finally {
     stream?.destroy();
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => backend.shutdown(),
         (): Promise<void> => active.close(true),
         (): Promise<void> => producer.close(),
@@ -396,7 +396,7 @@ it("preserves the real first ACK, an independently lost second reply and the unc
     failures.push(error);
   } finally {
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => session.shutdown(),
         (): Promise<void> => producer.close(),
         (): Promise<void> => fixture.dispose(),

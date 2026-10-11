@@ -12,8 +12,8 @@ import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import { ConnectHttpAdapter } from "../../src/features/kafka/engine/connect-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
 import type { ConnectInput } from "../../src/features/kafka/contracts/connect";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { startConnectFixture } from "../support/connect-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { startConnectFixture } from "../../aio-kafka/fixtures/connect";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 import { qualifyConnectOffsets } from "../support/connect-offset-scenario";
 

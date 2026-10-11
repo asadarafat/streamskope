@@ -7,8 +7,8 @@ import { expect, test } from "@playwright/test";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { startConnectFixture } from "../support/connect-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { startConnectFixture } from "../../aio-kafka/fixtures/connect";
 import { observeBrowserDiagnostics } from "../support/workbench-browser";
 
 async function port(): Promise<number> {

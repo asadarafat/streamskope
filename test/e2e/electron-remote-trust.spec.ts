@@ -8,7 +8,7 @@ import {
   buildRenderer,
   launchProfileApplication,
 } from "../support/electron-application";
-import { loadFixtureConfig, loadFixtureConnection } from "../support/kafka-fixture";
+import { loadFixtureConfig, loadFixtureConnection } from "../../aio-kafka/fixtures/development";
 import { acquireRemoteJksTrust } from "../support/remote-trust-workflow";
 import { startControlledSshServer } from "../support/ssh-fixture";
 import {

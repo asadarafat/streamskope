@@ -1,20 +1,23 @@
-import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 
-import { Admin } from "@platformatic/kafka";
+import { Admin, findErrorBy } from "@platformatic/kafka";
 
 import type { SecureConnectionInput } from "../../src/features/kafka/contracts";
 import {
   ContainerImageAvailabilityError,
   containerCommandFailureReason,
-  ensureContainerImage,
 } from "../../tools/dev/container-image";
 
-const execute = promisify(execFile);
+import {
+  FixtureContainerOwner,
+  FixtureCleanupError,
+  dockerCommand,
+  type DockerCommand,
+} from "./container-owner";
+import { kafkaPin } from "./pins";
+import { loopbackPorts } from "./loopback";
+
 class KafkaAuthorizationFixtureFailure extends Error {
   constructor(message: string) {
     super(message);
@@ -22,29 +25,40 @@ class KafkaAuthorizationFixtureFailure extends Error {
   }
 }
 interface AuthorizationFixtureRuntime {
-  readonly docker: (arguments_: readonly string[], timeoutMs: number) => Promise<unknown>;
+  readonly docker: DockerCommand;
   readonly createAdmin: (options: ConstructorParameters<typeof Admin>[0]) => Admin;
   readonly pause: () => Promise<void>;
 }
-async function availablePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error === undefined ? resolve() : reject(error))),
-  );
-  if (address === null || typeof address === "string")
-    throw new Error("No fixture port allocated.");
-  return address.port;
+
+/** FindCoordinator may create __consumer_offsets before its leader is ready. */
+export async function seedConsumerGroupOffsets(
+  admin: Admin,
+  input: Parameters<Admin["alterConsumerGroupOffsets"]>[0],
+): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    try {
+      await admin.alterConsumerGroupOffsets(input);
+      return;
+    } catch (error) {
+      const pending =
+        error instanceof Error &&
+        ["COORDINATOR_NOT_AVAILABLE", "COORDINATOR_LOAD_IN_PROGRESS", "NOT_COORDINATOR"].some(
+          (code) => findErrorBy(error, "apiId", code) !== null,
+        );
+      if (!pending || Date.now() >= deadline)
+        throw new KafkaAuthorizationFixtureFailure(
+          "AIO Kafka consumer-group fixture seeding failed.",
+        );
+      await delay(100);
+    }
+  }
 }
 
 /** An isolated Linux-only real broker; never changes the developer's running Kafka. */
 export async function startAuthorizationFixture(
   runtime: AuthorizationFixtureRuntime = {
-    docker: (arguments_, timeout) => execute("docker", [...arguments_], { timeout }),
+    docker: dockerCommand,
     createAdmin: (options) => new Admin(options),
     pause: () => delay(1_000),
   },
@@ -55,17 +69,11 @@ export async function startAuthorizationFixture(
 }> {
   if (process.platform !== "linux")
     throw new Error("The local Kafka authorization fixture requires Linux Docker host networking.");
-  const [clientPort, adminPort, controllerPort] = await Promise.all([
-    availablePort(),
-    availablePort(),
-    availablePort(),
-  ]);
+  const [clientPort, adminPort, controllerPort] = await loopbackPorts(3);
   const name = `streamskope-acl-qualification-${randomUUID()}`;
   const password = randomBytes(24).toString("hex");
-  const topology = await readFile("aio-kafka/topology.clab.yml", "utf8");
-  const image = /image:\s*(apache\/kafka:[^\s]+)/u.exec(topology)?.[1];
-  if (image === undefined || !image.includes("@sha256:"))
-    throw new Error("The Kafka fixture image must be pinned.");
+  const { image } = await kafkaPin();
+  const owner = new FixtureContainerOwner(runtime.docker);
   const environment: Record<string, string> = {
     CLUSTER_ID: randomBytes(16).toString("base64url"),
     KAFKA_PROCESS_ROLES: "broker,controller",
@@ -100,7 +108,6 @@ export async function startAuthorizationFixture(
     connectTimeout: 1_000,
     requestTimeout: 2_000,
   });
-  let creationStarted = false;
   const dispose = async (): Promise<void> => {
     const failures: string[] = [];
     try {
@@ -108,12 +115,12 @@ export async function startAuthorizationFixture(
     } catch {
       failures.push("admin close");
     }
-    if (creationStarted) {
-      try {
-        await runtime.docker(["rm", "--force", name], 30_000);
-      } catch (error) {
-        failures.push(`container removal: ${containerCommandFailureReason(error)}`);
-      }
+    try {
+      await owner.dispose();
+    } catch (error) {
+      failures.push(
+        `container removal: ${error instanceof FixtureCleanupError ? error.reason : containerCommandFailureReason(error)}`,
+      );
     }
     if (failures.length > 0)
       throw new KafkaAuthorizationFixtureFailure(
@@ -122,23 +129,19 @@ export async function startAuthorizationFixture(
   };
   let phase = "pinned image availability";
   try {
-    await ensureContainerImage(image, undefined, runtime.docker);
+    await owner.prepare(image);
     phase = "owned container creation";
-    creationStarted = true;
-    await runtime.docker(
-      [
-        "run",
-        "--detach",
-        "--rm",
-        "--name",
-        name,
-        "--network",
-        "host",
-        ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
-        image,
-      ],
-      30_000,
-    );
+    const id = await owner.create(name, [
+      "--network",
+      "host",
+      "--memory",
+      "768m",
+      "--cpus",
+      "2",
+      ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+      image,
+    ]);
+    await owner.start(id);
     phase = "broker readiness";
     let ready = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {

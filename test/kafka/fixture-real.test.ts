@@ -7,12 +7,12 @@ import { resolve } from "node:path";
 import { Admin, Consumer, type BaseOptions, type MessagesStream } from "@platformatic/kafka";
 import { describe, expect, it } from "vitest";
 
-import type { FixtureConnection } from "../support/kafka-fixture";
+import type { FixtureConnection } from "../../aio-kafka/fixtures/development";
 import {
   fetchFixtureToken,
   loadFixtureConfig,
   loadFixtureConnection,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");

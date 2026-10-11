@@ -13,7 +13,7 @@ import {
   loadFixtureConnection,
   type FixtureConfig,
   type FixtureConnection,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 async function connectionInput(
   fixture: FixtureConnection,

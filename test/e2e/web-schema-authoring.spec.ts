@@ -11,8 +11,8 @@ import { build } from "vite";
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
-import { fixtureClientOptions } from "../support/kafka-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { fixtureClientOptions } from "../../aio-kafka/fixtures/development";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { startStructuredBrowserFixture } from "../support/structured-browser-fixture";
 import { connectLocalProfile } from "../support/web-profile-workflow";
 import { openWorkbenchResource } from "../support/workbench-browser";
@@ -168,7 +168,7 @@ test("authors an edited record through the production browser and publishes only
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => page.close(),
         (): Promise<void> => gateway?.close() ?? Promise.resolve(),
         (): Promise<void> => stream?.close() ?? Promise.resolve(),

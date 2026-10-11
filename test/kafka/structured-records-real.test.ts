@@ -18,12 +18,12 @@ import {
   createKafkaMessageExportDocument,
   initialKafkaMessageFilters,
 } from "../../src/features/kafka/ui/message-operations";
-import { startNativeKafkaFixture } from "../support/native-kafka-fixture";
-import { fetchFixtureToken, loadFixtureConfig } from "../support/kafka-fixture";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { fetchFixtureToken, loadFixtureConfig } from "../../aio-kafka/fixtures/development";
 import { createSchemaRegistryProtocolFixture } from "../support/schema-registry-protocol-fixture";
 
 it("prepares mixed real Kafka records once for protected search, trace and export using their own writer IDs", async () => {
-  const fixture = await startNativeKafkaFixture();
+  const fixture = await startKafkaFixture();
   try {
     await qualifyRecords(fixture);
   } finally {
@@ -32,7 +32,7 @@ it("prepares mixed real Kafka records once for protected search, trace and expor
 }, 180_000);
 
 async function qualifyRecords(
-  fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>>,
+  fixture: Awaited<ReturnType<typeof startKafkaFixture>>,
 ): Promise<void> {
   const config = await loadFixtureConfig();
   const connection = {

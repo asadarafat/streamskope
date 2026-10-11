@@ -16,7 +16,10 @@ import {
   connectElectronToFixture,
   launchProfileApplication,
 } from "../support/electron-application";
-import { loadFixtureConnection, provisionSeededFixtureTopic } from "../support/kafka-fixture";
+import {
+  loadFixtureConnection,
+  provisionSeededFixtureTopic,
+} from "../../aio-kafka/fixtures/development";
 import { fetchTopicMessages, openTopicTask } from "../support/workbench-browser";
 
 const repositoryRoot = process.cwd();

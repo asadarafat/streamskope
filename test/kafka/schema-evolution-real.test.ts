@@ -11,15 +11,13 @@ import {
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
-import {
-  startNativeKafkaFixture,
-  disposeNativeFixtureResources,
-} from "../support/native-kafka-fixture";
-import { startSchemaRegistryServerFixture } from "../support/schema-registry-server-fixture";
-import { loadFixtureConfig } from "../support/kafka-fixture";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
+import { startSchemaRegistryServerFixture } from "../../aio-kafka/fixtures/registry";
+import { loadFixtureConfig } from "../../aio-kafka/fixtures/development";
 
 it("reviews real Registry evolution, refuses stale policy, registers once and verifies transitive compatibility", async () => {
-  const fixture = await startNativeKafkaFixture();
+  const fixture = await startKafkaFixture();
   let registry: Awaited<ReturnType<typeof startSchemaRegistryServerFixture>> | undefined;
   const backend = createKafkaBackend(),
     http = new NodeBoundedJsonHttp(),
@@ -219,7 +217,7 @@ it("reviews real Registry evolution, refuses stale policy, registers once and ve
     failures.push(error);
   }
   try {
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => backend.shutdown(),
       async (): Promise<void> => {
         if (registry)

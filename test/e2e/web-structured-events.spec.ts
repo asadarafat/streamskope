@@ -11,9 +11,9 @@ import { parseHostEvent, type HostEvent } from "../../src/features/kafka/contrac
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
 import { startStructuredBrowserFixture } from "../support/structured-browser-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { connectLocalProfile } from "../support/web-profile-workflow";
-import { fixtureClientOptions } from "../support/kafka-fixture";
+import { fixtureClientOptions } from "../../aio-kafka/fixtures/development";
 import {
   fetchTopicMessages,
   observeBrowserDiagnostics,
@@ -170,7 +170,7 @@ test("decodes, compares, traces and previews a schema sample in the real browser
         body: JSON.stringify(diagnostics.problems),
         contentType: "application/json",
       });
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => launch?.close() ?? backend.shutdown(),
       (): Promise<void> => fixture.dispose(),
     ]);
@@ -333,7 +333,7 @@ test("continues a protected finite read into replacement pages with fixed ranges
         body: JSON.stringify(diagnostics.problems),
         contentType: "application/json",
       });
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => launch?.close() ?? backend.shutdown(),
       (): Promise<void> => producer?.close() ?? Promise.resolve(),
       (): Promise<void> => fixture.dispose(),

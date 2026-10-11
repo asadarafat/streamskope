@@ -1,220 +1,102 @@
-import { spawn, execFile, type ChildProcess } from "node:child_process";
-import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
   type ServerResponse,
   type Server,
 } from "node:http";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve, win32 } from "node:path";
-import { Readable } from "node:stream";
-import { finished, pipeline } from "node:stream/promises";
-import type { ReadableStream } from "node:stream/web";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 
 import { Admin } from "@platformatic/kafka";
 
-import { loadFixtureConfig } from "./kafka-fixture";
-import { NativeKafkaFixtureError, type NativeFixturePhase } from "./native-fixture-error";
+import { loadFixtureConfig } from "./development";
+import { KafkaFixtureError, type KafkaFixturePhase } from "./error";
 import {
   createKafkaAuthenticationMaterials,
   type KafkaAuthenticationFixture,
-} from "./kafka-authentication-materials";
+} from "./authentication";
+import { createContainerBrokerRuntime } from "./container-runtime";
+import { createNativeBrokerRuntime } from "./native-runtime";
+import { disposeFixtureResources } from "./resources";
+import type { BrokerRuntime } from "./runtime";
+import { loopbackPorts } from "./loopback";
 
-const run = promisify(execFile);
-const KAFKA_VERSION = "4.3.1";
-const ARCHIVE = `kafka_2.13-${KAFKA_VERSION}.tgz`;
-// Apache release checksum: https://downloads.apache.org/kafka/4.3.1/kafka_2.13-4.3.1.tgz.sha512
-const ARCHIVE_SHA512 =
-  "c7d7b2318cb51aa0c61d3246a51c349210073c5c9b754947ef965a439f2f939e8600f204e134a75ac31faf3829c9370960ef7c6a9886c8a1dbf0339a21f4c54c";
-
-async function digest(path: string): Promise<string> {
-  const hash = createHash("sha512");
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-  return hash.digest("hex");
-}
-
-export async function fetchNativeKafkaArchive(fetchArchive = fetch): Promise<Response> {
-  // Prefer the active mirror, retaining old pins after archival. The caller still
-  // verifies downloaded and cached bytes against the original release checksum.
-  let failure: unknown = new Error("Unable to download the pinned Kafka fixture.");
-  for (const origin of ["https://downloads.apache.org", "https://archive.apache.org/dist"]) {
-    try {
-      const response = await fetchArchive(`${origin}/kafka/${KAFKA_VERSION}/${ARCHIVE}`, {
-        signal: AbortSignal.timeout(180_000),
-      });
-      if (response.ok && response.body !== null) return response;
-      await response.body?.cancel();
-      failure = new Error("Unable to download the pinned Kafka fixture.");
-    } catch (error) {
-      failure = error;
-    }
-  }
-  throw failure;
-}
-
-export function nativeArchiveExtractor(
-  platform = process.platform,
-  systemRoot = process.env.SystemRoot,
-): string {
-  if (platform !== "win32") return "tar";
-  if (systemRoot === undefined || !win32.isAbsolute(systemRoot))
-    throw new Error("Windows native fixture requires an absolute SystemRoot.");
-  // The PATH can contain Git/MSYS GNU tar, which treats native drive-letter
-  // archive arguments as remote paths. Windows ships a native bsdtar binary.
-  return win32.join(systemRoot, "System32", "tar.exe");
-}
-
-async function kafkaDistribution(): Promise<string> {
-  const cache = resolve(".cache/native-kafka");
-  await mkdir(cache, { recursive: true });
-  const archive = join(cache, ARCHIVE);
-  if (!(await stat(archive).catch(() => undefined))) {
-    const response = await fetchNativeKafkaArchive();
-    const temporary = `${archive}.${process.pid}.partial`;
-    try {
-      await pipeline(
-        Readable.fromWeb(response.body as ReadableStream<Uint8Array>),
-        createWriteStream(temporary, { flags: "wx" }),
-      );
-      if ((await digest(temporary)) !== ARCHIVE_SHA512)
-        throw new Error("Kafka fixture checksum mismatch.");
-      await rename(temporary, archive);
-    } finally {
-      await rm(temporary, { force: true });
-    }
-  }
-  if ((await digest(archive)) !== ARCHIVE_SHA512)
-    throw new Error("Cached Kafka fixture checksum mismatch.");
-  // Extract into a new owned directory; do not trust a previously extracted executable tree.
-  const extracted = await mkdtemp(join(cache, "distribution-"));
-  try {
-    await run(nativeArchiveExtractor(), ["-xzf", archive, "-C", extracted], { timeout: 60_000 });
-    return extracted;
-  } catch (error) {
-    let cleanup: "passed" | "failed" = "passed";
-    try {
-      await rm(extracted, { recursive: true, force: true });
-    } catch {
-      cleanup = "failed";
-    }
-    throw new NativeKafkaFixtureError("extract Kafka distribution", error, "", cleanup);
-  }
-}
-
-async function availablePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
-  );
-  if (!address || typeof address === "string") throw new Error("Fixture port allocation failed.");
-  return address.port;
-}
-
-async function stop(child: ChildProcess | undefined): Promise<void> {
-  if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null)
-    return;
-  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
-  child.kill("SIGTERM");
-  await Promise.race([exited, delay(10_000, undefined, { ref: false })]);
-  if (child.exitCode === null && child.signalCode === null) {
-    child.kill("SIGKILL");
-    await exited;
-  }
-}
-
-export async function disposeNativeFixtureResources(
-  actions: readonly (() => Promise<unknown>)[],
-): Promise<void> {
-  const failures: unknown[] = [];
-  for (const action of actions) {
-    try {
-      await action();
-    } catch (error) {
-      failures.push(error);
-    }
-  }
-  if (failures.length > 0) throw new AggregateError(failures, "Native fixture cleanup failed.");
-}
-
-/** A real JVM broker for native OS qualification, with no Docker or local-lab dependency. */
-export async function startNativeKafkaFixture(
-  runtime = {
-    distribution: kafkaDistribution,
-    directory: () => mkdtemp(join(tmpdir(), "streamskope-native-kafka-")),
-    configuration: loadFixtureConfig,
-  },
-  options: { readonly authenticationMatrix?: boolean } = {},
+/** Shared TLS/OAuth configuration; Docker by default, native only when explicitly selected. */
+export async function startKafkaFixture(
+  suppliedRuntime:
+    | {
+        prepare(): Promise<BrokerRuntime>;
+        directory(): Promise<string>;
+        configuration: typeof loadFixtureConfig;
+      }
+    | undefined = undefined,
+  options: {
+    readonly authenticationMatrix?: boolean;
+    readonly backend?: "container" | "native";
+  } = {},
 ): Promise<{
   readonly authentication?: KafkaAuthenticationFixture;
   readonly environment: Record<string, string>;
   readonly internalBroker: string;
-  readonly metadata: { kafkaVersion: string; archiveSha512: string; transport: string };
+  readonly metadata: BrokerRuntime["metadata"] & { readonly transport: string };
   dispose(): Promise<void>;
 }> {
-  let extracted: string;
+  const runtime = suppliedRuntime ?? {
+    prepare:
+      options.backend === "native" ? createNativeBrokerRuntime : createContainerBrokerRuntime,
+    directory: (): Promise<string> => mkdtemp(join(tmpdir(), "streamskope-aio-kafka-")),
+    configuration: loadFixtureConfig,
+  };
+  let driver: BrokerRuntime;
   try {
-    extracted = await runtime.distribution();
+    driver = await runtime.prepare();
   } catch (error) {
-    if (error instanceof NativeKafkaFixtureError) throw error;
-    throw new NativeKafkaFixtureError("prepare Kafka distribution", error);
+    if (error instanceof KafkaFixtureError) throw error;
+    throw new KafkaFixtureError("prepare broker runtime", error);
   }
   let directory: string | undefined;
   let oauth: Server | undefined;
-  let broker: ChildProcess | undefined;
   let admin: Admin | undefined;
-  let log: WriteStream | undefined;
-  let logFailure: Error | undefined;
   let disposed = false;
-  let phase: NativeFixturePhase = "initialize fixture";
+  let brokerRemoved = false;
+  let phase: KafkaFixturePhase = "initialize fixture";
   const dispose = async (): Promise<void> => {
     if (disposed) return;
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => admin?.close() ?? Promise.resolve(),
-      (): Promise<void> => stop(broker),
+      async (): Promise<void> => {
+        await driver.dispose();
+        brokerRemoved = true;
+      },
       (): Promise<void> => {
         const server = oauth;
         if (server === undefined) return Promise.resolve();
         server.closeAllConnections();
         return new Promise<void>((resolve) => server.close(() => resolve()));
       },
-      (): Promise<void> => {
-        const stream = log;
-        if (stream === undefined) return Promise.resolve();
-        stream.end();
-        return finished(stream);
+      async (): Promise<void> => {
+        if (!brokerRemoved)
+          throw new Error("AIO Kafka broker removal is unconfirmed; retain its directory.");
+        if (directory !== undefined)
+          await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
       },
-      (): Promise<void> =>
-        directory === undefined
-          ? Promise.resolve()
-          : rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }),
-      (): Promise<void> =>
-        rm(extracted, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }),
     ]);
     disposed = true;
   };
   try {
-    const distribution = join(extracted, `kafka_2.13-${KAFKA_VERSION}`);
     directory = await runtime.directory();
     const config = await runtime.configuration();
     const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const jwk = {
       ...publicKey.export({ format: "jwk" }),
-      kid: "native-fixture",
+      kid: "aio-fixture",
       alg: "RS256",
       use: "sig",
     };
-    const issuer = "streamskope-native-fixture";
+    const issuer = "streamskope-aio-fixture";
     const handleOAuth = async (
       request: IncomingMessage,
       response: ServerResponse,
@@ -252,7 +134,7 @@ export async function startNativeKafkaFixture(
       const unsigned = `${encode({ alg: "RS256", typ: "JWT", kid: jwk.kid })}.${encode({
         sub: config.oauthClientId,
         iss: issuer,
-        aud: "streamskope-native",
+        aud: "streamskope-aio",
         scope: config.oauthScope,
         iat: now,
         exp: now + 600,
@@ -262,10 +144,6 @@ export async function startNativeKafkaFixture(
     };
     oauth = createHttpServer((request, response) => {
       void handleOAuth(request, response).catch(() => response.destroy());
-    });
-    log = createWriteStream(join(directory, "broker.log"), { mode: 0o600 });
-    log.on("error", (error: Error) => {
-      logFailure = error;
     });
     phase = "initialize OAuth";
     const oauthServer = oauth;
@@ -277,8 +155,7 @@ export async function startNativeKafkaFixture(
     if (!address || typeof address === "string")
       throw new Error("OAuth fixture port allocation failed.");
     const oauthRoot = `http://127.0.0.1:${address.port}`;
-    const ports = new Set<number>();
-    while (ports.size < (options.authenticationMatrix ? 6 : 3)) ports.add(await availablePort());
+    const ports = await loopbackPorts(options.authenticationMatrix ? 6 : 3);
     const [
       clientPort,
       internalPort,
@@ -286,12 +163,12 @@ export async function startNativeKafkaFixture(
       mutualTlsPort,
       mutualSaslPort,
       saslPlaintextPort,
-    ] = [...ports];
+    ] = ports;
     const ca = join(directory, "ca.pem");
     const keystore = join(directory, "server.p12");
     const password = randomBytes(24).toString("hex");
     phase = "generate fixture TLS key";
-    await run(
+    await driver.tool(
       "keytool",
       [
         "-genkeypair",
@@ -315,9 +192,9 @@ export async function startNativeKafkaFixture(
         password,
         "-noprompt",
       ],
-      { timeout: 30_000 },
+      { cwd: directory, timeout: 30_000 },
     );
-    await run(
+    await driver.tool(
       "keytool",
       [
         "-exportcert",
@@ -331,7 +208,7 @@ export async function startNativeKafkaFixture(
         "-file",
         ca,
       ],
-      { timeout: 30_000 },
+      { cwd: directory, timeout: 30_000 },
     );
     const pathValue = (value: string): string => value.replaceAll("\\", "/");
     const properties = {
@@ -366,7 +243,7 @@ export async function startNativeKafkaFixture(
         "org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallbackHandler",
       "sasl.oauthbearer.jwks.endpoint.url": `${oauthRoot}/.well-known/jwks.json`,
       "sasl.oauthbearer.expected.issuer": issuer,
-      "sasl.oauthbearer.expected.audience": "streamskope-native",
+      "sasl.oauthbearer.expected.audience": "streamskope-aio",
     };
     const authentication = options.authenticationMatrix
       ? await createKafkaAuthenticationMaterials({
@@ -376,6 +253,8 @@ export async function startNativeKafkaFixture(
           mutualSaslPort: mutualSaslPort!,
           saslPlaintextPort: saslPlaintextPort!,
           brokerCaPath: ca,
+          execute: (command, args) =>
+            driver.tool(command, args, { cwd: directory!, timeout: 30_000 }),
         })
       : undefined;
     if (authentication !== undefined) {
@@ -393,41 +272,12 @@ export async function startNativeKafkaFixture(
         .join("\n") + "\n",
       { mode: 0o600 },
     );
-    const java = [
-      "-Xms128m",
-      "-Xmx384m",
-      `-Dkafka.logs.dir=${join(directory, "logs")}`,
-      `-Dlog4j2.configurationFile=${join(distribution, "config/log4j2.yaml")}`,
-      `-Dorg.apache.kafka.sasl.oauthbearer.allowed.urls=${oauthRoot}/.well-known/jwks.json`,
-      "-cp",
-      join(distribution, "libs/*"),
-    ];
-    phase = "format broker storage";
-    await run(
-      "java",
-      [
-        ...java,
-        "kafka.tools.StorageTool",
-        "format",
-        "--standalone",
-        // Base64url IDs may start with "-"; bind the value so it is never parsed as another flag.
-        `--cluster-id=${randomBytes(16).toString("base64url")}`,
-        "--config",
-        settings,
-        ...(authentication?.storageArguments ?? []),
-      ],
-      { cwd: directory, timeout: 30_000 },
-    );
     phase = "start broker";
-    broker = spawn("java", [...java, "kafka.Kafka", settings], {
-      cwd: directory,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    broker.stdout?.pipe(log, { end: false });
-    broker.stderr?.pipe(log, { end: false });
-    let spawnError = false;
-    broker.once("error", () => {
-      spawnError = true;
+    await driver.start({
+      directory,
+      oauthRoot,
+      clusterId: randomBytes(16).toString("base64url"),
+      storageArguments: authentication?.storageArguments ?? [],
     });
     const token = (await fetch(`${oauthRoot}/rest-gateway/rest/api/v1/auth/token`, {
       method: "POST",
@@ -439,7 +289,7 @@ export async function startNativeKafkaFixture(
     }).then((response) => response.json())) as { access_token: string };
     admin = new Admin({
       bootstrapBrokers: [`127.0.0.1:${clientPort}`],
-      clientId: "native-recovery-fixture",
+      clientId: "aio-kafka-readiness",
       tls: { ca: await readFile(ca), rejectUnauthorized: true },
       sasl: { mechanism: "OAUTHBEARER", token: token.access_token },
       retries: 0,
@@ -449,8 +299,7 @@ export async function startNativeKafkaFixture(
     phase = "authenticate with TLS and OAuth";
     let ready = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
-      if (logFailure !== undefined) throw logFailure;
-      if (spawnError || broker.exitCode !== null || broker.signalCode !== null) break;
+      if (await driver.exited()) break;
       try {
         await admin.listTopics();
         ready = true;
@@ -459,7 +308,7 @@ export async function startNativeKafkaFixture(
         await delay(1000);
       }
     }
-    if (!ready) throw new Error("Native Kafka fixture did not become ready.");
+    if (!ready) throw new Error("AIO Kafka fixture did not become ready.");
     return {
       ...(authentication === undefined ? {} : { authentication: authentication.fixture }),
       internalBroker: `127.0.0.1:${internalPort}`,
@@ -469,8 +318,7 @@ export async function startNativeKafkaFixture(
         STREAMSKOPE_TEST_CA_PATH: ca,
       },
       metadata: {
-        kafkaVersion: KAFKA_VERSION,
-        archiveSha512: ARCHIVE_SHA512,
+        ...driver.metadata,
         transport: options.authenticationMatrix
           ? "TLS, mTLS and explicit plaintext / PLAIN, SCRAM and RS256 OAUTHBEARER; loopback only"
           : "TLS / RS256 OAUTHBEARER; loopback only",
@@ -486,17 +334,13 @@ export async function startNativeKafkaFixture(
       typeof error.stderr === "string"
         ? error.stderr
         : "";
-    const logs =
-      formatStderr +
-      (directory === undefined
-        ? ""
-        : await readFile(join(directory, "broker.log"), "utf8").catch(() => ""));
+    const logs = formatStderr + (await driver.logs());
     let cleanup: "passed" | "failed" = "passed";
     try {
       await dispose();
     } catch {
       cleanup = "failed";
     }
-    throw new NativeKafkaFixtureError(phase, error, logs, cleanup);
+    throw new KafkaFixtureError(phase, error, logs, cleanup);
   }
 }

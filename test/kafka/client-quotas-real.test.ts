@@ -26,8 +26,8 @@ import {
   type ClientQuotaInput,
   type ClientQuotaReview,
 } from "../../src/features/kafka/contracts/client-quotas";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 
 it("reviews exact real named/default/combined quotas without writes, refuses zero and preserves removal and untouched keys, and refuses read-only, stale and broker-denied changes", async () => {
   const fixture = await startAuthorizationFixture(),
@@ -298,7 +298,7 @@ it("reviews exact real named/default/combined quotas without writes, refuses zer
     failures.push(error);
   } finally {
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => backend.shutdown(),
         (): Promise<void> => fixture.dispose(),
       ]);

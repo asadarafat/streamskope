@@ -9,13 +9,13 @@ import { build } from "vite";
 import { Producer } from "@platformatic/kafka";
 
 import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
-import { startConnectFixture } from "../support/connect-fixture";
+import { startConnectFixture } from "../../aio-kafka/fixtures/connect";
 import { qualifyConnectDlqBrowser } from "../support/connect-dlq-browser-scenario";
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway, type WebGatewayRuntime } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import {
   observeBrowserDiagnostics,
   expectNoHorizontalOverflow,
@@ -324,7 +324,7 @@ test("keyboard-operable Connect set/remove review preserves secrets and keeps on
       contentType: "application/json",
     });
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => page.close(),
         (): Promise<void> => gateway?.close() ?? Promise.resolve(),
         (): Promise<void> => worker?.dispose() ?? Promise.resolve(),

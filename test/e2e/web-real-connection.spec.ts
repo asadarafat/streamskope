@@ -21,7 +21,7 @@ import {
   loadFixtureConnection,
   provisionSeededFixtureTopic,
   type SeededFixtureTopic,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 import {
   assertPersistentWorkbenchBars,
   collapseActivity,

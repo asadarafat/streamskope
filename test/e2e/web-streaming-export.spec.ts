@@ -10,9 +10,9 @@ import { build } from "vite";
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
-import { fixtureClientOptions } from "../support/kafka-fixture";
+import { fixtureClientOptions } from "../../aio-kafka/fixtures/development";
 import { startStructuredBrowserFixture } from "../support/structured-browser-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { connectLocalProfile } from "../support/web-profile-workflow";
 import { openTopicDetail } from "../support/workbench-browser";
 
@@ -243,7 +243,7 @@ test("streams a real range beyond grid capacity through the production vault gat
     });
   } finally {
     await page.close();
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => gateway?.close() ?? Promise.resolve(),
       (): Promise<void> => producer?.close(true) ?? Promise.resolve(),
       (): Promise<void> => fixture?.dispose() ?? Promise.resolve(),

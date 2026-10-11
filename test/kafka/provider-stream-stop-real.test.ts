@@ -12,7 +12,7 @@ import {
 } from "../../src/features/kafka/contracts";
 import { startDevelopmentHost, type RunningDevelopmentHost } from "../../src/platform/dev-host";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 import { readKafkaEventsUntil } from "../support/kafka-sse-events";
 
 it("stops a real Kafka reader after the final HTTP client leaves and retains the usable connection", async () => {

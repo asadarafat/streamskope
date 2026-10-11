@@ -29,7 +29,7 @@ import {
   loadFixtureConfig,
   loadFixtureConnection,
   provisionSeededFixtureTopic,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 import {
   collapseActivity,
   expectRawLogEvidence,

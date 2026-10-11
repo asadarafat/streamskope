@@ -9,7 +9,10 @@ import {
   type SecureConnectionInput,
 } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { loadFixtureConnection, provisionSeededFixtureTopic } from "../support/kafka-fixture";
+import {
+  loadFixtureConnection,
+  provisionSeededFixtureTopic,
+} from "../../aio-kafka/fixtures/development";
 
 describe("real Kafka stream monitoring", () => {
   it("reports strict aggregate publication evidence for a bounded aio-kafka fetch", async () => {

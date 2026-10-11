@@ -1,6 +1,10 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { loadFixtureConfig, loadFixtureConnection, type FixtureConnection } from "./kafka-fixture";
+import {
+  loadFixtureConfig,
+  loadFixtureConnection,
+  type FixtureConnection,
+} from "../../aio-kafka/fixtures/development";
 
 export async function openRetrievalLibrary(editor: Locator): Promise<void> {
   await editor

@@ -1,16 +1,15 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from "node:fs/promises";
-import { createServer } from "node:net";
+import { mkdtemp, mkdir, writeFile, chmod, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 
 import type { KafkaClusterServiceContext } from "../../src/features/kafka/application/types";
 import { OwnedKafkaResources } from "../../src/features/kafka/engine/owned-kafka-resources";
 
-const execute = promisify(execFile);
+import { loopbackPorts } from "./loopback";
+import { FixtureContainerOwner } from "./container-owner";
+import { kafkaPin } from "./pins";
 export async function startConnectFixture(broker: string): Promise<{
   readonly url: string;
   readonly context: KafkaClusterServiceContext;
@@ -22,17 +21,10 @@ export async function startConnectFixture(broker: string): Promise<{
   const sourceData = join(directory, "source-data");
   await mkdir(sourceData, { mode: 0o777 });
   await chmod(sourceData, 0o777);
-  const reservation = createServer();
-  await new Promise<void>((r) => reservation.listen(0, "127.0.0.1", r));
-  const address = reservation.address();
-  if (!address || typeof address === "string") throw new Error("Port unavailable.");
-  const port = address.port;
-  await new Promise<void>((r) => reservation.close(() => r()));
+  const [port] = await loopbackPorts(1);
   const name = `streamskope-connect-${randomUUID()}`;
-  const image = /image:\s*(apache\/kafka:[^\s]+)/u.exec(
-    await readFile("aio-kafka/topology.clab.yml", "utf8"),
-  )?.[1];
-  if (!image?.includes("@sha256:")) throw new Error("Unpinned fixture image.");
+  const { image, version } = await kafkaPin();
+  const containers = new FixtureContainerOwner();
   const config = [
     `bootstrap.servers=${broker}`,
     `listeners=http://127.0.0.1:${port}`,
@@ -49,7 +41,7 @@ export async function startConnectFixture(broker: string): Promise<{
     `status.storage.partitions=1`,
     `key.converter=org.apache.kafka.connect.storage.StringConverter`,
     `value.converter=org.apache.kafka.connect.storage.StringConverter`,
-    `plugin.path=/opt/kafka/libs/connect-file-4.3.1.jar`,
+    `plugin.path=/opt/kafka/libs/connect-file-${version}.jar`,
     `offset.flush.interval.ms=1000`,
   ].join("\n");
   await writeFile(join(directory, "worker.properties"), config, { mode: 0o644 });
@@ -71,7 +63,7 @@ export async function startConnectFixture(broker: string): Promise<{
       failures.push(error);
     }
     try {
-      await execute("docker", ["rm", "--force", name], { timeout: 30000 });
+      await containers.dispose();
     } catch (error) {
       failures.push(error);
     }
@@ -83,33 +75,26 @@ export async function startConnectFixture(broker: string): Promise<{
     if (failures.length) throw new AggregateError(failures, "Connect fixture cleanup failed.");
   };
   try {
-    await execute(
-      "docker",
-      [
-        "run",
-        "--detach",
-        "--rm",
-        "--name",
-        name,
-        "--network",
-        "host",
-        "--memory",
-        "512m",
-        "--cpus",
-        "1",
-        "--env",
-        "KAFKA_HEAP_OPTS=-Xms128m -Xmx256m",
-        "--mount",
-        `type=bind,source=${directory},target=/fixture,readonly`,
-        "--mount",
-        `type=bind,source=${sourceData},target=/source-data`,
-        "--entrypoint",
-        "/opt/kafka/bin/connect-distributed.sh",
-        image,
-        "/fixture/worker.properties",
-      ],
-      { timeout: 30000 },
-    );
+    await containers.prepare(image);
+    const id = await containers.create(name, [
+      "--network",
+      "host",
+      "--memory",
+      "512m",
+      "--cpus",
+      "1",
+      "--env",
+      "KAFKA_HEAP_OPTS=-Xms128m -Xmx256m",
+      "--mount",
+      `type=bind,source=${directory},target=/fixture,readonly`,
+      "--mount",
+      `type=bind,source=${sourceData},target=/source-data`,
+      "--entrypoint",
+      "/opt/kafka/bin/connect-distributed.sh",
+      image,
+      "/fixture/worker.properties",
+    ]);
+    await containers.start(id);
     for (let n = 0; n < 90; n++) {
       try {
         const response = await fetch(`${url}/connectors`, { signal: AbortSignal.timeout(1000) });
