@@ -744,6 +744,9 @@ export function StreamSkopeWorkbench({
         backendAvailable={state.backend === "ready"}
         connected={connected}
         connectionName={state.connectionName}
+        metricsEndpoint={
+          state.profiles.find((profile) => profile.active)?.services?.metrics?.baseUrl
+        }
         initialTopic={selectedTopic ?? ""}
         initialGroupId={selectedConsumerGroupId ?? ""}
         topics={state.topics}

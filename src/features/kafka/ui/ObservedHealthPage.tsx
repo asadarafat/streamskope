@@ -17,6 +17,7 @@ import { type KafkaConsumerGroupInventorySnapshot, type StreamSkopeHost } from "
 import { analyzeObservations } from "../contracts/observation-analysis";
 import { observationIdentity, type ObservationInput } from "../contracts/observations";
 
+import { ExternalMetricsPanel } from "./ExternalMetricsPanel";
 import { ObservationAnalysisPanel } from "./ObservationAnalysisPanel";
 import { ObservationControls } from "./ObservationControls";
 import { ObservationFindings, type ObservationNavigation } from "./ObservationFindings";
@@ -38,6 +39,7 @@ export interface ObservedHealthPageProperties extends ObservationNavigation {
   readonly backendAvailable?: boolean;
   readonly connected?: boolean;
   readonly connectionName?: string | null;
+  readonly metricsEndpoint?: string | undefined;
   readonly initialTopic?: string;
   readonly initialGroupId?: string;
   readonly topics?: readonly string[];
@@ -51,6 +53,7 @@ export function ObservedHealthPage({
   backendAvailable = true,
   connected = true,
   connectionName = null,
+  metricsEndpoint,
   initialTopic = "",
   initialGroupId = "",
   topics = [],
@@ -365,6 +368,11 @@ export function ObservedHealthPage({
           </AccordionDetails>
         </Accordion>
       )}
+      <ExternalMetricsPanel
+        host={host}
+        available={backendAvailable && connected}
+        endpoint={metricsEndpoint}
+      />
       <Accordion expanded={settingsOpen} onChange={(_event, expanded) => setSettingsOpen(expanded)}>
         <AccordionSummary
           expandIcon={<ExpandMoreIcon />}

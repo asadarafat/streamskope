@@ -6,6 +6,10 @@ import {
 } from "../contracts";
 import type { ObservationCommand } from "../contracts/observation-protocol";
 import { observationIdentity, observationLag } from "../contracts/observations";
+import {
+  ExternalMetricsService,
+  type ExternalMetricsPort,
+} from "../application/external-metrics-service";
 import { ObservationWatch } from "../application/observation-watch";
 import type { ObservationWatchSnapshot } from "../contracts/observation-watch";
 import type { ObservationCapture, ObservationInput } from "../contracts/observations";
@@ -17,14 +21,17 @@ import { ObservationOperationError } from "../application/observation-errors";
 import { failureResponse, translateFacadeFailure, type ActivityInput } from "./facade-support";
 export class ObservationFacade {
   private readonly service: ObservationService;
+  private readonly metrics: ExternalMetricsService;
   private readonly watch: ObservationWatch;
   private readonly alerts = new Map<string, string>();
   constructor(
-    session: Pick<KafkaApplicationSession, "observationScope">,
+    session: Pick<KafkaApplicationSession, "observationScope" | "metricsScope">,
     store: ObservationStore | undefined,
     private readonly activity: (input: ActivityInput) => void,
     events?: { readonly publish: (event: HostEvent) => void; readonly nextSequence: () => number },
+    metrics?: ExternalMetricsPort,
   ) {
+    this.metrics = new ExternalMetricsService(() => session.metricsScope(), metrics);
     this.service = new ObservationService(() => session.observationScope(), store);
     this.watch = new ObservationWatch(
       this.service,
@@ -42,14 +49,25 @@ export class ObservationFacade {
   }
   cancel(): void {
     this.watch.invalidate();
+    this.metrics.cancel();
   }
   idle(): Promise<void> {
-    return this.watch.idle();
+    return Promise.all([this.watch.idle(), this.metrics.idle()]).then(() => undefined);
   }
   async execute(command: ObservationCommand, correlationId: string): Promise<HostCommandResponse> {
     try {
       const base = { id: command.id, version: HOST_PROTOCOL_VERSION, ok: true as const };
       switch (command.command) {
+        case "observations.metrics.capture":
+          return {
+            ...base,
+            command: command.command,
+            result: { correlationId, snapshot: await this.metrics.capture(command.payload) },
+          };
+        case "observations.metrics.cancel":
+          this.metrics.cancel();
+          await this.metrics.idle();
+          return { ...base, command: command.command, result: { correlationId } };
         case "observations.watch.status":
           return {
             ...base,

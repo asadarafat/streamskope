@@ -3,6 +3,8 @@ import { ACL_REVIEW_COMMANDS } from "./acl-review-commands";
 export const HOST_COMMANDS = [
   "relationships.capture",
   "relationships.cancel",
+  "observations.metrics.capture",
+  "observations.metrics.cancel",
   "observations.capture",
   "observations.watch.start",
   "observations.watch.status",

@@ -283,6 +283,8 @@ Continuation uses frozen output bytes and writer evidence, without decoding or
 re-encoding source records. It retains prior uncertainty and original cleanup
 ownership. See [repair operation](../website/docs/guide/record-replay.md).
 
+Host protocol 76 adds explicit optional metrics capture/cancel with a closed two-gauge snapshot. The application metrics reader retains original service authority until HTTP settlement and refuses a successful cancellation acknowledgement while original cleanup is unresolved. Its read scope exposes no mutation dispatch. Metrics use the existing protected service credential/trust pipeline; profile envelope5/protected payload7 preserves format4 security and an exact private predecessor. Exporter identity remains unbound to Kafka identity, and external snapshots are neither persisted in observation history nor used for its findings.
+
 Host protocol 75 adds retained observation settings and coverage-aware five-minute summaries to the history response, preserving legacy format1 inspection and refusing older paired peers. Host-owned watch start/status/stop and revisioned watch events retain original connection authority. It includes positive broker/topic identity across page navigation. It also carries stopped connector offset inspection/review/application and separate Connect dispatch, acknowledgement, readback and original-request cleanup evidence to explicit configuration set/removal reviews and closed topic, consumer-group and client-quota administration reviews/outcomes alongside
 the structured transform/evidence contracts; older peers are refused. Protected journal format 3 accepts read-only legacy formats
 1/2, preserves the exact encrypted predecessor on the first explicit mutation,

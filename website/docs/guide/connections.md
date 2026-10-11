@@ -20,7 +20,7 @@ Kafka credentials unencrypted. Broker addresses must be reachable from
 the machine running the StreamSkope host. Review the [workflow permissions](security.md#kafka-access-and-effects)
 with your administrator before requesting access.
 
-Schema Registry and Connect can each use separate credentials, certificate trust
+Schema Registry, Connect and optional Prometheus metrics can each use separate credentials, certificate trust
 and a TLS client identity. Existing profiles continue to inherit broker trust unless
 you explicitly select another trust mode. The broker OAuth endpoint uses the broker
 trust settings. Follow [Configure certificate trust](tls-trust.md) for different issuing CAs.
@@ -43,8 +43,10 @@ trust settings. Follow [Configure certificate trust](tls-trust.md) for different
    the CA certificates used to verify the server; it can be combined with SASL.
 6. If needed, enter Schema Registry or Connect endpoints. Choose each service's
    authentication and certificate trust independently. See [Schema Registry](schema-registry.md)
-   and [Kafka Connect](kafka-connect.md).
-7. Click **Test connection**. Wait for the broker and configured service checks.
+   and [Kafka Connect](kafka-connect.md). For optional metrics, configure the
+   Prometheus endpoint and follow [Observed health](observed-health.md#read-optional-prometheus-metrics).
+7. Click **Test connection**. Wait for the broker and configured Schema Registry/Connect checks.
+   Prometheus is checked separately through **Read metrics** after connecting.
    If a stage fails, open **Raw logs** and correct that endpoint's settings.
 8. Click **Save profile**. Find the saved Kafka profile and select **Connect**.
 9. Wait for **Connected**, then open **Topics**.

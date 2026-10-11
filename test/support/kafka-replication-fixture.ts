@@ -26,7 +26,11 @@ async function availablePort(): Promise<number> {
 }
 
 /** Three disposable KRaft nodes: stopping one leaves a real controller quorum. */
-export async function startReplicationFixture(): Promise<{
+export async function startReplicationFixture(jmx?: {
+  readonly agent: string;
+  readonly configuration: string;
+}): Promise<{
+  readonly metricsInstances: readonly string[];
   readonly admin: Admin;
   readonly connection: SecureConnectionInput;
   stopBroker(id: number): Promise<void>;
@@ -45,6 +49,11 @@ export async function startReplicationFixture(): Promise<{
   const allocated = [...reserved];
   for (let node = 0; node < 3; node++)
     ports.push({ client: allocated[node * 2]!, controller: allocated[node * 2 + 1]! });
+  const jmxPorts: number[] = [];
+  if (jmx) {
+    while (reserved.size < 9) reserved.add(await availablePort());
+    jmxPorts.push(...[...reserved].slice(6));
+  }
   const prefix = `streamskope-replication-${randomUUID()}`;
   const names = ports.map((_, index) => `${prefix}-${index + 1}`);
   const clusterId = randomBytes(16).toString("base64url");
@@ -64,7 +73,7 @@ export async function startReplicationFixture(): Promise<{
     const results = await Promise.allSettled([
       admin.close(),
       ...[...created].map((name) =>
-        execute("docker", ["rm", "--force", name], { timeout: 30_000 }),
+        execute("docker", ["rm", "--force", "--volumes", name], { timeout: 30_000 }),
       ),
     ]);
     if (results.some((result) => result.status === "rejected"))
@@ -78,6 +87,11 @@ export async function startReplicationFixture(): Promise<{
   try {
     for (const [index, p] of ports.entries()) {
       const environment: Record<string, string> = {
+        ...(jmx
+          ? {
+              KAFKA_OPTS: `-javaagent:/opt/metrics/agent.jar=127.0.0.1:${jmxPorts[index]}:/opt/metrics/exporter.yml`,
+            }
+          : {}),
         CLUSTER_ID: clusterId,
         KAFKA_PROCESS_ROLES: "broker,controller",
         KAFKA_NODE_ID: String(index + 1),
@@ -114,6 +128,14 @@ export async function startReplicationFixture(): Promise<{
           "host",
           "--memory",
           "768m",
+          ...(jmx
+            ? [
+                "--volume",
+                `${jmx.agent}:/opt/metrics/agent.jar:ro`,
+                "--volume",
+                `${jmx.configuration}:/opt/metrics/exporter.yml:ro`,
+              ]
+            : []),
           ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
           image,
         ],
@@ -130,11 +152,20 @@ export async function startReplicationFixture(): Promise<{
             { timeout: 5_000 },
           );
           if (stdout.trim() !== "true") {
-            const logs = await execute("docker", ["logs", "--tail", "60", name], {
-              timeout: 5_000,
-            });
+            const [state, logs] = await Promise.all([
+              execute(
+                "docker",
+                ["inspect", "--format", "exit={{.State.ExitCode}} oom={{.State.OOMKilled}}", name],
+                { timeout: 5_000 },
+              ),
+              execute("docker", ["logs", "--tail", "200", name], { timeout: 5_000 }),
+            ]);
+            const lines = `${logs.stdout}${logs.stderr}`.split("\n");
+            const causes = lines
+              .filter((line) => /ERROR|FATAL|Exception|Caused by|OutOfMemory/u.test(line))
+              .slice(-30);
             throw new Error(
-              `An isolated replication node exited during startup. ${logs.stdout}${logs.stderr}`,
+              `An isolated replication node exited during startup (${state.stdout.trim()}).\n${causes.join("\n")}\n${lines.slice(-20).join("\n")}`,
             );
           }
         }
@@ -153,6 +184,7 @@ export async function startReplicationFixture(): Promise<{
     if (!ready) throw new Error("The three replication fixture brokers did not become ready.");
     return {
       admin,
+      metricsInstances: jmxPorts.map((port) => `127.0.0.1:${port}`),
       connection: {
         name: "Isolated replication fixture",
         brokers: ports.map((p) => `127.0.0.1:${p.client}`),

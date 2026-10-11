@@ -2,6 +2,7 @@ import {
   MemoryRepairJobStore,
   type RepairJobStore,
 } from "../../features/kafka/application/repair-journal";
+import { PrometheusMetricsAdapter } from "../../features/kafka/engine/prometheus-metrics";
 import { ConnectHttpAdapter } from "../../features/kafka/engine/connect-http";
 import {
   InMemoryKafkaTrustRecipeStore,
@@ -170,6 +171,7 @@ export function createKafkaBackend(options: KafkaBackendOptions = {}): NodeKafka
       sampleGenerator: structuredWorker,
       transforms: new RedpandaTransformHttpAdapter(serviceHttp),
       connect: new ConnectHttpAdapter(serviceHttp),
+      metrics: new PrometheusMetricsAdapter(serviceHttp),
       trustAcquisitions,
     },
   );

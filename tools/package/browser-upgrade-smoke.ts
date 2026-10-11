@@ -13,6 +13,7 @@ import {
 } from "./browser-installer";
 import type { BrowserInstallerTarget } from "./browser-installer-evidence";
 import { nativeTransitionChecks } from "./browser-transition-checks";
+import { seedNativeMetricsRecovery } from "./browser-metrics-recovery-fixture";
 import { seedNativeObservationRecovery } from "./browser-observation-recovery-fixture";
 import { run, replaceConstant } from "./browser-qualification-process";
 import {
@@ -201,6 +202,7 @@ export interface TransitionOptions {
   readonly installerSource: string;
   readonly environment?: NodeJS.ProcessEnv;
   readonly observationRecovery?: boolean;
+  readonly metricsRecovery?: boolean;
   readonly repairHistory?: boolean;
   readonly repairRecovery?: { readonly from: 1 | 2; readonly to: 2 | 3 };
 }
@@ -463,6 +465,9 @@ export async function verifyTransition(
         legacyRepairBytes,
       );
     }
+    const metricsRecovery = options.metricsRecovery
+      ? await seedNativeMetricsRecovery({ fixture, data, uid, gid })
+      : undefined;
     const observationRecovery = options.observationRecovery
       ? await seedNativeObservationRecovery({ fixture, data, uid, gid })
       : undefined;
@@ -498,6 +503,7 @@ export async function verifyTransition(
     await fixture.unlockAfterReplacement();
     verifyBrowserNativeWorkers(String(targetContainer.Id));
     await observationRecovery?.migrate(String(targetContainer.Id), predecessor, environment);
+    await metricsRecovery?.migrate(String(targetContainer.Id), predecessor, environment);
     let repairBytes: Buffer | undefined;
     if (options.repairRecovery) {
       stage = "repair-recovery-migration";
@@ -612,11 +618,13 @@ export async function verifyTransition(
     assert.notEqual(
       incompatible.code,
       0,
-      options.observationRecovery
-        ? "The exact old observation host must refuse the migrated store before stopping the installed owner."
-        : options.repairRecovery
-          ? `The exact old repair host must refuse format${String(options.repairRecovery.to)} before stopping the installed owner.`
-          : "An old target must not accept the migrated view library.",
+      options.metricsRecovery
+        ? "The exact old security host must refuse metrics format5 before stopping the installed owner."
+        : options.observationRecovery
+          ? "The exact old observation host must refuse the migrated store before stopping the installed owner."
+          : options.repairRecovery
+            ? `The exact old repair host must refuse format${String(options.repairRecovery.to)} before stopping the installed owner.`
+            : "An old target must not accept the migrated view library.",
     );
     assert.ok((incompatible.stdout + incompatible.stderr).includes("compatibility inspection"));
     assert.deepEqual(await inventory(data), changedTree);
@@ -656,6 +664,7 @@ export async function verifyTransition(
     assert.equal(restoredBackup.originalInstallerLockInodePreserved, true);
     assert.equal(restoredBackup.restoredDataSnapshotSha256, upgradeBackup.dataSnapshotSha256);
     await observationRecovery?.verifyRestore(join(state, "preserved-after-view-migration"));
+    await metricsRecovery?.verifyRestore(join(state, "preserved-after-view-migration"));
     if (repairBytes !== undefined) {
       assert.deepEqual(
         await readFile(
@@ -724,6 +733,7 @@ export async function verifyTransition(
       );
     }
     await observationRecovery?.verifyRollback();
+    await metricsRecovery?.verifyRollback();
     verifyBrowserNativeWorkers(String(restored.Id));
     await fixture.lock();
     const pinnedRecord = await readFile(join(state, "installation.json"));

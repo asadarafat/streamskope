@@ -75,6 +75,7 @@ export function retainedServiceEndpoints(
   summary: ClusterServiceEndpointsSummary,
 ): ClusterServiceEndpointsInput {
   return {
+    ...(summary.metrics === undefined ? {} : { metrics: retainedEndpoint(summary.metrics) }),
     ...(summary.connect === undefined ? {} : { connect: retainedEndpoint(summary.connect) }),
     ...(summary.schemaRegistry === undefined
       ? {}

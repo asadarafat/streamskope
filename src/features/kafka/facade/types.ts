@@ -11,6 +11,7 @@ import type {
 export interface KafkaBackendFacadeOptions {
   readonly repairStore?: import("../application/repair-journal").RepairJobStore;
   readonly recordExportArtifacts?: import("../application/record-export-artifacts").RecordExportArtifacts;
+  readonly metrics?: import("../application/external-metrics-service").ExternalMetricsPort;
   readonly observationStore?: import("../application/observation-store").ObservationStore;
   readonly connect?: import("../application/connect-service").ConnectPort;
   readonly replayConnections?: import("../application").KafkaConnectionPort;

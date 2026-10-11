@@ -74,6 +74,11 @@ export interface ClusterServiceReviewScope extends ReviewAuthority {
   tryDispatch<T>(run: (context: KafkaClusterServiceContext) => Promise<T>): MutationDispatch<T>;
 }
 
+export type MetricsReadScope = Pick<
+  ClusterServiceReviewScope,
+  "connectionName" | "isCurrent" | "cleanupUnresolved" | "read"
+>;
+
 export type SchemaRegistryReviewScope = Omit<ClusterServiceReviewScope, "cleanupUnresolved">;
 export type ConnectReviewScope = ClusterServiceReviewScope & {
   readonly brokerClusterId?: (signal: AbortSignal) => Promise<string | null>;
@@ -174,7 +179,13 @@ export class KafkaConnectionScopes {
     return this.clusterService("connect");
   }
 
-  private clusterService(name: "schemaRegistry" | "connect"): ConnectReviewScope | null {
+  metrics(): MetricsReadScope | null {
+    return this.clusterService("metrics");
+  }
+
+  private clusterService(
+    name: "schemaRegistry" | "connect" | "metrics",
+  ): ConnectReviewScope | null {
     const active = this.context();
     if (active === null) return null;
     const context = { ...active };

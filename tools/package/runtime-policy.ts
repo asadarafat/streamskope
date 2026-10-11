@@ -44,6 +44,8 @@ export const ELECTRON_RUNTIME_EFFICIENCY_POLICY = Object.freeze({
     "src/features/kafka/ui/LatencyWorkspace.tsx",
     // UI-only absolute cooldown/freshness deadlines; disposed on unmount.
     "src/features/kafka/ui/use-observed-health.ts",
+    // At most two local sample-expiry deadlines; never scrape, cleared on replacement or unmount.
+    "src/features/kafka/ui/use-external-metrics.ts",
     // One continuation-expiry deadline, cleared on replacement or unmount.
     "src/features/kafka/ui/use-read-continuation.ts",
     // One-shot snapshot freshness expiry, cleared on navigation or replacement.

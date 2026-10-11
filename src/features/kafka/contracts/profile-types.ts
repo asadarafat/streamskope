@@ -33,6 +33,14 @@ export const CLUSTER_SERVICE_AUTHENTICATION_MODES = [
   "bearer",
   "oauth-client",
 ] as const;
+export const CLUSTER_SERVICE_NAMES = [
+  "connect",
+  "redpandaAdmin",
+  "schemaRegistry",
+  "metrics",
+] as const;
+export type ClusterServiceName = (typeof CLUSTER_SERVICE_NAMES)[number];
+
 export const KAFKA_SASL_MECHANISMS = ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"] as const;
 export type KafkaSaslMechanism = (typeof KAFKA_SASL_MECHANISMS)[number];
 export const KAFKA_PROFILE_TRANSPORTS = ["tls", "plaintext"] as const;
@@ -76,6 +84,7 @@ export interface ClusterServiceEndpointsInput<T = ProtectedValueUpdateInput> {
   readonly connect?: ClusterServiceEndpointInput<T>;
   readonly redpandaAdmin?: ClusterServiceEndpointInput<T>;
   readonly schemaRegistry?: ClusterServiceEndpointInput<T>;
+  readonly metrics?: ClusterServiceEndpointInput<T>;
 }
 
 export type ProtectedValueCreateInput =
@@ -224,6 +233,7 @@ export interface ClusterServiceEndpointsSummary {
   readonly connect?: ClusterServiceEndpointSummary;
   readonly redpandaAdmin?: ClusterServiceEndpointSummary;
   readonly schemaRegistry?: ClusterServiceEndpointSummary;
+  readonly metrics?: ClusterServiceEndpointSummary;
 }
 
 interface ProfileSummaryBase {

@@ -1,63 +1,11 @@
 import type { KafkaClusterServiceContext } from "../application/types";
 import type { ConnectMutationReceipt } from "../application/connect-service";
 
-import type {
-  BoundedJsonHttpPort,
-  BoundedJsonHttpRequest,
-  OwnedJsonHttpPort,
-} from "./bounded-json-http";
+import type { BoundedJsonHttpPort, BoundedJsonHttpRequest } from "./bounded-json-http";
 import { boundedHttpCleanup, type OwnedHttpRequest } from "./owned-http-request";
+import { ownedServiceHttp, serviceHttpInput } from "./service-http-request";
+export { readServiceHttp as readConnectHttp } from "./service-http-request";
 
-function owned(http: BoundedJsonHttpPort): http is OwnedJsonHttpPort {
-  return "open" in http && typeof http.open === "function";
-}
-async function input(
-  context: KafkaClusterServiceContext,
-  signal: AbortSignal,
-  method: BoundedJsonHttpRequest["method"],
-  path: string,
-  body?: unknown,
-): Promise<BoundedJsonHttpRequest> {
-  signal = context.signal ? AbortSignal.any([signal, context.signal]) : signal;
-  signal.throwIfAborted();
-  const authorization = await context.authorization(signal);
-  signal.throwIfAborted();
-  return {
-    url: `${context.baseUrl.replace(/\/+$/u, "")}${path}`,
-    method,
-    signal,
-    contentType: "application/json",
-    ...(body === undefined ? {} : { body }),
-    ...(authorization === undefined ? {} : { authorization }),
-    ...(context.caPem === undefined ? {} : { caPem: context.caPem }),
-    ...(context.clientIdentity === undefined ? {} : { clientIdentity: context.clientIdentity }),
-  };
-}
-/** Reads settle only after original close proof. Test-connection contexts can be read-only. */
-export async function readConnectHttp(
-  http: BoundedJsonHttpPort,
-  context: KafkaClusterServiceContext,
-  signal: AbortSignal,
-  method: BoundedJsonHttpRequest["method"],
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: unknown }> {
-  const run = async (): Promise<{ status: number; body: unknown }> => {
-    const request = await input(context, signal, method, path, body);
-    if (!context.requestOwner) return http.request(request);
-    if (!owned(http)) throw new Error("Original HTTP request ownership is unavailable.");
-    const result = await context.requestOwner.run(
-      () => {
-        const lease = http.open(request);
-        return { lease, close: (): Promise<void> => boundedHttpCleanup(lease) };
-      },
-      ({ lease }) => lease.response,
-    );
-    if (!result.cleaned) throw new Error("Original HTTP cleanup remains unresolved.");
-    return result.value;
-  };
-  return context.requestOwner ? context.requestOwner.runWork(run) : run();
-}
 /** One attempt, with actual status separate from dispatch, readback and local cleanup. */
 export async function mutateConnectHttp(
   http: BoundedJsonHttpPort,
@@ -76,11 +24,12 @@ export async function mutateConnectHttp(
     cleanup: context.requestOwner?.cleanupUnresolved ? "unresolved" : "confirmed",
     detail,
   });
-  if (!context.requestOwner || !owned(http) || !context.requestOwner.available) return refused();
+  if (!context.requestOwner || !ownedServiceHttp(http) || !context.requestOwner.available)
+    return refused();
   try {
     return await context.requestOwner.runWork(async () => {
       const request = {
-        ...(await input(context, signal, method, path, body)),
+        ...(await serviceHttpInput(context, signal, method, path, body)),
         responseMode: "status" as const,
       };
       const result = await context.requestOwner!.run(
