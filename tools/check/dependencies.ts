@@ -29,7 +29,7 @@ const REVIEWED_LICENSE_OVERRIDES = new Map<string, string>([
   ["node_modules/ssh2@1.17.0", "MIT"],
 ] as const);
 
-// Reviewed from the installed license files; these are unchanged build tools,
+// Reviewed from the installed license files; these are build tools,
 // excluded from the packaged production dependency graph. Keep original licenses
 // and notices; an upgrade or promotion to runtime requires a fresh review.
 // SPDX text: https://spdx.org/licenses/WTFPL.html.
@@ -37,7 +37,7 @@ const REVIEWED_BUILD_TOOL_LICENSES = new Map<string, string>([
   ["node_modules/argparse@2.0.1", "Python-2.0"],
   ["node_modules/sanitize-filename@1.6.4", "WTFPL OR ISC"],
   ["node_modules/truncate-utf8-bytes@1.0.2", "WTFPL"],
-  ["node_modules/type-fest@0.13.1", "(MIT OR CC0-1.0)"],
+  ["node_modules/type-fest@0.20.2", "(MIT OR CC0-1.0)"],
   ["node_modules/utf8-byte-length@1.0.5", "(WTFPL OR MIT)"],
 ]);
 

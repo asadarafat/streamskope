@@ -53,6 +53,7 @@ updates:
           - braces
           - http-cache-semantics
           - handlebars
+          - global-agent
       build-and-lint:
         applies-to: version-updates
         dependency-type: development
@@ -64,6 +65,7 @@ updates:
           - braces
           - http-cache-semantics
           - handlebars
+          - global-agent
   - package-ecosystem: npm
     directory: /website/promo
     schedule:
