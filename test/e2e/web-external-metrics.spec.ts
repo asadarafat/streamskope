@@ -27,6 +27,13 @@ test("reads real optional metrics with honest source coverage and no automatic e
     backend = createKafkaBackend();
   const diagnostics = observeBrowserDiagnostics(page),
     commands: string[] = [];
+  const rejectedRequests: { command: string; status: number }[] = [];
+  page.on("response", (response): void => {
+    if (response.status() < 400 || !new URL(response.url()).pathname.endsWith("/commands")) return;
+    const body = response.request().postDataJSON() as { command?: unknown } | null;
+    if (typeof body?.command === "string")
+      rejectedRequests.push({ command: body.command, status: response.status() });
+  });
   page.on("request", (request) => {
     if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/commands")) {
       const body = request.postDataJSON() as { command?: unknown } | null;
@@ -101,6 +108,10 @@ test("reads real optional metrics with honest source coverage and no automatic e
     expect(commands.filter((c) => c === "observations.metrics.capture")).toHaveLength(attempts);
     expect(diagnostics.problems).toEqual([]);
   } finally {
+    await testInfo.attach("metrics-browser-diagnostics", {
+      body: JSON.stringify({ problems: diagnostics.problems, rejectedRequests, commands }),
+      contentType: "application/json",
+    });
     try {
       await backend.shutdown();
     } finally {

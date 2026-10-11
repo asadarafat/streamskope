@@ -5,6 +5,8 @@ import { readFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { join } from "node:path";
 
+import type { ProfileSummary } from "../../src/features/kafka/contracts";
+
 interface Reply {
   readonly status: number;
   readonly headers: IncomingHttpHeaders;
@@ -99,6 +101,8 @@ export async function waitForBrowser(port: number): Promise<void> {
 export interface BrowserVaultFixture {
   /** Independent decryption stays within this disposable vault; receipts get hashes only. */
   fingerprintKafkaProtected(omitMetrics?: boolean): Promise<string>;
+  /** Profile commands acknowledge separately from their original event inventory. */
+  kafkaProfiles(): Promise<readonly ProfileSummary[]>;
   /** Check never restarts or authenticates again, so it proves a read-only check kept the session. */
   verifyUnlocked(): Promise<void>;
   unlockAfterReplacement(): Promise<void>;
@@ -226,6 +230,33 @@ export async function createBrowserVaultFixture(instance: {
     await verifyUnlocked();
   };
   await unlock();
+  const kafkaCommand = async (name: string, payload: unknown): Promise<Record<string, unknown>> => {
+    const health = await request(
+      port,
+      "/__streamskope_host/providers/kafka/health",
+      undefined,
+      cookie,
+    );
+    assert.equal(health.status, 200);
+    const version: unknown = record(JSON.parse(health.body)).protocolVersion;
+    assert.ok(typeof version === "number" && Number.isSafeInteger(version) && version > 0);
+    const reply = await request(
+      port,
+      "/__streamskope_host/providers/kafka/commands",
+      {
+        id: randomUUID(),
+        version,
+        command: name,
+        payload,
+      },
+      cookie,
+    );
+    assert.equal(reply.status, 200);
+    assertNoSecrets(reply.body);
+    const body = record(JSON.parse(reply.body));
+    assert.equal(body.ok, true, "The native Kafka fixture command must be accepted.");
+    return record(body.result);
+  };
   return {
     fingerprintKafkaProtected: async (omitMetrics = false): Promise<string> => {
       const metadata = record(JSON.parse(await readFile(join(data, "vault.json"), "utf8")));
@@ -324,33 +355,9 @@ export async function createBrowserVaultFixture(instance: {
       );
       assert.equal(result, "native-repair-fixture-seeded");
     },
-    kafkaCommand: async (name, payload): Promise<Record<string, unknown>> => {
-      const health = await request(
-        port,
-        "/__streamskope_host/providers/kafka/health",
-        undefined,
-        cookie,
-      );
-      assert.equal(health.status, 200);
-      const version: unknown = record(JSON.parse(health.body)).protocolVersion;
-      assert.ok(typeof version === "number" && Number.isSafeInteger(version) && version > 0);
-      const reply = await request(
-        port,
-        "/__streamskope_host/providers/kafka/commands",
-        {
-          id: randomUUID(),
-          version,
-          command: name,
-          payload,
-        },
-        cookie,
-      );
-      assert.equal(reply.status, 200);
-      assertNoSecrets(reply.body);
-      const body = record(JSON.parse(reply.body));
-      assert.equal(body.ok, true, "The native Kafka fixture command must be accepted.");
-      return record(body.result);
-    },
+    kafkaCommand,
+    kafkaProfiles: (): Promise<readonly ProfileSummary[]> =>
+      captureKafkaProfiles(port, cookie, () => kafkaCommand("profiles.list", {}), assertNoSecrets),
     lock: async (): Promise<void> => {
       assert.equal((await request(port, "/__streamskope_session/lock", {}, cookie)).status, 200);
     },
@@ -376,4 +383,102 @@ export function verifyBrowserNativeWorkers(container: string): void {
     `,
   );
   assert.equal(worker, "native-workers-qualified");
+}
+
+/** A bounded original subscription captures the safe inventory before its command acknowledgement. */
+async function captureKafkaProfiles(
+  port: number,
+  cookie: string,
+  list: () => Promise<Record<string, unknown>>,
+  assertNoSecrets: (text: string) => void,
+): Promise<readonly ProfileSummary[]> {
+  let close = (): void => {};
+  let completion: Promise<Record<string, unknown>> | undefined;
+  const inventory = new Promise<readonly ProfileSummary[]>((resolve, reject) => {
+    let finished = false;
+    const stream = httpRequest(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: "/__streamskope_host/providers/kafka/events",
+        headers: { cookie },
+      },
+      (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error("Native profile inventory subscription was not accepted."));
+          response.destroy();
+          return;
+        }
+        response.setEncoding("utf8");
+        let pending = "",
+          bytes = 0;
+        response.on("data", (chunk: string): void => {
+          if (finished) return;
+          try {
+            bytes += Buffer.byteLength(chunk);
+            assert.ok(bytes <= 1024 * 1024, "Native profile inventory exceeded its read bound.");
+            pending += chunk;
+            let boundary: number;
+            while ((boundary = pending.indexOf("\n\n")) >= 0) {
+              const frame = pending.slice(0, boundary);
+              pending = pending.slice(boundary + 2);
+              const data = frame
+                .split("\n")
+                .filter((line) => line.startsWith("data:"))
+                .map((line) => line.slice(5).trim())
+                .join("\n");
+              if (!data) continue;
+              assertNoSecrets(data);
+              const event = record(JSON.parse(data));
+              if (event.event !== "profiles.changed") continue;
+              const profiles: unknown = record(event.payload).profiles;
+              assert.ok(Array.isArray(profiles));
+              finished = true;
+              resolve(profiles as readonly ProfileSummary[]);
+              close();
+              return;
+            }
+          } catch (cause) {
+            finished = true;
+            reject(
+              cause instanceof Error
+                ? cause
+                : new Error("Native profile inventory failed.", { cause }),
+            );
+            close();
+          }
+        });
+        response.on("error", (cause): void => {
+          if (!finished) reject(cause);
+        });
+        response.once("close", (): void => {
+          if (!finished) reject(new Error("Native profile inventory closed before delivery."));
+        });
+        completion = list();
+        void completion.catch((cause: unknown): void => {
+          reject(
+            cause instanceof Error ? cause : new Error("Native profile command failed.", { cause }),
+          );
+          close();
+        });
+      },
+    );
+    close = (): void => {
+      stream.destroy();
+    };
+    stream.setTimeout(15_000, (): void => {
+      reject(new Error("Native profile inventory deadline exceeded."));
+      close();
+    });
+    stream.on("error", reject);
+    stream.end();
+  });
+  try {
+    const profiles = await inventory;
+    await completion;
+    return profiles;
+  } finally {
+    close();
+    await Promise.allSettled([completion]);
+  }
 }

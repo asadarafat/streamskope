@@ -43,9 +43,7 @@ export async function seedNativeMetricsRecovery({
   });
   const clear = { mode: "clear" as const },
     retain = { mode: "retain" as const };
-  const profiles = async (): Promise<readonly ProfileSummary[]> =>
-    ((await fixture.kafkaCommand("profiles.list", {})).profiles as { profiles: ProfileSummary[] })
-      .profiles;
+  const profiles = async (): Promise<readonly ProfileSummary[]> => fixture.kafkaProfiles();
   try {
     await run("openssl", [
       "req",
