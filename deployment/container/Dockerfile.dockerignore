@@ -26,6 +26,9 @@
 !test/**/*.ts
 !test/**/*.tsx
 !test/**/*.mjs
+!aio-kafka/
+!aio-kafka/fixtures/
+!aio-kafka/fixtures/**/*.ts
 !config/
 !config/typescript/
 !config/typescript/base.json

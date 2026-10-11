@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { utils } from "ssh2";
 
 import { createRecipeLibrary, LegacyTemplateFixture } from "../support/recipe-library";
 import type { RemoteSshTargetInput } from "../../src/features/kafka/contracts";
@@ -313,11 +312,24 @@ describe("SSH2 remote-trust controlled integration", () => {
   );
 
   it("uses an uploaded encrypted private key without password fallback", async () => {
-    const key = utils.generateKeyPairSync("ed25519", {
-      passphrase: "key-passphrase",
-      cipher: "aes256-cbc",
-      rounds: 16,
-    });
+    const directory = await mkdtemp(join(tmpdir(), "streamskope-encrypted-key-"));
+    const path = join(directory, "fixture-key");
+    let key: { readonly public: string; readonly private: string };
+    try {
+      // OpenSSH provides an independent fixture exporter. ssh2's generator can
+      // truncate a leading zero from an Ed25519 public key and produce invalid input.
+      await promisify(execFile)(
+        "ssh-keygen",
+        ["-q", "-t", "ed25519", "-Z", "aes256-cbc", "-a", "16", "-N", "key-passphrase", "-f", path],
+        { timeout: 5_000 },
+      );
+      key = {
+        public: await readFile(`${path}.pub`, "utf8"),
+        private: await readFile(path, "utf8"),
+      };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
     const controlled = await server({ authorizedPublicKey: key.public });
     const sshTarget = {
       host: controlled.host,

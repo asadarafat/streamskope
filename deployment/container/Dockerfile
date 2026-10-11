@@ -13,6 +13,7 @@ COPY tools ./tools
 COPY src ./src
 COPY plugins ./plugins
 COPY test ./test
+COPY aio-kafka/fixtures ./aio-kafka/fixtures
 COPY index.html ./
 RUN npm run build -- web
 RUN node --import tsx tools/package/container-notices.ts
