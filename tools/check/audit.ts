@@ -207,6 +207,8 @@ export function evaluateDependencyAudit(
   const backportedPackages: string[] = [];
   const buildMitigated = new Set<string>();
   for (const verifiedPatch of verifiedBuildPatches) {
+    // Behavior corrections have no reviewed advisory and cannot exempt a finding.
+    if (!verifiedPatch.advisoryUrl) continue;
     const specification = BUILD_DEPENDENCY_PATCHES.find(
       (patch) =>
         patch.name === verifiedPatch.name && patch.advisoryUrl === verifiedPatch.advisoryUrl,

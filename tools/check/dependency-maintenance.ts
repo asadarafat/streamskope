@@ -10,6 +10,7 @@ const UPSTREAM_STATUSES = [
   "reported-unfixed",
   "disputed-local-policy",
   "local-runtime-correction",
+  "local-build-correction",
 ] as const;
 
 interface DependencyMaintenanceEntry {
@@ -59,9 +60,9 @@ export const DEPENDENCY_MAINTENANCE = [
   },
   {
     name: "http-cache-semantics",
-    reviewedVersion: "4.2.0",
+    reviewedVersion: "4.3.0",
     owner: "@asadarafat",
-    reviewedOn: "2026-10-08",
+    reviewedOn: "2026-10-11",
     upstreamStatus: "disputed-local-policy",
     evidence: [
       "https://github.com/kornelski/http-cache-semantics/issues/56",
@@ -72,6 +73,21 @@ export const DEPENDENCY_MAINTENANCE = [
     retirementCriteria:
       "Qualify unmodified upstream cookie, private, no-cache and no-store rejection plus permitted public stale reuse against the project policy. Upstream disputes the advisory and version 4.3.0 fails that stricter policy; retirement requires passing regressions or an explicit review of the policy, patch and audit allowance together.",
     regressions: ["test/unit/build-dependency-patches.test.ts"],
+  },
+  {
+    name: "global-agent",
+    reviewedVersion: "4.1.3",
+    owner: "@asadarafat",
+    reviewedOn: "2026-10-11",
+    upstreamStatus: "local-build-correction",
+    evidence: [
+      "https://github.com/gajus/global-agent/issues/83",
+      "https://github.com/gajus/global-agent/pull/86",
+      "https://github.com/gajus/global-agent/releases/tag/v4.1.3",
+    ],
+    retirementCriteria:
+      "Qualify an unmodified proxy release against HTTPS IP/DNS identity, untrusted certificate rejection, explicitly trusted downloads, proxy routing and bypass. The TLS host correction grants no advisory exemption; remove it only when those consumer regressions pass without it.",
+    regressions: ["test/integration/packaging-download-security.test.ts"],
   },
   {
     name: "@nats-io/transport-node",

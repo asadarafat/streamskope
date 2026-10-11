@@ -25,7 +25,7 @@ async function fixture(): Promise<string> {
     packages: Record<string, unknown>;
   };
   const packages: Record<string, unknown> = {
-    "": { dependencies: { braces: "3.0.3", "http-cache-semantics": "4.2.0" } },
+    "": { dependencies: { braces: "3.0.3", "http-cache-semantics": "4.3.0" } },
   };
   await writeFile(join(directory, "package.json"), '{"name":"fixture","version":"1.0.0"}');
   for (const patch of BUILD_DEPENDENCY_PATCHES) {
@@ -93,7 +93,7 @@ it("reproduces both stock failures and preserves ordinary behavior after mitigat
   expect(before.privateEntry).toBe(true);
   await expect(verifyBuildDependencyPatches(directory)).rejects.toThrow(/Missing or unreviewed/u);
   const verified = await applyBuildDependencyPatches(directory);
-  expect(verified.map((p) => p.name)).toEqual(["braces", "http-cache-semantics"]);
+  expect(verified.map((p) => p.name)).toEqual(["braces", "http-cache-semantics", "global-agent"]);
   const after = exercise(directory);
   expect(after.nested).toContain("SyntaxError: Brace nesting exceeds");
   expect(after.shallow).toEqual(before.shallow);

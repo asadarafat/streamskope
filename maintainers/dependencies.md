@@ -78,7 +78,7 @@ its first matching group. Vitest and coverage remain paired. Python graphs have
 separate entries so a docs change does not pull in an OAuth image migration.
 Grouping reduces proposals; it does not make a group safe to merge automatically.
 
-The four source mitigations and the Handlebars override below remain excluded
+The five source mitigations and the dependency overrides below remain excluded
 from routine groups, not ignored. A parent update can still change a mitigated
 nested package, so the offline validator remains necessary. Groups apply only
 to version updates; security proposals remain separate and prompt, outside the
@@ -152,7 +152,7 @@ means normal review is required, not that the dependency is necessarily unsafe.
 Existing PRs are evaluated on their next completed CI run; changing the schedule
 does not itself qualify or merge them.
 
-## Temporary upstream override
+## Temporary upstream overrides
 
 The root manifest selects unmodified **`handlebars@4.7.10`** for both
 `eslint-plugin-boundaries` and `@boundaries/elements`. Their current releases pin
@@ -170,22 +170,59 @@ forbidden prototype constructors, and preserve ordinary template rendering.
 Fresh installation, full architecture lint and dependency/license checks qualify
 the selected graph. Remove the override once both consumers accept a patched
 version, then qualify their unmodified resolution with the same regressions.
-Keep this exception separate from the four local source corrections below.
+Keep this exception separate from the local source corrections below.
+
+### Electron Builder download dependencies
+
+The manifest scopes two exact overrides to `app-builder-lib`'s `@electron/get`
+consumer: **`global-agent@4.1.3`** and **`http-cache-semantics@4.3.0`**. They remain
+development-only. The proxy update removes `roarr` and `sprintf-js` from the
+complete root lockfile, eliminating the
+[formatter finding](https://github.com/advisories/GHSA-hp3w-g68c-fv3c).
+The [proxy release](https://github.com/gajus/global-agent/releases/tag/v4.1.3)
+retains the bootstrap API used by the downloader. Our exact-source correction
+selects TLS options for the HTTPS agent and preserves the destination IP for
+certificate verification through a proxy. The unmodified candidate skips those
+options and incorrectly checks the certificate as `localhost`. See the
+[upstream report](https://github.com/gajus/global-agent/issues/83). Certificate
+verification remains enabled, and this behavior correction grants no advisory
+exemption. The builder's downloader stays
+on its supported major; switching it to the Fetch downloader would also change
+its timeout, proxy-agent and retry contracts.
+
+The cache update moves beyond the advisory's declared affected interval, but
+**does not retire our stricter cache policy**. Unmodified 4.3.0 still fails that
+policy; the reviewed exact-source correction and independent regressions remain
+active. Do not describe the version change alone as passing those regressions.
+
+**@asadarafat** owns these overrides, reviewed on **2026-10-11**. The
+[download regressions](../test/integration/packaging-download-security.test.ts)
+exercise the actual builder and its resolved downloader against owned local
+servers: checksummed downloads, cache reuse, progress, request timeout, HTTP
+proxy routing and bypass, and HTTPS certificate rejection and explicit trust.
+Fresh installation and dependency/license checks qualify the complete graph.
+Retire the proxy override when the builder accepts the reviewed dependency
+without the override or TLS identity correction, retaining those regressions.
+Retire the cache override and source
+correction together only after its consumer accepts a version that passes the
+owned cache policy, or after an explicit policy review.
 
 ## Active mitigations
 
 The [maintenance inventory](../tools/check/dependency-maintenance.ts) is the
 authoritative record of reviewed versions, owners, dates, upstream evidence and
-retirement criteria. All four entries below were reviewed on **2026-10-08** and
-are owned by **@asadarafat**. No newer upstream candidate has been accepted by
-this review.
+retirement criteria. The Forge, braces and NATS entries were reviewed on
+**2026-10-08**; the cache and proxy entries were reviewed on **2026-10-11**.
+All five are owned by **@asadarafat**. The cache update retains its source
+correction.
 
-| Package                         | Scope                       | Reviewed upstream status                                                                                                                                                                                                                                         | Implementation and acceptance                                                                                                                             |
-| ------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `node-forge@1.4.0`              | Runtime truststore handling | Proposed fix: [RSA validation PR](https://github.com/digitalbazaar/forge/pull/1152), [advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv)                                                                                                               | [Backport](../tools/check/forge-patch.ts), [signature regression](../test/integration/forge-security-patch.test.ts)                                       |
-| `braces@3.0.3`                  | Development/build tooling   | Reported; no upstream replacement qualified: [nesting issue](https://github.com/micromatch/braces/issues/70), [advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)                                                                                      | [Exact-source mitigation](../tools/check/build-dependency-patch-data.ts), [behavior regressions](../test/unit/build-dependency-patches.test.ts)           |
-| `http-cache-semantics@4.2.0`    | Development/build tooling   | Disputed upstream advisory; StreamSkope retains its stricter cache policy: [discussion](https://github.com/kornelski/http-cache-semantics/issues/56), [advisory](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)                                              | [Policy correction](../tools/check/build-dependency-patch-data.ts), [cache regressions](../test/unit/build-dependency-patches.test.ts)                    |
-| `@nats-io/transport-node@3.4.0` | Runtime NATS transport      | Local lifecycle and TLS identity correction: [pending connection issue](https://github.com/nats-io/nats.js/issues/435), [reviewed source](https://github.com/nats-io/nats.js/blob/95e76e79d9feaa0a0bf3b0e8da526ec5a3460979/transport-node/src/node_transport.ts) | [Exact-source corrections](../tools/check/runtime-dependency-patch-data.ts), [public SDK regressions](../test/integration/nats-sdk-runtime-patch.test.ts) |
+| Package                         | Scope                        | Reviewed upstream status                                                                                                                                                                                                                                         | Implementation and acceptance                                                                                                                             |
+| ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node-forge@1.4.0`              | Runtime truststore handling  | Proposed fix: [RSA validation PR](https://github.com/digitalbazaar/forge/pull/1152), [advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv)                                                                                                               | [Backport](../tools/check/forge-patch.ts), [signature regression](../test/integration/forge-security-patch.test.ts)                                       |
+| `braces@3.0.3`                  | Development/build tooling    | Reported; no upstream replacement qualified: [nesting issue](https://github.com/micromatch/braces/issues/70), [advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)                                                                                      | [Exact-source mitigation](../tools/check/build-dependency-patch-data.ts), [behavior regressions](../test/unit/build-dependency-patches.test.ts)           |
+| `http-cache-semantics@4.3.0`    | Development/build tooling    | Disputed upstream advisory; StreamSkope retains its stricter cache policy: [discussion](https://github.com/kornelski/http-cache-semantics/issues/56), [advisory](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)                                              | [Policy correction](../tools/check/build-dependency-patch-data.ts), [cache regressions](../test/unit/build-dependency-patches.test.ts)                    |
+| `@nats-io/transport-node@3.4.0` | Runtime NATS transport       | Local lifecycle and TLS identity correction: [pending connection issue](https://github.com/nats-io/nats.js/issues/435), [reviewed source](https://github.com/nats-io/nats.js/blob/95e76e79d9feaa0a0bf3b0e8da526ec5a3460979/transport-node/src/node_transport.ts) | [Exact-source corrections](../tools/check/runtime-dependency-patch-data.ts), [public SDK regressions](../test/integration/nats-sdk-runtime-patch.test.ts) |
+| `global-agent@4.1.3`            | Development/native packaging | Local TLS identity correction; no advisory exemption: [proxy identity issue](https://github.com/gajus/global-agent/issues/83)                                                                                                                                    | [Exact-source correction](../tools/check/build-dependency-patch-data.ts), [consumer regressions](../test/integration/packaging-download-security.test.ts) |
 
 ### Forge security backport
 
@@ -196,6 +233,12 @@ before using application dependencies, including fresh production installs for
 native packaging. Packaging verifies the patched bytes after extracting the
 final ASAR and records the hash. Unknown versions, changed files, missing copies
 and unlisted resolutions fail verification.
+
+On 2026-10-11 the upstream fix was still an open PR and the newest published
+Forge was 1.4.0. The GitHub alert remains open until a patched upstream version
+can be qualified. This is a known, locally mitigated version finding, not an
+unverified dismissal; the independent signature and audit regressions continue
+to gate changes. GitHub's version scan cannot see our applied source backport.
 
 Raw `npm audit` can still report an advisory because a local backport does not
 change the upstream version. The [audit checker](../tools/check/audit.ts) accepts
@@ -213,6 +256,7 @@ forbids storage or reduces freshness to zero, even if a client permits stale
 responses. Positive-lifetime public entries retain permitted stale reuse.
 
 The published `http-cache-semantics@4.3.0` candidate was tested on 2026-10-08 and
+again on 2026-10-11. Before applying the source correction, it
 still allowed the cookie, no-cache, no-store and private cases that StreamSkope's
 regression policy rejects. Its existence is not sufficient to retire the local
 correction. This records the project's acceptance decision, not a resolution of
@@ -223,7 +267,7 @@ mitigation and audit accounting; a version bump alone does not authorize it.
 
 `check`, `build` and native `package` apply the pinned build changes and verify
 package identity, development-only classification, resolution and complete file
-hashes. Repeated application is idempotent. Both packages remain excluded from
+hashes. Repeated application is idempotent. All three build-corrected packages remain excluded from
 production dependencies. Their exact advisory/version/path accounting does not
 exempt new findings or unverified copies from the complete audit.
 
@@ -255,6 +299,8 @@ the mitigation:
   while retaining ordinary expansion.
 - **Cache policy:** refuse stale revival of cookie, no-cache, no-store and private
   entries while retaining permitted public stale reuse.
+- **Proxy:** verify destination IP/DNS identity, reject untrusted and wrong-host
+  certificates, and retain explicitly trusted downloads, routing and bypass.
 - **NATS:** release pending INFO/TLS setup sockets, preserve server fallback and
   enforce DNS/IP TLS identity and authentication through the public SDK.
 

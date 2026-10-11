@@ -9,7 +9,7 @@ import { RUNTIME_DEPENDENCY_PATCHES } from "./runtime-dependency-patch-data";
 
 export interface VerifiedBuildPatch {
   readonly name: string;
-  readonly advisoryUrl: string;
+  readonly advisoryUrl?: string;
   readonly paths: readonly string[];
 }
 export interface VerifiedRuntimePatch {
@@ -19,6 +19,7 @@ export interface VerifiedRuntimePatch {
 }
 interface InspectedPatch {
   readonly name: string;
+  readonly advisoryUrl?: string;
   readonly referenceUrl: string;
   readonly paths: readonly string[];
 }
@@ -59,7 +60,10 @@ async function inspect(
   const verified: InspectedPatch[] = [];
   const patches =
     scope === "build"
-      ? BUILD_DEPENDENCY_PATCHES.map((patch) => ({ ...patch, referenceUrl: patch.advisoryUrl }))
+      ? BUILD_DEPENDENCY_PATCHES.map((patch) => ({
+          ...patch,
+          referenceUrl: "rationaleUrl" in patch ? patch.rationaleUrl : patch.advisoryUrl,
+        }))
       : RUNTIME_DEPENDENCY_PATCHES.map((patch) => ({ ...patch, referenceUrl: patch.rationaleUrl }));
   const files: PatchFile[] = [];
   for (const patch of patches) {
@@ -138,7 +142,12 @@ async function inspect(
       ).replaceAll("\\", "/");
       if (!declared.has(found)) throw new Error(`Unlisted dependency resolution: ${found}`);
     }
-    verified.push({ name: patch.name, referenceUrl: patch.referenceUrl, paths: paths.sort() });
+    verified.push({
+      name: patch.name,
+      referenceUrl: patch.referenceUrl,
+      paths: paths.sort(),
+      ...("advisoryUrl" in patch && patch.advisoryUrl ? { advisoryUrl: patch.advisoryUrl } : {}),
+    });
   }
   return { verified, files };
 }
@@ -146,9 +155,9 @@ async function inspect(
 export async function verifyBuildDependencyPatches(
   root: string,
 ): Promise<readonly VerifiedBuildPatch[]> {
-  return (await inspect(root, false, "build")).verified.map(({ name, referenceUrl, paths }) => ({
+  return (await inspect(root, false, "build")).verified.map(({ name, advisoryUrl, paths }) => ({
     name,
-    advisoryUrl: referenceUrl,
+    ...(advisoryUrl ? { advisoryUrl } : {}),
     paths,
   }));
 }

@@ -75,7 +75,35 @@ function execution(findings: readonly FixtureFinding[]): AuditExecution {
 describe("dependency audit qualification", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it.each(BUILD_DEPENDENCY_PATCHES)(
+  it("never grants an advisory exemption to the proxy identity correction", () => {
+    const finding = {
+      ...forgeFinding(),
+      name: "global-agent",
+      nodes: ["node_modules/global-agent"],
+      via: [
+        {
+          ...knownAdvisory,
+          name: "global-agent",
+          dependency: "global-agent",
+          range: "<=4.1.3",
+        },
+      ],
+    };
+    for (const advisoryUrl of [undefined, "https://github.com/gajus/global-agent/issues/83"]) {
+      const verified = [
+        {
+          name: "global-agent",
+          paths: finding.nodes,
+          ...(advisoryUrl ? { advisoryUrl } : {}),
+        },
+      ];
+      expect(
+        evaluateDependencyAudit(execution([finding]), [], verified).remainingHighOrCriticalPackages,
+      ).toEqual(["global-agent"]);
+    }
+  });
+
+  it.each(BUILD_DEPENDENCY_PATCHES.filter((patch) => patch.advisoryUrl !== undefined))(
     "accepts only verified $name mitigation and exclusively inherited findings",
     (patch) => {
       const direct: FixtureFinding = {

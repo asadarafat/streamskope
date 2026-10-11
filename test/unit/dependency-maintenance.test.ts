@@ -29,7 +29,8 @@ async function fixture(): Promise<MaintenanceFixture> {
   const reviewed = [
     ["node-forge", "1.4.0", "proposed-fix"],
     ["braces", "3.0.3", "reported-unfixed"],
-    ["http-cache-semantics", "4.2.0", "disputed-local-policy"],
+    ["http-cache-semantics", "4.3.0", "disputed-local-policy"],
+    ["global-agent", "4.1.3", "local-build-correction"],
     ["@nats-io/transport-node", "3.4.0", "local-runtime-correction"],
   ];
   return {
@@ -40,7 +41,8 @@ async function fixture(): Promise<MaintenanceFixture> {
         "": {},
         "node_modules/node-forge": { version: "1.4.0" },
         "node_modules/braces": { version: "3.0.3", dev: true },
-        "node_modules/http-cache-semantics": { version: "4.2.0", dev: true },
+        "node_modules/http-cache-semantics": { version: "4.3.0", dev: true },
+        "node_modules/global-agent": { version: "4.1.3", dev: true },
         "node_modules/@nats-io/transport-node": { version: "3.4.0" },
       },
     },
@@ -61,16 +63,16 @@ async function fixture(): Promise<MaintenanceFixture> {
 it("qualifies the maintained repository inventory and its real regression references offline", async () => {
   const lock: unknown = JSON.parse(await readFile("package-lock.json", "utf8"));
   const result = await assertDependencyMaintenance(process.cwd(), lock);
-  expect(result.mitigationCount).toBe(4);
-  expect(result.lockedInstanceCount).toBeGreaterThanOrEqual(4);
+  expect(result.mitigationCount).toBe(5);
+  expect(result.lockedInstanceCount).toBeGreaterThanOrEqual(5);
 });
 
-it("identifies all four mitigations without optional package names or a review-expiry gate", async () => {
+it("identifies all five mitigations without optional package names or a review-expiry gate", async () => {
   const f = await fixture();
   f.entries[0]!.reviewedOn = "2000-02-29";
   await expect(assertDependencyMaintenance(f.root, f.lock, f.entries)).resolves.toEqual({
-    mitigationCount: 4,
-    lockedInstanceCount: 4,
+    mitigationCount: 5,
+    lockedInstanceCount: 5,
   });
 });
 
@@ -81,13 +83,13 @@ it("counts scoped and unscoped nested copies, including a mitigation with no roo
     version: "3.4.0",
   };
   await expect(assertDependencyMaintenance(f.root, f.lock, f.entries)).resolves.toEqual({
-    mitigationCount: 4,
-    lockedInstanceCount: 6,
+    mitigationCount: 5,
+    lockedInstanceCount: 7,
   });
   delete f.lock.packages["node_modules/@nats-io/transport-node"];
   await expect(assertDependencyMaintenance(f.root, f.lock, f.entries)).resolves.toEqual({
-    mitigationCount: 4,
-    lockedInstanceCount: 5,
+    mitigationCount: 5,
+    lockedInstanceCount: 6,
   });
 });
 

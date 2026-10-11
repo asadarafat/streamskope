@@ -74,21 +74,48 @@ export const BUILD_DEPENDENCY_PATCHES = [
   },
   {
     name: "http-cache-semantics",
-    version: "4.2.0",
+    version: "4.3.0",
     advisoryUrl: "https://github.com/advisories/GHSA-ch52-4w7c-c8xp",
-    registryUrl: "https://registry.npmjs.org/http-cache-semantics/-/http-cache-semantics-4.2.0.tgz",
+    registryUrl: "https://registry.npmjs.org/http-cache-semantics/-/http-cache-semantics-4.3.0.tgz",
     integrity:
-      "sha512-dTxcvPXqPvXBQpq5dUr6mEMJX4oIEFv6bwom3FDwKRDsuIjjJGANqhBuoAn9c1RQJIdAKav33ED65E2ys+87QQ==",
+      "sha512-M5t5LlJpS1UHMjvwRQVdFHvPISGeLAxNcrWuJkeGh0KxsqCHZ1O3NXZU/8x7cD0BDcGW8kapxMKTvwlqrNkHkA==",
     files: [
       {
         file: "index.js",
-        originalSha256: "01b7d66c854b2fe53ac05c98feb6e0d64722ab8898a778e2d2426a8b468d178f",
-        patchedSha256: "91ae6a167e8e505a6524aad67551dbbf461c467cb17b41297eb5f74e9240c444",
+        originalSha256: "ede1cc404a492fa348eb9d97a3007a0d72aa717bd22cd86a56bd0824c19729ca",
+        patchedSha256: "f4d19d77c3766285bb1dc1f6b7cab2b21939a51ed4ad58c38777f43e5d3210a2",
         replacements: [
           {
             before: "    evaluateRequest(req) {\n        this._assertRequestHasHeaders(req);",
             after:
               "    evaluateRequest(req) {\n        this._assertRequestHasHeaders(req);\n\n        // Never let max-stale or stale-while-revalidate revive an entry\n        // whose freshness was zeroed for cache safety. Revalidate instead.\n        if (!this.storable() || this.maxAge() <= 0) {\n            return this._evaluateRequestMissResult(req);\n        }",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    name: "global-agent",
+    version: "4.1.3",
+    advisoryUrl: undefined,
+    rationaleUrl: "https://github.com/gajus/global-agent/issues/83",
+    registryUrl: "https://registry.npmjs.org/global-agent/-/global-agent-4.1.3.tgz",
+    integrity:
+      "sha512-KUJEViiuFT3I97t+GYMikLPJS2Lfo/S2F+DQuBWzuzaMPnvt5yyZePzArx36fBzpGTxZjIpDbXLeySLgh+k76g==",
+    files: [
+      {
+        file: "dist/classes/Agent.js",
+        originalSha256: "a2a275ef0a6955109a0b5c1473c7194c183c0dc3bc7e8009a3b59c98be88d539",
+        patchedSha256: "d03f1f4033f8b67b63dd9670907f9d0266639e641c15ebd270c4d9b5fe67b18b",
+        replacements: [
+          {
+            before: "        if (configuration.secureEndpoint) {",
+            after: "        if (this.protocol === 'https:') {",
+          },
+          {
+            before: "            connectionConfiguration.tls = {\n                ca:",
+            after:
+              "            connectionConfiguration.tls = {\n                host: connectionConfiguration.host,\n                ca:",
           },
         ],
       },
