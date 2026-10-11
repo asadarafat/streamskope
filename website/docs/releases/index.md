@@ -31,12 +31,14 @@ compatibility. See [plugin versioning and compatibility](../plugins/versioning.m
 
 | Plugin release      | Archived notes                                  | Published assets                                                                            |
 | ------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| EDA Connector 0.1.2 | [Read the release notes](plugins/eda/v0.1.2.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.1.2) |
+| NSP Connector 0.2.0 | [Read the release notes](plugins/nsp/v0.2.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.2.0) |
+| EDA Connector 0.2.0 | [Read the release notes](plugins/eda/v0.2.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.2.0) |
 | NSP Connector 0.1.2 | [Read the release notes](plugins/nsp/v0.1.2.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.1.2) |
-| EDA Connector 0.1.1 | [Read the release notes](plugins/eda/v0.1.1.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.1.1) |
+| EDA Connector 0.1.2 | [Read the release notes](plugins/eda/v0.1.2.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.1.2) |
 | NSP Connector 0.1.1 | [Read the release notes](plugins/nsp/v0.1.1.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.1.1) |
-| EDA Capture 0.1.0   | [Read the release notes](plugins/eda/v0.1.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.1.0) |
-| NSP Capture 0.1.0   | [Read the release notes](plugins/nsp/v0.1.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.1.0) |
+| EDA Connector 0.1.1 | [Read the release notes](plugins/eda/v0.1.1.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.1.1) |
+| NSP Connector 0.1.0 | [Read the release notes](plugins/nsp/v0.1.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.1.0) |
+| EDA Connector 0.1.0 | [Read the release notes](plugins/eda/v0.1.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.1.0) |
 
 <!-- /plugin-release-history -->
 
