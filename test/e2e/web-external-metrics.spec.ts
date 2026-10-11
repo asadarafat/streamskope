@@ -110,6 +110,12 @@ test("reads real optional metrics with honest source coverage and no automatic e
     }).toPass({ timeout: 20_000, intervals: [1000] });
     await expect(table.getByRole("cell", { name: "0", exact: true })).toHaveCount(2);
     await expect(panel).toContainText("identity is not bound to your connected cluster");
+    await expect(panel.getByText(/^Read two Kafka JMX partition-count gauges/u)).toBeInViewport({
+      ratio: 1,
+    });
+    await expect(panel.getByText(`Endpoint: ${fixture.endpoint}`, { exact: true })).toBeInViewport({
+      ratio: 1,
+    });
     await page.screenshot({ path: testInfo.outputPath("external-metrics.png"), fullPage: true });
     await testInfo.attach("external-metrics", {
       path: testInfo.outputPath("external-metrics.png"),
