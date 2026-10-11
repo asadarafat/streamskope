@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
 
 export interface CommandResult {
   readonly code: number;
@@ -75,4 +77,35 @@ export function replaceConstant(source: string, name: string, value: string): st
   const expression = new RegExp(`^${name}='[^']*'$`, "mu");
   assert.ok(expression.test(source), `Installer qualification requires one ${name} constant.`);
   return source.replace(expression, `${name}='${value}'`);
+}
+
+/** Use the installer-owned runtime for predecessor bootstrap and owned cleanup. */
+export async function prepareBrowserContainerlab(
+  root: string,
+  architecture: string,
+  environment = process.env,
+): Promise<string> {
+  assert.equal(process.getuid?.(), 0);
+  assert.ok(["amd64", "arm64"].includes(architecture));
+  const stage = await mkdtemp(join(root, ".install-tools-"));
+  await chmod(stage, 0o700);
+  try {
+    const result = await run(
+      "python3",
+      [
+        "-c",
+        await readFile("tools/package/browser-maintenance.py", "utf8"),
+        "prepare-containerlab",
+        root,
+        String(process.getuid()),
+        String(process.getgid!()),
+        architecture,
+        stage,
+      ],
+      environment,
+    );
+    return result.stdout.trim();
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
 }

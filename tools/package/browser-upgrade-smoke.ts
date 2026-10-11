@@ -15,7 +15,7 @@ import type { BrowserInstallerTarget } from "./browser-installer-evidence";
 import { nativeTransitionChecks } from "./browser-transition-checks";
 import { seedNativeMetricsRecovery } from "./browser-metrics-recovery-fixture";
 import { seedNativeObservationRecovery } from "./browser-observation-recovery-fixture";
-import { run, replaceConstant } from "./browser-qualification-process";
+import { run, replaceConstant, prepareBrowserContainerlab } from "./browser-qualification-process";
 import {
   createBrowserVaultFixture,
   verifyBrowserNativeWorkers,
@@ -304,23 +304,12 @@ export async function verifyTransition(
   try {
     // Bootstrap the unchanged predecessor with the same verified deployment
     // runtime as the current installer, independently of the host's global CLI.
-    const toolStage = join(temporary, ".install-tools");
-    await mkdir(toolStage, { mode: 0o700 });
-    const pinnedTool = await run(
-      "python3",
-      [
-        "-c",
-        await readFile("tools/package/browser-maintenance.py", "utf8"),
-        "prepare-containerlab",
-        temporary,
-        String(process.getuid()),
-        String(process.getgid!()),
-        target.platform.split("/")[1]!,
-        toolStage,
-      ],
+    const pinnedTool = await prepareBrowserContainerlab(
+      temporary,
+      target.platform.split("/")[1]!,
       environment,
     );
-    environment.PATH = `${dirname(pinnedTool.stdout.trim())}${delimiter}${environment.PATH ?? ""}`;
+    environment.PATH = `${dirname(pinnedTool)}${delimiter}${environment.PATH}`;
     await verifyImage(target, environment);
     const absent = await run("docker", ["inspect", container], environment, true);
     assert.ok(absent.code !== 0 && /No such object/u.test(absent.stderr));

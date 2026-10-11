@@ -9,7 +9,12 @@ import { fileURLToPath } from "node:url";
 import { prepareBrowserReleaseAssets } from "./browser-release";
 import { BROWSER_INSTALLER_NAME } from "./browser-installer";
 import { parseBrowserRegistryMetadata } from "./browser-registry-metadata";
-import { run, replaceConstant, type CommandResult } from "./browser-qualification-process";
+import {
+  run,
+  replaceConstant,
+  prepareBrowserContainerlab,
+  type CommandResult,
+} from "./browser-qualification-process";
 import { verifyBrowserUpgrade } from "./browser-upgrade-smoke";
 import type { BrowserUpgradeEvidence } from "./browser-upgrade-evidence";
 import { verifyBrowserContainer } from "./container-smoke";
@@ -268,9 +273,7 @@ with open(${JSON.stringify(fixtureCalls)},'a',encoding='utf8') as receipt:
             () => false,
           )
         ) {
-          const clab = (
-            await run("sh", ["-c", "command -v containerlab || command -v clab"])
-          ).stdout.trim();
+          const clab = await prepareBrowserContainerlab(state, architecture);
           await run(
             clab,
             [
