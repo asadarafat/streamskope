@@ -4,10 +4,6 @@ import { tmpdir } from "node:os";
 
 import { expect, it } from "vitest";
 
-import {
-  nativeArchiveExtractor,
-  createNativeBrokerRuntime,
-} from "../../aio-kafka/fixtures/native-runtime";
 import { KafkaFixtureError } from "../../aio-kafka/fixtures/error";
 import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
 import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
@@ -39,25 +35,25 @@ it("retains only allowlisted system codes and records cleanup failures separatel
   expect(
     new KafkaFixtureError("generate fixture TLS key", { code: "ENOENT" }, "", "failed").diagnostic,
   ).toMatchObject({ code: "ENOENT", cleanup: "failed" });
-  const untrusted = new KafkaFixtureError("prepare Kafka distribution", {
+  const untrusted = new KafkaFixtureError("prepare broker runtime", {
     code: "secret-value",
     message: "secret-value",
   });
   expect(untrusted.diagnostic).toEqual({
-    phase: "prepare Kafka distribution",
+    phase: "prepare broker runtime",
     exceptionClasses: [],
     cleanup: "not started",
   });
   expect(JSON.stringify(untrusted)).not.toContain("secret-value");
 });
 
-it("records a JavaScript download timeout without inventing a process exit code", () => {
+it("records a JavaScript image request timeout without inventing a process exit code", () => {
   const error = new KafkaFixtureError(
-    "prepare Kafka distribution",
+    "prepare broker runtime",
     new DOMException("private download details", "TimeoutError"),
   );
   expect(error.diagnostic).toEqual({
-    phase: "prepare Kafka distribution",
+    phase: "prepare broker runtime",
     exceptionClasses: [],
     code: "ETIMEDOUT",
     cleanup: "not started",
@@ -67,7 +63,7 @@ it("records a JavaScript download timeout without inventing a process exit code"
 
 it("does not report a cancelled JavaScript request as a process exit", () => {
   const error = new KafkaFixtureError(
-    "prepare Kafka distribution",
+    "prepare broker runtime",
     new DOMException("private cancellation details", "AbortError"),
   );
   expect(error.diagnostic).not.toHaveProperty("exitCode");
@@ -75,25 +71,28 @@ it("does not report a cancelled JavaScript request as a process exit", () => {
   expect(JSON.stringify(error)).not.toContain("private cancellation details");
 });
 
-it("uses native Windows archive extraction without depending on Git or MSYS PATH tools", () => {
-  expect(nativeArchiveExtractor("win32", "C:\\Windows")).toBe("C:\\Windows\\System32\\tar.exe");
-  expect(nativeArchiveExtractor("win32", "D:\\Windows")).toBe("D:\\Windows\\System32\\tar.exe");
-  expect(() => nativeArchiveExtractor("win32", "relative")).toThrow("absolute SystemRoot");
-  expect(nativeArchiveExtractor("darwin", "irrelevant")).toBe("tar");
-  expect(nativeArchiveExtractor("linux", "irrelevant")).toBe("tar");
-});
-
-it("removes both owned directories when configuration fails before OAuth or JVM startup", async () => {
-  const extraction = await mkdtemp(join(tmpdir(), "native-extract-test-"));
-  const directory = await mkdtemp(join(tmpdir(), "native-data-test-"));
+it("removes owned data and disposes the driver when configuration fails before startup", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "aio-data-test-"));
+  let driverDisposed = false;
   await expect(
     startKafkaFixture({
-      prepare: () => createNativeBrokerRuntime(() => Promise.resolve(extraction)),
+      prepare: () =>
+        Promise.resolve({
+          metadata: { backend: "container" as const, kafkaVersion: "4.3.1" },
+          tool: () => Promise.resolve(),
+          start: () => Promise.resolve(),
+          exited: () => Promise.resolve(true),
+          logs: () => Promise.resolve(""),
+          dispose: () => {
+            driverDisposed = true;
+            return Promise.resolve();
+          },
+        }),
       directory: () => Promise.resolve(directory),
       configuration: () => Promise.reject(new Error("private configuration failure")),
     }),
   ).rejects.toMatchObject({ diagnostic: { phase: "initialize fixture", cleanup: "passed" } });
-  await expect(stat(extraction)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(driverDisposed).toBe(true);
   await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
 });
 

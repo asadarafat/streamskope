@@ -21,7 +21,7 @@ offset resets and broker failures cannot alter the development lab.
 | Authorization broker | ACLs, groups, quotas and topic administration | Disposable Docker instance of the same pinned Kafka image |
 | Replication | Three brokers, broker failure and replica health | Three disposable Docker instances |
 | Connect / Registry / metrics | Real service behavior and external metrics | Disposable service containers, alongside their owned broker |
-| Native installer recovery | Actual installer checks on native operating systems | Explicit JVM backend; shared secure configuration and matching verified Apache archive |
+| Native installer recovery | Actual installer checks on Linux, macOS and Windows | Every client attaches to the same configured remote AIO TLS/OAuth broker |
 
 Implementations live in `fixtures/`. `pins.ts` reads the Kafka version and digest
 from `topology.clab.yml`; Connect uses that same version. The reference-capable
@@ -40,8 +40,9 @@ label. Cleanup checks the immutable container ID and owner before removal,
 confirms removal and supports retries. A creation timeout is resolved through its
 owner label; a conflicting foreign name is never removed. Tests use random
 loopback ports and bounded CPU/memory settings. The Docker backend currently
-requires a Linux Docker host, including a Linux VM; native installer recovery
-selects the JVM backend explicitly instead of silently falling back.
+requires a Linux Docker host, including a Linux VM. Native installer recovery
+uses an explicitly configured remote AIO connection on every operating system;
+it does not download Kafka or start a host JVM.
 
 Run the complete real-provider/browser lane from the repository root:
 
@@ -55,6 +56,10 @@ lab. The development-lab verification below and tests that use
 `loadFixtureConnection()` require a running lab or an explicit external fixture.
 
 ## Prerequisites
+
+These are prerequisites for the Linux fixture host. A remote native-test client
+needs Node.js and its OS credential service, plus access to the AIO endpoints and
+a local copy of the public CA certificate; it needs no Docker, Containerlab or JDK.
 
 - Node.js 24.21.0 or newer in the 24.x line
 - Docker
@@ -165,6 +170,46 @@ node --import tsx tools/dev/kafka-fixture/cli.ts stop --name streamskope-kafka
 Cleanup requires the matching ownership record. It removes only that lab,
 record, Containerlab directory, and generated certificate directory. It will
 not destroy a name that StreamSkope does not own.
+
+## Share one AIO host across operating systems
+
+Run the broker on one trusted Linux AIO host. Linux, macOS and Windows native
+recovery clients use the same connection settings:
+
+| Setting | Client value |
+| --- | --- |
+| `STREAMSKOPE_TEST_KAFKA_ENDPOINT` | Reachable Kafka bootstrap host and port |
+| `STREAMSKOPE_TEST_OAUTH_ENDPOINT` | Reachable OAuth token URL |
+| `STREAMSKOPE_TEST_CA_PATH` | Local path to a copy of the host's public `ca.pem` |
+
+The default topology advertises `localhost` and its configured external Kafka
+port. For remote clients, use an SSH tunnel that preserves that port, for example
+with the default lab ports:
+
+```sh
+ssh -N -L 19093:127.0.0.1:19093 -L 15000:127.0.0.1:15000 USER@AIO_HOST
+```
+
+Keep the tunnel open while testing. Set the Kafka endpoint to `127.0.0.1:19093`
+and the token URL to
+`http://127.0.0.1:15000/rest-gateway/rest/api/v1/auth/token`. Copy only the public
+CA certificate to the client. With direct network access, the broker's advertised
+endpoint must also be reachable from the client and covered by its certificate.
+Keep this fixture on a trusted test network; do not expose its demo credentials
+or services to the public internet.
+
+Native recovery preflight verifies TLS/OAuth metadata before downloading or
+replacing an installer. Missing or unreachable settings fail the rehearsal;
+they do not select another broker implementation. Each rehearsal creates a
+unique topic and removes that topic during teardown. Clients never stop or
+destroy the shared lab.
+
+The manual GitHub recovery workflow takes its Kafka and OAuth endpoints from the
+repository variables with the names above. Set `STREAMSKOPE_TEST_CA_PEM` to the
+public PEM certificate; the workflow writes the local CA file on each runner.
+Every runner needs a route to these endpoints. This workflow does not establish
+an SSH/VPN connection or make a private Orb lab reachable automatically. A failed
+preflight is a failed check, and an unexecuted native rehearsal is not a pass.
 
 ## Verify an existing external fixture
 

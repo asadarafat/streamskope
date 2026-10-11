@@ -14,13 +14,6 @@ export async function kafkaPin(): Promise<{ image: string; version: string }> {
   return { image: image[1], version: image[2] };
 }
 
-// Native installer runners cannot run the Linux fixture image. Refuse a Kafka
-// image update until its matching native archive checksum is reviewed as well.
-export const NATIVE_ARCHIVE_SHA512: Readonly<Record<string, string>> = {
-  "4.3.1":
-    "c7d7b2318cb51aa0c61d3246a51c349210073c5c9b754947ef965a439f2f939e8600f204e134a75ac31faf3829c9370960ef7c6a9886c8a1dbf0339a21f4c54c",
-};
-
 // Reference-capable schema tests need this Registry variant. The interactive
 // TLS/OAuth Registry retains its separately qualified fixture.config.json pin.
 export const REFERENCE_REGISTRY_IMAGE =

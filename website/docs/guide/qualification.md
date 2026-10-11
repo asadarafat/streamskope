@@ -578,8 +578,9 @@ the selected published target. The `0.6.0` → `0.7.0` run stopped at that basel
 failure before reaching the target installer.
 
 To run the same candidate check locally on macOS ARM64, install the
-[development prerequisites](../start/development.md), Java 17+ and unlock the OS
-credential service, then run from a clean checkout:
+[development prerequisites](../start/development.md), unlock the OS credential
+service and configure a connection to the shared remote AIO fixture, then run
+from a clean checkout:
 
 ```sh
 node --import tsx tools/check/native-recovery.ts --from 0.6.0 --candidate dist/installers/StreamSkope-0.0.0-dev-darwin-arm64.dmg --candidate-version 0.0.0-dev
@@ -587,11 +588,24 @@ node --import tsx tools/check/native-recovery.ts --from 0.6.0 --candidate dist/i
 
 Use the matching native filename on Linux, where Xvfb, D-Bus and GNOME Keyring
 are also required. Windows installer rehearsals run only in disposable Actions
-accounts because NSIS modifies user registration and shortcuts. Without explicit
-fixture connection variables, the runner starts a checksum-pinned, loopback-only
-Kafka broker with TLS and RS256 OAuth. macOS replaces an isolated `.app`; Linux
+accounts because NSIS modifies user registration and shortcuts. All clients use
+`STREAMSKOPE_TEST_KAFKA_ENDPOINT`, `STREAMSKOPE_TEST_OAUTH_ENDPOINT` and
+`STREAMSKOPE_TEST_CA_PATH` to attach to the same remote AIO TLS/OAuth broker. The
+CA path is local to the client; copy only the host's public CA certificate. The
+client needs a route or tunnel to the token service and advertised Kafka endpoint.
+Missing or unreachable configuration fails preflight before installer download
+or replacement. The client never starts a host JVM or destroys the shared lab;
+it removes only its unique test topic. See the
+[remote AIO setup](https://github.com/asadarafat/streamskope/blob/main/aio-kafka/README.md#share-one-aio-host-across-operating-systems).
+macOS replaces an isolated `.app`; Linux
 replaces the AppImage and starts its extracted native payload. Linux FUSE and
 desktop launcher integration are outside this rehearsal.
+
+The manual workflow uses repository variables `STREAMSKOPE_TEST_KAFKA_ENDPOINT`,
+`STREAMSKOPE_TEST_OAUTH_ENDPOINT` and `STREAMSKOPE_TEST_CA_PEM`. The PEM value is
+written to a local file on each runner. Configure network access first: the
+workflow does not create an SSH/VPN route to a private lab. PR checks do not
+establish native installer recovery; unexecuted or failed checks remain explicit.
 
 The sanitized report under `dist/native-recovery/` records outcome and cleanup;
 only this report is uploaded by the workflow. Record the exact source, OS/CPU,
@@ -602,7 +616,9 @@ downgrade, rehearse its exact source/target builds.
 
 ### Source-only recovery checks
 
-For a focused development rehearsal with the [AIO fixture](../start/development.md):
+For a focused development rehearsal, first configure the same three AIO
+connection variables above. A Linux client can instead use its owned local
+[AIO fixture](../start/development.md):
 
 ```sh
 npm run build

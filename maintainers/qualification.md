@@ -326,20 +326,31 @@ Candidate success therefore does not retroactively qualify the old build. Keep
 historical outcomes in the [operator qualification record](../website/docs/guide/qualification.md)
 rather than treating them as current-source results.
 
-The rehearsal needs Java 17+ and an unlocked OS credential service. Without all
-three explicit fixture variables (`STREAMSKOPE_TEST_KAFKA_ENDPOINT`,
-`STREAMSKOPE_TEST_OAUTH_ENDPOINT`, `STREAMSKOPE_TEST_CA_PATH`), supply none and let
-it start its explicitly selected native JVM backend with TLS/RS256 OAuth. This
-backend shares the Docker fixture's broker configuration and derives the Kafka
-version from the AIO image pin; it verifies the matching Apache archive checksum.
-It remains available because native macOS/Windows installer runners lack Docker.
+All native clients attach to one remote AIO fixture using the same three settings:
+`STREAMSKOPE_TEST_KAFKA_ENDPOINT`, `STREAMSKOPE_TEST_OAUTH_ENDPOINT` and
+`STREAMSKOPE_TEST_CA_PATH`. The last setting is a local copy of the public AIO CA
+certificate. [Remote AIO setup](../aio-kafka/README.md#share-one-aio-host-across-operating-systems)
+describes the default loopback topology, SSH forwarding and advertised-address
+requirements. A read-only TLS/OAuth preflight runs before installer download or
+replacement. Missing, malformed or unreachable settings fail; no host JVM or
+platform-specific Kafka implementation is selected. The client creates and
+removes only its unique test topic, leaving the shared broker with its owner.
+
+The manual workflow reads the Kafka/OAuth repository variables and
+`STREAMSKOPE_TEST_CA_PEM`; it materializes the CA file per runner. Provision a
+route or tunnel from every runner first. GitHub-hosted native runners cannot
+reach a private local lab automatically. This is a separate manual rehearsal,
+not the release packaging matrix. No live native result is implied by PR CI.
+
+The client needs Node.js and an unlocked OS credential service, without a JDK.
 Linux additionally needs Xvfb, D-Bus and GNOME Keyring. Windows runs only on a
 disposable GitHub Actions account because installer registration affects the
 user account. macOS copies the DMG app into an isolated directory; Linux launches
 the extracted AppImage, which does not qualify FUSE or desktop launcher integration.
 
-Only sanitized reports are uploaded; owned app data, credentials, traces and
-broker logs are removed. Confirm cleanup outcomes. This separate rehearsal does
+Only sanitized reports are uploaded; owned app data, credentials and traces are
+removed. The remote fixture and its server logs remain with the AIO host owner.
+Confirm application and owned-topic cleanup outcomes. This separate rehearsal does
 not establish cross-account credential portability, live EDA/NSP behavior or
 long-running renderer endurance.
 

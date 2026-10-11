@@ -2,8 +2,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
-import { KafkaFixtureError, type KafkaFixtureDiagnostic } from "../../aio-kafka/fixtures/error";
+import { preflightRemoteAioFixture, RemoteAioFixtureError } from "../../aio-kafka/fixtures/remote";
 
 import {
   downloadNativeInstaller,
@@ -19,7 +18,18 @@ function failureCode(error: unknown): string {
   const code =
     error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
   return typeof code === "string" &&
-    ["ENOENT", "EACCES", "EPERM", "EBUSY", "ETIMEDOUT", "ENOSPC", "EIO", "ENOTEMPTY"].includes(code)
+    [
+      "ENOENT",
+      "EACCES",
+      "EPERM",
+      "EBUSY",
+      "ETIMEDOUT",
+      "ENOSPC",
+      "EIO",
+      "ENOTEMPTY",
+      "FIXTURE_NOT_CONFIGURED",
+      "FIXTURE_UNAVAILABLE",
+    ].includes(code)
     ? code
     : "VERIFICATION_FAILED";
 }
@@ -42,17 +52,6 @@ async function main(): Promise<void> {
   if (process.platform === "win32" && process.env.GITHUB_ACTIONS !== "true") {
     throw new Error("Windows installer recovery requires a disposable GitHub Actions account.");
   }
-  const fixtureVariables = [
-    "STREAMSKOPE_TEST_KAFKA_ENDPOINT",
-    "STREAMSKOPE_TEST_OAUTH_ENDPOINT",
-    "STREAMSKOPE_TEST_CA_PATH",
-  ];
-  const supplied = fixtureVariables.filter((name) => process.env[name]);
-  if (supplied.length !== 0 && supplied.length !== fixtureVariables.length) {
-    throw new Error(
-      "Provide all three STREAMSKOPE_TEST_* connection variables, or none to start the owned fixture.",
-    );
-  }
   const output = resolve("dist", "native-recovery");
   const outputPath = join(output, `${process.platform}-${process.arch}.json`);
   const reportPath = resolve("test-results", "electron", "native-recovery.json");
@@ -61,9 +60,9 @@ async function main(): Promise<void> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "streamskope native-recovery-")));
   let plan: NativeRecoveryPlan | undefined;
   let report: Record<string, unknown> | undefined;
-  let fixture: Awaited<ReturnType<typeof startKafkaFixture>> | undefined;
-  let phase = "target installer";
-  let failure: { phase: string; code: string; fixture?: KafkaFixtureDiagnostic } | undefined;
+  let fixtureVerified = false;
+  let phase = "remote AIO fixture preflight";
+  let failure: { phase: string; code: string; recovery?: string } | undefined;
   const cleanup: Record<string, { outcome: "passed" | "failed"; code?: string }> = {};
   const clean = async (name: string, action: () => Promise<void>): Promise<void> => {
     try {
@@ -76,10 +75,8 @@ async function main(): Promise<void> {
     }
   };
   try {
-    if (supplied.length === 0) {
-      phase = "disposable Kafka fixture";
-      fixture = await startKafkaFixture(undefined, { backend: "native" });
-    }
+    await preflightRemoteAioFixture();
+    fixtureVerified = true;
     phase = "target installer";
     const target = candidate
       ? await loadCandidateInstaller(args[3]!, to, root)
@@ -96,8 +93,6 @@ async function main(): Promise<void> {
         ? {}
         : { candidateSourceRevision: target.sourceRevision }),
     };
-    // Keep the owned fixture out of build/package tests; expose it only to recovery.
-    if (fixture !== undefined) Object.assign(process.env, fixture.environment);
     process.env.STREAMSKOPE_NATIVE_RECOVERY_PLAN = await writeRecoveryPlan(plan);
     process.env.STREAMSKOPE_NATIVE_RECOVERY = "1";
     phase = "native installer replacement and profile recovery";
@@ -114,15 +109,12 @@ async function main(): Promise<void> {
     failure = {
       phase,
       code: failureCode(error),
-      ...(error instanceof KafkaFixtureError ? { fixture: error.diagnostic } : {}),
+      ...(error instanceof RemoteAioFixtureError ? { recovery: error.message } : {}),
     };
   } finally {
     const ownedPlan = plan;
-    const ownedFixture = fixture;
     if (ownedPlan !== undefined)
       await clean("owned installation", () => uninstallNativeRecovery(ownedPlan));
-    if (ownedFixture !== undefined)
-      await clean("disposable Kafka fixture", () => ownedFixture.dispose());
     await clean("temporary files", () => rm(root, { recursive: true, force: true, maxRetries: 3 }));
   }
   if (plan === undefined || report === undefined)
@@ -153,8 +145,11 @@ async function main(): Promise<void> {
           plan === undefined
             ? []
             : [plan.from, plan.to].map(({ path: _path, ...published }) => published),
-        fixture: fixture?.metadata ?? {
-          source: supplied.length === 0 ? "not started" : "explicit external disposable fixture",
+        fixture: {
+          source: "configured external AIO Kafka",
+          preflight: fixtureVerified ? "passed" : "not completed",
+          ownership: "external",
+          brokerCleanup: "not attempted; remote owner retains authority",
         },
       },
       null,
@@ -163,7 +158,7 @@ async function main(): Promise<void> {
   );
   if (failure !== undefined)
     throw new Error(
-      `Qualification failed during ${failure.phase}; sanitized evidence: ${outputPath}`,
+      `Qualification failed during ${failure.phase}.${failure.recovery === undefined ? "" : ` ${failure.recovery}`} Sanitized evidence: ${outputPath}`,
     );
 }
 
