@@ -1,7 +1,5 @@
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
@@ -9,21 +7,11 @@ import { Admin } from "@platformatic/kafka";
 
 import type { SecureConnectionInput } from "../../src/features/kafka/contracts";
 
-const execute = promisify(execFile);
+import { FixtureContainerOwner } from "./container-owner";
+import { kafkaPin } from "./pins";
+import { loopbackPorts } from "./loopback";
 
-async function availablePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-  if (address === null || typeof address === "string") throw new Error("No fixture port.");
-  return address.port;
-}
+const execute = promisify(execFile);
 
 /** Three disposable KRaft nodes: stopping one leaves a real controller quorum. */
 export async function startReplicationFixture(jmx?: {
@@ -39,21 +27,14 @@ export async function startReplicationFixture(jmx?: {
 }> {
   if (process.platform !== "linux")
     throw new Error("The isolated replication fixture requires Linux Docker host networking.");
-  const topology = await readFile("aio-kafka/topology.clab.yml", "utf8");
-  const image = /image:\s*(apache\/kafka:[^\s]+)/u.exec(topology)?.[1];
-  if (!image?.includes("@sha256:")) throw new Error("Kafka fixture image must be pinned.");
+  const { image } = await kafkaPin();
+  const owner = new FixtureContainerOwner();
+  const identities = new Map<string, string>();
   const ports: { client: number; controller: number }[] = [];
-  // Sequential reservations avoid accidentally recycling one ephemeral port in this fixture.
-  const reserved = new Set<number>();
-  while (reserved.size < 6) reserved.add(await availablePort());
-  const allocated = [...reserved];
+  const allocated = await loopbackPorts(jmx ? 9 : 6);
   for (let node = 0; node < 3; node++)
     ports.push({ client: allocated[node * 2]!, controller: allocated[node * 2 + 1]! });
-  const jmxPorts: number[] = [];
-  if (jmx) {
-    while (reserved.size < 9) reserved.add(await availablePort());
-    jmxPorts.push(...[...reserved].slice(6));
-  }
+  const jmxPorts = allocated.slice(6);
   const prefix = `streamskope-replication-${randomUUID()}`;
   const names = ports.map((_, index) => `${prefix}-${index + 1}`);
   const clusterId = randomBytes(16).toString("base64url");
@@ -65,17 +46,8 @@ export async function startReplicationFixture(jmx?: {
     connectTimeout: 1_000,
     requestTimeout: 5_000,
   });
-  const created = new Set<string>();
-  let disposed = false;
   const dispose = async (): Promise<void> => {
-    if (disposed) return;
-    disposed = true;
-    const results = await Promise.allSettled([
-      admin.close(),
-      ...[...created].map((name) =>
-        execute("docker", ["rm", "--force", "--volumes", name], { timeout: 30_000 }),
-      ),
-    ]);
+    const results = await Promise.allSettled([admin.close(), owner.dispose()]);
     if (results.some((result) => result.status === "rejected"))
       throw new Error("The isolated replication fixture cleanup did not complete.");
   };
@@ -85,6 +57,7 @@ export async function startReplicationFixture(jmx?: {
     return name;
   };
   try {
+    await owner.prepare(image);
     for (const [index, p] of ports.entries()) {
       const environment: Record<string, string> = {
         ...(jmx
@@ -115,37 +88,31 @@ export async function startReplicationFixture(jmx?: {
         KAFKA_NUM_NETWORK_THREADS: "2",
         KAFKA_NUM_IO_THREADS: "2",
       };
-      // No --rm: restart must retain this node's log and identity until final cleanup.
-      created.add(names[index]!);
-      await execute(
-        "docker",
-        [
-          "run",
-          "--detach",
-          "--name",
-          names[index]!,
-          "--network",
-          "host",
-          "--memory",
-          "768m",
-          ...(jmx
-            ? [
-                "--volume",
-                `${jmx.agent}:/opt/metrics/agent.jar:ro`,
-                "--volume",
-                `${jmx.configuration}:/opt/metrics/exporter.yml:ro`,
-              ]
-            : []),
-          ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
-          image,
-        ],
-        { timeout: 30_000 },
-      );
+      const id = await owner.create(names[index]!, [
+        "--network",
+        "host",
+        "--memory",
+        "768m",
+        "--cpus",
+        "2",
+        ...(jmx
+          ? [
+              "--volume",
+              `${jmx.agent}:/opt/metrics/agent.jar:ro`,
+              "--volume",
+              `${jmx.configuration}:/opt/metrics/exporter.yml:ro`,
+            ]
+          : []),
+        ...Object.entries(environment).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+        image,
+      ]);
+      identities.set(names[index]!, id);
+      await owner.start(id);
     }
     let ready = false;
     for (let attempt = 0; attempt < 60; attempt++) {
       if (attempt % 5 === 0) {
-        for (const name of created) {
+        for (const name of identities.values()) {
           const { stdout } = await execute(
             "docker",
             ["inspect", "--format", "{{.State.Running}}", name],
@@ -191,10 +158,12 @@ export async function startReplicationFixture(jmx?: {
         tls: { enabled: false },
       },
       async stopBroker(id): Promise<void> {
-        await execute("docker", ["stop", "--time", "10", brokerName(id)], { timeout: 30_000 });
+        await execute("docker", ["stop", "--time", "10", identities.get(brokerName(id))!], {
+          timeout: 30_000,
+        });
       },
       async startBroker(id): Promise<void> {
-        await execute("docker", ["start", brokerName(id)], { timeout: 30_000 });
+        await owner.start(identities.get(brokerName(id))!);
       },
       dispose,
     };

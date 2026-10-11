@@ -25,7 +25,7 @@ import {
   provisionSeededFixtureTopic,
   type FixtureConfig,
   type FixtureConnection,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 function useLocalhost(endpoint: string): string {
   return endpoint.replace(/^127\.0\.0\.1:/u, "localhost:");

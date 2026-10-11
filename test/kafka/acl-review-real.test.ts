@@ -11,7 +11,7 @@ import type { KafkaActiveConnection } from "../../src/features/kafka/application
 import type { KafkaAclBinding } from "../../src/features/kafka/contracts";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import { PlatformaticAdminPort } from "../../src/features/kafka/engine/platformatic-admin";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 
 it("compares reviewed topic READ semantics and exact ACL application with a real StandardAuthorizer broker", async () => {
   const fixture = await startAuthorizationFixture();

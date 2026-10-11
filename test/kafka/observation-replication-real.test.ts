@@ -6,7 +6,7 @@ import { ObservationService } from "../../src/features/kafka/application/observa
 import { analyzeObservations } from "../../src/features/kafka/contracts/observation-analysis";
 import type { ObservationCapture } from "../../src/features/kafka/contracts/observations";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
-import { startReplicationFixture } from "../support/kafka-replication-fixture";
+import { startReplicationFixture } from "../../aio-kafka/fixtures/replication";
 
 it("reports actual ISR loss and an offline leader, then clears replication findings after broker recovery", async () => {
   const fixture = await startReplicationFixture();

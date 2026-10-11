@@ -1,30 +1,30 @@
 import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
-
 import {
   loadFixtureConfig,
   provisionSeededFixtureTopic,
   type FixtureConnection,
   type SeededFixtureTopic,
-} from "./kafka-fixture";
-import { startNativeKafkaFixture, disposeNativeFixtureResources } from "./native-kafka-fixture";
-import { startSchemaRegistryServerFixture } from "./schema-registry-server-fixture";
+} from "../../aio-kafka/fixtures/development";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
+import { startSchemaRegistryServerFixture } from "../../aio-kafka/fixtures/registry";
 
 /** Production-browser tests against a real, owned Registry and secured Kafka broker. */
 export async function startRegistryBrowserFixture(): Promise<
   SeededFixtureTopic & { readonly connection: FixtureConnection }
 > {
-  const native = await startNativeKafkaFixture();
+  const kafka = await startKafkaFixture();
   let registry: Awaited<ReturnType<typeof startSchemaRegistryServerFixture>> | undefined;
   let seeded: SeededFixtureTopic | undefined;
   const dispose = (): Promise<void> =>
-    disposeNativeFixtureResources([
+    disposeFixtureResources([
       (): Promise<void> => seeded?.dispose() ?? Promise.resolve(),
       (): Promise<void> => registry?.dispose() ?? Promise.resolve(),
-      (): Promise<void> => native.dispose(),
+      (): Promise<void> => kafka.dispose(),
     ]);
   try {
-    registry = await startSchemaRegistryServerFixture(native.internalBroker);
+    registry = await startSchemaRegistryServerFixture(kafka.internalBroker);
     const config = await loadFixtureConfig();
     const adapter = new SchemaRegistryHttpAdapter(new NodeBoundedJsonHttp());
     await adapter.register(
@@ -43,9 +43,9 @@ export async function startRegistryBrowserFixture(): Promise<
       AbortSignal.timeout(15000),
     );
     const connection: FixtureConnection = {
-      kafkaEndpoint: native.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
-      oauthEndpoint: native.environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT!,
-      caPath: native.environment.STREAMSKOPE_TEST_CA_PATH!,
+      kafkaEndpoint: kafka.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
+      oauthEndpoint: kafka.environment.STREAMSKOPE_TEST_OAUTH_ENDPOINT!,
+      caPath: kafka.environment.STREAMSKOPE_TEST_CA_PATH!,
       schemaRegistryEndpoint: registry.url,
     };
     seeded = await provisionSeededFixtureTopic(connection);

@@ -17,7 +17,7 @@ import {
   fetchFixtureToken,
   loadFixtureConfig,
   loadFixtureConnection,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 it("decodes real Kafka original bytes using authenticated Registry IDs and Protobuf references", async () => {
   const config = await loadFixtureConfig();

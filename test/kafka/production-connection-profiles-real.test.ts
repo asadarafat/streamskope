@@ -21,16 +21,16 @@ import {
   openPassphraseVault,
   type PassphraseVault,
 } from "../../src/platform/node/vault/passphrase-vault";
-import { loadFixtureConfig } from "../support/kafka-fixture";
-import { startNativeKafkaFixture } from "../support/native-kafka-fixture";
+import { loadFixtureConfig } from "../../aio-kafka/fixtures/development";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 import { undecodableClientKey } from "../support/tls-client-identity-fixture";
 
 const mechanisms = ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"] as const;
-let fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>>;
+let fixture: Awaited<ReturnType<typeof startKafkaFixture>>;
 
 beforeAll(async () => {
-  fixture = await startNativeKafkaFixture(undefined, { authenticationMatrix: true });
+  fixture = await startKafkaFixture(undefined, { authenticationMatrix: true });
 }, 240_000);
 afterAll(async () => {
   await fixture?.dispose();

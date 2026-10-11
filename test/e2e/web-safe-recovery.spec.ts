@@ -12,8 +12,8 @@ import { HOST_PROTOCOL_VERSION } from "../../src/features/kafka/contracts";
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway, type WebGatewayRuntime } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 import {
   fetchTopicMessages,
   observeBrowserDiagnostics,
@@ -260,7 +260,7 @@ test("reviews and applies replay, offset recovery and ACL changes through the re
       body: Buffer.from(JSON.stringify({ problems: diagnostics.problems, httpProblems }, null, 2)),
       contentType: "application/json",
     });
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => gateway?.close() ?? Promise.resolve(),
       (): Promise<void> => fixture.dispose(),
       (): Promise<void> => rm(rendererRoot, { recursive: true, force: true }),

@@ -9,7 +9,7 @@ import { HOST_PROTOCOL_VERSION, type HostCommand } from "../../src/features/kafk
 import { MemoryObservationStore } from "../../src/features/kafka/application/observation-store";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture, type DevelopmentBackend } from "../support/product-web-fixture";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 import { testHostExecute } from "../support/host-response";
 import { observeBrowserDiagnostics } from "../support/workbench-browser";
 

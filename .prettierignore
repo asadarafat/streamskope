@@ -1,6 +1,7 @@
 .codex/
 .git/
-aio-kafka/
+aio-kafka/*
+!aio-kafka/fixtures/
 aio-nats/ownership/
 coverage/
 dist/

@@ -14,8 +14,8 @@ import {
   parseHostCommand,
   parseHostCommandResponse,
 } from "../../src/features/kafka/contracts";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 
 it("expands and UUID-deletes real topics with no preview writes, duplicate apply, stale replacement/assignment and real permission refusal", async () => {
   const fixture = await startAuthorizationFixture(),
@@ -186,7 +186,7 @@ it("expands and UUID-deletes real topics with no preview writes, duplicate apply
     failures.push(error);
   } finally {
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => backend.shutdown(),
         (): Promise<void> => fixture.dispose(),
       ]);

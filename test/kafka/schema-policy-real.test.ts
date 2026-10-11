@@ -12,7 +12,7 @@ import type { SchemaPolicyChange } from "../../src/features/kafka/contracts/sche
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
 import { startRegistryBrowserFixture } from "../support/registry-browser-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 
 it("sets, coalesces and inherits real subject policy with no-op, stale policy/writer refusal and independent readback", async () => {
   const fixture = await startRegistryBrowserFixture(),
@@ -177,7 +177,7 @@ it("sets, coalesces and inherits real subject policy with no-op, stale policy/wr
     failures.push(error);
   } finally {
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => backend.shutdown(),
         (): Promise<void> => fixture.dispose(),
       ]);

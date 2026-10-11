@@ -17,15 +17,13 @@ import type { KafkaCompleteRecord } from "../../src/features/kafka/contracts/rec
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
-import {
-  startNativeKafkaFixture,
-  disposeNativeFixtureResources,
-} from "../support/native-kafka-fixture";
-import { startSchemaRegistryServerFixture } from "../support/schema-registry-server-fixture";
-import { loadFixtureConfig, fixtureClientOptions } from "../support/kafka-fixture";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
+import { startSchemaRegistryServerFixture } from "../../aio-kafka/fixtures/registry";
+import { loadFixtureConfig, fixtureClientOptions } from "../../aio-kafka/fixtures/development";
 
 it("authors registered referenced schemas, publishes reviewed bytes and independently decodes real broker receipts", async () => {
-  const fixture = await startNativeKafkaFixture();
+  const fixture = await startKafkaFixture();
   let registry: Awaited<ReturnType<typeof startSchemaRegistryServerFixture>> | undefined;
   let admin: Admin | undefined;
   const backend = createKafkaBackend(),
@@ -152,7 +150,7 @@ it("authors registered referenced schemas, publishes reviewed bytes and independ
       messageType: "",
       payload: '{"id":9007199254740993,"detail":{"name":"private-authoring-sentinel"}}',
     });
-    expect(bad).toMatchObject({
+    expect(bad, bad.ok ? undefined : JSON.stringify(bad.error)).toMatchObject({
       ok: true,
       result: { authoring: { state: "invalid", issues: [{ code: "precision" }] } },
     });
@@ -260,7 +258,7 @@ it("authors registered referenced schemas, publishes reviewed bytes and independ
     failures.push(error);
   } finally {
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => backend.shutdown(),
         async (): Promise<void> => {
           if (admin && topicCreated) await admin.deleteTopics({ topics: [topic] });

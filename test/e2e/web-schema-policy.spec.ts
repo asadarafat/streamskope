@@ -10,7 +10,7 @@ import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { startRegistryBrowserFixture } from "../support/registry-browser-fixture";
 import { configureLocalConnection } from "../support/web-profile-workflow";
 import { openWorkbenchResource } from "../support/workbench-browser";
@@ -139,7 +139,7 @@ test("reviews real subject policy, confirms override, refreshes without another 
     failures.push(error);
   } finally {
     try {
-      await disposeNativeFixtureResources([
+      await disposeFixtureResources([
         (): Promise<void> => page.close(),
         (): Promise<void> => gateway?.close() ?? Promise.resolve(),
         (): Promise<void> => fixture?.dispose() ?? Promise.resolve(),

@@ -6,10 +6,8 @@ import avro from "avsc";
 import protobuf from "protobufjs";
 import { expect, it, vi } from "vitest";
 
-import {
-  startNativeKafkaFixture,
-  disposeNativeFixtureResources,
-} from "../support/native-kafka-fixture";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import {
   MemoryRepairJobStore,
   RepairJournal,
@@ -34,7 +32,7 @@ import {
 import { createKafkaBackend, type NodeKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
-import { startSchemaRegistryServerFixture } from "../support/schema-registry-server-fixture";
+import { startSchemaRegistryServerFixture } from "../../aio-kafka/fixtures/registry";
 import type { KafkaCompleteRecord } from "../../src/features/kafka/contracts/record-bytes";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import {
@@ -46,8 +44,8 @@ import {
   fixtureClientOptions,
   type FixtureConnection,
   provisionSeededFixtureTopic,
-} from "../support/kafka-fixture";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+} from "../../aio-kafka/fixtures/development";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 
 async function read(connection: KafkaActiveConnection, topic: string): Promise<ReplayRecord[]> {
   const stream = await connection.openMessageStream(
@@ -72,7 +70,7 @@ async function read(connection: KafkaActiveConnection, topic: string): Promise<R
   return records;
 }
 it("replays frozen original bytes to the same topic, another topic and a separately authenticated broker, retaining tombstones, headers and timestamps", async () => {
-  const native = await startNativeKafkaFixture();
+  const native = await startKafkaFixture();
   try {
     await qualifyReplay({
       kafkaEndpoint: native.environment.STREAMSKOPE_TEST_KAFKA_ENDPOINT!,
@@ -320,7 +318,7 @@ async function qualifyReplay(fixture: FixtureConnection): Promise<void> {
 }
 
 it("reviews missing destination writers, translates colliding Registry IDs and continues frozen bytes after real receipt loss with the source Registry offline", async () => {
-  const fixture = await startNativeKafkaFixture();
+  const fixture = await startKafkaFixture();
   const store = new InMemoryKafkaProfileStore({
     durability: "session",
     protection: "memory",
@@ -758,7 +756,7 @@ it("reviews missing destination writers, translates colliding Registry IDs and c
     });
     expect(await read(connection, destinationTopic)).toHaveLength(8);
   } finally {
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => backend.shutdown(),
       async (): Promise<void> => {
         await connection?.close();

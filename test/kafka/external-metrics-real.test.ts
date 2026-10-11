@@ -5,7 +5,7 @@ import { ExternalMetricsService } from "../../src/features/kafka/application/ext
 import { PrometheusMetricsAdapter } from "../../src/features/kafka/engine/prometheus-metrics";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
-import { startPrometheusFixture } from "../support/prometheus-fixture";
+import { startPrometheusFixture } from "../../aio-kafka/fixtures/metrics";
 
 it("reads actual JMX partition gauges with actual Prometheus scrape times, observes ISR loss and recovery, and keeps missing exporters unknown", async () => {
   const fixture = await startPrometheusFixture();

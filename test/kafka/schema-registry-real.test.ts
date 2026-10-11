@@ -8,7 +8,7 @@ import {
   fetchFixtureToken,
   loadFixtureConfig,
   loadFixtureConnection,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 it("qualifies Registry references, compatibility, denial and dependency-safe deletion", async () => {
   const config = await loadFixtureConfig();

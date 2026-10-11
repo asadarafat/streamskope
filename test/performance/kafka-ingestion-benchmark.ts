@@ -10,7 +10,7 @@ import {
   fixtureClientOptions,
   loadFixtureConfig,
   loadFixtureConnection,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 function option(name: string, fallback: number, maximum: number): number {
   const argument = process.argv.find((value) => value.startsWith(`--${name}=`));

@@ -11,7 +11,7 @@ import {
   fixtureClientOptions,
   loadFixtureConnection,
   provisionSeededFixtureTopic,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 describe("real Kafka consumer-group exploration", () => {
   it("lists a controlled group and reports its committed offset and lag", async () => {

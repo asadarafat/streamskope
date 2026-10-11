@@ -11,8 +11,8 @@ import { inspectKafkaQueryLibraryDocument } from "../../src/features/kafka/contr
 import { openBrowserRuntime } from "../../src/platform/node/browser-runtime";
 import { startWebGateway } from "../../src/platform/node/web-gateway";
 import { inspectPassphraseVault } from "../../src/platform/node/vault/passphrase-vault";
-import { fixtureClientOptions } from "../support/kafka-fixture";
-import { disposeNativeFixtureResources } from "../support/native-kafka-fixture";
+import { fixtureClientOptions } from "../../aio-kafka/fixtures/development";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { startStructuredBrowserFixture } from "../support/structured-browser-fixture";
 import { connectLocalProfile } from "../support/web-profile-workflow";
 import { openTopicDetail, openWorkbenchResource } from "../support/workbench-browser";
@@ -310,7 +310,7 @@ test("saves record positions through the UI and reloads current protected eviden
         .screenshot({ path: info.outputPath("bookmark-failure.png") })
         .catch(() => undefined);
     await page.close();
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => gateway?.close() ?? Promise.resolve(),
       async (): Promise<void> => {
         if (admin !== undefined && groupCreated) await admin.deleteGroups({ groups: [groupId] });

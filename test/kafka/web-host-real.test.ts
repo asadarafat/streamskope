@@ -9,7 +9,7 @@ import {
 } from "../../src/features/kafka/contracts";
 import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { startDevelopmentHost } from "../../src/platform/dev-host";
-import { loadFixtureConfig, loadFixtureConnection } from "../support/kafka-fixture";
+import { loadFixtureConfig, loadFixtureConnection } from "../../aio-kafka/fixtures/development";
 import { readKafkaEventsUntil } from "../support/kafka-sse-events";
 
 const RENDERER_ORIGIN = "http://127.0.0.1:4173";

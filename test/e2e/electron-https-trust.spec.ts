@@ -11,7 +11,7 @@ import {
   launchProfileApplication,
 } from "../support/electron-application";
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
-import { loadFixtureConnection } from "../support/kafka-fixture";
+import { loadFixtureConnection } from "../../aio-kafka/fixtures/development";
 import { configureLocalConnection } from "../support/web-profile-workflow";
 import { openWorkbenchResource, openProfileAction } from "../support/workbench-browser";
 

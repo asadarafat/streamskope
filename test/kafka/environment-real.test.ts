@@ -13,7 +13,7 @@ import {
   exportEnvironment,
   type EnvironmentInput,
 } from "../../src/features/kafka/contracts/environment-snapshot";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 
 it("captures two real clusters, exports exact diff, promotes one selected setting and blocks later drift", async () => {
   const source = await startAuthorizationFixture();

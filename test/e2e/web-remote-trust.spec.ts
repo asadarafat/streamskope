@@ -10,7 +10,7 @@ import {
   launchProductWebFixture,
   type RunningWebDevelopment,
 } from "../support/product-web-fixture";
-import { loadFixtureConfig, loadFixtureConnection } from "../support/kafka-fixture";
+import { loadFixtureConfig, loadFixtureConnection } from "../../aio-kafka/fixtures/development";
 import {
   acquireRemoteJksTrust,
   prepareRemoteJksTrust,

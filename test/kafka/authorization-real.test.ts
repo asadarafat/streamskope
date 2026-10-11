@@ -10,7 +10,10 @@ import { expect, it } from "vitest";
 import { traceCorrelation } from "../../src/features/kafka/application/correlation-trace-service";
 import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import { PlatformaticAdminPort } from "../../src/features/kafka/engine/platformatic-admin";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import {
+  startAuthorizationFixture,
+  seedConsumerGroupOffsets,
+} from "../../aio-kafka/fixtures/authorization";
 
 it("reconciles exact ACL bindings and reports real produce, group and ACL permission denials", async () => {
   const fixture = await startAuthorizationFixture();
@@ -37,6 +40,11 @@ it("reconciles exact ACL bindings and reports real produce, group and ACL permis
     } finally {
       await seed.close();
     }
+    // Establish an actual group before hiding it; a missing group cannot prove permission behavior.
+    await seedConsumerGroupOffsets(fixture.admin, {
+      groupId: "denied-group",
+      topics: [{ name: topic, partitionOffsets: [{ partition: 0, offset: 0n }] }],
+    });
     const privileged = new PlatformaticAdminPort(fixture.admin);
     const exact = {
       host: "*",
@@ -133,6 +141,11 @@ it("reconciles exact ACL bindings and reports real produce, group and ACL permis
       connection.deleteAcl!(before.find((entry) => entry.resourceName === topic)!),
     ).rejects.toMatchObject({ code: "AUTHORIZATION_DENIED" });
     expect(await connection.listAcls!()).toEqual(before);
+    // Independently confirm the privileged fixture still sees the group before
+    // requiring an authorization failure from the unprivileged production route.
+    expect(
+      (await fixture.admin.describeGroups({ groups: ["denied-group"] })).has("denied-group"),
+    ).toBe(true);
     await expect(connection.describeConsumerGroup!("denied-group")).rejects.toMatchObject({
       code: "AUTHORIZATION_DENIED",
     });

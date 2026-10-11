@@ -152,10 +152,12 @@ local qualification receipt.
 
 The runtime lane includes `test/kafka/production-connection-profiles-real.test.ts`
 and retains `.artifacts/ci/connection-profiles-real.json` in its source-bound report.
-It starts an isolated, checksum-pinned Kafka 4.3.1 JVM broker on loopback. Java 17+
-(including `keytool`) and OpenSSL are required; it does not change a running AIO,
-EDA or NSP fixture. Owned process, temporary credentials and broker logs are removed
-on completion or handled failure.
+It starts an isolated Docker broker using the Kafka version and image digest from
+`aio-kafka/topology.clab.yml`. A Linux Docker host is required; the fixture image
+provides Java, `keytool` and OpenSSL. It does not change a running development lab,
+EDA or NSP fixture. Owned containers and temporary credentials are removed after
+completion or handled failure. Unconfirmed container removal fails qualification
+and retains its private directory for recovery.
 
 The matrix exercises PLAIN and SCRAM-SHA-256/512 over verified TLS, mutual TLS and
 explicit plaintext; mutual TLS without SASL; and OAuth with or without a broker
@@ -327,7 +329,10 @@ rather than treating them as current-source results.
 The rehearsal needs Java 17+ and an unlocked OS credential service. Without all
 three explicit fixture variables (`STREAMSKOPE_TEST_KAFKA_ENDPOINT`,
 `STREAMSKOPE_TEST_OAUTH_ENDPOINT`, `STREAMSKOPE_TEST_CA_PATH`), supply none and let
-it start its checksum-pinned loopback JVM Kafka fixture with TLS/RS256 OAuth.
+it start its explicitly selected native JVM backend with TLS/RS256 OAuth. This
+backend shares the Docker fixture's broker configuration and derives the Kafka
+version from the AIO image pin; it verifies the matching Apache archive checksum.
+It remains available because native macOS/Windows installer runners lack Docker.
 Linux additionally needs Xvfb, D-Bus and GNOME Keyring. Windows runs only on a
 disposable GitHub Actions account because installer registration affects the
 user account. macOS copies the DMG app into an isolated directory; Linux launches

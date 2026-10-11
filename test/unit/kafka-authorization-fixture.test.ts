@@ -1,7 +1,7 @@
 import { Admin } from "@platformatic/kafka";
 import { expect, it, vi, type MockInstance } from "vitest";
 
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 
 type Runtime = NonNullable<Parameters<typeof startAuthorizationFixture>[0]>;
 const secret = "private-fixture-password";
@@ -24,8 +24,25 @@ function runtime(): Runtime & {
     listTopics,
     close,
     createAdmin: () => admin,
-    docker: vi.fn<Runtime["docker"]>().mockResolvedValue(undefined),
+    docker: vi.fn<Runtime["docker"]>().mockImplementation(fixtureDocker()),
     pause: vi.fn<Runtime["pause"]>().mockResolvedValue(undefined),
+  };
+}
+
+function fixtureDocker(): Runtime["docker"] {
+  let token = "";
+  let present = false;
+  const id = "a".repeat(64);
+  return (args): Promise<{ stdout: string }> => {
+    if (args[0] === "create") {
+      token = args[args.indexOf("--label") + 1]!.split("=")[1]!;
+      present = true;
+      return Promise.resolve({ stdout: id });
+    }
+    if (args[0] === "rm") present = false;
+    return Promise.resolve({
+      stdout: args[0] === "inspect" ? `${id} ${token}` : args[0] === "ps" && present ? id : "",
+    });
   };
 }
 
@@ -41,7 +58,7 @@ async function safeFailure(pending: Promise<unknown>, message: string): Promise<
 it("checks its pinned image before creating the owned broker and keeps cleanup scoped to its name", async () => {
   const f = runtime();
   const fixture = await startAuthorizationFixture(f);
-  expect(f.docker.mock.calls.map(([args]) => args[0])).toEqual(["image", "run"]);
+  expect(f.docker.mock.calls.map(([args]) => args[0])).toEqual(["image", "create", "start"]);
   const image = f.docker.mock.calls[0]![0][2];
   expect(image).toMatch(/^apache\/kafka:.*@sha256:[a-f0-9]{64}$/u);
   const creation = f.docker.mock.calls[1]![0];
@@ -49,7 +66,10 @@ it("checks its pinned image before creating the owned broker and keeps cleanup s
   const name = creation[creation.indexOf("--name") + 1];
   expect(name).toMatch(/^streamskope-acl-qualification-[a-f0-9-]{36}$/u);
   await fixture.dispose();
-  expect(f.docker.mock.calls.at(-1)).toEqual([["rm", "--force", name], 30_000]);
+  expect(f.docker.mock.calls).toContainEqual([
+    ["rm", "--force", "--volumes", "a".repeat(64)],
+    30_000,
+  ]);
   expect(f.close).toHaveBeenCalledOnce();
 });
 
@@ -86,20 +106,21 @@ it.each([
   "classifies $reason during credential-bearing creation and confirms owned cleanup",
   async ({ reason, stderr }) => {
     const f = runtime();
+    const successful = fixtureDocker();
     f.docker.mockImplementation((args) =>
-      args[0] === "run"
+      args[0] === "create"
         ? Promise.reject(
             Object.assign(new Error(`--env ${secret}`), {
               stderr: `${stderr} ${secret}`,
             }),
           )
-        : Promise.resolve(undefined),
+        : successful(args, 30_000),
     );
     await safeFailure(
       startAuthorizationFixture(f),
       `owned container creation (${reason}); owned cleanup was confirmed`,
     );
-    expect(f.docker.mock.calls.map(([args]) => args[0])).toEqual(["image", "run", "rm"]);
+    expect(f.docker.mock.calls.map(([args]) => args[0])).toEqual(["image", "create", "ps"]);
     expect(f.listTopics).not.toHaveBeenCalled();
     expect(f.close).toHaveBeenCalledOnce();
   },
@@ -114,21 +135,30 @@ it("reports broker readiness separately after the unchanged bounded polling wind
   );
   expect(f.listTopics).toHaveBeenCalledTimes(60);
   expect(f.pause).toHaveBeenCalledTimes(60);
-  expect(f.docker.mock.calls.map(([args]) => args[0])).toEqual(["image", "run", "rm"]);
+  expect(f.docker.mock.calls.map(([args]) => args[0])).toEqual([
+    "image",
+    "create",
+    "start",
+    "ps",
+    "inspect",
+    "rm",
+    "ps",
+  ]);
 });
 
 it.each(["admin", "container"] as const)(
   "does not claim confirmed cleanup when %s cleanup fails after a startup failure",
   async (owner) => {
     const f = runtime();
+    const successful = fixtureDocker();
     if (owner === "admin") f.close.mockRejectedValue(new Error(secret));
     f.docker.mockImplementation((args) =>
-      args[0] === "run" || (owner === "container" && args[0] === "rm")
+      args[0] === "start" || (owner === "container" && args[0] === "rm")
         ? Promise.reject(Object.assign(new Error(secret), { stderr: secret }))
-        : Promise.resolve(undefined),
+        : successful(args, 30_000),
     );
     await safeFailure(startAuthorizationFixture(f), "owned cleanup could not be confirmed");
-    expect(f.docker.mock.calls.map(([args]) => args[0])).toEqual(["image", "run", "rm"]);
+    expect(f.docker.mock.calls.map(([args]) => args[0])).toContain("rm");
     expect(f.close).toHaveBeenCalledOnce();
   },
 );
@@ -147,5 +177,5 @@ it("keeps disposal errors safe after a successful startup while still closing bo
     "cleanup could not be confirmed (admin close, container removal: docker-daemon-unavailable)",
   );
   expect(f.close).toHaveBeenCalledOnce();
-  expect(f.docker.mock.calls.at(-1)?.[0][0]).toBe("rm");
+  expect(f.docker.mock.calls.at(-1)?.[0][0]).toBe("ps");
 });

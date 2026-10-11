@@ -15,7 +15,7 @@ import {
   launchProductWebFixture,
   type RunningWebDevelopment,
 } from "../support/product-web-fixture";
-import { loadFixtureConnection } from "../support/kafka-fixture";
+import { loadFixtureConnection } from "../../aio-kafka/fixtures/development";
 import { startControlledSshServer } from "../support/ssh-fixture";
 import { configureLocalConnection } from "../support/web-profile-workflow";
 

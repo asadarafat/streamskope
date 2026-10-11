@@ -8,7 +8,7 @@ import {
   launchProductWebFixture,
   type RunningWebDevelopment,
 } from "../support/product-web-fixture";
-import { loadFixtureConfig } from "../support/kafka-fixture";
+import { loadFixtureConfig } from "../../aio-kafka/fixtures/development";
 import {
   collapseActivity,
   expectRawLogFields,

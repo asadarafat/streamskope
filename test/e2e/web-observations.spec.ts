@@ -10,8 +10,8 @@ import { createKafkaBackend } from "../../src/platform/node/kafka-backend";
 import { launchProductWebFixture } from "../support/product-web-fixture";
 import { ConnectHttpAdapter, ConnectHttpError } from "../../src/features/kafka/engine/connect-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { startConnectFixture } from "../support/connect-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { startConnectFixture } from "../../aio-kafka/fixtures/connect";
 import { observeBrowserDiagnostics } from "../support/workbench-browser";
 
 async function port(): Promise<number> {

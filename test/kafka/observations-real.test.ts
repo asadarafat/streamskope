@@ -18,7 +18,7 @@ import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import { observationLag } from "../../src/features/kafka/contracts/observations";
 import { analyzeObservations } from "../../src/features/kafka/contracts/observation-analysis";
 import { AtomicObservationFileStore } from "../../src/platform/node/kafka-observation-file-store";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
 
 it("observes real known offsets/lag and replication, retains history across restart, and treats denied group reads as unknown", async () => {
   const fixture = await startAuthorizationFixture();

@@ -1,4 +1,5 @@
-export type NativeFixturePhase =
+export type KafkaFixturePhase =
+  | "prepare broker runtime"
   | "prepare Kafka distribution"
   | "extract Kafka distribution"
   | "initialize fixture"
@@ -8,8 +9,8 @@ export type NativeFixturePhase =
   | "start broker"
   | "authenticate with TLS and OAuth";
 
-export interface NativeFixtureDiagnostic {
-  readonly phase: NativeFixturePhase;
+export interface KafkaFixtureDiagnostic {
+  readonly phase: KafkaFixturePhase;
   readonly exceptionClasses: readonly string[];
   readonly code?: string;
   readonly exitCode?: number;
@@ -28,17 +29,17 @@ const systemCodes = new Set([
 ]);
 
 /** Only fixed phases, native codes and Java exception identities can leave the fixture. */
-export class NativeKafkaFixtureError extends Error {
-  readonly diagnostic: NativeFixtureDiagnostic;
+export class KafkaFixtureError extends Error {
+  readonly diagnostic: KafkaFixtureDiagnostic;
 
   constructor(
-    phase: NativeFixturePhase,
+    phase: KafkaFixturePhase,
     error: unknown,
     logs = "",
-    cleanup: NativeFixtureDiagnostic["cleanup"] = "not started",
+    cleanup: KafkaFixtureDiagnostic["cleanup"] = "not started",
   ) {
-    super(`Native Kafka fixture failed during ${phase}.`);
-    this.name = "NativeKafkaFixtureError";
+    super(`AIO Kafka fixture failed during ${phase}.`);
+    this.name = "KafkaFixtureError";
     const code =
       error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
     const webException = error instanceof DOMException;

@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 
 import { expect, it } from "vitest";
 
-import { fetchNativeKafkaArchive } from "../support/native-kafka-fixture";
+import { fetchNativeKafkaArchive } from "../../aio-kafka/fixtures/native-runtime";
 
 async function withDownloads(
   responses: readonly { readonly status: number; readonly body: string }[],

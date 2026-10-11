@@ -23,7 +23,7 @@ import {
   loadFixtureConnection,
   fixtureClientOptions,
   fetchFixtureToken,
-} from "../support/kafka-fixture";
+} from "../../aio-kafka/fixtures/development";
 
 it("generates a real Registry client, round-trips Kafka bytes and exports protected query results over TLS/OAuth", async () => {
   const config = await loadFixtureConfig(),

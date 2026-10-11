@@ -16,6 +16,7 @@
     "../../tools/**/*.ts",
     "../*.ts",
     "../../plugins/**/*.ts",
-    "../../plugins/**/*.tsx"
+    "../../plugins/**/*.tsx",
+    "../../aio-kafka/fixtures/**/*.ts"
   ]
 }

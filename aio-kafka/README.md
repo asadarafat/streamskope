@@ -8,6 +8,52 @@ infrastructure; it is not included in StreamSkope desktop packages.
 Credentials in `fixture.config.json` are public, development-only test values.
 Never reuse them for production or expose this fixture to untrusted networks.
 
+## One fixture owner, isolated instances
+
+`aio-kafka` owns the interactive lab, real Kafka test fixtures, service variants
+and qualification image. Tests keep separate instances so permission changes,
+offset resets and broker failures cannot alter the development lab.
+
+| Variant | Purpose | Runtime |
+| --- | --- | --- |
+| Development lab | TLS/OAuth, seed message and authenticated Registry | Persistent Containerlab lab; explicit CLI cleanup |
+| Secure broker / authentication matrix | Record workflows, vault restart, PLAIN, SCRAM, OAuth and mutual TLS | Disposable Docker image built automatically from the lab's pinned Kafka image |
+| Authorization broker | ACLs, groups, quotas and topic administration | Disposable Docker instance of the same pinned Kafka image |
+| Replication | Three brokers, broker failure and replica health | Three disposable Docker instances |
+| Connect / Registry / metrics | Real service behavior and external metrics | Disposable service containers, alongside their owned broker |
+| Native installer recovery | Actual installer checks on native operating systems | Explicit JVM backend; shared secure configuration and matching verified Apache archive |
+
+Implementations live in `fixtures/`. `pins.ts` reads the Kafka version and digest
+from `topology.clab.yml`; Connect uses that same version. The reference-capable
+Registry and metrics pins also live there. The authenticated development Registry
+keeps its qualified variant in `fixture.config.json`.
+
+The secure test image lives in `images/qualification-broker/`. Its small build
+adds the storage-format/start entrypoint to the pinned Kafka base; it downloads no
+separate JDK or Kafka archive. It is built and cached locally or on the CI runner,
+with the immutable image ID recorded in fixture metadata. `keytool` and OpenSSL
+run inside the image. There is no separate GHCR publication or release asset for
+this test-only image.
+
+Disposable containers receive an instance ownership label and a fixture-system
+label. Cleanup checks the immutable container ID and owner before removal,
+confirms removal and supports retries. A creation timeout is resolved through its
+owner label; a conflicting foreign name is never removed. Tests use random
+loopback ports and bounded CPU/memory settings. The Docker backend currently
+requires a Linux Docker host, including a Linux VM; native installer recovery
+selects the JVM backend explicitly instead of silently falling back.
+
+Run the complete real-provider/browser lane from the repository root:
+
+```sh
+npm run check -- --ci --lane runtime
+```
+
+Focused test files can still be run with Vitest. Tests that start disposable
+fixture handles clean up their own instances and need no running development
+lab. The development-lab verification below and tests that use
+`loadFixtureConnection()` require a running lab or an explicit external fixture.
+
 ## Prerequisites
 
 - Node.js 24.21.0 or newer in the 24.x line

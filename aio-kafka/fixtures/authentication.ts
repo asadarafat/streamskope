@@ -19,7 +19,7 @@ export interface KafkaAuthenticationFixture {
   readonly passphrase: string;
 }
 
-/** Disposable loopback credentials; owned by and removed with the native broker fixture. */
+/** Disposable loopback credentials; owned by and removed with the AIO Kafka broker fixture. */
 export async function createKafkaAuthenticationMaterials(options: {
   readonly directory: string;
   readonly tlsPort: number;
@@ -27,12 +27,17 @@ export async function createKafkaAuthenticationMaterials(options: {
   readonly mutualSaslPort: number;
   readonly saslPlaintextPort: number;
   readonly brokerCaPath: string;
+  readonly execute?: (command: string, arguments_: readonly string[]) => Promise<unknown>;
 }): Promise<{
   readonly fixture: KafkaAuthenticationFixture;
   readonly listeners: string;
   readonly properties: Readonly<Record<string, string>>;
   readonly storageArguments: readonly string[];
 }> {
+  const execute =
+    options.execute ??
+    ((command: string, args: readonly string[]): Promise<unknown> =>
+      run(command, [...args], { timeout: 30_000 }));
   const username = "connectionmatrix";
   const password = randomBytes(24).toString("hex");
   const passphrase = randomBytes(24).toString("hex");
@@ -41,47 +46,39 @@ export async function createKafkaAuthenticationMaterials(options: {
   const passwordPath = join(options.directory, "client.password");
   const trustPath = join(options.directory, "clients.p12");
   await writeFile(passwordPath, passphrase, { mode: 0o600 });
-  await run(
-    "openssl",
-    [
-      "req",
-      "-x509",
-      "-newkey",
-      "rsa:2048",
-      "-sha256",
-      "-days",
-      "2",
-      "-keyout",
-      keyPath,
-      "-out",
-      certificatePath,
-      "-passout",
-      `file:${passwordPath}`,
-      "-subj",
-      "/CN=streamskope-fixture-client",
-      "-addext",
-      "extendedKeyUsage=clientAuth",
-    ],
-    { timeout: 30_000 },
-  );
-  await run(
-    "keytool",
-    [
-      "-importcert",
-      "-noprompt",
-      "-alias",
-      "client",
-      "-file",
-      certificatePath,
-      "-keystore",
-      trustPath,
-      "-storetype",
-      "PKCS12",
-      "-storepass:file",
-      passwordPath,
-    ],
-    { timeout: 30_000 },
-  );
+  await execute("openssl", [
+    "req",
+    "-x509",
+    "-newkey",
+    "rsa:2048",
+    "-sha256",
+    "-days",
+    "2",
+    "-keyout",
+    keyPath,
+    "-out",
+    certificatePath,
+    "-passout",
+    `file:${passwordPath}`,
+    "-subj",
+    "/CN=streamskope-fixture-client",
+    "-addext",
+    "extendedKeyUsage=clientAuth",
+  ]);
+  await execute("keytool", [
+    "-importcert",
+    "-noprompt",
+    "-alias",
+    "client",
+    "-file",
+    certificatePath,
+    "-keystore",
+    trustPath,
+    "-storetype",
+    "PKCS12",
+    "-storepass:file",
+    passwordPath,
+  ]);
   const properties: Record<string, string> = {
     "sasl.enabled.mechanisms": "OAUTHBEARER,PLAIN,SCRAM-SHA-256,SCRAM-SHA-512",
     "listener.name.mtls.ssl.client.auth": "required",

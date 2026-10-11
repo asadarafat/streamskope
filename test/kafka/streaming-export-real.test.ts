@@ -27,17 +27,15 @@ import type {
 } from "../../src/features/kafka/contracts/record-analysis";
 import { parseRecordAnalysisSnapshot } from "../../src/features/kafka/contracts/record-analysis-validation";
 import { createKafkaBackend, type NodeKafkaBackend } from "../../src/platform/node/kafka-backend";
-import { fetchFixtureToken, loadFixtureConfig } from "../support/kafka-fixture";
+import { fetchFixtureToken, loadFixtureConfig } from "../../aio-kafka/fixtures/development";
 import { kafkaFixtureFailure, waitForKafkaTopicOffsets } from "../support/kafka-topic-readiness";
-import {
-  disposeNativeFixtureResources,
-  startNativeKafkaFixture,
-} from "../support/native-kafka-fixture";
+import { startKafkaFixture } from "../../aio-kafka/fixtures/broker";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 import { createSchemaRegistryProtocolFixture } from "../support/schema-registry-protocol-fixture";
 
-let fixture: Awaited<ReturnType<typeof startNativeKafkaFixture>>;
+let fixture: Awaited<ReturnType<typeof startKafkaFixture>>;
 beforeAll(async () => {
-  fixture = await startNativeKafkaFixture();
+  fixture = await startKafkaFixture();
 }, 180_000);
 afterAll(async () => {
   await fixture?.dispose();
@@ -203,7 +201,7 @@ async function withTopic(work: (context: TopicContext) => Promise<void>): Promis
       },
     });
   } finally {
-    await disposeNativeFixtureResources([
+    await disposeFixtureResources([
       (): Promise<void> => backend.shutdown(),
       (): Promise<void> => producer.close(),
       (): Promise<void> => readiness.close(),

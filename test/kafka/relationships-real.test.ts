@@ -10,18 +10,14 @@ import { StreamSkopeKafkaEngine } from "../../src/features/kafka/engine";
 import { ConnectHttpAdapter } from "../../src/features/kafka/engine/connect-http";
 import { SchemaRegistryHttpAdapter } from "../../src/features/kafka/engine/schema-registry-http";
 import { NodeBoundedJsonHttp } from "../../src/features/kafka/engine/bounded-json-http";
-import { startAuthorizationFixture } from "../support/kafka-authorization-fixture";
-import { startConnectFixture } from "../support/connect-fixture";
-import {
-  loadFixtureConnection,
-  loadFixtureConfig,
-  fetchFixtureToken,
-} from "../support/kafka-fixture";
+import { startAuthorizationFixture } from "../../aio-kafka/fixtures/authorization";
+import { startConnectFixture } from "../../aio-kafka/fixtures/connect";
+import { loadFixtureConfig } from "../../aio-kafka/fixtures/development";
+import { startSchemaRegistryServerFixture } from "../../aio-kafka/fixtures/registry";
+import { disposeFixtureResources } from "../../aio-kafka/fixtures/resources";
 
 it("discovers actual Connect/group relationships and Registry reference impact from protected Kafka framing candidates", async () => {
-  const fixture = await loadFixtureConnection(),
-    config = await loadFixtureConfig();
-  if (!fixture.schemaRegistryEndpoint) throw new Error("A live Registry fixture is required.");
+  const config = await loadFixtureConfig();
   const kafka = await startAuthorizationFixture();
   const worker = await startConnectFixture(kafka.connection.brokers[0]!).catch(
     async (error: unknown) => {
@@ -31,17 +27,16 @@ it("discovers actual Connect/group relationships and Registry reference impact f
   );
   const registry = new SchemaRegistryHttpAdapter(new NodeBoundedJsonHttp()),
     connect = new ConnectHttpAdapter(new NodeBoundedJsonHttp());
+  let registryServer: Awaited<ReturnType<typeof startSchemaRegistryServerFixture>> | undefined;
   const registryContext = {
-    baseUrl: fixture.schemaRegistryEndpoint,
-    authorization: async (): Promise<string> =>
-      `Bearer ${await fetchFixtureToken(fixture, config)}`,
+    baseUrl: "",
+    authorization: (): Promise<undefined> => Promise.resolve(undefined),
   };
   const connectContext = worker.context;
   const topic = `a-streamskope-lineage-${randomUUID()}`,
     base = `${topic}-base`,
     subject = `${topic}-value`,
     name = "lineage-sink";
-  const created = new Set<string>();
   const session = new KafkaApplicationSession(new StreamSkopeKafkaEngine());
   const producer = new Producer({
     clientId: "relationship-fixture",
@@ -51,6 +46,8 @@ it("discovers actual Connect/group relationships and Registry reference impact f
   });
   const signal = AbortSignal.timeout(120_000);
   try {
+    registryServer = await startSchemaRegistryServerFixture(kafka.connection.brokers[0]!);
+    registryContext.baseUrl = registryServer.url;
     await kafka.admin.createTopics({ topics: [topic], partitions: 1, replicas: 1 });
     await registry.register(
       registryContext,
@@ -64,7 +61,6 @@ it("discovers actual Connect/group relationships and Registry reference impact f
       },
       signal,
     );
-    created.add(base);
     const registered = await registry.register(
       registryContext,
       {
@@ -77,7 +73,6 @@ it("discovers actual Connect/group relationships and Registry reference impact f
       },
       signal,
     );
-    created.add(subject);
     expect(
       await connect.apply(
         connectContext,
@@ -163,16 +158,12 @@ it("discovers actual Connect/group relationships and Registry reference impact f
     expect(graph.coverage.find((c) => c.source === "Schema Registry")?.state).toBe("limited");
     expect(JSON.stringify(graph)).not.toContain(config.oauthClientSecret);
   } finally {
-    await producer.close();
-    await session.disconnect();
-    await worker.dispose();
-    await kafka.dispose();
-    for (const owned of [subject, base])
-      if (created.has(owned))
-        await registry.delete(
-          registryContext,
-          { mode: "permanent", target: { kind: "subject", subject: owned }, confirmation: owned },
-          AbortSignal.timeout(15000),
-        );
+    await disposeFixtureResources([
+      (): Promise<void> => producer.close(),
+      (): Promise<void> => session.disconnect(),
+      (): Promise<void> => worker.dispose(),
+      (): Promise<void> => registryServer?.dispose() ?? Promise.resolve(),
+      (): Promise<void> => kafka.dispose(),
+    ]);
   }
 }, 180_000);
