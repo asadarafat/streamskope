@@ -201,7 +201,11 @@ precedence. Inspect `.artifacts/website/terminology.json` and rendered pages whe
 changing the catalog. Repository-only Markdown such as the README must define
 its terms in the authored text.
 
-Routine docs qualification plays the approved remote video masters when media,
+Routine docs qualification plays checksum-verified cached copies of the actual
+masters; it does not substitute synthetic footage. Published-site qualification
+instead exercises their public GitHub URLs. Both the browser receipt and the
+qualification report identify the delivery mode; a cache pass is not a public
+delivery pass. Routine playback runs when media,
 presentation or toolchain inputs change, when CI cannot determine the comparison
 base, or with `--media`. Local runs cache a successful fingerprint; unchanged
 prose still gets routine checks. CI installs Firefox when playback is selected.

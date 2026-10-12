@@ -23,6 +23,7 @@ def write_qualification(root: Path, started: str, media: bool, fingerprint: str)
         "htmlPages": sum(1 for _ in (root / "dist/site").rglob("*.html")),
         "routes": browser["routes"], "browserSha256": hashlib.sha256(contents).hexdigest(),
         "media": {"outcome": browser["media"], "fingerprint": fingerprint,
+                  "delivery": browser.get("mediaDelivery", "bundled" if media else "not-checked"),
                   **({} if media else {"reason": "unchanged-media-inputs"})},
     }
     (directory / "qualification.json").write_text(json.dumps(report, indent=2) + "\n")
