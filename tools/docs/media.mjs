@@ -183,6 +183,9 @@ export async function checkMedia(base, evidence) {
     await videoPage.setViewportSize({ width: 1280, height: 900 });
     videoPage.setDefaultTimeout(60_000);
     await videoPage.goto(base);
+    if ((await videoPage.locator("body").getAttribute("data-md-color-scheme")) === "slate") {
+      await videoPage.locator('label[title="Switch to light mode"]').click();
+    }
     await videoPage.locator(".launch-player").scrollIntoViewIfNeeded();
     const film = await (await videoPage.locator(".launch-player").elementHandle()).contentFrame();
     await film.waitForFunction(() => document.querySelector("video")?.readyState >= 2);

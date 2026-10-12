@@ -1,4 +1,4 @@
-/* global document, window, URL */
+/* global document, window */
 (() => {
   const video = document.querySelector("#film");
   const status = document.querySelector("#media-status");
