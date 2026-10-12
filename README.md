@@ -3,10 +3,10 @@
   StreamSkope
 </h1>
 
-[![PR CI](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml?query=event%3Apull_request)
+[![Pull request continuous integration](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml/badge.svg?event=pull_request)](https://github.com/asadarafat/streamskope/actions/workflows/ci.yml?query=event%3Apull_request)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/asadarafat/streamskope)
 
-A workbench for exploring and troubleshooting Kafka and NATS.
+A workbench for exploring and troubleshooting Kafka and NATS (a publish/subscribe messaging system).
 
 Inspect messages, investigate consumer lag, and manage cluster resources from
 one application.
@@ -18,7 +18,7 @@ one application.
 
 ## Download
 
-Download StreamSkope for macOS **ARM64**, Windows **x64** or Linux **x64** from the
+Download StreamSkope for macOS **ARM64** (64-bit Arm), Windows **x64** or Linux **x64** from the
 [latest published release](https://github.com/asadarafat/streamskope/releases/latest). Each release
 identifies its version, source revision and automated qualification evidence.
 Desktop packages are **unsigned**. Verify the installer against its release's
@@ -29,7 +29,8 @@ automated checks and identifies workflows that still need recorded evidence.
 
 Prefer a browser workbench on a Linux Docker host? Follow
 [Install the browser workbench](https://asadarafat.github.io/streamskope/start/containerlab/).
-The installer downloads the released Linux AMD64/ARM64 image from public GHCR;
+The installer downloads the released Linux AMD64 (64-bit x86) or ARM64 image from public
+GitHub Container Registry (GHCR);
 you do not need to build from source. Saved credentials use a browser-unlocked
 vault. See [Use the browser workbench](website/docs/guide/browser-host.md) to
 reopen and maintain it, or [manual deployment](website/docs/guide/browser-deployment.md)
@@ -37,7 +38,7 @@ for offline files and custom hosting.
 
 StreamSkope also includes **NATS** as a built-in messaging provider.
 Open **Connection Profiles → Add connection → NATS server** to save a
-token/verified-TLS profile, connect it, subscribe to a known subject or wildcard,
+token-authenticated profile with verified Transport Layer Security (TLS), connect it, subscribe to a known subject or wildcard,
 and inspect live records. Read the
 [NATS guide](website/docs/guide/core-nats.md) for storage, receipt and omission
 limits. The desktop connects to the NATS server you supply; it does not embed
@@ -46,21 +47,23 @@ supported provider capabilities.
 
 ## What you can do
 
-- Browse topics, read and filter messages, inspect original record bytes and export filtered JSON.
+- Browse topics, read and filter messages, inspect original record bytes and export filtered JavaScript Object Notation (JSON).
 - Decode JSON, Confluent Avro and Protobuf, compare records and trace correlation values across topics.
 - Create topics and publish reviewed records or bounded schema-generated samples.
-- Preview and apply consumer offset resets, copy records across topics or clusters, and review exact ACL changes.
+- Preview and apply consumer offset resets, copy records across topics or clusters, and review exact access control list (ACL) changes.
 - Use host read-only controls and deterministic record masking.
 - Investigate consumer lag, stream activity and producer/consumer probe latency.
 - Retain bounded health observations, inspect lag trends and review evidence-linked diagnostic hints.
 - Explore observed topic, consumer and connector relationships and partial schema-change impact.
 - Manage topic configuration, Schema Registry and ACLs.
-- Manage Kafka Connect, validate connector configuration and inspect supported DLQ context.
+- Manage Kafka Connect, validate connector configuration and inspect supported dead-letter queue (DLQ) context.
 - Compare topic settings across clusters and promote selected, reviewed differences.
 - Test message rules and inspect deployed Redpanda transforms.
-- Save TLS/mutual TLS and OAuth, PLAIN or SCRAM connection profiles, with optional SSH or HTTPS secret retrieval.
+- Save profiles with certificate or password-based authentication, with optional Secure Shell (SSH) or Hypertext Transfer Protocol Secure (HTTPS) secret retrieval.
 
-Kafka authentication supports **OAUTHBEARER, PLAIN, SCRAM-SHA-256/512 or no SASL**. Schema Registry and Connect have independent credentials and certificate trust. Avro/Protobuf inspection
+Kafka authentication supports **OAUTHBEARER, PLAIN, SCRAM-SHA-256/512 or no SASL**
+(Simple Authentication and Security Layer). SCRAM means Salted Challenge Response
+Authentication Mechanism; the SHA suffix selects a Secure Hash Algorithm digest. Schema Registry and Connect have independent credentials and certificate trust. Avro/Protobuf inspection
 uses the configured Schema Registry and the saved key/value settings in
 [Preferences → Records](website/docs/guide/structured-events.md). **Detect encoding**
 is the default; an explicit choice overrides detection for subsequent reads.
@@ -94,7 +97,7 @@ Installer availability is verified before the site is published.
   [backup and recovery](website/docs/guide/recovery.md), and [data and export limits](website/docs/guide/data-handling.md)
 - [Troubleshoot a problem](website/docs/guide/troubleshooting.md)
 - [Report a defect](https://github.com/asadarafat/streamskope/issues): include the
-  exact release tag, OS/architecture, action and redacted error. Exclude credentials,
+  exact release tag, operating system (OS)/architecture, action and redacted error. Exclude credentials,
   tokens, private payloads and complete application-data directories.
 
 ## Development

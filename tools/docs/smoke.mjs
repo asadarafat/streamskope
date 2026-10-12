@@ -717,7 +717,9 @@ try {
   await page.locator('label[title="Switch to dark mode"]').click();
   await themedFilm.waitForFunction(() => document.documentElement.dataset.theme === "dark");
   assert(
-    (await themedFilm.locator("video").getAttribute("src")).endsWith("streamskope-intro-dark.mp4"),
+    (await themedFilm.locator("video").evaluate((v) => v.currentSrc)).endsWith(
+      "streamskope-intro-dark.mp4",
+    ),
   );
   await page.locator('label[title="Switch to light mode"]').click();
 

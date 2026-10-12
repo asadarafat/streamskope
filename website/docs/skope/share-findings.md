@@ -1,38 +1,17 @@
 # Share your findings
 
-Another engineer needs to repeat your checks. Separate the settings they can
-reopen from the record evidence you choose to share, and explain where your
-search stopped.
+## What this workflow does
 
-## Watch the walkthrough
+Prepare a handover that another engineer can reopen: the selected source, time
+range, filters, record positions, findings and remaining gaps. Export record
+content separately when it is needed and permitted.
 
-A 42-second recording of the actual workbench with on-screen instructions and no
-audio. Bookmark an illustrative AIO record, review and export the view, then import it with positions unloaded.
+## The problem it solves
 
-<video class="skope-walkthrough" controls muted playsinline preload="metadata"
-       poster="../../assets/skope/share-findings.png"
-       aria-label="Walkthrough: Share your findings"
-       aria-describedby="share-findings-video-summary">
-<source src="../assets/skope/share-findings.mp4" type="video/mp4">
-  <track kind="captions" src="../assets/skope/share-findings.vtt" srclang="en" label="English instructions">
-  <a href="../assets/skope/share-findings.mp4">Download the walkthrough</a>.
-</video>
-
-<p id="share-findings-video-summary">Follow the actions and outcomes below. Pause or use
-fullscreen to inspect the controls; the written guide covers prerequisites and
-the decisions behind each step.</p>
-
-<details markdown="1">
-<summary>Read the walkthrough transcript</summary>
-
-- **00:00 — Bookmark the useful position.** Illustrative AIO record: positions cannot restore expired data.
-- **00:07 — Review what the file includes.** Names, filters and positions can be sensitive. Payloads and credentials are excluded.
-- **00:14 — Export settings and positions.** Record evidence is a separate export. Review before sharing.
-- **00:21 — Review and select a local profile.** Importing the file does not connect or read records.
-- **00:28 — Open with positions unloaded.** Read explicitly under your current credentials and protection.
-- **00:35 — Add the handover context.** Include the question, UTC range, result, coverage gaps and next check.
-
-</details>
+Another engineer asks which records you checked and how to repeat the search.
+A screenshot alone cannot preserve the query or show its coverage. A saved view
+can carry settings and positions, but it does not archive message bodies or
+guarantee that retained records will still exist.
 
 ## Before you start
 
@@ -40,7 +19,9 @@ Finish or stop the active read. Know the intended recipient and what operational
 data you may share. Even without credentials or payloads, topic names, filter
 literals and record positions can be sensitive.
 
-## Prepare the handover
+## How to solve it
+
+### Prepare the handover
 
 1. [Save the current view](../guide/saved-views.md#keep-investigation-views) with a
    useful name, topic or group, explicit time interval and filters. A saved
@@ -71,7 +52,7 @@ For an application failure, add the reviewed
 [Support report](../guide/troubleshooting.md#share-useful-evidence). It contains
 bounded activity metadata and correlation IDs, not record payloads or a diagnosis.
 
-## Reopen at the receiving end
+### Reopen at the receiving end
 
 1. The recipient follows the [import review procedure](../guide/saved-views.md#share-an-investigation)
    and deliberately selects an appropriate local profile. Opening restores
@@ -84,7 +65,7 @@ bounded activity metadata and correlation IDs, not record payloads or a diagnosi
 4. Record any changed conclusion separately and save the imported view locally
    if the settings should persist.
 
-## Know what was shared
+### Know what was shared
 
 View files exclude credentials, broker endpoints, record bodies and local topic
 notes. They do not capture a running trace, health history or replay job. Local
@@ -99,3 +80,40 @@ restore data that Kafka no longer retains.
 For repeated evidence collection, use the [read-only CLI](../guide/read-only-cli.md).
 Before sharing values, check the [record masking settings](../guide/masking.md)
 and review the actual exported file.
+
+## Check the result
+
+The recipient can review and import the settings, select their own local profile,
+and deliberately reload available positions. Include the original coverage and
+remaining questions. A successfully imported view does not establish that a new
+read returned the same records.
+
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Bookmark an illustrative AIO record, review and export the view, then import it with positions unloaded.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/share-findings.png"
+       aria-label="Walkthrough: Share your findings"
+       aria-describedby="share-findings-video-summary">
+<source src="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/share-findings.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/share-findings.vtt" srclang="en" label="English instructions">
+  <a href="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/share-findings.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="share-findings-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — Bookmark the useful position.** Illustrative AIO record: positions cannot restore expired data.
+- **00:07 — Review what the file includes.** Names, filters and positions can be sensitive. Payloads and credentials are excluded.
+- **00:14 — Export settings and positions.** Record evidence is a separate export. Review before sharing.
+- **00:21 — Review and select a local profile.** Importing the file does not connect or read records.
+- **00:28 — Open with positions unloaded.** Read explicitly under your current credentials and protection.
+- **00:35 — Add the handover context.** Include the question, UTC range, result, coverage gaps and next check.
+
+</details>

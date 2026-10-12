@@ -21,7 +21,7 @@ original host connection first; an unresolved cleanup needs recovery before the
 switch can complete.
 
 Broker traffic comes from the StreamSkope host. For the desktop this is your
-computer; for the browser workbench it is the container host, not the browser tab.
+computer; for the browser workbench it is the StreamSkope container, not the browser tab.
 That host must reach the server and any additional addresses it advertises.
 
 After connecting Kafka, [read your first message](quickstart.md#3-open-a-record).

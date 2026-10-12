@@ -1,8 +1,30 @@
 /* global document, window, innerWidth */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { firefox, expect } from "@playwright/test";
+
+async function playVideo(video) {
+  await video.evaluate(
+    (v) =>
+      new Promise((resolve, reject) => {
+        const timer = window.setTimeout(
+          () => reject(new Error("Video playback did not start within 20 seconds")),
+          20_000,
+        );
+        v.play().then(
+          () => {
+            window.clearTimeout(timer);
+            resolve();
+          },
+          (error) => {
+            window.clearTimeout(timer);
+            reject(error);
+          },
+        );
+      }),
+  );
+}
 
 async function checkSkopeWalkthroughs(browser, base, evidence) {
   const routes = {
@@ -18,7 +40,10 @@ async function checkSkopeWalkthroughs(browser, base, evidence) {
     "share-findings": "skope/share-findings/",
     troubleshooting: "guide/troubleshooting/",
   };
-  const names = (await readdir("dist/site/assets/skope")).filter((name) => name.endsWith(".mp4"));
+  const assets = JSON.parse(await readFile("website/media.json", "utf8")).assets;
+  const names = assets
+    .filter((asset) => asset.path.startsWith("assets/skope/"))
+    .map((asset) => asset.name);
   assert.deepEqual(
     names.sort(),
     Object.keys(routes)
@@ -27,6 +52,7 @@ async function checkSkopeWalkthroughs(browser, base, evidence) {
     "Every Under the Skope workflow has a recording",
   );
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(60_000);
   try {
     await page.goto(base + "skope/");
     const workflowLinks = await page
@@ -45,6 +71,10 @@ async function checkSkopeWalkthroughs(browser, base, evidence) {
       const video = page.locator("video.skope-walkthrough");
       await expect(video).toHaveCount(1);
       await video.scrollIntoViewIfNeeded();
+      assert.equal(
+        await video.locator("source").getAttribute("src"),
+        assets.find((asset) => asset.name === name).url,
+      );
       await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
       const duration = await video.evaluate((v) => v.duration);
       assert(
@@ -79,10 +109,10 @@ async function checkSkopeWalkthroughs(browser, base, evidence) {
         }, start + 0.5);
         await expect.poll(() => video.evaluate((v) => !v.seeking && v.readyState >= 2)).toBe(true);
       }
-      await video.evaluate(async (v) => {
+      await video.evaluate((v) => {
         v.currentTime = 0;
-        await v.play();
       });
+      await playVideo(video);
       await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeGreaterThan(0.5);
       await video.evaluate((v) => v.pause());
       for (const width of [1440, 390]) {
@@ -110,7 +140,7 @@ export async function checkMedia(base, evidence) {
   try {
     await checkSkopeWalkthroughs(videoBrowser, base, evidence);
     const videoPage = await videoBrowser.newPage({ viewport: { width: 1280, height: 900 } });
-    videoPage.setDefaultTimeout(20_000);
+    videoPage.setDefaultTimeout(60_000);
     await videoPage.goto(base);
     await videoPage.locator(".launch-player").scrollIntoViewIfNeeded();
     const film = await (await videoPage.locator(".launch-player").elementHandle()).contentFrame();
@@ -149,7 +179,7 @@ export async function checkMedia(base, evidence) {
     );
     assert.equal(await film.getByRole("link").count(), 0, "Player has no resource links");
     await film.locator("video").screenshot({ path: resolve(evidence, "intro-mp4-dark.png") });
-    await video.evaluate((v) => v.play());
+    await playVideo(video);
     await videoPage.locator('label[title="Switch to light mode"]').click();
     await film.waitForFunction(() => {
       const v = document.querySelector("video");

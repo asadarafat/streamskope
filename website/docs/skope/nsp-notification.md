@@ -4,9 +4,82 @@ plugin_scope: nsp
 
 # Follow an NSP notification
 
-You expect a notification after an NSP operation. Establish access to the broker,
-search the intended stream, and distinguish a missing match from an incomplete
-read or a source that has not emitted anything.
+## What this workflow does
+
+Use NSP Connector to obtain a Kafka connection profile through the NSP API,
+then inspect notifications from the existing NSP broker. The connector sets up
+access; it does not create notifications or a new Kafka broker.
+
+## The problem it solves
+
+You perform an NSP operation but another system receives no expected notification.
+For example, a service update has no matching event in your integration. First
+confirm broker access, then search the topic and interval where that notification
+should appear.
+
+## Before you start
+
+Use a supported [NSP Connector](../plugins/nsp.md#before-you-start). Obtain the
+notification topic, the operation's time interval and a known resource or
+correlation identifier from the operator. Topic names and payload fields depend
+on your NSP configuration; there is no universal notification topic or JSON path.
+
+The StreamSkope host needs network access to NSP's API and Kafka's advertised
+broker addresses. The plugin retrieves connection material; it creates no broker
+or tunnel.
+
+## How to solve it
+
+### Connect and follow the notification
+
+1. Open **Add connection → Connect via NSP**, enter the API URL and credentials,
+   and keep certificate verification enabled. Use
+   [Create the connection profile](../plugins/nsp.md#create-the-connection-profile)
+   for installation and authentication choices, then choose **Create connection profile**. Wait for retrieval, execution cleanup, connection testing and profile saving.
+   Connect the saved profile and open **Topics**.
+2. Open the intended notification topic. For an upcoming operation, use **Tail**.
+   For a past operation, stop the current read, select **Time window**, then
+   **Custom interval** with explicit timezone bounds around the operation.
+3. Choose **Load messages** for the time window. Inspect the displayed read
+   coverage, then select a record and check its **Value** and **Metadata**.
+4. Use the known identifier to narrow the records. A grid filter covers loaded
+   records only. Use [broker search](../guide/messages.md#search-beyond-the-loaded-sample)
+   when the question extends beyond that sample.
+5. If several known Kafka topics carry the same identifier, follow the
+   [correlation workflow](missing-event.md#follow-the-identifier). Select the
+   actual header, key or payload path used by those records.
+
+Kafka time-window reads use record timestamps, which can differ from an operation
+timestamp inside the payload. Record both when timing matters.
+
+### Interpret what you see
+
+| Result                                      | What to do next                                                                                                      |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| API access succeeds, Kafka connection fails | Check broker reachability, certificate names and Kafka authentication separately                                     |
+| Expected topic is absent                    | Confirm the configured notification stream and your topic permissions with the NSP administrator                     |
+| No match in a partial read                  | Continue the supported bounded read or narrow the interval; do not conclude the notification was never published     |
+| No match in a completed range               | Check the identifier, timestamp interpretation and source emission; the finding applies only to that searched range  |
+| Matching notification found                 | Record its source position and relevant fields; a notification alone does not prove another application processed it |
+
+### Finish and share
+
+Stop the read and [share the findings](share-findings.md) you need. Disconnect
+when finished. Keep your saved profile for reuse; use the plugin's credential
+refresh action when its connection material changes.
+
+The plugin normally removes its completed execution records and retains its
+reusable workflow definition. It does not remove NSP topics or notifications.
+If **Cleanup required** remains, follow
+[workflow ownership and cleanup](../plugins/nsp.md#what-the-workflow-changes)
+with the same account instead of deleting recovery state.
+
+## Check the result
+
+You have a matching notification and its Kafka position, or a documented missing
+match with the read interval and coverage. If the read completed without a match,
+check the NSP operation and notification producer. The connection workflow does
+not prove that NSP emitted the expected event.
 
 ## Watch the walkthrough
 
@@ -17,9 +90,9 @@ audio. Recorded against the local NSP 26.4 lab with the NSP Connector already in
        poster="../../assets/skope/nsp-notification.png"
        aria-label="Walkthrough: Follow an NSP notification"
        aria-describedby="nsp-notification-video-summary">
-<source src="../assets/skope/nsp-notification.mp4" type="video/mp4">
+<source src="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/nsp-notification.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/nsp-notification.vtt" srclang="en" label="English instructions">
-  <a href="../assets/skope/nsp-notification.mp4">Download the walkthrough</a>.
+  <a href="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/nsp-notification.mp4">Download the walkthrough</a>.
 </video>
 
 <p id="nsp-notification-video-summary">Follow the actions and outcomes below. Pause or use
@@ -38,56 +111,3 @@ the decisions behind each step.</p>
 - **00:36 — Reuse the saved profile.** The profile and reusable NSP workflow remain for the next connection.
 
 </details>
-
-## Before you start
-
-Use a supported [NSP Connector](../plugins/nsp.md#before-you-start). Obtain the
-notification topic, the operation's time interval and a known resource or
-correlation identifier from the operator. Topic names and payload fields depend
-on your NSP configuration; there is no universal notification topic or JSON path.
-
-The StreamSkope host needs network access to NSP's API and Kafka's advertised
-broker addresses. The plugin retrieves connection material; it creates no broker
-or tunnel.
-
-## Connect and follow the notification
-
-1. Follow [Create the connection profile](../plugins/nsp.md#create-the-connection-profile).
-   Wait for retrieval, execution cleanup, connection testing and profile saving.
-   Connect the saved profile and open **Topics**.
-2. Open the intended notification topic. For an upcoming operation, use **Tail**.
-   For a past operation, stop the current read, select **Time window**, then
-   **Custom interval** with explicit timezone bounds around the operation.
-3. Choose **Load messages** for the time window. Inspect the displayed read
-   coverage, then select a record and check its **Value** and **Metadata**.
-4. Use the known identifier to narrow the records. A grid filter covers loaded
-   records only. Use [broker search](../guide/messages.md#search-beyond-the-loaded-sample)
-   when the question extends beyond that sample.
-5. If several known Kafka topics carry the same identifier, follow the
-   [correlation workflow](missing-event.md#follow-the-identifier). Select the
-   actual header, key or payload path used by those records.
-
-Kafka time-window reads use record timestamps, which can differ from an operation
-timestamp inside the payload. Record both when timing matters.
-
-## Interpret what you see
-
-| Result                                      | What to do next                                                                                                      |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| API access succeeds, Kafka connection fails | Check broker reachability, certificate names and Kafka authentication separately                                     |
-| Expected topic is absent                    | Confirm the configured notification stream and your topic permissions with the NSP administrator                     |
-| No match in a partial read                  | Continue the supported bounded read or narrow the interval; do not conclude the notification was never published     |
-| No match in a completed range               | Check the identifier, timestamp interpretation and source emission; the finding applies only to that searched range  |
-| Matching notification found                 | Record its source position and relevant fields; a notification alone does not prove another application processed it |
-
-## Finish and share
-
-Stop the read and [share the findings](share-findings.md) you need. Disconnect
-when finished. Keep your saved profile for reuse; use the plugin's credential
-refresh action when its connection material changes.
-
-The plugin normally removes its completed execution records and retains its
-reusable workflow definition. It does not remove NSP topics or notifications.
-If **Cleanup required** remains, follow
-[workflow ownership and cleanup](../plugins/nsp.md#what-the-workflow-changes)
-with the same account instead of deleting recovery state.

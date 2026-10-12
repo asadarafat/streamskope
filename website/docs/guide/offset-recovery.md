@@ -1,9 +1,26 @@
 # Preview and reset consumer offsets
 
-Resetting changes where a consumer group resumes. It can reprocess records or skip
-unprocessed records. Stop **every consumer in the group** before applying a reset.
-Inspect [consumer lag](operations.md) first and retain the original positions if
-you may need to restore them.
+## What this workflow does
+
+Change the next Kafka position that a consumer group will read when it resumes.
+An offset reset moves the group's position; it does not copy, edit or delete
+records.
+
+## The problem it solves
+
+A consumer bug has been fixed and you want the stopped group to reread retained
+records. Alternatively, an agreed recovery may deliberately skip a backlog.
+Moving backward can repeat processing; moving forward can skip unprocessed data.
+Use [record replay](../skope/replay-record.md) when you need a corrected copy in
+a destination topic rather than moving the group's position.
+
+## Before you start
+
+Agree the target position and consequences with the consumer owner. Stop
+**every consumer in the group**, check reset permissions, and retain the original
+committed positions before changing them. Inspect [consumer lag](operations.md).
+
+## How to solve it
 
 1. Open **Consumer Groups**, choose the group, then **Reset offsets…**.
 2. Select the topic partitions to change, up to 32. Choose **Explicit offsets**,
@@ -23,6 +40,13 @@ you may need to restore them.
    permits preview and blocks apply. Masking applies to sampled records.
 7. Inspect every partition result and refresh the group before restarting consumers.
 
+## Check the result
+
+Read each partition's acknowledgement and fresh committed offset, then refresh
+the group. Reconcile any uncertain or partial result before another reset.
+Restart consumers separately only after the owner accepts the verified positions;
+the reset itself does not restart them or prove successful reprocessing.
+
 ## Watch the walkthrough
 
 A 42-second recording of the actual workbench with on-screen instructions and no
@@ -32,9 +56,9 @@ audio. Preview and apply a reset on an owned, inactive AIO consumer group, then 
        poster="../../assets/skope/offset-recovery.png"
        aria-label="Walkthrough: Preview and reset consumer offsets"
        aria-describedby="offset-recovery-video-summary">
-<source src="../assets/skope/offset-recovery.mp4" type="video/mp4">
+<source src="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/offset-recovery.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/offset-recovery.vtt" srclang="en" label="English instructions">
-  <a href="../assets/skope/offset-recovery.mp4">Download the walkthrough</a>.
+  <a href="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/offset-recovery.mp4">Download the walkthrough</a>.
 </video>
 
 <p id="offset-recovery-video-summary">Follow the actions and outcomes below. Pause or use

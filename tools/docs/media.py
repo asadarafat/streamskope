@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def media_inputs(path):
     return (path.startswith(("website/docs/intro/", "website/docs/launch/", "website/docs/assets/", "website/docs/skope/",
                              "website/overrides/", "tools/docs/"))
-            or path in {"website/docs/index.md", "website/requirements.txt", "website/zensical.toml",
+            or path in {"website/docs/index.md", "website/media.json", "website/requirements.txt", "website/zensical.toml",
                         "website/docs/guide/observed-health.md", "website/docs/guide/offset-recovery.md",
                         "website/docs/guide/environment-comparison.md", "website/docs/guide/relationships.md",
                         "website/docs/guide/troubleshooting.md",

@@ -1,7 +1,9 @@
 # Source workbench with local Kafka
 
-Start the local workbench, connect to the included AIO Kafka broker, and inspect
-one record. You do not need an existing Kafka cluster for this walkthrough.
+Start the local workbench, connect to the included All-in-One (AIO) Kafka lab, and inspect
+one record. The lab bundles a Kafka broker, an OAuth token service and a Schema
+Registry for development and testing. You do not need an existing Kafka cluster
+for this walkthrough.
 
 This walkthrough is for a source checkout. For the released application, use the
 [desktop quickstart](quickstart.md).

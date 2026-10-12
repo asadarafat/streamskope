@@ -9,9 +9,9 @@ Choose a desktop installer below, or [use the development sandbox](development.m
 Before downloading, check the [supported authentication and data formats](compatibility.md)
 and [desktop prerequisites](#desktop-prerequisites).
 
-GitHub Releases contains desktop installers. The separately versioned EDA Connector
-catalog and container image are not desktop releases; their tags do not imply a
-new desktop download is available.
+GitHub Releases contains desktop installers. EDA and NSP connector packages and the EDA
+capture-service image have independent release identities. Their tags do not
+imply a new desktop download is available.
 
 ## Download
 
@@ -37,9 +37,10 @@ sha256sum "StreamSkope-<version>-linux-x64.AppImage"
 Get-FileHash ".\StreamSkope-<version>-win32-x64-Setup.exe" -Algorithm SHA256
 ```
 
-Replace `<version>` with the downloaded version. If you downloaded all three
-installers, `shasum -a 256 -c SHA256SUMS` (macOS) or
-`sha256sum -c SHA256SUMS` (Linux) checks the complete set.
+Replace `<version>` with the downloaded version. If you downloaded every asset listed in
+`SHA256SUMS`, `shasum -a 256 -c SHA256SUMS` (macOS) or
+`sha256sum -c SHA256SUMS` (Linux) checks the complete set. Missing assets produce missing-file errors; use the
+per-file commands above when you downloaded only an installer.
 On a mismatch, stop and obtain a fresh copy from the trusted release.
 
 ## Browser alternative

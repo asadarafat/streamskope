@@ -173,7 +173,35 @@ digests; retain the exact revision and relevant capture evidence in the review
 for every refreshed asset. Inspect the images before committing them. Failed
 capture is not permission to substitute fabricated product state.
 
-Routine docs qualification plays the existing approved video masters when media,
+Approved MP4 masters live in the immutable `documentation-media/v1` GitHub
+release, outside Git and the Pages artifact. `website/media.json` pins their
+download URLs, sizes and SHA-256 digests. Posters, captions and transcripts stay
+in the source. Documentation builds work offline; playback needs GitHub access.
+`npm run docs -- media` verifies or downloads masters into `.cache/docs-media`;
+add `--destination <directory>` to copy verified files for an offline review.
+A failed or corrupt download never becomes an approved cache entry.
+
+To change recordings, use the existing Hyperframes production workflow and
+qualify the new exports locally. Upload a new numbered `documentation-media/`
+release as a draft, with its manifest and checksums; compare uploaded bytes
+before publication. Publish the complete media release, update the pinned
+manifest and references through a qualified PR, and qualify external playback
+before the next application release publishes Pages. Do not overwrite an
+existing media identity or use `latest` links. Unchanged films can reuse their
+original media release. Removing binaries from current source stops future
+growth; it does not remove older Git objects.
+
+First prose uses of the terms in `tools/docs/terminology.py` are explained on
+each rendered page, including archived release pages. The renderer preserves
+headings, links, exact UI labels, code, examples and publication notices. This
+keeps archived release bodies exact and navigation labels short. Add unfamiliar
+terms to the catalog with a verified expansion or a plain-language explanation;
+do not invent expansions for product names. Existing authored definitions take
+precedence. Inspect `.artifacts/website/terminology.json` and rendered pages when
+changing the catalog. Repository-only Markdown such as the README must define
+its terms in the authored text.
+
+Routine docs qualification plays the approved remote video masters when media,
 presentation or toolchain inputs change, when CI cannot determine the comparison
 base, or with `--media`. Local runs cache a successful fingerprint; unchanged
 prose still gets routine checks. CI installs Firefox when playback is selected.
@@ -197,3 +225,18 @@ acceptance and its limits. Follow the [release publication procedure](releases.m
 for Pages and archive handoffs. Inspect a failed publication before retrying its
 exact release; a successful build of current main cannot repair an older release's
 identity.
+
+## Under the Skope writing contract
+
+Every workflow answers four reader questions before relying on its video:
+what the workflow does, the concrete problem it solves, how to solve it, and
+how to check the result. Use a recognizable example and exact controls, with
+prerequisites and consequences beside the action. Explain what the result
+establishes and what still needs another system or owner. A broker receipt is
+not business success; an empty partial read is not proof of absence.
+
+The documentation checks enforce those sections and a written action sequence
+for every workflow in navigation. Keep advanced bounds and recovery details in
+their canonical guide/reference and link where needed; a link alone cannot
+replace the workflow's operating steps. Everyday tasks remain the simple
+connection-and-reading entry point.

@@ -5,9 +5,49 @@ description: Export bounded topic configuration snapshots, review drift and sele
 
 # Compare environments
 
-Open **Compare environments** after connecting to Kafka. Capture one to twenty named topics from the active source. Save the source JSON in your private Git repository, or paste a previously exported snapshot as the source. Importing does not change Kafka.
+## What this workflow does
 
-Choose a saved destination profile or the active connection, then **Capture destination and compare**. A saved destination opens separately with host-owned credentials and closes after the read; it does not disconnect the source or activate a plugin. Prepare a managed capture before selecting its profile.
+Compare supported Kafka topic settings with another environment or a saved
+snapshot. You can review differences and explicitly promote selected settings
+to an existing destination topic.
+
+## The problem it solves
+
+A topic behaves differently in test and production, and you suspect configuration
+drift. For example, `retention.ms` differs between the two. Compare the settings
+before changing them. This workflow does not compare message content or
+synchronize entire clusters.
+
+## Before you start
+
+Know the source and destination identities and have permission to read their
+topic configuration. Promotion additionally needs configuration-write permission.
+Prepare any plugin-managed destination first. Reducing retention can delete data;
+agree that consequence before applying a change.
+
+## How to solve it
+
+1. Connect the source profile and open **Compare environments**.
+2. Enter one to twenty names in **Source topics**, then choose **Capture active source**.
+   Use **Export source snapshot** and keep the file privately if
+   you need to repeat the comparison. Alternatively, paste an existing snapshot
+   into **Import source snapshot JSON** and choose **Use imported source**.
+3. Choose the intended destination profile or the active connection, then select
+   **Capture destination and compare**. A saved destination opens separately
+   without replacing the source connection.
+4. Review resource identities, observation times and supported setting differences.
+   Stop here if you only need to diagnose drift; comparison changes nothing.
+5. If promotion is agreed, select individual supported differences and choose
+   **Review selected promotion**. Review the target, settings and consequences.
+6. Confirm the exact target and setting count, then choose **Apply reviewed promotion**
+   once. Read each topic result before considering another attempt.
+
+## Check the result
+
+For comparison, retain the differing setting values, resource identities and
+observation times. After promotion, inspect each topic's acknowledgement and
+read-back. A verified selected setting does not prove all environments match.
+Reconcile unknown results; there is no automatic retry or rollback.
 
 ## Watch the walkthrough
 
@@ -18,9 +58,9 @@ audio. Compare an illustrative desired-state snapshot with one AIO broker and ap
        poster="../../assets/skope/environment-comparison.png"
        aria-label="Walkthrough: Compare environments"
        aria-describedby="environment-comparison-video-summary">
-<source src="../assets/skope/environment-comparison.mp4" type="video/mp4">
+<source src="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/environment-comparison.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/environment-comparison.vtt" srclang="en" label="English instructions">
-  <a href="../assets/skope/environment-comparison.mp4">Download the walkthrough</a>.
+  <a href="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/environment-comparison.mp4">Download the walkthrough</a>.
 </video>
 
 <p id="environment-comparison-video-summary">Follow the actions and outcomes below. Pause or use

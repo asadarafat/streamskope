@@ -15,7 +15,11 @@ concurrency:
 jobs:
   records:
     name: Synchronize release records or hand off
-    if: github.event_name == 'release' && !github.event.release.draft
+    if: >-
+      github.event_name == 'release' && !github.event.release.draft &&
+      (startsWith(github.event.release.tag_name, 'v') ||
+       startsWith(github.event.release.tag_name, 'plugins/eda/v') ||
+       startsWith(github.event.release.tag_name, 'plugins/nsp/v'))
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     concurrency:

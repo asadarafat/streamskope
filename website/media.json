@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "release": "documentation-media/v1",
+  "assets": [
+    {
+      "path": "assets/skope/changed-payload.mp4",
+      "name": "changed-payload.mp4",
+      "sha256": "c1aa93db694b01ed12fd1a6ab4cb01e33e7fd66db86c03a6149dcc944b3b5a90",
+      "bytes": 8402364,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/changed-payload.mp4"
+    },
+    {
+      "path": "assets/skope/eda-export.mp4",
+      "name": "eda-export.mp4",
+      "sha256": "e0590a736f0d10b622acd2ea96678a86f187f49ef84298bec2a17baefa5b0159",
+      "bytes": 7800860,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/eda-export.mp4"
+    },
+    {
+      "path": "assets/skope/environment-comparison.mp4",
+      "name": "environment-comparison.mp4",
+      "sha256": "256aaf17ec86da880a5f08e9a5f21fa86dd74fa1e85845f60973520bbd11677a",
+      "bytes": 7565465,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/environment-comparison.mp4"
+    },
+    {
+      "path": "assets/skope/missing-event.mp4",
+      "name": "missing-event.mp4",
+      "sha256": "9fb3092657d207e8f3ba350abab2b204ce2d8e512be89acc71beb14cfb099364",
+      "bytes": 6594175,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/missing-event.mp4"
+    },
+    {
+      "path": "assets/skope/nsp-notification.mp4",
+      "name": "nsp-notification.mp4",
+      "sha256": "a284980540f0ff647258cca96d657b1858071f8c6b67e215806987f7e47beb1c",
+      "bytes": 7724831,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/nsp-notification.mp4"
+    },
+    {
+      "path": "assets/skope/observed-health.mp4",
+      "name": "observed-health.mp4",
+      "sha256": "c24993dd9bce13baca0c97df323f63d1b57a62d6c73fbe65adbc0f5db4cbeaa3",
+      "bytes": 7937182,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/observed-health.mp4"
+    },
+    {
+      "path": "assets/skope/offset-recovery.mp4",
+      "name": "offset-recovery.mp4",
+      "sha256": "bdb2193f9de16954c78a240de8a870d41a0ec71b1e61b33474a55419530d4724",
+      "bytes": 6709344,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/offset-recovery.mp4"
+    },
+    {
+      "path": "assets/skope/relationships.mp4",
+      "name": "relationships.mp4",
+      "sha256": "2adf175002f173aa6109cd70c235b78061de29c12e335f96907bc807610f0849",
+      "bytes": 10682740,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/relationships.mp4"
+    },
+    {
+      "path": "assets/skope/replay-record.mp4",
+      "name": "replay-record.mp4",
+      "sha256": "78af697acb69e4a6bebbbaef81ff1a1b71055c1cab0c24c38be716f6ccaa38ea",
+      "bytes": 7277640,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/replay-record.mp4"
+    },
+    {
+      "path": "assets/skope/share-findings.mp4",
+      "name": "share-findings.mp4",
+      "sha256": "242e19984625fddabd6b085d3bb7c287ae136b20fb939d2cb20b79b50bbb6b39",
+      "bytes": 8278052,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/share-findings.mp4"
+    },
+    {
+      "path": "assets/skope/troubleshooting.mp4",
+      "name": "troubleshooting.mp4",
+      "sha256": "ef9577c3ea47bad27bf0b2ce71aa0559a0d3668f9d50f0caa9003b014d9a33a5",
+      "bytes": 8790947,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/troubleshooting.mp4"
+    },
+    {
+      "path": "assets/streamskope-intro-dark.mp4",
+      "name": "streamskope-intro-dark.mp4",
+      "sha256": "0e4f838c6ec7c90ad3e90fcaf48a94521ab30a06039739b5abb6044a3bf977f0",
+      "bytes": 19750839,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/streamskope-intro-dark.mp4"
+    },
+    {
+      "path": "assets/streamskope-intro-light.mp4",
+      "name": "streamskope-intro-light.mp4",
+      "sha256": "a2c8f1bbaa781f2b36d65e82ff65a8df70408c5368ac51b63aed42bdd8b51f68",
+      "bytes": 19865431,
+      "url": "https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/streamskope-intro-light.mp4"
+    }
+  ]
+}
