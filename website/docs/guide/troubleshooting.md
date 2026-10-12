@@ -11,7 +11,7 @@ audio. Diagnose an empty read caused by a non-matching filter on an owned AIO to
        poster="../../assets/skope/troubleshooting.png"
        aria-label="Walkthrough: Fix a connection or reading problem"
        aria-describedby="troubleshooting-video-summary">
-  <source src="../assets/skope/troubleshooting.mp4" type="video/mp4">
+<source src="../assets/skope/troubleshooting.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/troubleshooting.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/troubleshooting.mp4">Download the walkthrough</a>.
 </video>

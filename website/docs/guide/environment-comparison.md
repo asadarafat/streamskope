@@ -18,7 +18,7 @@ audio. Compare an illustrative desired-state snapshot with one AIO broker and ap
        poster="../../assets/skope/environment-comparison.png"
        aria-label="Walkthrough: Compare environments"
        aria-describedby="environment-comparison-video-summary">
-  <source src="../assets/skope/environment-comparison.mp4" type="video/mp4">
+<source src="../assets/skope/environment-comparison.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/environment-comparison.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/environment-comparison.mp4">Download the walkthrough</a>.
 </video>

@@ -17,7 +17,7 @@ audio. Recorded against the local NSP 26.4 lab with the NSP Connector already in
        poster="../../assets/skope/nsp-notification.png"
        aria-label="Walkthrough: Follow an NSP notification"
        aria-describedby="nsp-notification-video-summary">
-  <source src="../assets/skope/nsp-notification.mp4" type="video/mp4">
+<source src="../assets/skope/nsp-notification.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/nsp-notification.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/nsp-notification.mp4">Download the walkthrough</a>.
 </video>

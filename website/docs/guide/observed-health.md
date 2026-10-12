@@ -14,7 +14,7 @@ audio. Inspect real lag on an owned AIO topic and inactive consumer group, then 
        poster="../../assets/skope/observed-health.png"
        aria-label="Walkthrough: Investigate observed Kafka health"
        aria-describedby="observed-health-video-summary">
-  <source src="../assets/skope/observed-health.mp4" type="video/mp4">
+<source src="../assets/skope/observed-health.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/observed-health.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/observed-health.mp4">Download the walkthrough</a>.
 </video>

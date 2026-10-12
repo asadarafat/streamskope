@@ -66,9 +66,10 @@ async function main(): Promise<void> {
             theme === "dark" ? "rgb(21, 21, 24)" : "rgb(244, 244, 245)",
           );
           await page.mouse.move(0, 0);
-          const name = subject === "streamskope-intro"
-            ? `${subject}-${theme}.png`
-            : `${subject}${theme === "dark" ? "-dark" : ""}.png`;
+          const name =
+            subject === "streamskope-intro"
+              ? `${subject}-${theme}.png`
+              : `${subject}${theme === "dark" ? "-dark" : ""}.png`;
           await page.screenshot({ path: resolve(output, name), animations: "disabled" });
           captures.push(name);
           dimensions[name] = [viewport.width, viewport.height];
@@ -92,7 +93,9 @@ async function main(): Promise<void> {
         await page.getByRole("option", { name: "Newest N", exact: true }).click();
         await page.getByRole("combobox", { name: "Record limit", exact: true }).click();
         await page.getByRole("option", { name: "10", exact: true }).click();
-        await page.getByRole("button", { name: "Load messages orders.events", exact: true }).click();
+        await page
+          .getByRole("button", { name: "Load messages orders.events", exact: true })
+          .click();
         const grid = page.getByRole("grid", { name: "Kafka messages" });
         await expect(grid.getByText("ord-1042", { exact: true })).toBeVisible({ timeout: 15_000 });
         await grid.getByText("ord-1042", { exact: true }).click();
@@ -142,8 +145,17 @@ async function main(): Promise<void> {
       const sourcePatch = (
         await promisify(execFile)(
           "git",
-          ["diff", "HEAD", "--", "src", "config", "package.json", "package-lock.json",
-            "test/support", "tools/docs/capture.ts"],
+          [
+            "diff",
+            "HEAD",
+            "--",
+            "src",
+            "config",
+            "package.json",
+            "package-lock.json",
+            "test/support",
+            "tools/docs/capture.ts",
+          ],
           { encoding: "utf8" },
         )
       ).stdout;
@@ -160,10 +172,15 @@ async function main(): Promise<void> {
             sourcePatchSha256: createHash("sha256").update(sourcePatch).digest("hex"),
             sha256: Object.fromEntries(
               await Promise.all(
-                captures.map(async (name) => [
-                  name,
-                  createHash("sha256").update(await readFile(resolve(output, name))).digest("hex"),
-                ] as const),
+                captures.map(
+                  async (name) =>
+                    [
+                      name,
+                      createHash("sha256")
+                        .update(await readFile(resolve(output, name)))
+                        .digest("hex"),
+                    ] as const,
+                ),
               ),
             ),
             ...(profilesOnly

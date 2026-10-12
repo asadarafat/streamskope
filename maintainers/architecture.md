@@ -101,13 +101,13 @@ secrets from settings and history; the entire data directory is not encrypted.
 
 ### External interactions shared by both hosts
 
-| Host owner | External system | Protocol and purpose |
-| --- | --- | --- |
-| Kafka backend | Kafka brokers | Kafka protocol over TCP, optionally TLS/SASL; record and administration operations |
-| Kafka backend | Schema Registry / Kafka Connect | HTTP(S) APIs with independent endpoint authentication and trust |
-| NATS backend | NATS server | NATS protocol over TCP, optionally TLS; connection and bounded subscriptions |
-| EDA plugin backend | EDA API and capture application | HTTPS API operations and an authenticated WebSocket tunnel for managed capture |
-| NSP plugin backend | NSP API and installed workflow | HTTPS workflow installation/execution to obtain Kafka connection material |
+| Host owner         | External system                 | Protocol and purpose                                                               |
+| ------------------ | ------------------------------- | ---------------------------------------------------------------------------------- |
+| Kafka backend      | Kafka brokers                   | Kafka protocol over TCP, optionally TLS/SASL; record and administration operations |
+| Kafka backend      | Schema Registry / Kafka Connect | HTTP(S) APIs with independent endpoint authentication and trust                    |
+| NATS backend       | NATS server                     | NATS protocol over TCP, optionally TLS; connection and bounded subscriptions       |
+| EDA plugin backend | EDA API and capture application | HTTPS API operations and an authenticated WebSocket tunnel for managed capture     |
+| NSP plugin backend | NSP API and installed workflow  | HTTPS workflow installation/execution to obtain Kafka connection material          |
 
 EDA and NSP extend Kafka profile creation and recovery through the plugin API.
 Their renderer bundles add the UI, and their backend bundles run in the owning

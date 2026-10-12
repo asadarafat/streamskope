@@ -23,14 +23,14 @@ Support explicit invocation with `$documentation-review` and ordinary requests
 to review docs, audit a branch's documentation, evaluate architecture diagrams,
 or identify documentation gaps.
 
-| Input | Default and handling |
-| --- | --- |
-| Scope | Current repository's documentation; accept selected paths or an explicit change set. |
-| Depth | Standard; quick traces one high-value journey, standard samples the main audiences, deep broadens evidence and journeys. None implies exhaustive coverage. |
-| Audience | Infer users, operators, contributors, maintainers, or other roles from repository evidence. |
-| Published URL | Optional; distinguish source-only review from published-site inspection. |
-| Emphasis | Accept named workflows, features, or frameworks without losing relevant accuracy and safety checks. |
-| Output | Conversation. Write a report only to a user-requested or explicitly authorized destination. |
+| Input         | Default and handling                                                                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope         | Current repository's documentation; accept selected paths or an explicit change set.                                                                       |
+| Depth         | Standard; quick traces one high-value journey, standard samples the main audiences, deep broadens evidence and journeys. None implies exhaustive coverage. |
+| Audience      | Infer users, operators, contributors, maintainers, or other roles from repository evidence.                                                                |
+| Published URL | Optional; distinguish source-only review from published-site inspection.                                                                                   |
+| Emphasis      | Accept named workflows, features, or frameworks without losing relevant accuracy and safety checks.                                                        |
+| Output        | Conversation. Write a report only to a user-requested or explicitly authorized destination.                                                                |
 
 State reasonable assumptions and proceed. Ask only when ambiguity materially
 changes scope or authorization; optional inputs must not become blockers.

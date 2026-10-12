@@ -12,7 +12,7 @@ audio. Compare two illustrative JSON events on the local AIO Kafka broker, inclu
        poster="../../assets/skope/changed-payload.png"
        aria-label="Walkthrough: Understand a changed payload"
        aria-describedby="changed-payload-video-summary">
-  <source src="../assets/skope/changed-payload.mp4" type="video/mp4">
+<source src="../assets/skope/changed-payload.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/changed-payload.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/changed-payload.mp4">Download the walkthrough</a>.
 </video>

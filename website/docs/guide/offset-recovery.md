@@ -32,7 +32,7 @@ audio. Preview and apply a reset on an owned, inactive AIO consumer group, then 
        poster="../../assets/skope/offset-recovery.png"
        aria-label="Walkthrough: Preview and reset consumer offsets"
        aria-describedby="offset-recovery-video-summary">
-  <source src="../assets/skope/offset-recovery.mp4" type="video/mp4">
+<source src="../assets/skope/offset-recovery.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/offset-recovery.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/offset-recovery.mp4">Download the walkthrough</a>.
 </video>

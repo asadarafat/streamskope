@@ -17,7 +17,7 @@ audio. Recorded against the local EDA 26.8.2 lab with the EDA Connector and clus
        poster="../../assets/skope/eda-export.png"
        aria-label="Walkthrough: Inspect an EDA export"
        aria-describedby="eda-export-video-summary">
-  <source src="../assets/skope/eda-export.mp4" type="video/mp4">
+<source src="../assets/skope/eda-export.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/eda-export.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/eda-export.mp4">Download the walkthrough</a>.
 </video>

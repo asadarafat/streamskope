@@ -13,7 +13,7 @@ audio. Correct and replay one illustrative JSON record to a separate, owned AIO 
        poster="../../assets/skope/replay-record.png"
        aria-label="Walkthrough: Review and replay a failed record"
        aria-describedby="replay-record-video-summary">
-  <source src="../assets/skope/replay-record.mp4" type="video/mp4">
+<source src="../assets/skope/replay-record.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/replay-record.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/replay-record.mp4">Download the walkthrough</a>.
 </video>

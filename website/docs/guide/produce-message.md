@@ -1,6 +1,5 @@
 # Produce and verify one message
 
-
 In a topic, choose **Produce message**. Select the partition, enter a key and value,
 and optionally add an ordered JSON array of headers. Repeated header names are
 preserved. **Null key** differs from an empty key; **Tombstone** writes a null value.
@@ -23,7 +22,6 @@ again. Attempt results are session-local and bounded; after restart, inspect Kaf
 
 For reviewed recovery, see [copy or replay records](record-replay.md) and
 [preview consumer offset resets](offset-recovery.md).
-
 
 Return to [Read Kafka messages](messages.md) to inspect the acknowledged record.
 For a recovery decision, follow [Review and replay a failed record](../skope/replay-record.md).

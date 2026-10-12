@@ -294,11 +294,7 @@ export async function checkNavigation(page, base, evidence, accessible) {
       for (const [name, links] of [
         [
           "Everyday tasks",
-          [
-            "Connect to Kafka or NATS",
-            "Read Kafka messages",
-            "Read NATS subjects",
-          ],
+          ["Connect to Kafka or NATS", "Read Kafka messages", "Read NATS subjects"],
         ],
         [
           "Under the Skope",
@@ -360,8 +356,9 @@ export async function checkNavigation(page, base, evidence, accessible) {
         if (name === "Everyday tasks") {
           await expect(section.getByRole("navigation")).toHaveCount(0);
           assert.deepEqual(
-            (await section.locator("ul.md-nav__list > li > a.md-nav__link").allTextContents())
-              .map((text) => text.trim()),
+            (await section.locator("ul.md-nav__list > li > a.md-nav__link").allTextContents()).map(
+              (text) => text.trim(),
+            ),
             links,
             "The simple entry path connects first, then offers the two readers",
           );

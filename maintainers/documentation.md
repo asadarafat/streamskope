@@ -77,7 +77,7 @@ product labels; a page's difficulty does not determine its section.
 | Section         | Owns                                                        | Boundary                                                                                                     |
 | --------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Start here      | Installation entry points and the first guided session      | A first-session tutorial gives expected results; installation links lead to the maintained procedure         |
-| Everyday tasks  | Connecting and reading messages                             | A flat entry path: connect first, then read Kafka messages or NATS subjects                                   |
+| Everyday tasks  | Connecting and reading messages                             | A flat entry path: connect first, then read Kafka messages or NATS subjects                                  |
 | Under the Skope | Diagnosis and recovery decisions                            | Question, evidence, interpretation, next check and handover; link to task procedures rather than repeat them |
 | Plugins         | Installation, lifecycle and target integration requirements | Preserve platform permissions, compatibility and cleanup ownership; link to event-diagnosis workflows        |
 | Concepts        | Models, relationships and reasons                           | Explain why; link to procedures and exact limits                                                             |

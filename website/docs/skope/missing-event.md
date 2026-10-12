@@ -16,7 +16,7 @@ audio. Trace an illustrative order across a populated source and an empty destin
        poster="../../assets/skope/missing-event.png"
        aria-label="Walkthrough: Find a missing or delayed event"
        aria-describedby="missing-event-video-summary">
-  <source src="../assets/skope/missing-event.mp4" type="video/mp4">
+<source src="../assets/skope/missing-event.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/missing-event.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/missing-event.mp4">Download the walkthrough</a>.
 </video>

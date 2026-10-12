@@ -27,7 +27,7 @@ audio. Discover relationships and potential schema impact using a registered Avr
        poster="../../assets/skope/relationships.png"
        aria-label="Walkthrough: Trace relationships and potential schema impact"
        aria-describedby="relationships-video-summary">
-  <source src="../assets/skope/relationships.mp4" type="video/mp4">
+<source src="../assets/skope/relationships.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/relationships.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/relationships.mp4">Download the walkthrough</a>.
 </video>

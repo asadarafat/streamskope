@@ -7,14 +7,14 @@ and version limitations rather than inheriting that date as fresh verification.
 
 ## Division of responsibility
 
-| Framework | Role in this skill | Boundary |
-| --- | --- | --- |
-| Diátaxis | Identify the reader need and suitable documentation treatment. | Does not require four folders, balanced page counts, or a site-wide reorganization. |
-| Google developer documentation style guide | Evaluate editorial conventions. | Respect documented terminology and justified house style; preserve technical meaning. |
-| Google Technical Writing courses | Support audience analysis and clear technical prose. | Teaching material, not a mandatory style checklist or a claimed completed course. |
-| C4 | Assess architecture views that help a real audience. | Does not govern every visual or require every abstraction level. |
-| IBM-informed content quality | Assess usefulness across nine complementary characteristics. | No certification, numeric score, or mandate to make all content procedural. |
-| DITA-inspired principles, optional | Improve coherent topics, reuse, and maintenance. | Supplement Diátaxis; do not require XML, DITA maps, or platform migration. |
+| Framework                                  | Role in this skill                                             | Boundary                                                                              |
+| ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Diátaxis                                   | Identify the reader need and suitable documentation treatment. | Does not require four folders, balanced page counts, or a site-wide reorganization.   |
+| Google developer documentation style guide | Evaluate editorial conventions.                                | Respect documented terminology and justified house style; preserve technical meaning. |
+| Google Technical Writing courses           | Support audience analysis and clear technical prose.           | Teaching material, not a mandatory style checklist or a claimed completed course.     |
+| C4                                         | Assess architecture views that help a real audience.           | Does not govern every visual or require every abstraction level.                      |
+| IBM-informed content quality               | Assess usefulness across nine complementary characteristics.   | No certification, numeric score, or mandate to make all content procedural.           |
+| DITA-inspired principles, optional         | Improve coherent topics, reuse, and maintenance.               | Supplement Diátaxis; do not require XML, DITA maps, or platform migration.            |
 
 Technical accuracy and user safety outrank stylistic uniformity. The skill's
 rule IDs, severity/confidence scales, sampling strategy, evidence labels,

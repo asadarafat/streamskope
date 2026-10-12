@@ -13,7 +13,7 @@ audio. Bookmark an illustrative AIO record, review and export the view, then imp
        poster="../../assets/skope/share-findings.png"
        aria-label="Walkthrough: Share your findings"
        aria-describedby="share-findings-video-summary">
-  <source src="../assets/skope/share-findings.mp4" type="video/mp4">
+<source src="../assets/skope/share-findings.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/share-findings.vtt" srclang="en" label="English instructions">
   <a href="../assets/skope/share-findings.mp4">Download the walkthrough</a>.
 </video>
