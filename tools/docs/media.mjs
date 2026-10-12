@@ -1,4 +1,4 @@
-/* global document, window, innerWidth */
+/* global document, window, innerWidth, process */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -52,7 +52,8 @@ async function checkSkopeWalkthroughs(browser, base, evidence) {
       .sort(),
     "Every Under the Skope workflow has a recording",
   );
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage();
+  await page.setViewportSize({ width: 1440, height: 1000 });
   page.setDefaultTimeout(60_000);
   try {
     await page.goto(base + "skope/");
@@ -140,43 +141,43 @@ export async function checkMedia(base, evidence) {
   const videoBrowser = await firefox.launch({ headless: true });
   const remote = process.env.STREAMSKOPE_DOCS_PUBLISH === "1";
   const mediaContext = await videoBrowser.newContext();
-  if (!remote) {
-    const assets = JSON.parse(await readFile("website/media.json", "utf8")).assets;
-    for (const asset of assets) {
-      const bytes = await readFile(resolve(".cache/docs-media", asset.sha256, asset.name));
-      assert.equal(bytes.length, asset.bytes);
-      assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
-      await mediaContext.route(asset.url, async (route) => {
-        const range = route
-          .request()
-          .headers()
-          .range?.match(/^bytes=(\d+)-(\d*)$/u);
-        if (!range) {
-          await route.fulfill({ status: 200, contentType: "video/mp4", body: bytes });
-          return;
-        }
-        const start = Number(range[1]);
-        const end = Math.min(range[2] ? Number(range[2]) : bytes.length - 1, bytes.length - 1);
-        if (start > end || start >= bytes.length) {
-          await route.fulfill({
-            status: 416,
-            headers: { "Content-Range": `bytes */${bytes.length}` },
-          });
-          return;
-        }
-        await route.fulfill({
-          status: 206,
-          contentType: "video/mp4",
-          body: bytes.subarray(start, end + 1),
-          headers: {
-            "Accept-Ranges": "bytes",
-            "Content-Range": `bytes ${start}-${end}/${bytes.length}`,
-          },
-        });
-      });
-    }
-  }
   try {
+    if (!remote) {
+      const assets = JSON.parse(await readFile("website/media.json", "utf8")).assets;
+      for (const asset of assets) {
+        const bytes = await readFile(resolve(".cache/docs-media", asset.sha256, asset.name));
+        assert.equal(bytes.length, asset.bytes);
+        assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
+        await mediaContext.route(asset.url, async (route) => {
+          const range = route
+            .request()
+            .headers()
+            .range?.match(/^bytes=(\d+)-(\d*)$/u);
+          if (!range) {
+            await route.fulfill({ status: 200, contentType: "video/mp4", body: bytes });
+            return;
+          }
+          const start = Number(range[1]);
+          const end = Math.min(range[2] ? Number(range[2]) : bytes.length - 1, bytes.length - 1);
+          if (start > end || start >= bytes.length) {
+            await route.fulfill({
+              status: 416,
+              headers: { "Content-Range": `bytes */${bytes.length}` },
+            });
+            return;
+          }
+          await route.fulfill({
+            status: 206,
+            contentType: "video/mp4",
+            body: bytes.subarray(start, end + 1),
+            headers: {
+              "Accept-Ranges": "bytes",
+              "Content-Range": `bytes ${start}-${end}/${bytes.length}`,
+            },
+          });
+        });
+      }
+    }
     await checkSkopeWalkthroughs(mediaContext, base, evidence);
     const videoPage = await mediaContext.newPage();
     await videoPage.setViewportSize({ width: 1280, height: 900 });
