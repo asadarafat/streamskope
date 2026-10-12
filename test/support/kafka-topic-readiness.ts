@@ -7,6 +7,8 @@ const pendingMetadata = [
   "LEADER_NOT_AVAILABLE",
   "NOT_LEADER_OR_FOLLOWER",
   "FENCED_LEADER_EPOCH",
+  // Metadata can reach the controller's new epoch before the data listener does.
+  "UNKNOWN_LEADER_EPOCH",
 ];
 
 function protocolCodes(error: unknown): readonly string[] {

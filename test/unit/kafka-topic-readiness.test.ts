@@ -29,20 +29,44 @@ it("requires usable offsets after metadata and retries only read-only readiness"
   expect(consumer.clearMetadata).toHaveBeenCalledOnce();
 });
 
-it("does not retry authorization failures mixed with transient metadata errors", async () => {
+it("refreshes metadata when the data listener has not reached the reported leader epoch", async () => {
   const consumer = reader();
-  consumer.listOffsets.mockRejectedValue(
-    new AggregateError([
-      { apiId: "NOT_LEADER_OR_FOLLOWER" },
-      { apiId: "TOPIC_AUTHORIZATION_FAILED" },
-    ]),
+  consumer.listOffsets.mockRejectedValueOnce(
+    new AggregateError([{ apiId: "UNKNOWN_LEADER_EPOCH" }]),
   );
   await expect(
     waitForKafkaTopicOffsets(consumer as unknown as Consumer, "fixture", "topic-id", 1),
-  ).rejects.toThrow("NOT_LEADER_OR_FOLLOWER, TOPIC_AUTHORIZATION_FAILED");
+  ).resolves.toEqual([0n]);
+  expect(consumer.metadata).toHaveBeenCalledTimes(2);
+  expect(consumer.listOffsets).toHaveBeenCalledTimes(2);
+  expect(consumer.clearMetadata).toHaveBeenCalledOnce();
+});
+
+it("fails within the readiness deadline if the leader epoch never becomes usable", async () => {
+  const consumer = reader();
+  consumer.listOffsets.mockRejectedValue({ apiId: "UNKNOWN_LEADER_EPOCH" });
+  vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(15_000);
+  await expect(
+    waitForKafkaTopicOffsets(consumer as unknown as Consumer, "fixture", "topic-id", 1),
+  ).rejects.toThrow("The owned Kafka topic did not expose its expected identity and offsets.");
   expect(consumer.listOffsets).toHaveBeenCalledOnce();
   expect(consumer.clearMetadata).not.toHaveBeenCalled();
 });
+
+it.each(["NOT_LEADER_OR_FOLLOWER", "UNKNOWN_LEADER_EPOCH"])(
+  "does not retry authorization failures mixed with %s",
+  async (code) => {
+    const consumer = reader();
+    consumer.listOffsets.mockRejectedValue(
+      new AggregateError([{ apiId: code }, { apiId: "TOPIC_AUTHORIZATION_FAILED" }]),
+    );
+    await expect(
+      waitForKafkaTopicOffsets(consumer as unknown as Consumer, "fixture", "topic-id", 1),
+    ).rejects.toThrow(`${code}, TOPIC_AUTHORIZATION_FAILED`);
+    expect(consumer.listOffsets).toHaveBeenCalledOnce();
+    expect(consumer.clearMetadata).not.toHaveBeenCalled();
+  },
+);
 
 it("retries the SDK's exact unknown-owned-topic error while the new topic propagates", async () => {
   const consumer = reader();
