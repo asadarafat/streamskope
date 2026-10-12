@@ -1,0 +1,4 @@
+interface:
+  display_name: "Documentation Review"
+  short_description: "Evidence-based documentation reviews"
+  default_prompt: "Use $documentation-review to review this repository's documentation and prioritize evidence-backed improvements."
