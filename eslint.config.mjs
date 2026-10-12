@@ -20,6 +20,7 @@ export default [
   {
     ignores: [
       ".codex/**",
+      ".agents/**",
       ".cache/**",
       ".artifacts/**",
       "coverage/**",

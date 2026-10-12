@@ -4,6 +4,7 @@ coverage/
 .cache/
 .artifacts/
 .codex/
+.agents/
 .vite/
 playwright-report/
 test-results/
