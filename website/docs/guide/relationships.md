@@ -1,9 +1,35 @@
 # Trace relationships and potential schema impact
 
-Connect a profile, then open **Relationships**. Enter one to three visible topic
-names, separated by commas. Optionally enter an **Impact subject** and its **Exact
-subject version**. Choose **Discover relationships**. Discovery performs reads
-only; it does not register/delete schemas or change connectors, groups or topics.
+## What this workflow does
+
+Discover the topic, consumer-group, connector and schema relationships visible
+through the endpoints configured in your profile. For a selected schema version,
+review potential dependents before proposing a change.
+
+## The problem it solves
+
+You want to change a schema but do not know which configured connectors or
+visible resources may use it. The graph gathers declared and observed evidence
+to help you ask the right owners. It is a partial snapshot, not a complete
+producer-to-consumer lineage map or proof of current record flow.
+
+## Before you start
+
+Connect the relevant Kafka profile. Configure Registry and Connect endpoints
+where those relationships matter, and use an account permitted to read them.
+Know the exact schema subject/version when reviewing potential impact.
+
+## How to solve it
+
+1. Open **Relationships** on the intended profile.
+2. Enter one to three visible topic names, separated by commas.
+3. For schema impact, enter the **Impact subject** and its **Exact subject version**.
+4. Choose **Discover relationships**. Discovery only reads; it does not change
+   schemas, connectors, consumer groups or topics.
+5. Select a graph node to filter the evidence table. Use **Show all relationships**
+   to return to the full result, then inspect the sources and coverage below.
+
+### Interpret the evidence
 
 The graph is a bounded snapshot of the endpoints configured in this profile.
 Select a node to filter the evidence table; **Show all relationships** restores
@@ -18,6 +44,13 @@ all edges. Every edge includes a source, observation time and interpretation.
 Arrows follow the relation named in the table. Some represent dependencies or
 metadata associations, so they do not all show the direction of record flow.
 
+## Check the result
+
+Inspect each relationship's source, time and interpretation, together with
+unavailable endpoints and coverage limits. Use potential impact as a list of
+leads to verify with downstream owners. Run a separate schema compatibility
+check before a schema change; an empty graph is not proof that no consumers exist.
+
 ## Watch the walkthrough
 
 A 42-second recording of the actual workbench with on-screen instructions and no
@@ -27,9 +60,9 @@ audio. Discover relationships and potential schema impact using a registered Avr
        poster="../../assets/skope/relationships.png"
        aria-label="Walkthrough: Trace relationships and potential schema impact"
        aria-describedby="relationships-video-summary">
-<source src="../assets/skope/relationships.mp4" type="video/mp4">
+<source src="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/relationships.mp4" type="video/mp4">
   <track kind="captions" src="../assets/skope/relationships.vtt" srclang="en" label="English instructions">
-  <a href="../assets/skope/relationships.mp4">Download the walkthrough</a>.
+  <a href="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/relationships.mp4">Download the walkthrough</a>.
 </video>
 
 <p id="relationships-video-summary">Follow the actions and outcomes below. Pause or use

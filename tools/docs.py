@@ -17,6 +17,9 @@ from urllib.parse import unquote, urlsplit
 from docs import publication
 from docs.publication import documentation_context, publication_identity, verify_publication
 from docs.media import media_inputs, media_selection
+from docs.video_assets import fetch_videos, video_assets, inspect_video_references
+from docs.terminology import explain_terms
+from docs.journeys import inspect_skope_journeys
 from docs.downloads import desktop_downloads, container_downloads
 from docs.plugins import SNAPSHOT, capture_publications, plugin_context
 from docs.procedures import inspect_record_procedure, inspect_retrieval_procedure
@@ -176,18 +179,17 @@ def inspect_site(root, base_path="/"):
         special = relative in {
             ".nojekyll", "objects.inv", "search.json", "search/search_index.json", "documentation.json", "plugin-publications.json",
             "assets/launch-score.mp3", "launch/assets/launch-score.mp3",
-            "assets/streamskope-intro-light.mp4", "assets/streamskope-intro-dark.mp4",
-            "assets/skope/changed-payload.mp4", "assets/skope/changed-payload.vtt",
-            "assets/skope/eda-export.mp4", "assets/skope/eda-export.vtt",
-            "assets/skope/nsp-notification.mp4", "assets/skope/nsp-notification.vtt",
-            "assets/skope/missing-event.mp4", "assets/skope/missing-event.vtt",
-            "assets/skope/replay-record.mp4", "assets/skope/replay-record.vtt",
-            "assets/skope/share-findings.mp4", "assets/skope/share-findings.vtt",
-            "assets/skope/observed-health.mp4", "assets/skope/observed-health.vtt",
-            "assets/skope/offset-recovery.mp4", "assets/skope/offset-recovery.vtt",
-            "assets/skope/environment-comparison.mp4", "assets/skope/environment-comparison.vtt",
-            "assets/skope/relationships.mp4", "assets/skope/relationships.vtt",
-            "assets/skope/troubleshooting.mp4", "assets/skope/troubleshooting.vtt",
+            "assets/skope/changed-payload.vtt",
+            "assets/skope/eda-export.vtt",
+            "assets/skope/nsp-notification.vtt",
+            "assets/skope/missing-event.vtt",
+            "assets/skope/replay-record.vtt",
+            "assets/skope/share-findings.vtt",
+            "assets/skope/observed-health.vtt",
+            "assets/skope/offset-recovery.vtt",
+            "assets/skope/environment-comparison.vtt",
+            "assets/skope/relationships.vtt",
+            "assets/skope/troubleshooting.vtt",
             "assets/qualification/lifecycle-2026-10-04.json",
             "assets/qualification/topic-monitor-2026-10-04.json",
             "assets/qualification/pre-release-2026-10-06.json",
@@ -288,6 +290,8 @@ def prepare(url, serving=False):
         ROOT / "src/platform/ui/assets/streamskope.svg",
         WEBSITE / "docs/assets/streamskope.svg",
     )
+    (WEBSITE / "docs/assets/video-sources.js").write_text(
+        "window.streamSkopeVideos = " + json.dumps({a["name"]: a["url"] for a in video_assets()}) + ";\n")
     media = WEBSITE / "docs/launch/assets"
     media.mkdir(parents=True, exist_ok=True)
     (media / "destination.js").write_text(
@@ -327,8 +331,9 @@ def prepare(url, serving=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["setup", "prepare", "build", "serve", "check", "qualify", "verify", "guard", "pending"])
+    parser.add_argument("action", choices=["setup", "prepare", "build", "serve", "check", "qualify", "verify", "guard", "pending", "media"])
     parser.add_argument("--component", choices=["desktop", "eda", "nsp", "all"], default="all")
+    parser.add_argument("--destination", help="Copy verified video masters to this directory")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8002)
     parser.add_argument("--media", action="store_true", help="Force intro and walkthrough playback qualification")
@@ -336,6 +341,9 @@ def main():
     parser.add_argument("--revision")
     parser.add_argument("--release")
     args = parser.parse_args()
+    if args.action == "media":
+        fetch_videos(destination=args.destination)
+        return
     if args.action == "pending":
         pending_changes(args.component)
         return
@@ -367,6 +375,7 @@ def main():
         inspect_message_limits()
         inspect_retrieval_procedure(ROOT)
         inspect_record_procedure(ROOT)
+        inspect_skope_journeys(ROOT)
         python = setup()
         run([python, "-m", "unittest", "discover", "-s", "test/docs", "-p", "test_*.py"])
         run(["node", "--test", "test/docs/accessibility.test.mjs"])
@@ -374,6 +383,8 @@ def main():
         changed, fingerprint = media_selection()
         media = args.media or changed
         print("Media playback: " + ("required" if media else "unchanged; skipped"), flush=True)
+        if media:
+            fetch_videos()
         if media and os.environ.get("CI") == "true":
             run(["npx", "--no-install", "playwright", "install", "--with-deps", "firefox"])
         run(["node", "tools/docs/smoke.mjs", *(["--media"] if media else [])])
@@ -402,7 +413,12 @@ def main():
         (SITE / "documentation.json").write_text(json.dumps(publication_identity()) + "\n")
         if os.environ.get("STREAMSKOPE_DOCS_PUBLISH") == "1":
             shutil.copyfile(ROOT / SNAPSHOT, SITE / "plugin-publications.json")
+        receipt = explain_terms(SITE)
+        evidence = ROOT / ".artifacts/website/terminology.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text(json.dumps(receipt, indent=2) + "\n")
         inspect_site(SITE, urlsplit(url).path)
+        inspect_video_references(SITE)
 
 
 def pending_changes(component):

@@ -849,6 +849,11 @@ try {
         completedAt: new Date().toISOString(),
         routes: routes.length,
         media: process.argv.includes("--media") ? "passed" : "skipped",
+        mediaDelivery: process.argv.includes("--media")
+          ? process.env.STREAMSKOPE_DOCS_PUBLISH === "1"
+            ? "github"
+            : "verified-cache"
+          : "not-checked",
       },
       null,
       2,

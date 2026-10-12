@@ -29,13 +29,13 @@ hide:
   <div class="guide-paths">
     <a href="guide/"><span class="path-label">Everyday tasks</span><span><strong>Connect and read messages</strong><small>Connect to Kafka or NATS, then read and inspect a message.</small></span><span aria-hidden="true">→</span></a>
     <a href="guide/operations/"><span class="path-label">Consumers</span><span><strong>Check consumer lag</strong><small>Find a group and compare committed and end offsets.</small></span><span aria-hidden="true">→</span></a>
-    <a href="skope/"><span class="path-label">Under the Skope</span><span><strong>Bring an event into focus</strong><small>Follow an EDA or NSP event, compare payloads, or share your findings.</small></span><span aria-hidden="true">→</span></a>
+    <a href="skope/"><span class="path-label">Under the Skope</span><span><strong>Bring an event into focus</strong><small>Follow a Nokia Event-Driven Automation (EDA) or Network Services Platform (NSP) event, compare payloads, or share your findings.</small></span><span aria-hidden="true">→</span></a>
     <a href="plugins/"><span class="path-label">Plugins</span><span><strong>Connect a platform</strong><small>Set up EDA capture or an NSP Kafka connection.</small></span><span aria-hidden="true">→</span></a>
     <a href="guide/troubleshooting/"><span class="path-label">Help</span><span><strong>Fix a connection problem</strong><small>Find the failed operation and work through the next check.</small></span><span aria-hidden="true">→</span></a>
   </div>
 <figure class="product-shot">
-  <img data-sk-light="messages.png" data-sk-dark="messages-dark.png" alt="AIO Kafka record with metadata and headers" width="2880" height="1800" loading="lazy" decoding="async">
-  <noscript><img src="assets/messages.png" alt="AIO Kafka record with metadata and headers" width="2880" height="1800" loading="lazy"></noscript>
+  <img data-sk-light="messages.png" data-sk-dark="messages-dark.png" alt="Kafka record with metadata and headers" width="2880" height="1800" loading="lazy" decoding="async">
+  <noscript><img src="assets/messages.png" alt="Kafka record with metadata and headers" width="2880" height="1800" loading="lazy"></noscript>
 </figure>
 </section>
 

@@ -1,38 +1,26 @@
 # Fix a connection or reading problem
 
-Start with the failed action and its log entry, then check the matching cause.
+## What this workflow does
 
-## Watch the walkthrough
+Locate the stage that failed when connecting or reading, then check the settings,
+permissions or network path for that stage. Raw logs and a correlation identifier
+help you keep one failed attempt separate from another.
 
-A 42-second recording of the actual workbench with on-screen instructions and no
-audio. Diagnose an empty read caused by a non-matching filter on an owned AIO topic. Clear the filter, retry a bounded read and inspect the returned record.
+## The problem it solves
 
-<video class="skope-walkthrough" controls muted playsinline preload="metadata"
-       poster="../../assets/skope/troubleshooting.png"
-       aria-label="Walkthrough: Fix a connection or reading problem"
-       aria-describedby="troubleshooting-video-summary">
-<source src="../assets/skope/troubleshooting.mp4" type="video/mp4">
-  <track kind="captions" src="../assets/skope/troubleshooting.vtt" srclang="en" label="English instructions">
-  <a href="../assets/skope/troubleshooting.mp4">Download the walkthrough</a>.
-</video>
+You cannot connect, one service fails while Kafka works, or a read shows no
+records. These symptoms have different causes. For example, a non-matching
+grid filter can hide a loaded record without indicating a broker outage.
 
-<p id="troubleshooting-video-summary">Follow the actions and outcomes below. Pause or use
-fullscreen to inspect the controls; the written guide covers prerequisites and
-the decisions behind each step.</p>
+## Before you start
 
-<details markdown="1">
-<summary>Read the walkthrough transcript</summary>
+Know the failed action, intended profile and topic. Keep the relevant redacted
+log entry. Check network access from the StreamSkope host: the desktop process
+or browser container, not just the browser computer.
 
-- **00:00 — No messages does not mean no events.** Illustrative AIO topic: a non-matching filter hides known retained records.
-- **00:07 — Confirm the connection and topic.** Check the active profile and intended topic before changing credentials.
-- **00:14 — Inspect the active filters.** The key filter asks for absent-order; the fixture record uses order-42.
-- **00:21 — Clear the filter and check read mode.** First N reads retained records. Tail can wait for new events.
-- **00:28 — Retry the bounded read.** Changing a filter alone does not establish what the broker contains.
-- **00:35 — Inspect a returned record.** If the retry fails, retain its stage and correlation ID; never share credentials.
+## How to solve it
 
-</details>
-
-## Find the failed operation
+### Find the failed operation
 
 1. Expand **Raw logs** at the bottom of StreamSkope.
 2. Find the entry for the failed action. Filter by text or severity if needed.
@@ -55,6 +43,43 @@ the decisions behind each step.</p>
 **You should see:** a successful retry or a more specific failing stage to
 investigate. Keep the correlation ID when escalating the problem.
 
+## Check the result
+
+Retry once after correcting the identified cause. You should see the expected
+connection or record, or a more specific failing stage to escalate. Keep the
+correlation identifier and coverage limits. A reachable port does not establish
+valid credentials, certificate trust or permission to read a topic.
+
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Diagnose an empty read caused by a non-matching filter on an owned AIO topic. Clear the filter, retry a bounded read and inspect the returned record.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/troubleshooting.png"
+       aria-label="Walkthrough: Fix a connection or reading problem"
+       aria-describedby="troubleshooting-video-summary">
+<source src="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/troubleshooting.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/troubleshooting.vtt" srclang="en" label="English instructions">
+  <a href="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/troubleshooting.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="troubleshooting-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — No messages does not mean no events.** Illustrative AIO topic: a non-matching filter hides known retained records.
+- **00:07 — Confirm the connection and topic.** Check the active profile and intended topic before changing credentials.
+- **00:14 — Inspect the active filters.** The key filter asks for absent-order; the fixture record uses order-42.
+- **00:21 — Clear the filter and check read mode.** First N reads retained records. Tail can wait for new events.
+- **00:28 — Retry the bounded read.** Changing a filter alone does not establish what the broker contains.
+- **00:35 — Inspect a returned record.** If the retry fails, retain its stage and correlation ID; never share credentials.
+
+</details>
+
 ## SASL credentials or client certificate rejected
 
 Check **Broker authentication** against the broker listener's configured mechanism.
@@ -76,14 +101,16 @@ private keys or raw server error bodies into issue reports.
 ## Broker connection times out after bootstrap succeeds
 
 Kafka returns advertised broker addresses after contacting a bootstrap server.
-Every returned address used by the client must be reachable from the desktop host;
+Every returned address used by the client must be reachable from the StreamSkope
+host: the desktop process or browser container;
 a reachable bootstrap address alone is insufficient.
 
 1. In **Raw logs**, identify whether the failed stage is connection, metadata or
    fetch, and record the target hostname/port if present. Ask the administrator for
    the broker's advertised listener addresses when the error omits them.
-2. Check each returned hostname from the machine running StreamSkope, not just from
-   a Kubernetes pod or browser. For example, replace `broker.example.net` and `9093`:
+2. Check each returned hostname from the network environment running StreamSkope.
+   For the browser workbench, a successful test on your workstation does not prove
+   the container can reach it. For example, replace `broker.example.net` and `9093`:
 
     ```sh
     # Linux/macOS, where nc is installed

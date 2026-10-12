@@ -1,4 +1,4 @@
-/* global document, window, URL */
+/* global document, window */
 (() => {
   const video = document.querySelector("#film");
   const status = document.querySelector("#media-status");
@@ -12,7 +12,7 @@
     if (nextTheme === theme) return;
     theme = nextTheme;
     const version = ++generation;
-    const source = new URL(`../assets/streamskope-intro-${theme}.mp4`, window.location.href).href;
+    const source = window.streamSkopeVideos[`streamskope-intro-${theme}.mp4`];
     // Keep the original position and play intent while successive sources are loading.
     const state = pending ?? {
       time: video.currentTime,

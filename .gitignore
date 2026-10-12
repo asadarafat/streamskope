@@ -68,18 +68,6 @@ website/docs/launch/.hyperframes/
 __pycache__/
 
 # Published intro variants; other recordings remain private.
-!website/docs/assets/streamskope-intro-light.mp4
-!website/docs/assets/streamskope-intro-dark.mp4
 
 # Approved instructional films; unedited captures remain private.
-!website/docs/assets/skope/missing-event.mp4
-!website/docs/assets/skope/changed-payload.mp4
-!website/docs/assets/skope/observed-health.mp4
-!website/docs/assets/skope/eda-export.mp4
-!website/docs/assets/skope/nsp-notification.mp4
-!website/docs/assets/skope/replay-record.mp4
-!website/docs/assets/skope/offset-recovery.mp4
-!website/docs/assets/skope/environment-comparison.mp4
-!website/docs/assets/skope/relationships.mp4
-!website/docs/assets/skope/troubleshooting.mp4
-!website/docs/assets/skope/share-findings.mp4
+website/docs/assets/video-sources.js

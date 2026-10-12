@@ -1,41 +1,28 @@
 # Investigate observed Kafka health
 
-Use **Observed health** to investigate one topic and, optionally, one consumer
-group on your connected profile. It uses Kafka metadata, offsets and bounded
-protected record reads. Its findings describe the selected resource from this
-client; they do not establish cluster-wide health or successful consumer processing.
+## What this workflow does
 
-## Watch the walkthrough
+Observe progress for a selected Kafka topic and consumer group. StreamSkope
+compares bounded readings of offsets and metadata and presents findings with
+their evidence. Optional configured Prometheus metrics add a separate source
+of measurements.
 
-A 42-second recording of the actual workbench with on-screen instructions and no
-audio. Inspect real lag on an owned AIO topic and inactive consumer group, then follow the finding to the group. These observations do not measure broker CPU or disk.
+## The problem it solves
 
-<video class="skope-walkthrough" controls muted playsinline preload="metadata"
-       poster="../../assets/skope/observed-health.png"
-       aria-label="Walkthrough: Investigate observed Kafka health"
-       aria-describedby="observed-health-video-summary">
-<source src="../assets/skope/observed-health.mp4" type="video/mp4">
-  <track kind="captions" src="../assets/skope/observed-health.vtt" srclang="en" label="English instructions">
-  <a href="../assets/skope/observed-health.mp4">Download the walkthrough</a>.
-</video>
+Orders are arriving, but processing appears stalled. You need to distinguish
+growing backlog, stopped commits, inactive group members and stale observations
+before choosing the next check. This view does not measure the whole cluster
+or prove that business processing succeeded.
 
-<p id="observed-health-video-summary">Follow the actions and outcomes below. Pause or use
-fullscreen to inspect the controls; the written guide covers prerequisites and
-the decisions behind each step.</p>
+## Before you start
 
-<details markdown="1">
-<summary>Read the walkthrough transcript</summary>
+Connect the intended Kafka profile and know the topic and consumer group. Your
+account needs access to their metadata and offsets; optional sampling and metrics
+need their own permissions and configuration.
 
-- **00:00 — Choose the topic and consumer group.** Illustrative AIO fixture: stopped consumers with retained records.
-- **00:07 — Set a meaningful threshold.** Use a lag threshold agreed for this workload, not a universal health score.
-- **00:14 — Capture a bounded observation.** This reads Kafka metadata and offsets; it does not measure broker CPU or disk.
-- **00:21 — Read findings with their evidence.** Lag with no active members is a lead to check, not a root-cause verdict.
-- **00:28 — Inspect the partition positions.** Compare committed and end positions; preserve the observation time and scope.
-- **00:35 — Follow the next check.** Inspect the group and its members before deciding on a recovery action.
+## How to solve it
 
-</details>
-
-## Start an investigation
+### Start an investigation
 
 1. Connect a profile, then open **Observed health**.
 2. Select an existing topic and optionally a consumer group. Refresh the resource
@@ -50,7 +37,7 @@ Local lag and request-time thresholds and optional record sampling are available
 in the collection settings. A threshold breach is an observation-specific finding;
 Activity records entry into a breach without repeating it on every sample.
 
-## Decide what to investigate next
+### Decide what to investigate next
 
 | Evidence                         | What it means                                                                | Useful next step                                                                              |
 | -------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -73,6 +60,43 @@ reports whether it completed or hit a bound.
 processing success, and advertised broker/controller presence does not prove
 each broker is reachable. Broker CPU, disk and end-to-end message latency are
 not measured here.
+
+## Check the result
+
+Check that observations are fresh and comparable for the selected topic and
+group. Open a finding's evidence and follow its suggested resource. Growing lag
+or stopped commits are reasons to inspect consumer logs, not a confirmed root
+cause. Stop collection when you have enough evidence.
+
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Inspect real lag on an owned AIO topic and inactive consumer group, then follow the finding to the group. These observations do not measure broker CPU or disk.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/observed-health.png"
+       aria-label="Walkthrough: Investigate observed Kafka health"
+       aria-describedby="observed-health-video-summary">
+<source src="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/observed-health.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/observed-health.vtt" srclang="en" label="English instructions">
+  <a href="https://github.com/asadarafat/streamskope/releases/download/documentation-media/v1/observed-health.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="observed-health-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — Choose the topic and consumer group.** Illustrative AIO fixture: stopped consumers with retained records.
+- **00:07 — Set a meaningful threshold.** Use a lag threshold agreed for this workload, not a universal health score.
+- **00:14 — Capture a bounded observation.** This reads Kafka metadata and offsets; it does not measure broker CPU or disk.
+- **00:21 — Read findings with their evidence.** Lag with no active members is a lead to check, not a root-cause verdict.
+- **00:28 — Inspect the partition positions.** Compare committed and end positions; preserve the observation time and scope.
+- **00:35 — Follow the next check.** Inspect the group and its members before deciding on a recovery action.
+
+</details>
 
 ## Save a repeatable investigation
 

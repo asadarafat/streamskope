@@ -353,15 +353,16 @@ class DocumentationArtifactTests(unittest.TestCase):
         )
         docs.inspect_site(self.root, "/streamskope/")
 
-    def test_accepts_only_named_public_intro_exports(self):
+    def test_video_masters_cannot_enter_the_pages_artifact(self):
         (self.root / "assets").mkdir()
-        (self.root / "assets/streamskope-intro-light.mp4").write_bytes(b"public light export")
-        (self.root / "assets/streamskope-intro-dark.mp4").write_bytes(b"public dark export")
-        (self.root / "index.html").write_text('<video src="assets/streamskope-intro-light.mp4"></video>')
+        (self.root / "index.html").write_text('<video src="https://example.com/approved.mp4"></video>')
         docs.inspect_site(self.root)
-        (self.root / "assets/private.mp4").write_bytes(b"private recording")
-        with self.assertRaisesRegex(ValueError, "Unexpected publication file"):
-            docs.inspect_site(self.root)
+        for name in ("streamskope-intro-light.mp4", "private.mp4"):
+            file = self.root / "assets" / name
+            file.write_bytes(b"video master")
+            with self.assertRaisesRegex(ValueError, "Unexpected publication file"):
+                docs.inspect_site(self.root)
+            file.unlink()
 
     def test_accepts_only_named_public_qualification_summary(self):
         directory = self.root / "assets/qualification"
@@ -389,9 +390,8 @@ class DocumentationArtifactTests(unittest.TestCase):
         for slug in ("changed-payload", "eda-export", "nsp-notification", "missing-event",
                      "replay-record", "share-findings", "observed-health", "offset-recovery",
                      "environment-comparison", "relationships", "troubleshooting"):
-            (directory / f"{slug}.mp4").write_bytes(b"silent edited export")
             (directory / f"{slug}.vtt").write_text("WEBVTT\n")
-            videos.append(f'<video src="assets/skope/{slug}.mp4">'
+            videos.append(f'<video src="https://example.com/{slug}.mp4">'
                           f'<track src="assets/skope/{slug}.vtt"></video>')
         (self.root / "index.html").write_text("".join(videos))
         docs.inspect_site(self.root)

@@ -42,5 +42,6 @@ Save useful findings and finish safely
 
 [Search coverage and evidence](../concepts/evidence.md) explains how much a result
 can establish. [Reference](../reference/index.md) owns exact formats and limits.
-The linked task and plugin guides own the operating steps, avoiding a second
-copy of the same procedure in each scenario.
+Each workflow explains what it does, the problem it solves, the steps to take
+and the result to verify. Videos illustrate those steps. Linked task and plugin
+guides provide additional configuration, recovery and limits when needed.
