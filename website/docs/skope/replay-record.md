@@ -46,9 +46,10 @@ same-cluster retry topic; Avro, Protobuf and cross-profile records can require
 1. Open the source topic in **Topics**, load the relevant records and select the
    failed event. Inspect **Message details** and compare it with the failure in
    the consumer logs. Confirm its identifier, partition and offset.
-2. Choose **Replay…** in the message toolbar. The dialog includes a frozen
-   selection of displayed records; select **only** the intended event. Selecting
-   a row before opening the dialog does not make the batch a one-record batch.
+2. Choose **Replay…** in the message toolbar. The dialog lists up to 50 frozen
+   displayed records. It initially checks the selected record when complete
+   original bytes are available. Confirm that **only** the intended event is
+   checked before proceeding.
 3. Choose **Active connection**, then the agreed existing destination topic
    `orders.retry` and its partition. Use a low rate such as one record per second.
 4. For an unchanged retry, leave transformations off. For the agreed JSON
