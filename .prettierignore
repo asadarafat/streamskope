@@ -1,4 +1,5 @@
 .codex/
+.agents/
 .git/
 aio-kafka/*
 !aio-kafka/fixtures/

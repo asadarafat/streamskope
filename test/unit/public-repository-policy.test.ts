@@ -34,6 +34,8 @@ it("does not track ignored private or generated content", () => {
 it("ignores local credentials and recordings without hiding required public source", () => {
   const ignored = [
     ".codex/private.md",
+    ".agents/local.md",
+    ".agents/skills/private-review/SKILL.md",
     "openspec/config.yaml",
     "docs/private.md",
     "docs/development/README.md",
