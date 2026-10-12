@@ -1,0 +1,29 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:06.000
+Connect via EDA
+Live EDA lab; connector installed. Credential entry and provisioning are omitted.
+
+00:00:06.000 --> 00:00:12.000
+Review the capture profile
+The temporary broker and exporter leave the original producer unchanged.
+
+00:00:12.000 --> 00:00:18.000
+Connect and open the topic
+Select the exported topic from the generated connection.
+
+00:00:18.000 --> 00:00:24.000
+Read an exported record
+Inspect its content; a visible event is evidence for this capture only.
+
+00:00:24.000 --> 00:00:30.000
+Retain the record position
+Keep the topic, partition, offset and timestamp for follow-up.
+
+00:00:30.000 --> 00:00:36.000
+Disconnect the client
+Disconnecting Kafka leaves the temporary capture running.
+
+00:00:36.000 --> 00:00:42.000
+Remove the temporary capture
+Removal discards captured messages. Confirm cleanup; the original exporter remains.

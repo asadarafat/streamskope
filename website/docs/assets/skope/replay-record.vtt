@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+Inspect the source record
+Illustrative AIO record: review the correction before publishing.
+
+00:00:07.000 --> 00:00:14.000
+Choose a separate destination
+Replay leaves the original record unchanged.
+
+00:00:14.000 --> 00:00:21.000
+Describe the JSON correction
+This sample changes /status to ready; review production writer mappings separately.
+
+00:00:21.000 --> 00:00:28.000
+Preview before sending
+Inspect original and destination bytes. Preview publishes nothing.
+
+00:00:28.000 --> 00:00:35.000
+Confirm and apply once
+Type the exact destination. Never blindly retry an uncertain write.
+
+00:00:35.000 --> 00:00:42.000
+Read the acknowledgement
+The receipt proves Kafka accepted the write, not consumer processing.

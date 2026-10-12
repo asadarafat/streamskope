@@ -155,6 +155,38 @@ async function checkReleaseNavigation(page, base, evidence, accessible) {
 }
 
 export async function checkNavigation(page, base, evidence, accessible) {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [name, path] of [
+      ["Everyday tasks", "guide/"],
+      ["Under the Skope", "skope/"],
+    ]) {
+      await page.goto(base);
+      if (width === 390)
+        await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+      const sidebar = page.locator(".md-sidebar--primary");
+      await sidebar.getByRole("link", { name, exact: true }).click();
+      await page.waitForURL(base + path);
+      await expect(page.locator("h1")).toContainText(name);
+      if (width === 390)
+        await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+      const toggle = sidebar.getByRole("button", { name, exact: true });
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(sidebar.getByRole("link", { name, exact: true })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      // The arrow only collapses/expands; it keeps the overview open.
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      assert.equal(page.url(), base + path);
+      await toggle.focus();
+      await page.keyboard.press("Space");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await page.keyboard.press("Enter");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    }
+  }
   for (const width of [1440, 1000, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     for (const theme of ["light", "dark"]) {
@@ -187,7 +219,10 @@ export async function checkNavigation(page, base, evidence, accessible) {
       await expect(backdrop).toBeHidden();
       await expect(backdrop).toBeDisabled();
       const sectionToggle = (name) =>
-        sidebar.locator("label.md-nav__link[for]").filter({ hasText: name });
+        sidebar
+          .locator("label.md-nav__link[for]")
+          .filter({ hasText: name })
+          .or(sidebar.locator(`label.md-nav__link[aria-label="${name}"]`));
       async function openDrawer() {
         await trigger.focus();
         await page.keyboard.press("Enter");
@@ -243,12 +278,43 @@ export async function checkNavigation(page, base, evidence, accessible) {
         "page",
       );
 
-      // The native section controls expose the same documentation on Home and guide pages.
+      // Everyday tasks remains a flat connect-then-read path.
+      await expect(sectionToggle("Operate safely")).toHaveCount(0);
+      await expect(sectionToggle("Advanced")).toHaveCount(0);
+      await expect(
+        navigation.getByRole("link", { name: /^Choose a (task|workflow)$/u }),
+      ).toHaveCount(0);
+      for (const [name, path] of [
+        ["Everyday tasks", "guide/"],
+        ["Under the Skope", "skope/"],
+      ]) {
+        const overview = navigation.getByRole("link", { name, exact: true });
+        assert.equal(new URL(await overview.getAttribute("href"), base).href, base + path);
+      }
       for (const [name, links] of [
+        [
+          "Everyday tasks",
+          ["Connect to Kafka or NATS", "Read Kafka messages", "Read NATS subjects"],
+        ],
+        [
+          "Under the Skope",
+          [
+            "Find a missing or delayed event",
+            "Understand a changed payload",
+            "Diagnose Kafka health",
+            "Inspect an EDA export",
+            "Follow an NSP notification",
+            "Review and replay a failed record",
+            "Recover consumer positions",
+            "Compare environments",
+            "Assess relationships and schema impact",
+            "Fix a connection or reading problem",
+            "Share your findings",
+          ],
+        ],
         [
           "Plugins",
           [
-            "Plugin overview",
             "Versioning and compatibility",
             "Install without GitHub",
             "EDA Connector",
@@ -256,8 +322,24 @@ export async function checkNavigation(page, base, evidence, accessible) {
           ],
         ],
         [
-          "Operate safely",
-          ["Change topic configuration", "Run a latency probe", "Configure certificate trust"],
+          "Concepts",
+          [
+            "Records, decoding and original bytes",
+            "Search coverage and evidence",
+            "Connections and capture lifecycles",
+          ],
+        ],
+        [
+          "Reference",
+          [
+            "Compatibility",
+            "Record formats and decoding limits",
+            "Replay behavior and limits",
+            "Authentication and certificate trust",
+            "Permissions and security",
+            "Data, exports and storage",
+            "Qualification evidence",
+          ],
         ],
       ]) {
         const toggle = sectionToggle(name);
@@ -266,19 +348,32 @@ export async function checkNavigation(page, base, evidence, accessible) {
         const section = navigation.getByRole("navigation", { name, exact: true });
         const sectionState = page.locator(`#${await toggle.getAttribute("for")}`);
         await expect(sectionState).toBeChecked();
-        for (const name of links) {
-          const link = section.getByRole("link", { name, exact: true });
+        for (const label of links) {
+          const link = section.getByRole("link", { name: label, exact: true });
           await link.scrollIntoViewIfNeeded();
           await expect(link).toBeInViewport();
+        }
+        if (name === "Everyday tasks") {
+          await expect(section.getByRole("navigation")).toHaveCount(0);
+          assert.deepEqual(
+            (await section.locator("ul.md-nav__list > li > a.md-nav__link").allTextContents()).map(
+              (text) => text.trim(),
+            ),
+            links,
+            "The simple entry path connects first, then offers the two readers",
+          );
         }
         await toggle.focus();
         await page.keyboard.press("Enter");
         await expect(sectionState).not.toBeChecked();
       }
 
-      await sectionToggle("Start here").focus();
+      await sectionToggle("Everyday tasks").focus();
       await page.keyboard.press("Enter");
-      const connections = navigation.getByRole("link", { name: "Connect your Kafka", exact: true });
+      const connections = navigation.getByRole("link", {
+        name: "Connect to Kafka or NATS",
+        exact: true,
+      });
       await connections.focus();
       if (mobile) {
         await page.keyboard.press("Escape");
@@ -290,7 +385,7 @@ export async function checkNavigation(page, base, evidence, accessible) {
       await accessible();
       await page.screenshot({ path: resolve(evidence, `home-navigation-${width}-${theme}.png`) });
       await connections.click();
-      await page.waitForURL(/\/guide\/connections\//);
+      await page.waitForURL(/\/start\/connections\//);
       await expect(page.locator(".md-path")).toBeVisible();
       if (mobile) {
         await closedDrawer();
@@ -301,7 +396,9 @@ export async function checkNavigation(page, base, evidence, accessible) {
       await expect(connections).toHaveAttribute("aria-current", "page");
       await expect(connections).toHaveClass(/md-nav__link--active/u);
       await expect(sectionToggle("Plugins")).toBeVisible();
-      await expect(sectionToggle("Operate safely")).toBeVisible();
+      await expect(sectionToggle("Everyday tasks")).toBeVisible();
+      await expect(sectionToggle("Concepts")).toBeVisible();
+      await expect(sectionToggle("Reference")).toBeVisible();
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await accessible();
       await page.screenshot({ path: resolve(evidence, `navigation-${width}-${theme}.png`) });

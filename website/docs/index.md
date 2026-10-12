@@ -27,8 +27,9 @@ hide:
 <section class="workbench-section" aria-labelledby="workbench-title">
   <div class="section-heading"><h2 id="workbench-title">Choose your next task</h2></div>
   <div class="guide-paths">
-    <a href="guide/messages/"><span class="path-label">Messages</span><span><strong>Find and inspect a message</strong><small>Filter by key, read the payload, and check its headers.</small></span><span aria-hidden="true">→</span></a>
+    <a href="guide/"><span class="path-label">Everyday tasks</span><span><strong>Connect and read messages</strong><small>Connect to Kafka or NATS, then read and inspect a message.</small></span><span aria-hidden="true">→</span></a>
     <a href="guide/operations/"><span class="path-label">Consumers</span><span><strong>Check consumer lag</strong><small>Find a group and compare committed and end offsets.</small></span><span aria-hidden="true">→</span></a>
+    <a href="skope/"><span class="path-label">Under the Skope</span><span><strong>Bring an event into focus</strong><small>Follow an EDA or NSP event, compare payloads, or share your findings.</small></span><span aria-hidden="true">→</span></a>
     <a href="plugins/"><span class="path-label">Plugins</span><span><strong>Connect a platform</strong><small>Set up EDA capture or an NSP Kafka connection.</small></span><span aria-hidden="true">→</span></a>
     <a href="guide/troubleshooting/"><span class="path-label">Help</span><span><strong>Fix a connection problem</strong><small>Find the failed operation and work through the next check.</small></span><span aria-hidden="true">→</span></a>
   </div>

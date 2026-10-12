@@ -12,6 +12,7 @@ const mime = {
   ".png": "image/png",
   ".mp3": "audio/mpeg",
   ".mp4": "video/mp4",
+  ".vtt": "text/vtt",
 };
 export async function serveSite(root, prefix) {
   const server = createServer(async (request, response) => {

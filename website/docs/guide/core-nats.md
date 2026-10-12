@@ -1,8 +1,8 @@
 ---
-title: NATS live subscriptions
+title: Read NATS subjects
 ---
 
-# Inspect a NATS live subscription
+# Read NATS subjects
 
 Use the documentation for your installed desktop release. The site notice
 identifies the source revision and whether this is development or published

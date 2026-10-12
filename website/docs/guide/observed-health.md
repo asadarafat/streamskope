@@ -5,6 +5,36 @@ group on your connected profile. It uses Kafka metadata, offsets and bounded
 protected record reads. Its findings describe the selected resource from this
 client; they do not establish cluster-wide health or successful consumer processing.
 
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Inspect real lag on an owned AIO topic and inactive consumer group, then follow the finding to the group. These observations do not measure broker CPU or disk.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/observed-health.png"
+       aria-label="Walkthrough: Investigate observed Kafka health"
+       aria-describedby="observed-health-video-summary">
+<source src="../assets/skope/observed-health.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/observed-health.vtt" srclang="en" label="English instructions">
+  <a href="../assets/skope/observed-health.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="observed-health-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — Choose the topic and consumer group.** Illustrative AIO fixture: stopped consumers with retained records.
+- **00:07 — Set a meaningful threshold.** Use a lag threshold agreed for this workload, not a universal health score.
+- **00:14 — Capture a bounded observation.** This reads Kafka metadata and offsets; it does not measure broker CPU or disk.
+- **00:21 — Read findings with their evidence.** Lag with no active members is a lead to check, not a root-cause verdict.
+- **00:28 — Inspect the partition positions.** Compare committed and end positions; preserve the observation time and scope.
+- **00:35 — Follow the next check.** Inspect the group and its members before deciding on a recovery action.
+
+</details>
+
 ## Start an investigation
 
 1. Connect a profile, then open **Observed health**.
@@ -59,7 +89,7 @@ disables the resource actions.
 2. Review the name and local connection profile in **Saved views**, then choose
    **Save current view**. Preparing or saving does not navigate, connect, read
    messages or start observation collection.
-3. Later, open the view from the existing [saved-view library](messages.md#keep-investigation-views).
+3. Later, open the view from the existing [saved-view library](saved-views.md#keep-investigation-views).
    A topic investigation prepares Messages with a bounded time-window and a
    100-record read limit. It uses the recorded sample window when available,
    otherwise the recent comparable collection interval. Kafka record timestamps
@@ -256,3 +286,11 @@ is client elapsed collection time, including sequential reads and host schedulin
 it is not broker processing latency. Gaps over 45 seconds, restart/stop boundaries,
 changed partition identities and backwards offsets break continuity. Heuristics
 can miss problems and produce false positives.
+
+## Follow up on a finding
+
+[Inspect consumer lag and membership](operations.md) before proposing a position
+change. If broker throttling is suspected, [inspect client quotas](client-quotas.md)
+and confirm the affected principal. For an explicitly approved synthetic test,
+[run a latency probe](latency.md); it produces a test record and measures that
+path, not the latency of existing traffic.

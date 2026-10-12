@@ -26,7 +26,10 @@ Create a **Plaintext** desktop connection profile with:
 | Kafka Connect URL      | `http://127.0.0.1:18086` |
 | Connect authentication | None                     |
 
-Open `sandbox.events`, select **Earliest**, and read the ten seed records. [Kafka Connect](kafka-connect.md) exposes the installed example connector classes. Kafka Connect workers reach the broker at `kafka:29092` inside the Compose network.
+Open `sandbox.events`, choose **Read → First N**, set **Limit** to `10`, and click
+**Load messages** to read the ten seed records. [Kafka Connect](kafka-connect.md)
+exposes the installed example connector classes. Kafka Connect workers reach the
+broker at `kafka:29092` inside the Compose network.
 
 Both published ports bind only to the Docker host's loopback address. Run the desktop on that host, or use an explicit trusted tunnel from your workstation. This sandbox does not configure OrbStack forwarding, remote access, TLS, OAuth or Schema Registry. Set `STREAMSKOPE_SANDBOX_KAFKA_PORT` and `STREAMSKOPE_SANDBOX_CONNECT_PORT` before `up` to avoid conflicts; use the same values for later commands.
 

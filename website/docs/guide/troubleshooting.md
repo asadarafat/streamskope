@@ -2,6 +2,36 @@
 
 Start with the failed action and its log entry, then check the matching cause.
 
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Diagnose an empty read caused by a non-matching filter on an owned AIO topic. Clear the filter, retry a bounded read and inspect the returned record.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/troubleshooting.png"
+       aria-label="Walkthrough: Fix a connection or reading problem"
+       aria-describedby="troubleshooting-video-summary">
+<source src="../assets/skope/troubleshooting.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/troubleshooting.vtt" srclang="en" label="English instructions">
+  <a href="../assets/skope/troubleshooting.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="troubleshooting-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — No messages does not mean no events.** Illustrative AIO topic: a non-matching filter hides known retained records.
+- **00:07 — Confirm the connection and topic.** Check the active profile and intended topic before changing credentials.
+- **00:14 — Inspect the active filters.** The key filter asks for absent-order; the fixture record uses order-42.
+- **00:21 — Clear the filter and check read mode.** First N reads retained records. Tail can wait for new events.
+- **00:28 — Retry the bounded read.** Changing a filter alone does not establish what the broker contains.
+- **00:35 — Inspect a returned record.** If the retry fails, retain its stage and correlation ID; never share credentials.
+
+</details>
+
 ## Find the failed operation
 
 1. Expand **Raw logs** at the bottom of StreamSkope.
@@ -199,3 +229,11 @@ needs reachable endpoints and a broker certificate covering that hostname.
 ## Try again
 
 [Return to the desktop quickstart →](../start/quickstart.md)
+
+## Recover the connection setup
+
+For missing connection material, inspect [secret retrieval](secret-retrieval.md)
+and its reported result. If the browser host cannot unlock or start, follow
+[Use the browser workbench](browser-host.md) for normal operations or
+[manual deployment](browser-deployment.md) for host configuration. Use
+[backup and recovery](recovery.md) before changing protected application data.

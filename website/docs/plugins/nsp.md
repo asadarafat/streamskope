@@ -4,6 +4,9 @@ plugin_scope: nsp
 
 # NSP Connector
 
+For a complete troubleshooting workflow, start with
+[Under the Skope: Follow an NSP notification](../skope/nsp-notification.md).
+
 <span id="connect-to-nsp-kafka"></span>
 
 NSP Connector creates a Kafka connection profile using your NSP API URL, username

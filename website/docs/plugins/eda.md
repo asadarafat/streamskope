@@ -4,6 +4,9 @@ plugin_scope: eda
 
 # EDA Connector
 
+For a complete troubleshooting workflow, start with
+[Under the Skope: Inspect an EDA export](../skope/eda-export.md).
+
 <span id="capture-from-eda"></span>
 
 Use EDA Connector to inspect an existing exporter destination or create a temporary

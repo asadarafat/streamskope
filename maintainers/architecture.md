@@ -17,6 +17,109 @@ providers. This distinction is the starting point for an extension.
 | Host-specific integration | Electron windows/preload/IPC; production browser HTTP/vault; source dev host | [Electron entry](../src/platform/electron/main/electron-entry.ts), [browser entry](../src/platform/node/browser-entry.ts), [development entry](../tools/dev/start.ts)              |
 | Optional plugins          | Separately built backend and renderer, declared resources and compatibility  | [plugin API](../src/plugins/api.ts), [renderer API](../src/plugins/renderer-api.ts), [EDA](../plugins/eda), [NSP](../plugins/nsp)                                                  |
 
+## Runtime boundaries
+
+These views cover the installed desktop and production browser host. Boxes name
+process or external-system boundaries; arrows name interactions, not deployment
+order. Request arrows also carry correlated responses. The provider backends and
+plugin runtime are modules inside the host process, not separate services.
+
+### Desktop: local UI and local connection owner
+
+```text
+Person
+  | uses
+  v
++-- Electron renderer process -----------------------+
+| Product frame, provider UI, plugin renderer bundles |
+| Typed host client; no Node or broker SDK access     |
++----------------------------------------------------+
+  | typed commands / responses / provider events
+  | isolated preload bridge + Electron IPC
+  v
++-- Electron main process ---------------------------+
+| Provider registry -> Kafka / NATS backends          |
+| Plugin runtime -> installed backend bundles         |
+| Owns connections, cleanup and local file access     |
++----------------------------------------------------+
+  |                         |
+  | provider / plugin       | protect secret fields
+  | network clients         | with Electron safeStorage
+  v                         v
+External endpoints          OS credential service
+(see protocol table)        + local profile files
+```
+
+The [Electron entry](../src/platform/electron/main/electron-entry.ts) composes the
+hosts and the [preload bridge](../src/platform/electron/preload/index.ts) exposes
+their typed transports to the renderer. Profile files belong to the main process;
+the operating-system service protects secret fields rather than storing the whole
+profile catalog. [Protection initialization](../src/platform/electron/main/electron-profile-protection.ts)
+reports unavailable protection instead of accepting Linux's plaintext fallback.
+See [security](../website/docs/guide/security.md) for the user-visible boundaries.
+
+### Browser: remote UI and host-owned vault
+
+```text
+Person
+  | uses; submits setup / unlock through browser UI
+  v
++-- Browser process ---------------------------------+
+| Product frame, provider UI, plugin renderer bundles |
+| Same-origin host client; no direct broker access    |
++----------------------------------------------------+
+  | HTTP requests / responses; SSE provider events
+  | authenticated session + origin checks
+  v
++-- StreamSkope Node host process -------------------+
+| Web gateway: session, unlock / lock, asset delivery |
+| Provider registry -> Kafka / NATS backends          |
+| Plugin runtime -> installed backend bundles         |
+| Owns connections, cleanup and local file access     |
++----------------------------------------------------+
+  |                         |
+  | provider / plugin       | host file access
+  | network clients         v
+  v                         Host data directory
+External endpoints          Passphrase-encrypted secret fields;
+(see protocol table)        separate settings / history files
+```
+
+The [browser entry](../src/platform/node/browser-entry.ts) starts the
+[web gateway](../src/platform/node/web-gateway.ts).
+[Runtime composition](../src/platform/node/browser-runtime.ts) opens the vault and
+creates the provider/plugin owners after setup or unlock. The tab submits input
+and displays safe profile summaries; it does not persist the host's protected
+credential catalog or connect directly to vendor APIs. The gateway owns the
+authenticated session, and locking drains host work before releasing the vault.
+Transport encryption depends on the configured access path; HTTP here names the
+application protocol, not a claim that every deployment provides HTTPS. See
+[browser host operation](../website/docs/guide/browser-host.md) and the
+[data inventory](../website/docs/guide/data-handling.md#production-browser-data)
+for access, backup and storage limits. The inventory distinguishes encrypted
+secrets from settings and history; the entire data directory is not encrypted.
+
+### External interactions shared by both hosts
+
+| Host owner         | External system                 | Protocol and purpose                                                               |
+| ------------------ | ------------------------------- | ---------------------------------------------------------------------------------- |
+| Kafka backend      | Kafka brokers                   | Kafka protocol over TCP, optionally TLS/SASL; record and administration operations |
+| Kafka backend      | Schema Registry / Kafka Connect | HTTP(S) APIs with independent endpoint authentication and trust                    |
+| NATS backend       | NATS server                     | NATS protocol over TCP, optionally TLS; connection and bounded subscriptions       |
+| EDA plugin backend | EDA API and capture application | HTTPS API operations and an authenticated WebSocket tunnel for managed capture     |
+| NSP plugin backend | NSP API and installed workflow  | HTTPS workflow installation/execution to obtain Kafka connection material          |
+
+EDA and NSP extend Kafka profile creation and recovery through the plugin API.
+Their renderer bundles add the UI, and their backend bundles run in the owning
+host process. They are trusted installed code, not isolated services or an
+additional messaging provider. The plugin API supplies lifecycle and capability
+boundaries; it is not a security sandbox. The resulting Kafka profile is used by
+the Kafka backend. Source entry points are [EDA](../plugins/eda/backend/index.ts),
+[NSP](../plugins/nsp/backend/index.ts) and the
+[backend loader](../src/platform/node/plugins/backend-loader.ts).
+
+## Trace a feature request
+
 A typical feature request travels through these boundaries:
 
 ```text

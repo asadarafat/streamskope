@@ -11,24 +11,33 @@
     const current =
       activeLinks.find((link) => !link.closest(".md-nav__container")) || activeLinks[0];
     current?.setAttribute("aria-current", "page");
-    const releaseSection = sidebar.querySelector("[data-sk-releases]");
-    if (releaseSection) {
-      const sectionState = releaseSection.querySelector(".md-nav__toggle");
-      const sectionToggle = releaseSection.querySelector("[data-sk-release-toggle]");
-      const section = releaseSection.querySelector("nav");
-      function syncReleases() {
-        const expanded = String(sectionState.checked);
-        sectionToggle.setAttribute("aria-expanded", expanded);
-        section.setAttribute("aria-expanded", expanded);
+    // Section indexes open their overview; the adjacent arrow can expand
+    // the section without navigating. Give that icon-only control a name.
+    for (const container of sidebar.querySelectorAll(".md-nav__container")) {
+      const link = container.querySelector("a.md-nav__link");
+      const toggle = container.querySelector("label.md-nav__link[for]");
+      if (!link || !toggle) continue;
+      const name = link.textContent.trim();
+      const state = document.getElementById(toggle.htmlFor);
+      const section = container.parentElement.querySelector("nav");
+      toggle.setAttribute("aria-label", name);
+      toggle.setAttribute("role", "button");
+      if (section) {
+        section.id ||= `${toggle.htmlFor}_section`;
+        toggle.setAttribute("aria-controls", section.id);
       }
-      sectionState.addEventListener("change", syncReleases);
-      sectionToggle.addEventListener("keydown", (event) => {
+      toggle.addEventListener("keydown", (event) => {
         if (event.key === " ") {
           event.preventDefault();
-          sectionState.click();
+          state.click();
         }
       });
-      syncReleases();
+      function syncSection() {
+        toggle.setAttribute("aria-expanded", String(state.checked));
+        section?.setAttribute("aria-expanded", String(state.checked));
+      }
+      state.addEventListener("change", syncSection);
+      syncSection();
     }
     const close = document.createElement("button");
     close.type = "button";

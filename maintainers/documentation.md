@@ -20,7 +20,7 @@ npx --no-install playwright install chromium firefox
 ```
 
 On Linux, install the Playwright system libraries if they are missing. Chromium
-owns routine browser checks; Firefox owns actual intro-video playback.
+owns routine browser checks; Firefox owns actual video playback.
 
 | Command                                              | Expected result                                                                                                         |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -29,7 +29,7 @@ owns routine browser checks; Firefox owns actual intro-video playback.
 | `npm run docs -- build`                              | Clean strict build in `dist/site/`, with rendered local link, anchor and asset checks.                                  |
 | `npm run docs -- check`                              | Inspect an existing `dist/site/`; this does not rebuild or run browser tests.                                           |
 | `npm run docs -- qualify`                            | Source-policy checks, documentation tests, strict build, Chromium navigation/accessibility and selected media playback. |
-| `npm run docs -- qualify --media`                    | The same qualification with full intro playback required.                                                               |
+| `npm run docs -- qualify --media`                    | The same qualification with intro and walkthrough playback required.                                                    |
 
 For a browser outside the development host, choose a host interface it can reach
 using `--host`; loopback refers to the machine running the server. Do not assume
@@ -40,6 +40,13 @@ against executable contracts, and the secret-retrieval guide's required actions
 and UI labels. It also checks source/release metadata and runs the Python and
 JavaScript tests in `test/docs/`. A page rendering successfully alone does not
 establish that its instructions match the product.
+
+Silent walkthroughs include an accessible text transcript and optional caption
+track. Record actual UI actions against an identified fixture and retain the
+source revision, assertions and output digests locally. Label illustrative fixture
+data; do not present it as a live EDA/NSP event or expose real credentials. Media
+qualification checks playback, caption loading and seeking, no autoplay or audio,
+and responsive presentation for the walkthroughs under `assets/skope/`.
 
 ## Source ownership
 
@@ -61,13 +68,48 @@ Keep provider selection in Connection Profiles and call the product's NATS
 support **NATS**; explain core subscriptions versus JetStream only where that
 technical distinction affects the task.
 
-Link to the existing [security](../website/docs/guide/security.md),
-[recovery](../website/docs/guide/recovery.md) and
-[data-handling](../website/docs/guide/data-handling.md) references instead of
-copying their procedures and limits into each feature guide. Keep plugin-specific
-instructions under the [plugin guides](../website/docs/plugins). Add a navigation
-entry for a new operator page, preserve useful bookmarks, and check the narrow
-layout as well as both themes.
+## Give each page one purpose
+
+Use the [Diátaxis distinction](https://diataxis.fr/) between learning, performing
+a task, understanding a concept and looking up facts. Navigation uses familiar
+product labels; a page's difficulty does not determine its section.
+
+| Section         | Owns                                                        | Boundary                                                                                                     |
+| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Start here      | Installation entry points and the first guided session      | A first-session tutorial gives expected results; installation links lead to the maintained procedure         |
+| Everyday tasks  | Connecting and reading messages                             | A flat entry path: connect first, then read Kafka messages or NATS subjects                                  |
+| Under the Skope | Diagnosis and recovery decisions                            | Question, evidence, interpretation, next check and handover; link to task procedures rather than repeat them |
+| Plugins         | Installation, lifecycle and target integration requirements | Preserve platform permissions, compatibility and cleanup ownership; link to event-diagnosis workflows        |
+| Concepts        | Models, relationships and reasons                           | Explain why; link to procedures and exact limits                                                             |
+| Reference       | Formats, settings, limits and recorded support evidence     | State facts; link to the operating procedure                                                                 |
+| Releases        | Version-specific changes                                    | Preserve historical scope and the existing recent-five/archive navigation                                    |
+
+Keep Everyday tasks and Under the Skope directly in the sidebar. Everyday tasks
+has no nested categories and contains only connection and message-reading entry
+points. Link supporting administration and development procedures from the
+relevant Under the Skope workflows, rather than adding them to the simple path.
+Do not reintroduce **Advanced** or **Operate safely** as competing categories.
+Place safety checks immediately
+before the relevant action, with links to the authoritative
+[permissions](../website/docs/guide/security.md),
+[recovery procedure](../website/docs/guide/recovery.md) and
+[data inventory](../website/docs/guide/data-handling.md).
+
+A scenario video demonstrates the procedure; its surrounding guide owns decisions
+and interpretation. Do not describe every workflow as recorded when only some
+have videos. Embed the recording, captions and transcript on its workflow page.
+Section headings with an overview open that page; the adjacent arrow expands
+the sidebar without navigating. Avoid duplicate “Choose…” overview links.
+
+Keep existing page URLs when their navigation owner changes. When extracting
+content, retain old heading anchors with a useful link to the new owner. Give
+each sidebar entry one navigation owner and verify its active state and
+breadcrumb. Supporting procedures may be outside the sidebar: keep them reachable
+through a relevant workflow, searchable, and linked back to that workflow or
+another useful next step. Platform scenarios retain their explicit `plugin_scope` and generated
+compatibility notice. Check narrow layouts and both themes.
+
+## Record qualification honestly
 
 Record the actual source, target, actions, result and limits of an operator
 rehearsal. Link the exact evidence from the
@@ -126,7 +168,7 @@ Omit `--profiles-only` only after preparing the broader capture's curated
 alone does not create that curated state. The tool captures the actual
 connected app in both themes and copies images to `website/docs/assets/` only
 after the requested views succeed. It writes capture details under
-`.artifacts/website/aio-captures/`. The profiles capture records source and image
+`.artifacts/website/aio-captures/`. Every capture records source and image
 digests; retain the exact revision and relevant capture evidence in the review
 for every refreshed asset. Inspect the images before committing them. Failed
 capture is not permission to substitute fabricated product state.

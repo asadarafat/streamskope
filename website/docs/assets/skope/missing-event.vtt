@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+Confirm the identifier
+Illustrative AIO order: inspect its exact correlation-id header.
+
+00:00:07.000 --> 00:00:14.000
+Choose explicit topics
+Search the source and destination; this is a bounded trace.
+
+00:00:14.000 --> 00:00:21.000
+Set the value and time range
+Match the case-sensitive header and review the UTC interval.
+
+00:00:21.000 --> 00:00:28.000
+Run the trace
+The read searches retained records without committing consumer offsets.
+
+00:00:28.000 --> 00:00:35.000
+Check coverage, not just matches
+The empty destination does not explain why delivery stopped.
+
+00:00:35.000 --> 00:00:42.000
+Choose the next check
+Check emission and consumer progress. Absence remains bounded by coverage.

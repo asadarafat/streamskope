@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+Choose the topic and consumer group
+Illustrative AIO fixture: stopped consumers with retained records.
+
+00:00:07.000 --> 00:00:14.000
+Set a meaningful threshold
+Use a lag threshold agreed for this workload, not a universal health score.
+
+00:00:14.000 --> 00:00:21.000
+Capture a bounded observation
+This reads Kafka metadata and offsets; it does not measure broker CPU or disk.
+
+00:00:21.000 --> 00:00:28.000
+Read findings with their evidence
+Lag with no active members is a lead to check, not a root-cause verdict.
+
+00:00:28.000 --> 00:00:35.000
+Inspect the partition positions
+Compare committed and end positions; preserve the observation time and scope.
+
+00:00:35.000 --> 00:00:42.000
+Follow the next check
+Inspect the group and its members before deciding on a recovery action.

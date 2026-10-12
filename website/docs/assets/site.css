@@ -35,6 +35,15 @@
   box-shadow: none;
   border-bottom: 1px solid var(--launch-rule);
 }
+.md-typeset .skope-walkthrough {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  background: #f7f7f2;
+  border: 1px solid var(--launch-rule);
+  border-radius: 4px;
+}
 .md-tabs {
   border-bottom: 1px solid var(--launch-rule);
 }

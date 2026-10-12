@@ -5,6 +5,9 @@ the workbench. The grid, inspector, filters, live rules, comparison, correlation
 tracing and export share that interpretation. Each record keeps its own writer
 schema identity and decoding outcome, including mixed-schema topics.
 
+For the distinction between a position, bytes and a projection, read
+[Records, decoding and original bytes](../concepts/records.md).
+
 ## Choose how records are interpreted
 
 1. For Avro or Protobuf, configure the profile's
@@ -22,34 +25,11 @@ not per-topic settings. Changing them does not reinterpret an old retained sampl
 Reload records after saving. The source CLI uses its own configuration rather
 than inheriting desktop preferences.
 
-Detection examines each key and value separately. A Confluent magic byte and
-writer schema ID select the type declared by the configured Registry. Recognized
-JSON is parsed as JSON; other valid UTF-8 is text. Malformed JSON objects or
-arrays, invalid UTF-8, unreadable schemas and bad framing remain explicit errors.
-Ambiguous non-JSON text stays text until an explicit JSON override is selected.
-Detection does not guess from a topic or subject name or silently try a different structured codec
-after a decoding failure. Choose an explicit encoding to override detection;
-**Bytes (Base64)** is available for binary or unsupported data.
-
-| Encoding           | Supported input                                                                           | Representation                                                                                                                                                |
-| ------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UTF-8 text         | Strict UTF-8; no Registry required                                                        | Text, without JSON interpretation                                                                                                                             |
-| UTF-8 JSON         | A complete JSON document; no Registry required                                            | Unsafe integer values are exact decimal strings; JSON null remains distinct from a Kafka tombstone                                                            |
-| Confluent Avro     | Magic byte 0, four-byte schema ID and Avro binary payload; declared Registry references   | Avro JSON, including union branch wrappers; longs use decimal strings, bytes/fixed use Avro JSON byte strings, logical types retain underlying storage values |
-| Confluent Protobuf | Magic byte 0, four-byte schema ID, message indexes and Protobuf payload; declared imports | Schema field spelling, decimal strings for 64-bit integers and Base64 for bytes; absent fields stay absent                                                    |
-| Bytes (Base64)     | Any retained complete bytes                                                               | Base64 text, without schema lookup or JSON interpretation                                                                                                     |
-
-Check the detected encoding, writer schema ID, Protobuf message type when present
-and Registry identity in **Decoded**.
-The **Original** tab keeps the unchanged key, value and ordered headers when
-originals are available. Decoding never registers a schema or writes to Kafka.
-A missing or malformed projection does not change its retained original bytes.
-
-This implements the [Confluent schema-ID wire format](https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format).
-Raw Avro/Protobuf, Avro container files, Confluent JSON Schema framing, GUID-header
-framing and custom codecs are unsupported. Protobuf unknown fields remain in the
-original bytes but are omitted from the decoded projection. Schema relationships
-and Registry support still depend on the vendor and version.
+Check the encoding and writer identity in **Decoded**, and use **Original** to
+inspect retained bytes and ordered headers. For the detection rules, supported
+formats and representation of each encoding, see the
+[record format reference](../reference/record-formats.md#detection-and-formats).
+A failed interpretation leaves its retained original bytes unchanged.
 
 ## When decoding is unavailable
 
@@ -74,24 +54,17 @@ and byte modes have no JSON fields. Tombstones, zero bytes and the JSON value
 
 ## Bounds
 
-One decode accepts at most 256 KiB of original bytes. Each schema is limited to
-256 KiB, with at most 32 schema entries, eight reference levels and 1 MiB of
-resolved schema input. Schema caches are bounded to 32 entries and 2 MiB and
-cleared when the connection changes. Decoded JSON is limited to 256 Ki characters,
-20,000 nodes and 32 levels.
-
-At most two worker decodes run concurrently. Structured binary parsing runs in an
-isolated worker with bounded heap and a three-second deadline. A limit failure
-leaves original bytes unchanged. Record, batch and retained-history limits still
-apply after adding the decoded representation.
-
-[Inspect original record evidence →](messages.md#inspect-a-record)
+See [decoding bounds](../reference/record-formats.md#decoding-bounds) for input,
+schema, worker and projection limits. A bound failure is unavailable evidence,
+not an empty field. [Inspect original evidence](messages.md#inspect-a-record)
+when it is retained and disclosure is permitted.
 
 ## Compare two records
 
 In **Message details → Compare**, select **Pin as baseline**, then select another
-record in the same topic. The baseline is a snapshot: rolling-window eviction does
-not change it. Changing topic, connection or protection settings clears it.
+record. The baseline is a snapshot: rolling-window eviction and topic navigation
+in the same connection do not change it. Changing connection, encoding or
+protection settings clears loaded content; saved positions can be reloaded explicitly.
 
 Choose **Value**, **Key** or **Ordered headers**, then **Compare records**. The
 **Protected projection** uses the same interpretation and protection as the grid;
@@ -105,11 +78,10 @@ Comparison never writes to Kafka. Masked fields cannot establish equality of the
 underlying secret values. A decoding error or unavailable original is reported
 instead of treating missing evidence as equal.
 
-The table labels additions, removals and changes using JSON Pointer paths;
-individual cells show at most 512 characters. Comparison stops at 500 changes,
-20,000 visited nodes, depth 32 or 512 KiB of text per input and labels a partial
-result. **No differences** applies only to the selected representation, not to the
-record's timestamp, offset or other unselected fields.
+Read the partial-result notice before treating the comparison as complete.
+The [comparison bounds](../reference/record-formats.md#comparison-bounds) specify
+what can be omitted. To decide what a difference means, use
+[Understand a changed payload](../skope/changed-payload.md).
 
 ## Generate schema-valid samples
 
@@ -199,14 +171,9 @@ Read the coverage for **every** selected topic:
 - **denied / failed:** access or another read failure prevented qualification.
 - **not-searched:** an earlier bound or cancellation prevented this topic's start.
 
-Each topic admits at most 1,000 candidates; the whole trace retains at most 200
-matches, evaluates at most 32 MiB and has a 30-second deadline. The underlying
-finite reader also has its per-topic fetch/scan limits. Streams are closed on
-completion, cancellation or connection changes. Cleanup and an in-flight broker
-operation may settle after the deadline; no new topic starts afterward. The
-trace is independent of the current message reader and does not commit consumer
-offsets. It is read-only and applies the same host masking policy before matching.
-A protected field cannot reveal its original value through a trace result.
+Check [trace bounds](../reference/record-formats.md#trace-bounds) when coverage is
+partial. Tracing is read-only and does not commit consumer offsets. It applies
+host masking before matching; a protected field cannot reveal its original value.
 
 **Cancel trace** returns partial evidence after cleanup. Editing the request clears
 old results. Retention and compaction still apply: timestamp lookup cannot restore

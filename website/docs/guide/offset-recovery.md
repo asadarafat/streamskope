@@ -23,6 +23,36 @@ you may need to restore them.
    permits preview and blocks apply. Masking applies to sampled records.
 7. Inspect every partition result and refresh the group before restarting consumers.
 
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Preview and apply a reset on an owned, inactive AIO consumer group, then verify the committed position. No production consumer positions are changed.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/offset-recovery.png"
+       aria-label="Walkthrough: Preview and reset consumer offsets"
+       aria-describedby="offset-recovery-video-summary">
+<source src="../assets/skope/offset-recovery.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/offset-recovery.vtt" srclang="en" label="English instructions">
+  <a href="../assets/skope/offset-recovery.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="offset-recovery-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — Start with an inactive group.** Owned AIO group, no running consumers. Agree replay consequences before changing positions.
+- **00:07 — Select the exact partition and target.** This example returns one partition to its earliest retained offset.
+- **00:14 — Preview before changing anything.** The offset exposure is an upper bound, not a count of records to process.
+- **00:21 — Confirm the exact group.** Review the plan, then type the group ID. Keep consumers stopped.
+- **00:28 — Apply the reviewed reset once.** An uncertain response needs reconciliation before another attempt.
+- **00:35 — Verify the result before restarting.** The broker read-back confirms offset zero. Restarting consumers is a separate step.
+
+</details>
+
 ## What the preview establishes
 
 Replay exposure is an offset distance from the proposed position back to the prior

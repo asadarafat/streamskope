@@ -54,7 +54,10 @@ async function main(): Promise<void> {
         reducedMotion: "reduce",
       });
       const captures: string[] = [];
+      const dimensions: Record<string, readonly [number, number]> = {};
       async function capture(subject: string): Promise<void> {
+        const viewport = { width: 1440, height: subject === "streamskope-intro" ? 810 : 900 };
+        await page.setViewportSize(viewport);
         for (const theme of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: theme });
           await expect(page.locator("html")).toHaveAttribute("data-mui-color-scheme", theme);
@@ -63,12 +66,18 @@ async function main(): Promise<void> {
             theme === "dark" ? "rgb(21, 21, 24)" : "rgb(244, 244, 245)",
           );
           await page.mouse.move(0, 0);
-          const name = `${subject}${theme === "dark" ? "-dark" : ""}.png`;
+          const name =
+            subject === "streamskope-intro"
+              ? `${subject}-${theme}.png`
+              : `${subject}${theme === "dark" ? "-dark" : ""}.png`;
           await page.screenshot({ path: resolve(output, name), animations: "disabled" });
           captures.push(name);
+          dimensions[name] = [viewport.width, viewport.height];
         }
       }
-      await page.goto(launch.browserUrl);
+      // Cold source transforms can exceed Playwright's default navigation timeout.
+      // The view assertions below still require actual connected product state.
+      await page.goto(launch.browserUrl, { timeout: 120_000, waitUntil: "domcontentloaded" });
       await connectLocalProfile(page);
       if (!profilesOnly) {
         await expect(
@@ -76,6 +85,17 @@ async function main(): Promise<void> {
         ).toBeVisible();
         await capture("topics");
         await page.getByRole("button", { name: "orders.events", exact: true }).click();
+        // The curated records are historical; the default recent tail is not a history read.
+        await page.getByRole("button", { name: "Stop tail orders.events", exact: true }).click();
+        const mode = page.getByRole("combobox", { name: "Read mode", exact: true });
+        await expect(mode).toBeEnabled();
+        await mode.click();
+        await page.getByRole("option", { name: "Newest N", exact: true }).click();
+        await page.getByRole("combobox", { name: "Record limit", exact: true }).click();
+        await page.getByRole("option", { name: "10", exact: true }).click();
+        await page
+          .getByRole("button", { name: "Load messages orders.events", exact: true })
+          .click();
         const grid = page.getByRole("grid", { name: "Kafka messages" });
         await expect(grid.getByText("ord-1042", { exact: true })).toBeVisible({ timeout: 15_000 });
         await grid.getByText("ord-1042", { exact: true }).click();
@@ -86,6 +106,7 @@ async function main(): Promise<void> {
         await inspector.getByRole("tab", { name: "Value", exact: true }).click();
         await expect(inspector).toContainText("accepted");
         await capture("message-value");
+        await capture("streamskope-intro");
         await openWorkbenchResource(page, "Consumer Groups");
         await page
           .getByRole("searchbox", { name: "Search consumer groups" })
@@ -121,55 +142,52 @@ async function main(): Promise<void> {
       // Publish only after every real-broker view was successfully captured.
       for (const name of captures)
         await copyFile(resolve(output, name), resolve("website/docs/assets", name));
-      const sourcePatch = profilesOnly
-        ? (
-            await promisify(execFile)(
-              "git",
-              [
-                "diff",
-                "HEAD",
-                "--",
-                "src",
-                "config",
-                "package.json",
-                "package-lock.json",
-                "test/support",
-                "tools/docs/capture.ts",
-              ],
-              { encoding: "utf8" },
-            )
-          ).stdout
-        : "";
+      const sourcePatch = (
+        await promisify(execFile)(
+          "git",
+          [
+            "diff",
+            "HEAD",
+            "--",
+            "src",
+            "config",
+            "package.json",
+            "package-lock.json",
+            "test/support",
+            "tools/docs/capture.ts",
+          ],
+          { encoding: "utf8" },
+        )
+      ).stdout;
       await writeFile(
         resolve(output, profilesOnly ? "profiles-provenance.json" : "provenance.json"),
         JSON.stringify(
           {
             capturedAt: new Date().toISOString(),
             backend: "createKafkaBackend connected to repository AIO Kafka",
+            sourceRevision: (
+              await promisify(execFile)("git", ["rev-parse", "HEAD"], { encoding: "utf8" })
+            ).stdout.trim(),
+            sourceDirty: sourcePatch.length > 0,
+            sourcePatchSha256: createHash("sha256").update(sourcePatch).digest("hex"),
+            sha256: Object.fromEntries(
+              await Promise.all(
+                captures.map(
+                  async (name) =>
+                    [
+                      name,
+                      createHash("sha256")
+                        .update(await readFile(resolve(output, name)))
+                        .digest("hex"),
+                    ] as const,
+                ),
+              ),
+            ),
             ...(profilesOnly
-              ? {
-                  sourceRevision: (
-                    await promisify(execFile)("git", ["rev-parse", "HEAD"], { encoding: "utf8" })
-                  ).stdout.trim(),
-                  sourceDirty: sourcePatch.length > 0,
-                  sourcePatchSha256: createHash("sha256").update(sourcePatch).digest("hex"),
-                  view: "Shared Connection Profiles with selected, live-connected Kafka profile",
-                  sha256: Object.fromEntries(
-                    await Promise.all(
-                      captures.map(
-                        async (name) =>
-                          [
-                            name,
-                            createHash("sha256")
-                              .update(await readFile(resolve(output, name)))
-                              .digest("hex"),
-                          ] as const,
-                      ),
-                    ),
-                  ),
-                }
+              ? { view: "Shared Connection Profiles with selected, live-connected Kafka profile" }
               : { topic: "orders.events", key: "ord-1042", group: "orders-workers" }),
             viewport: [1440, 900],
+            dimensions,
             deviceScaleFactor: 2,
             captures,
           },

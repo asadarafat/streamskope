@@ -44,6 +44,17 @@ class ReleaseContentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unreleased notes page"):
             inspect_release_content(self.root, True)
 
+    def test_skope_platform_workflows_keep_their_own_plugin_requirements(self):
+        for path, scope in (("skope/eda-export.md", "eda"),
+                            ("skope/nsp-notification.md", "nsp")):
+            file = self.page(path, f"---\nplugin_scope: {scope}\n---\n# Workflow\n")
+            for published in (False, True):
+                inspect_release_content(self.root, published)
+                file.write_text("# Workflow without plugin requirements\n")
+                with self.subTest(path=path, published=published), self.assertRaisesRegex(ValueError, "plugin_scope"):
+                    inspect_release_content(self.root, published)
+                file.write_text(f"---\nplugin_scope: {scope}\n---\n# Workflow\n")
+
     def test_stale_current_source_heading_fails_but_historical_evidence_survives(self):
         file = self.page("guide/qualification.md", "## Current-source qualification\n")
         with self.assertRaisesRegex(ValueError, "source-bound"):

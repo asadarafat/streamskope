@@ -4,7 +4,7 @@ container_downloads: true
 
 # Deploy the browser workbench manually
 
-Use this reference for offline installation, custom networking and Linux host
+Use this procedure for offline installation, custom networking and Linux host
 maintenance. For the normal online path, use
 [Install the browser workbench](../start/containerlab.md). For day-to-day use,
 follow [Use the browser workbench](browser-host.md).

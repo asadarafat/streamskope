@@ -18,6 +18,27 @@ const desktopRelease = /^desktop_release = "([^"]+)"$/mu.exec(
   await readFile("website/zensical.toml", "utf8"),
 )?.[1];
 assert(desktopRelease, "The site declares its documented StreamSkope release");
+const python = resolve(
+  ".cache/zensical",
+  process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+);
+const { stdout: configuredNavigation } = await promisify(execFile)(python, [
+  "-c",
+  "import json,tomllib; print(json.dumps(tomllib.load(open('website/zensical.toml','rb'))['project']['nav']))",
+]);
+const navigationOwners = new Map();
+function registerNavigation(entries, parents = []) {
+  for (const entry of entries) {
+    const [name, value] = Object.entries(entry)[0];
+    if (Array.isArray(value)) registerNavigation(value, [...parents, name]);
+    else {
+      const route = value === "index.md" ? "" : value.replace(/(?:\/index)?\.md$/u, "/");
+      assert(!navigationOwners.has(route), `One navigation entry per page: ${route}`);
+      navigationOwners.set(route, parents);
+    }
+  }
+}
+registerNavigation(JSON.parse(configuredNavigation));
 const developmentSource =
   JSON.parse(await readFile("package.json", "utf8")).version === "0.0.0-dev";
 const published = process.env.STREAMSKOPE_DOCS_PUBLISH === "1";
@@ -119,22 +140,16 @@ try {
       );
     }
     await expect(installer.locator('a[href$="browser-deployment/"]')).toBeVisible();
-    const everyday = content.locator('a[href$="browser-host/"]').first();
-    await expect(everyday).toBeVisible();
-    await everyday.click();
+    const hostGuide = content.locator('a[href$="browser-host/"]').first();
+    await expect(hostGuide).toBeVisible();
+    await hostGuide.click();
     await page.waitForURL(base + "guide/browser-host/");
-    await expect(page.locator(".md-path")).toContainText("Operate safely");
-    await expect(
-      page
-        .locator(".md-sidebar--primary")
-        .getByRole("link", { name: "Use the browser workbench", exact: true }),
-    ).toHaveAttribute("aria-current", "page");
+    await expect(content.locator("h1")).toContainText("Use the browser workbench");
     const advanced = content.locator('a[href$="browser-deployment/"]').first();
     await expect(advanced).toBeVisible();
     await advanced.click();
     await page.waitForURL(base + "guide/browser-deployment/");
-    await expect(page.locator(".md-path")).toContainText("Advanced");
-    await expect(page.locator('.md-sidebar--primary a[aria-current="page"]')).toHaveCount(1);
+    await expect(content.locator("h1")).toContainText("Deploy the browser workbench manually");
     await page.goto(base + "guide/recovery/");
     await content
       .getByRole("link", { name: "browser host backup and restore", exact: true })
@@ -375,6 +390,11 @@ try {
     assert.equal((await page.goto(base + route)).status(), 200, route);
     await page.locator("h1").first().waitFor();
     assert(await page.locator("h1").first().innerText());
+    const owners = navigationOwners.get(route);
+    if (owners !== undefined) {
+      for (const owner of owners) await expect(page.locator(".md-path")).toContainText(owner);
+      await expect(page.locator('.md-sidebar--primary a[aria-current="page"]')).toHaveCount(1);
+    }
     const versionNotice = page.getByRole("complementary", { name: "Documentation version" });
     assert(await versionNotice.isVisible(), `${route}: release context is visible`);
     if (published) {
