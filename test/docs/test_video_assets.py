@@ -100,6 +100,14 @@ class TerminologyTests(unittest.TestCase):
         self.assertNotIn('Not Another', output)
         self.assertIn('publish/subscribe', output)
 
+    def test_plural_first_uses_share_a_definition_with_the_singular(self):
+        source = '<article class="md-content__inner"><p>Read ACLs and writer IDs. One ACL has an ID.</p></article>'
+        output = self.render(source)
+        self.assertIn('ACLs (access control lists)', output)
+        self.assertIn('IDs (identifiers)', output)
+        self.assertNotIn('ACL (access control list)', output)
+        self.assertEqual(output, self.render(output))
+
     def test_search_indexes_full_names_without_changing_titles_or_locations(self):
         with tempfile.TemporaryDirectory() as directory:
             site = Path(directory)

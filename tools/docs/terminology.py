@@ -116,6 +116,19 @@ TERMS = {
     "MiB": "mebibytes; 1 MiB equals 1,048,576 bytes",
     "GiB": "gibibytes; 1 GiB equals 1,073,741,824 bytes",
 }
+PLURALS = {
+    "APIs": ("API", "application programming interfaces"),
+    "ACLs": ("ACL", "access control lists"),
+    "CAs": ("CA", "certificate authorities"),
+    "IDs": ("ID", "identifiers"),
+    "UUIDs": ("UUID", "universally unique identifiers"),
+    "URLs": ("URL", "uniform resource locators"),
+    "VMs": ("VM", "virtual machines"),
+    "CPUs": ("CPU", "central processing units"),
+    "DLQs": ("DLQ", "dead-letter queues"),
+    "SDKs": ("SDK", "software development kits"),
+}
+TERMS.update({plural: meaning for plural, (_, meaning) in PLURALS.items()})
 PATTERN = re.compile(r"(?<![\w-])(" + "|".join(
     re.escape(term) for term in sorted(TERMS, key=len, reverse=True)) + r")(?![\w-])")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
@@ -140,7 +153,8 @@ class Terminology(HTMLParser):
             literal = (tag in LITERAL or "skope-term" in classes
                        or bool(self.stack and self.stack[-1][2]))
             if attributes.get("data-skope-term") in TERMS:
-                self.seen.add(attributes["data-skope-term"])
+                term = attributes["data-skope-term"]
+                self.seen.add(PLURALS.get(term, (term, ""))[0])
             self.stack.append((tag, scope, literal))
 
     def handle_startendtag(self, tag, attrs):
@@ -159,9 +173,10 @@ class Terminology(HTMLParser):
             return
         def explain(match):
             term = match[0]
-            if term in self.seen or re.match(r" (?:Connector|Capture)\b", data[match.end():]):
+            canonical = PLURALS.get(term, (term, ""))[0]
+            if canonical in self.seen or re.match(r" (?:Connector|Capture)\b", data[match.end():]):
                 return term
-            self.seen.add(term)
+            self.seen.add(canonical)
             meaning = TERMS[term]
             # Respect existing "Meaning (TERM)" and "TERM (meaning)" introductions.
             before, after = data[:match.start()], data[match.end():]
