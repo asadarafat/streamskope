@@ -321,9 +321,9 @@ issues. See [Troubleshooting](troubleshooting.md#share-useful-evidence).
 
 ## Mask records before they reach the workbench
 
-Disconnect Kafka, then open **Preferences → Protection**. Finish active plugin
-capture and cleanup work before saving. Protection settings apply to every
-connection on this host and use the same storage as workbench preferences.
+Protection settings apply to every connection on the host and use the same
+storage as workbench preferences. Use [Configure record masking](masking.md)
+for the operating procedure.
 
 | Control                   | Result                                                                                                                                                           |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |

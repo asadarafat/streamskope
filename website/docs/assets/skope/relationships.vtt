@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+Choose the topic and writer schema
+Illustrative AIO records use a registered Avro writer schema.
+
+00:00:07.000 --> 00:00:14.000
+Choose whether to sample framing
+Schema IDs from record framing are inferred links, not proof of downstream use.
+
+00:00:14.000 --> 00:00:21.000
+Discover, then read coverage first
+A bounded snapshot leaves unknown producers and consumers unknown.
+
+00:00:21.000 --> 00:00:28.000
+Follow the observed relationships
+Inspect edge sources and times. Arrows do not all represent event flow.
+
+00:00:28.000 --> 00:00:35.000
+Read the evidence behind each edge
+Observed, declared and inferred links carry different strength.
+
+00:00:35.000 --> 00:00:42.000
+Treat impact as a lead to verify
+Check compatibility and downstream owners separately. Unknown impact is not zero impact.

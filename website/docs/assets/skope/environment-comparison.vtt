@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+Import the reviewed desired state
+Illustrative snapshot and one AIO broker; this recording does not test two clusters.
+
+00:00:07.000 --> 00:00:14.000
+Compare against the destination
+Active connection is the target here. Confirm identity before selecting changes.
+
+00:00:14.000 --> 00:00:21.000
+Select only the intended setting
+This owned topic changes retention.ms. Other configuration remains outside the selection.
+
+00:00:21.000 --> 00:00:28.000
+Review the promotion
+Review is read-only. It does not change the target setting.
+
+00:00:28.000 --> 00:00:35.000
+Confirm and apply once
+Recheck the target identity and consequences of reducing retention before applying.
+
+00:00:35.000 --> 00:00:42.000
+Check acknowledgement and read-back
+Success means this selected setting was verified, not that all environments match.

@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+Start with an inactive group
+Owned AIO group, no running consumers. Agree replay consequences before changing positions.
+
+00:00:07.000 --> 00:00:14.000
+Select the exact partition and target
+This example returns one partition to its earliest retained offset.
+
+00:00:14.000 --> 00:00:21.000
+Preview before changing anything
+The offset exposure is an upper bound, not a count of records to process.
+
+00:00:21.000 --> 00:00:28.000
+Confirm the exact group
+Review the plan, then type the group ID. Keep consumers stopped.
+
+00:00:28.000 --> 00:00:35.000
+Apply the reviewed reset once
+An uncertain response needs reconciliation before another attempt.
+
+00:00:35.000 --> 00:00:42.000
+Verify the result before restarting
+The broker read-back confirms offset zero. Restarting consumers is a separate step.

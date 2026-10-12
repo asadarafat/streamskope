@@ -6,6 +6,11 @@ A profile keeps the settings for one Kafka connection together.
 the **System** column before connecting. Selecting, editing or saving a profile
 does not replace the active connection; its **Connect** action does.
 
+For NATS or a platform integration, start with
+[Connect to Kafka or NATS](../start/connections.md). The
+[connection lifecycle](../concepts/connections.md) explains why saving a profile,
+connecting and removing remote resources are separate operations.
+
 Trying StreamSkope for the first time? Follow the [desktop quickstart](../start/quickstart.md).
 For a disposable broker in a development checkout, use the [development sandbox](../start/development.md).
 

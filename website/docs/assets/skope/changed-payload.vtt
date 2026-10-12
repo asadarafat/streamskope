@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+Select the earlier record
+Two illustrative AIO records. Start with a bounded read.
+
+00:00:07.000 --> 00:00:14.000
+Pin it as the baseline
+Open Compare and pin the record before selecting another.
+
+00:00:14.000 --> 00:00:21.000
+Select the later record
+Before stays pinned. Your next selection becomes After.
+
+00:00:21.000 --> 00:00:28.000
+Compare interpreted values
+Protected projection keeps the inspector’s interpretation and masking.
+
+00:00:28.000 --> 00:00:35.000
+Check ordered headers
+Matching payloads would not prove matching headers.
+
+00:00:35.000 --> 00:00:42.000
+Keep the conclusion precise
+A field difference does not establish downstream processing success.

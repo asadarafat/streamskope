@@ -177,6 +177,17 @@ def inspect_site(root, base_path="/"):
             ".nojekyll", "objects.inv", "search.json", "search/search_index.json", "documentation.json", "plugin-publications.json",
             "assets/launch-score.mp3", "launch/assets/launch-score.mp3",
             "assets/streamskope-intro-light.mp4", "assets/streamskope-intro-dark.mp4",
+            "assets/skope/changed-payload.mp4", "assets/skope/changed-payload.vtt",
+            "assets/skope/eda-export.mp4", "assets/skope/eda-export.vtt",
+            "assets/skope/nsp-notification.mp4", "assets/skope/nsp-notification.vtt",
+            "assets/skope/missing-event.mp4", "assets/skope/missing-event.vtt",
+            "assets/skope/replay-record.mp4", "assets/skope/replay-record.vtt",
+            "assets/skope/share-findings.mp4", "assets/skope/share-findings.vtt",
+            "assets/skope/observed-health.mp4", "assets/skope/observed-health.vtt",
+            "assets/skope/offset-recovery.mp4", "assets/skope/offset-recovery.vtt",
+            "assets/skope/environment-comparison.mp4", "assets/skope/environment-comparison.vtt",
+            "assets/skope/relationships.mp4", "assets/skope/relationships.vtt",
+            "assets/skope/troubleshooting.mp4", "assets/skope/troubleshooting.vtt",
             "assets/qualification/lifecycle-2026-10-04.json",
             "assets/qualification/topic-monitor-2026-10-04.json",
             "assets/qualification/pre-release-2026-10-06.json",
@@ -320,7 +331,7 @@ def main():
     parser.add_argument("--component", choices=["desktop", "eda", "nsp", "all"], default="all")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8002)
-    parser.add_argument("--media", action="store_true", help="Force full intro playback qualification")
+    parser.add_argument("--media", action="store_true", help="Force intro and walkthrough playback qualification")
     parser.add_argument("--url", help="Published site URL for verification")
     parser.add_argument("--revision")
     parser.add_argument("--release")
@@ -362,7 +373,7 @@ def main():
         run([sys.executable, "tools/docs.py", "build"])
         changed, fingerprint = media_selection()
         media = args.media or changed
-        print("Intro playback: " + ("required" if media else "unchanged; skipped"), flush=True)
+        print("Media playback: " + ("required" if media else "unchanged; skipped"), flush=True)
         if media and os.environ.get("CI") == "true":
             run(["npx", "--no-install", "playwright", "install", "--with-deps", "firefox"])
         run(["node", "tools/docs/smoke.mjs", *(["--media"] if media else [])])

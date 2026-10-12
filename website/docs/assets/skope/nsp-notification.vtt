@@ -1,0 +1,29 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:06.000
+Connect via NSP
+Live NSP lab; connector installed. Credential entry and provisioning are omitted.
+
+00:00:06.000 --> 00:00:12.000
+Review the generated profile
+This lab disables API certificate verification; use trusted certificates in production.
+
+00:00:12.000 --> 00:00:18.000
+Connect and select the topic
+Use the generated Kafka profile; no cluster credentials are entered here.
+
+00:00:18.000 --> 00:00:24.000
+Read recent notifications
+A bounded read shows ten retained notifications from this lab.
+
+00:00:24.000 --> 00:00:30.000
+Keep metadata with the event
+Record topic, partition, offset and time alongside your interpretation.
+
+00:00:30.000 --> 00:00:36.000
+Disconnect when finished
+Disconnect ends this client session; it does not delete notifications.
+
+00:00:36.000 --> 00:00:42.000
+Reuse the saved profile
+The profile and reusable NSP workflow remain for the next connection.

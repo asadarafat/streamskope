@@ -137,7 +137,8 @@ def inspect_release_content(root=ROOT, published=False):
     """Reject known ambiguous release labels; preserve explicitly historical evidence."""
     root = Path(root)
     scopes = {"plugins/index.md": "all", "plugins/versioning.md": "all", "plugins/offline.md": "all",
-              "plugins/eda.md": "eda", "plugins/nsp.md": "nsp"}
+              "plugins/eda.md": "eda", "plugins/nsp.md": "nsp",
+              "skope/eda-export.md": "eda", "skope/nsp-notification.md": "nsp"}
     for file in (root / "website/docs").rglob("*.md"):
         relative = file.relative_to(root / "website/docs").as_posix()
         content = file.read_text()

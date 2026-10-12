@@ -382,6 +382,26 @@ class DocumentationArtifactTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unexpected publication file"):
             docs.inspect_site(self.root)
 
+    def test_walkthrough_exports_do_not_admit_raw_recordings_or_other_captions(self):
+        directory = self.root / "assets/skope"
+        directory.mkdir(parents=True)
+        videos = []
+        for slug in ("changed-payload", "eda-export", "nsp-notification", "missing-event",
+                     "replay-record", "share-findings", "observed-health", "offset-recovery",
+                     "environment-comparison", "relationships", "troubleshooting"):
+            (directory / f"{slug}.mp4").write_bytes(b"silent edited export")
+            (directory / f"{slug}.vtt").write_text("WEBVTT\n")
+            videos.append(f'<video src="assets/skope/{slug}.mp4">'
+                          f'<track src="assets/skope/{slug}.vtt"></video>')
+        (self.root / "index.html").write_text("".join(videos))
+        docs.inspect_site(self.root)
+        for name in ("raw.webm", "raw.mp4", "private.vtt"):
+            file = directory / name
+            file.write_bytes(b"unreviewed recording")
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "Unexpected publication file"):
+                docs.inspect_site(self.root)
+            file.unlink()
+
     def test_rejects_missing_page_and_anchor(self):
         for link in ["missing/", "guide/#missing"]:
             with self.subTest(link=link):
@@ -471,6 +491,10 @@ class PublicationTests(unittest.TestCase):
 class MediaSelectionTests(unittest.TestCase):
     def test_media_and_its_dependencies_require_playback_but_prose_does_not(self):
         for path in ("website/docs/intro/index.html", "website/docs/assets/film.mp4",
+                     "website/docs/skope/changed-payload.md", "website/docs/assets/skope/changed-payload.vtt",
+                     "website/docs/guide/observed-health.md", "website/docs/guide/offset-recovery.md",
+                     "website/docs/guide/environment-comparison.md", "website/docs/guide/relationships.md",
+                     "website/docs/guide/troubleshooting.md",
                      "tools/docs/media.mjs", "website/overrides/main.html", "package-lock.json"):
             self.assertTrue(docs.media_inputs(path), path)
         self.assertFalse(docs.media_inputs("website/docs/plugins/nsp.md"))

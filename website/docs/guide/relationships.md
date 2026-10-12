@@ -18,6 +18,36 @@ all edges. Every edge includes a source, observation time and interpretation.
 Arrows follow the relation named in the table. Some represent dependencies or
 metadata associations, so they do not all show the direction of record flow.
 
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Discover relationships and potential schema impact using a registered Avro schema and illustrative records on AIO. The recording shows inferred links and coverage limits, not a complete dependency inventory.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/relationships.png"
+       aria-label="Walkthrough: Trace relationships and potential schema impact"
+       aria-describedby="relationships-video-summary">
+  <source src="../assets/skope/relationships.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/relationships.vtt" srclang="en" label="English instructions">
+  <a href="../assets/skope/relationships.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="relationships-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — Choose the topic and writer schema.** Illustrative AIO records use a registered Avro writer schema.
+- **00:07 — Choose whether to sample framing.** Schema IDs from record framing are inferred links, not proof of downstream use.
+- **00:14 — Discover, then read coverage first.** A bounded snapshot leaves unknown producers and consumers unknown.
+- **00:21 — Follow the observed relationships.** Inspect edge sources and times. Arrows do not all represent event flow.
+- **00:28 — Read the evidence behind each edge.** Observed, declared and inferred links carry different strength.
+- **00:35 — Treat impact as a lead to verify.** Check compatibility and downstream owners separately. Unknown impact is not zero impact.
+
+</details>
+
 ## Sources, coverage and limits
 
 | Source                     | Discovery scope                                                                                                         | Unknowns that remain                                                                                                                                                                                      |

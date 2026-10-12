@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:07.000
+No messages does not mean no events
+Illustrative AIO topic: a non-matching filter hides known retained records.
+
+00:00:07.000 --> 00:00:14.000
+Confirm the connection and topic
+Check the active profile and intended topic before changing credentials.
+
+00:00:14.000 --> 00:00:21.000
+Inspect the active filters
+The key filter asks for absent-order; the fixture record uses order-42.
+
+00:00:21.000 --> 00:00:28.000
+Clear the filter and check read mode
+First N reads retained records. Tail can wait for new events.
+
+00:00:28.000 --> 00:00:35.000
+Retry the bounded read
+Changing a filter alone does not establish what the broker contains.
+
+00:00:35.000 --> 00:00:42.000
+Inspect a returned record
+If the retry fails, retain its stage and correlation ID; never share credentials.

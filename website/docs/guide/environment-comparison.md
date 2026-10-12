@@ -9,6 +9,36 @@ Open **Compare environments** after connecting to Kafka. Capture one to twenty n
 
 Choose a saved destination profile or the active connection, then **Capture destination and compare**. A saved destination opens separately with host-owned credentials and closes after the read; it does not disconnect the source or activate a plugin. Prepare a managed capture before selecting its profile.
 
+## Watch the walkthrough
+
+A 42-second recording of the actual workbench with on-screen instructions and no
+audio. Compare an illustrative desired-state snapshot with one AIO broker and apply one reviewed retention setting. This demonstrates the workflow; it is not a recording of two independent clusters.
+
+<video class="skope-walkthrough" controls muted playsinline preload="metadata"
+       poster="../../assets/skope/environment-comparison.png"
+       aria-label="Walkthrough: Compare environments"
+       aria-describedby="environment-comparison-video-summary">
+  <source src="../assets/skope/environment-comparison.mp4" type="video/mp4">
+  <track kind="captions" src="../assets/skope/environment-comparison.vtt" srclang="en" label="English instructions">
+  <a href="../assets/skope/environment-comparison.mp4">Download the walkthrough</a>.
+</video>
+
+<p id="environment-comparison-video-summary">Follow the actions and outcomes below. Pause or use
+fullscreen to inspect the controls; the written guide covers prerequisites and
+the decisions behind each step.</p>
+
+<details markdown="1">
+<summary>Read the walkthrough transcript</summary>
+
+- **00:00 — Import the reviewed desired state.** Illustrative snapshot and one AIO broker; this recording does not test two clusters.
+- **00:07 — Compare against the destination.** Active connection is the target here. Confirm identity before selecting changes.
+- **00:14 — Select only the intended setting.** This owned topic changes retention.ms. Other configuration remains outside the selection.
+- **00:21 — Review the promotion.** Review is read-only. It does not change the target setting.
+- **00:28 — Confirm and apply once.** Recheck the target identity and consequences of reducing retention before applying.
+- **00:35 — Check acknowledgement and read-back.** Success means this selected setting was verified, not that all environments match.
+
+</details>
+
 ## Snapshot contract
 
 The `streamskope.topic-config/v1` document contains a cluster ID, observation time, topic UUIDs and the settings below. Topics and settings have deterministic ordering. Exporting the same snapshot yields identical bytes. The value diff ignores observation time, while both times and identities remain visible for review.
