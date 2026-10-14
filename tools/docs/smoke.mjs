@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { chromium, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { checkNavigation, isReleasePreview } from "./navigation.mjs";
+import { checkNavigation, checkRepositoryFacts, isReleasePreview } from "./navigation.mjs";
 import { serveSite } from "./server.mjs";
 import { checkMedia } from "./media.mjs";
 import { prepareAccessibilityAudit, checkSearchKeyboard } from "./accessibility.mjs";
@@ -659,6 +659,7 @@ try {
     await page.waitForURL(`${base}plugins/${plugin}/#${fragment}`);
     assert.equal(await page.locator(`[id="${fragment}"]`).count(), 1);
   }
+  await checkRepositoryFacts(browser, base);
   await checkNavigation(page, base, evidence, accessible);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(base);

@@ -27,5 +27,22 @@
       </button>
       {% include "partials/search.html" %} {% endif %} {% endif %}
     </div>
+    {% if config.repo_url %}
+    <a
+      class="sk-repository"
+      href="{{ config.repo_url }}"
+      data-md-component="source"
+      aria-label="GitHub {{ config.repo_name }}"
+      title="View {{ config.repo_name }} on GitHub"
+    >
+      <span class="md-icon" aria-hidden="true">
+        {% include ".icons/fontawesome/brands/github.svg" %}
+      </span>
+      <div class="sk-repository-label">
+        <span class="sk-repository-name">{{ config.repo_name }}</span>
+        <span class="sk-repository-host">GitHub</span>
+      </div>
+    </a>
+    {% endif %}
   </div>
 </header>

@@ -7,6 +7,130 @@ import { expect } from "@playwright/test";
 const stableTag = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const versionOrder = new Intl.Collator("en", { numeric: true });
 
+export async function checkRepositoryFacts(browser, base) {
+  const repositoryUrl = "https://github.com/asadarafat/streamskope";
+  const api = "https://api.github.com/repos/asadarafat/streamskope";
+  const releaseApi = `${api}/releases/latest`;
+  const release = { tag_name: "v9.8.7", name: "A different release title" };
+  const labels = { version: "Latest release", stars: "Stars", forks: "Forks" };
+  for (const fixture of [
+    { name: "zero counts", release: true, repository: true, stars: 0, forks: 0 },
+    { name: "normal counts", release: true, repository: true, stars: 42, forks: 7 },
+    { name: "release unavailable", release: false, repository: true, stars: 42, forks: 7 },
+    { name: "repository unavailable", release: true, repository: false },
+    { name: "both unavailable", release: false, repository: false },
+  ]) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    context.setDefaultTimeout(10_000);
+    try {
+      const requests = [];
+      let apiOffline = false;
+      await context.route("**/*", async (route) => {
+        const url = route.request().url();
+        if (new URL(url).origin === new URL(base).origin) return route.continue();
+        if (url !== api && url !== releaseApi) return route.abort();
+        requests.push(url);
+        if (apiOffline) return route.abort();
+        const available = url === releaseApi ? fixture.release : fixture.repository;
+        await route.fulfill({
+          status: available ? 200 : 503,
+          headers: { "access-control-allow-origin": "*" },
+          json: available
+            ? url === releaseApi
+              ? release
+              : { stargazers_count: fixture.stars, forks_count: fixture.forks }
+            : { message: "Unavailable" },
+        });
+      });
+      const page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(base);
+      // Empty and partial results also signal that both native requests settled.
+      await page.waitForFunction(() =>
+        Object.keys(globalThis.sessionStorage).some((key) => key.endsWith(".__source")),
+      );
+      const repository = page.getByRole("banner").locator(".sk-repository");
+      const facts = {
+        ...(fixture.release ? { version: release.tag_name } : {}),
+        ...(fixture.repository
+          ? { stars: String(fixture.stars), forks: String(fixture.forks) }
+          : {}),
+      };
+      async function checkFacts() {
+        await expect(repository).toBeVisible();
+        await expect(repository).toHaveAttribute("href", repositoryUrl);
+        await expect(repository).toHaveAccessibleName(
+          [
+            "GitHub asadarafat/streamskope",
+            ...Object.entries(facts).map(([key, value]) => `${labels[key]}: ${value}`),
+          ].join(". "),
+        );
+        await expect(repository.locator(".md-source__fact")).toHaveCount(Object.keys(facts).length);
+        for (const [key, label] of Object.entries(labels)) {
+          const fact = repository.locator(`.md-source__fact--${key}`);
+          if (!(key in facts)) {
+            await expect(fact).toHaveCount(0);
+            continue;
+          }
+          await expect(fact).toBeVisible();
+          await expect(fact).toHaveText(facts[key]);
+          await expect(fact).toHaveAttribute("aria-label", `${label}: ${facts[key]}`);
+          await expect(fact).toHaveAttribute("title", `${label}: ${facts[key]}`);
+          assert(
+            await fact.evaluate((element) => element.scrollWidth <= element.clientWidth),
+            `${fixture.name}: ${label} is not clipped`,
+          );
+        }
+        if (Object.keys(facts).length) {
+          await expect(repository.locator(".md-source__facts")).toBeVisible();
+        } else {
+          await expect(repository.locator(".md-source__facts")).toHaveCount(0);
+        }
+        await repository.click({ trial: true });
+        await repository.focus();
+        await expect(repository).toBeFocused();
+      }
+      await checkFacts();
+      assert.deepEqual(requests.toSorted(), [api, releaseApi].toSorted(), fixture.name);
+      if (fixture.name === "normal counts") {
+        for (const width of [1440, 1000, 768, 390, 320]) {
+          await page.setViewportSize({ width, height: 900 });
+          for (const theme of ["light", "dark"]) {
+            const scheme = await page.locator("body").getAttribute("data-md-color-scheme");
+            if ((scheme === "slate") !== (theme === "dark"))
+              await page.locator(`label[title="Switch to ${theme} mode"]`).click();
+            await checkFacts();
+            const box = await repository.boundingBox();
+            assert(
+              box.x >= 0 && box.x + box.width <= width,
+              `Repository facts fit at ${width}px in ${theme} mode`,
+            );
+            for (const selector of [".sk-brand", ".sk-header-tools"]) {
+              const other = await page.locator(selector).boundingBox();
+              assert(
+                box.x + box.width <= other.x + 1 ||
+                  other.x + other.width <= box.x + 1 ||
+                  box.y + box.height <= other.y + 1 ||
+                  other.y + other.height <= box.y + 1,
+                `Repository facts do not overlap ${selector} at ${width}px`,
+              );
+            }
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+          }
+        }
+        apiOffline = true;
+        await page.reload();
+        await checkFacts();
+        assert.equal(requests.length, 2, "Cached facts survive reload without an API request");
+      }
+      assert.deepEqual(errors, [], `${fixture.name}: repository facts cause no page errors`);
+    } finally {
+      await context.close();
+    }
+  }
+}
+
 export function isReleasePreview(tag, desktopRelease, metadata = "") {
   if (/^release_status:\s*(?:pending|"pending"|'pending')\s*$/mu.test(metadata)) return true;
   const core = (version) => /^v(\d+\.\d+\.\d+)/u.exec(version)?.[1];
@@ -203,6 +327,19 @@ export async function checkNavigation(page, base, evidence, accessible) {
       assert(
         brandBox.x + brandBox.width <= toolsBox.x + 1,
         "Brand does not overlap header controls",
+      );
+
+      const repository = page
+        .getByRole("banner")
+        .getByRole("link", { name: /^GitHub asadarafat\/streamskope(?:\.|$)/u });
+      await expect(repository).toBeVisible();
+      await expect(repository).toHaveAttribute("href", "https://github.com/asadarafat/streamskope");
+      await repository.focus();
+      await expect(repository).toBeFocused();
+      const repositoryBox = await repository.boundingBox();
+      assert(
+        repositoryBox.x >= 0 && repositoryBox.x + repositoryBox.width <= width,
+        "Repository link stays visible within the header at every viewport",
       );
 
       const mobile = width < 1220;

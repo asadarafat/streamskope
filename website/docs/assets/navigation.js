@@ -1,5 +1,28 @@
-/* global document, ResizeObserver, matchMedia, getComputedStyle */
+/* global document, ResizeObserver, MutationObserver, matchMedia, getComputedStyle */
 (() => {
+  // Zensical owns fetching and caching repository facts; add names to its icon-only values.
+  const repository = document.querySelector(".sk-repository");
+  if (repository) {
+    const name = repository.getAttribute("aria-label");
+    const labels = { version: "Latest release", stars: "Stars", forks: "Forks" };
+    const describeRepository = () => {
+      const descriptions = [];
+      for (const [key, label] of Object.entries(labels)) {
+        const fact = repository.querySelector(`.md-source__fact--${key}`);
+        if (!fact) continue;
+        const description = `${label}: ${fact.textContent.trim()}`;
+        fact.setAttribute("aria-label", description);
+        fact.setAttribute("title", description);
+        descriptions.push(description);
+      }
+      repository.setAttribute("aria-label", [name, ...descriptions].join(". "));
+    };
+    describeRepository();
+    new MutationObserver(describeRepository).observe(repository, {
+      childList: true,
+      subtree: true,
+    });
+  }
   const trigger = document.querySelector(".sk-nav-trigger");
   const sidebar = document.querySelector(".md-sidebar--primary");
   const drawer = document.querySelector("#__drawer");
