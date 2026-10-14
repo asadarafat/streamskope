@@ -100,7 +100,7 @@ it("hot update drains the old NSP retrieval before the new backend reads recover
   vi.spyOn(NspApiClient.prototype, "close").mockResolvedValue();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.11.1",
+    hostRelease: "v0.11.2",
     catalog: {
       list: (): Promise<[]> => Promise.resolve([]),
       download: (): Promise<ReturnType<typeof bundle>> => Promise.resolve(bundle(2)),
@@ -201,119 +201,122 @@ it("hot update drains the old NSP retrieval before the new backend reads recover
   expect((await runtime.list()).plugins).toEqual([]);
 });
 
-it("direct host shutdown permits final NSP cleanup and journal writes while rejecting new host work", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "streamskope-nsp-shutdown-"));
-  directories.push(directory);
-  const store = new PluginStore(directory);
-  const installed = bundle(1);
-  await store.install(installed.bytes, installed.sha256);
-  const entered = deferred();
-  const release = deferred();
-  const closing = deferred();
-  const executionId = randomUUID();
-  let pluginHost: PluginBackendHost | undefined;
-  vi.spyOn(NspApiClient.prototype, "authenticate").mockResolvedValue();
-  vi.spyOn(NspApiClient.prototype, "readVersion").mockResolvedValue({
-    raw: "NSP-CN-26.4.0-rel.200",
-    product: "26.4.0",
-    build: 200,
-  });
-  vi.spyOn(NspApiClient.prototype, "ensureWorkflow").mockResolvedValue({
-    id: randomUUID(),
-    name: "streamskopeNspCaptureV1",
-    fingerprint: "a".repeat(64),
-  });
-  vi.spyOn(NspApiClient.prototype, "retrieveTrust").mockImplementation(
-    async (_requestId, callbacks) => {
-      await callbacks?.onExecution?.(executionId);
-      entered.resolve();
-      await release.promise;
-      throw new Error("Request interrupted during shutdown");
-    },
-  );
-  const remoteCleanup = vi
-    .spyOn(NspApiClient.prototype, "cleanupExecution")
-    .mockImplementation(async () => {
-      expect(await pluginHost!.recoveryState!.read()).toMatchObject({ executionId });
-      await expect(
-        pluginHost!.execute({
-          command: "profiles.list",
-          id: randomUUID(),
-          payload: {},
-          version: HOST_PROTOCOL_VERSION,
-        }),
-      ).rejects.toThrow(/no longer active/u);
-      await expect(pluginHost!.deleteProfile("unrelated")).rejects.toThrow(/no longer active/u);
-      await expect(pluginHost!.disconnectOwnedConnection()).rejects.toThrow(/no longer active/u);
+it.each(["26.4.0", "26.11.0"])(
+  "direct host shutdown permits final NSP %s cleanup and journal writes while rejecting new host work",
+  async (version) => {
+    const directory = await mkdtemp(join(tmpdir(), "streamskope-nsp-shutdown-"));
+    directories.push(directory);
+    const store = new PluginStore(directory);
+    const installed = bundle(1);
+    await store.install(installed.bytes, installed.sha256);
+    const entered = deferred();
+    const release = deferred();
+    const closing = deferred();
+    const executionId = randomUUID();
+    let pluginHost: PluginBackendHost | undefined;
+    vi.spyOn(NspApiClient.prototype, "authenticate").mockResolvedValue();
+    vi.spyOn(NspApiClient.prototype, "readVersion").mockResolvedValue({
+      raw: `NSP-CN-${version}-rel.200`,
+      product: version,
+      build: 200,
     });
-  const closeClient = vi.spyOn(NspApiClient.prototype, "close").mockResolvedValue();
-  const runtime = new PluginRuntime({
-    store,
-    hostRelease: "v0.11.1",
-    loadModule: (): Promise<PluginBackendModule> =>
-      Promise.resolve({
-        activate: (host: PluginBackendHost): PluginBackend => {
-          pluginHost = host;
-          const backend = activate(host);
-          const close = backend.close.bind(backend);
-          backend.close = (): Promise<void> => {
-            closing.resolve();
-            return close();
-          };
-          return backend;
-        },
-      }),
-  });
-  runtimes.push(runtime);
-  const hostExecute = vi.fn(() => Promise.reject(new Error("Unexpected host command")));
-  runtime.bindHost({
-    execute: testHostExecute(hostExecute),
-    connectionActive: () => false,
-    profiles: () => Promise.resolve([]),
-    deleteProfile: () => Promise.reject(new Error("Unexpected profile deletion")),
-    disconnectPluginConnection: () => Promise.reject(new Error("Unexpected disconnection")),
-    recordActivity: () => undefined,
-    failure: (error, context) =>
-      translateFacadeFailure(
-        error,
-        { ...context, activeStateChanged: false, connection: undefined },
-        true,
-      ).error,
-  });
-  await runtime.start();
-  const current = (await runtime.list()).plugins[0]!;
-  expect(current.activationId).toBeDefined();
-  const operation = runtime.execute({
-    pluginId: NSP_PLUGIN_ID,
-    activationId: current.activationId!,
-    method: "nspCapture.connect",
-    input: {
-      apiUrl: "https://nsp.example.test",
-      username: "operator",
-      password: "test-api-secret",
-      verifyCertificate: true,
-    },
-    requestId: randomUUID(),
-    correlationId: randomUUID(),
-  });
-  await entered.promise;
-  const shutdown = runtime.close();
-  try {
-    await closing.promise;
-  } finally {
-    release.resolve();
-  }
-  expect(await operation).toMatchObject({ ok: false, error: { code: "CANCELLED" } });
-  await expect(shutdown).resolves.toBeUndefined();
-  expect(remoteCleanup).toHaveBeenCalledWith(expect.any(String), executionId);
-  expect(closeClient).toHaveBeenCalledTimes(2);
-  expect(hostExecute).not.toHaveBeenCalled();
-  expect(await store.readRecoveryState(NSP_PLUGIN_ID)).toBeNull();
-  await expect(pluginHost!.recoveryState!.write({ stale: true })).rejects.toThrow(
-    /no longer active/u,
-  );
-  await expect(pluginHost!.recoveryState!.read()).rejects.toThrow(/no longer active/u);
-});
+    vi.spyOn(NspApiClient.prototype, "ensureWorkflow").mockResolvedValue({
+      id: randomUUID(),
+      name: "streamskopeNspCaptureV1",
+      fingerprint: "a".repeat(64),
+    });
+    vi.spyOn(NspApiClient.prototype, "retrieveTrust").mockImplementation(
+      async (_requestId, callbacks) => {
+        await callbacks?.onExecution?.(executionId);
+        entered.resolve();
+        await release.promise;
+        throw new Error("Request interrupted during shutdown");
+      },
+    );
+    const remoteCleanup = vi
+      .spyOn(NspApiClient.prototype, "cleanupExecution")
+      .mockImplementation(async () => {
+        expect(await pluginHost!.recoveryState!.read()).toMatchObject({ executionId });
+        await expect(
+          pluginHost!.execute({
+            command: "profiles.list",
+            id: randomUUID(),
+            payload: {},
+            version: HOST_PROTOCOL_VERSION,
+          }),
+        ).rejects.toThrow(/no longer active/u);
+        await expect(pluginHost!.deleteProfile("unrelated")).rejects.toThrow(/no longer active/u);
+        await expect(pluginHost!.disconnectOwnedConnection()).rejects.toThrow(/no longer active/u);
+      });
+    const closeClient = vi.spyOn(NspApiClient.prototype, "close").mockResolvedValue();
+    const runtime = new PluginRuntime({
+      store,
+      hostRelease: "v0.11.2",
+      loadModule: (): Promise<PluginBackendModule> =>
+        Promise.resolve({
+          activate: (host: PluginBackendHost): PluginBackend => {
+            pluginHost = host;
+            const backend = activate(host);
+            const close = backend.close.bind(backend);
+            backend.close = (): Promise<void> => {
+              closing.resolve();
+              return close();
+            };
+            return backend;
+          },
+        }),
+    });
+    runtimes.push(runtime);
+    const hostExecute = vi.fn(() => Promise.reject(new Error("Unexpected host command")));
+    runtime.bindHost({
+      execute: testHostExecute(hostExecute),
+      connectionActive: () => false,
+      profiles: () => Promise.resolve([]),
+      deleteProfile: () => Promise.reject(new Error("Unexpected profile deletion")),
+      disconnectPluginConnection: () => Promise.reject(new Error("Unexpected disconnection")),
+      recordActivity: () => undefined,
+      failure: (error, context) =>
+        translateFacadeFailure(
+          error,
+          { ...context, activeStateChanged: false, connection: undefined },
+          true,
+        ).error,
+    });
+    await runtime.start();
+    const current = (await runtime.list()).plugins[0]!;
+    expect(current.activationId).toBeDefined();
+    const operation = runtime.execute({
+      pluginId: NSP_PLUGIN_ID,
+      activationId: current.activationId!,
+      method: "nspCapture.connect",
+      input: {
+        apiUrl: "https://nsp.example.test",
+        username: "operator",
+        password: "test-api-secret",
+        verifyCertificate: true,
+      },
+      requestId: randomUUID(),
+      correlationId: randomUUID(),
+    });
+    await entered.promise;
+    const shutdown = runtime.close();
+    try {
+      await closing.promise;
+    } finally {
+      release.resolve();
+    }
+    expect(await operation).toMatchObject({ ok: false, error: { code: "CANCELLED" } });
+    await expect(shutdown).resolves.toBeUndefined();
+    expect(remoteCleanup).toHaveBeenCalledWith(expect.any(String), executionId);
+    expect(closeClient).toHaveBeenCalledTimes(2);
+    expect(hostExecute).not.toHaveBeenCalled();
+    expect(await store.readRecoveryState(NSP_PLUGIN_ID)).toBeNull();
+    await expect(pluginHost!.recoveryState!.write({ stale: true })).rejects.toThrow(
+      /no longer active/u,
+    );
+    await expect(pluginHost!.recoveryState!.read()).rejects.toThrow(/no longer active/u);
+  },
+);
 
 it("discarding a staged update cannot overwrite the active plugin's unresolved recovery", async () => {
   const directory = await mkdtemp(join(tmpdir(), "streamskope-nsp-staged-"));
@@ -333,7 +336,7 @@ it("discarding a staged update cannot overwrite the active plugin's unresolved r
   const attemptedWrite = vi.fn();
   const runtime = new PluginRuntime({
     store,
-    hostRelease: "v0.11.1",
+    hostRelease: "v0.11.2",
     catalog: {
       list: (): Promise<[]> => Promise.resolve([]),
       download: (): Promise<ReturnType<typeof bundle>> => Promise.resolve(bundle(2)),
