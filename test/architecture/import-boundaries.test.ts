@@ -6,6 +6,19 @@ import { describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 
+it("excludes generated video metadata while still linting authored documentation scripts", async () => {
+  const eslint = new ESLint({
+    cwd: repositoryRoot,
+    overrideConfig: [tseslint.configs.disableTypeChecked],
+  });
+  expect(await eslint.isPathIgnored("website/docs/assets/video-sources.js")).toBe(true);
+  expect(await eslint.isPathIgnored("website/docs/assets/navigation.js")).toBe(false);
+  const [result] = await eslint.lintText("unknownBrowserSymbol();", {
+    filePath: "website/docs/assets/navigation.js",
+  });
+  expect(result?.messages.map(({ ruleId }) => ruleId)).toContain("no-undef");
+});
+
 const forbiddenRendererCases = [
   ...["application", "engine", "facade"].map((layer) => ({
     fileName: `${layer}-import.ts`,
