@@ -104,23 +104,30 @@ function Harness({
   consumptionError = null,
   consumptionRequest = request,
   continuationBusy = false,
+  onStart = (): void => undefined,
   onStop = (): void => undefined,
+  retainedMessages = retained,
   initialFilters = initialKafkaMessageFilters,
 }: {
   readonly download?: TextDocumentTransferPort["download"];
   readonly consumptionError?: HostError | null;
   readonly consumptionRequest?: KafkaFetchRequest;
   readonly continuationBusy?: boolean;
+  readonly onStart?: () => void;
   readonly onStop?: () => void;
+  readonly retainedMessages?: readonly KafkaExploredMessage[];
   readonly initialFilters?: KafkaMessageFilters;
 }): React.JSX.Element {
   const [filters, setFilters] = useState<KafkaMessageFilters>(initialFilters);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const messages = useMemo(() => selectFilteredKafkaMessages(retained, filters), [filters]);
+  const messages = useMemo(
+    () => selectFilteredKafkaMessages(retainedMessages, filters),
+    [retainedMessages, filters],
+  );
   const selectedMessage = selectKafkaMessageById(messages, selectedMessageId);
   const selectionNotice =
     selectedMessageId !== null &&
-    retained.some((item) => item.id === selectedMessageId) &&
+    retainedMessages.some((item) => item.id === selectedMessageId) &&
     selectedMessage === null
       ? "The selected message is hidden by the current filters."
       : undefined;
@@ -164,10 +171,10 @@ function Harness({
           setFilters((current) => ({ ...current, activeRuleMatchesOnly }));
         }}
         onSelectMessage={setSelectedMessageId}
-        onStart={() => undefined}
+        onStart={onStart}
         onStop={onStop}
         onTextFilterChange={changeText}
-        retainedMessageCount={retained.length}
+        retainedMessageCount={retainedMessages.length}
         savedProfileCount={0}
         selectedMessage={selectedMessage}
         selectedMessageId={selectedMessageId}
@@ -185,6 +192,35 @@ afterEach(() => {
 });
 
 describe("Kafka message operation Material UI workflow", () => {
+  it("keeps the selected topic and recovery action after a read fails before returning records", async () => {
+    const onStart = vi.fn();
+    const error: HostError = {
+      activeStateChanged: false,
+      code: "TIMEOUT",
+      correlationId: "startup-timeout",
+      recovery: "Verify the broker endpoints and network path, then retry.",
+      retryable: true,
+      stage: "broker",
+      summary: "The Kafka broker request timed out.",
+      target: "orders",
+    };
+    render(<Harness consumptionError={error} onStart={onStart} retainedMessages={[]} />);
+
+    const state = screen.getByRole("status", { name: "Message workspace state" });
+    expect(within(state).getByRole("heading", { name: "Read failed" })).toBeVisible();
+    expect(state).toHaveTextContent(
+      "Follow the recovery guidance above, then retry from the message toolbar.",
+    );
+    expect(screen.getByText(error.summary)).toBeVisible();
+    expect(screen.getByText(error.recovery)).toBeVisible();
+    expect(screen.queryByText("Select a topic")).not.toBeInTheDocument();
+    expect(screen.queryByText("Topic currently has no messages")).not.toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: "Start tail orders" });
+    expect(retry).toBeEnabled();
+    await userEvent.setup().click(retry);
+    expect(onStart).toHaveBeenCalledOnce();
+  });
+
   it("keeps pause available while a continuation response is pending after the host starts reading", async () => {
     const onStop = vi.fn();
     const user = userEvent.setup();

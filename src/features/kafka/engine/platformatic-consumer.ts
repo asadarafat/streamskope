@@ -395,6 +395,7 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
     };
     input.signal?.addEventListener("abort", abort, { once: true });
     try {
+      input.onOpeningStage?.("topic-metadata");
       const captureIdentity = async (): Promise<ReadIdentity | undefined> => {
         try {
           const metadata = await consumer.metadata({
@@ -453,6 +454,7 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
       let lower: readonly bigint[] | undefined;
       let upper: readonly bigint[] | undefined;
       if (input.checkpoint !== undefined) assertReadIdentity(identity, input.checkpoint);
+      input.onOpeningStage?.("starting-offsets");
       const plan = await resolveKafkaFetchPlan(
         {
           listTopicOffsets: async (topic, timestamp) => {
@@ -480,6 +482,7 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
         input.checkpoint,
       );
       if (identity !== undefined) {
+        input.onOpeningStage?.("verify-topic");
         const after = await captureIdentity();
         assertExpected(after);
         if (input.expectedLocator === undefined) assertReadIdentity(after, identity);
@@ -520,6 +523,7 @@ export class PlatformaticConsumerFactory implements KafkaConsumerFactory {
           input.expectedLocator,
         );
       }
+      input.onOpeningStage?.("start-reader");
       const stream = await new Promise<PlatformaticMessageStream>((resolve, reject) => {
         consumer.consume(
           {

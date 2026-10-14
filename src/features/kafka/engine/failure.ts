@@ -1,3 +1,5 @@
+import { TimeoutError } from "@platformatic/kafka";
+
 import type { HostErrorCode, HostErrorStage } from "../contracts";
 import {
   classifyConnectionFailure,
@@ -73,6 +75,24 @@ export function mapKafkaAdminFailure(
   const text = errorText(error);
 
   const diagnostic = classifyConnectionFailure(error);
+  // The SDK timeout currently carries a generic network code and Error name.
+  if (
+    diagnostic === "timeout" ||
+    connectionErrorChain(error).some((entry) => entry instanceof TimeoutError)
+  ) {
+    return new KafkaEngineFailure({
+      cause: error,
+      cleanupCause,
+      code: "TIMEOUT",
+      recovery:
+        "Verify the broker endpoints and network path, then retry. If the timeout persists, check broker availability and load.",
+      retryable: true,
+      stage: "broker",
+      summary: "The Kafka broker request timed out.",
+      target,
+    });
+  }
+
   if (diagnostic === "tls-client" || diagnostic === "tls-trust") {
     return new KafkaEngineFailure({
       cause: error,

@@ -199,6 +199,28 @@ beforeEach(() => {
 });
 
 describe("durable locator preflight and retained cleanup", () => {
+  it("identifies the reader setup stage without confusing offset failures with metadata", async () => {
+    kafkaState.offsets.set("-2", [0n]);
+    kafkaState.offsets.set("-1", [10n]);
+    const stages: string[] = [];
+    const request = {
+      ...input({ topic: "orders", mode: "earliest", maxMessages: 10 }),
+      onOpeningStage: (stage: string): void => {
+        stages.push(stage);
+      },
+    };
+    const stream = await new PlatformaticConsumerFactory().open(request);
+    expect(stages).toEqual(["topic-metadata", "starting-offsets", "verify-topic", "start-reader"]);
+    await stream.close();
+
+    stages.length = 0;
+    kafkaState.offsetFailure = new Error("Offset lookup failed");
+    await expect(new PlatformaticConsumerFactory().open(request)).rejects.toBe(
+      kafkaState.offsetFailure,
+    );
+    expect(stages).toEqual(["topic-metadata", "starting-offsets"]);
+  });
+
   const expected: KafkaRecordLocator = {
     schemaVersion: 1,
     clusterId: "fixture-cluster",

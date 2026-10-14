@@ -3,6 +3,7 @@ import { classifyConnectionFailure } from "../application/connection-diagnostics
 
 import { KafkaEngineFailure } from "./failure";
 import { OAuthEndpointResponseError } from "./oauth";
+import type { KafkaReadOpeningStage } from "./types";
 
 export function cancelledFailure(stage: HostErrorStage, target: string): KafkaEngineFailure {
   return new KafkaEngineFailure({
@@ -28,6 +29,29 @@ export function timeoutFailure(stage: HostErrorStage, target: string): KafkaEngi
       stage === "oauth"
         ? "OAuth token acquisition timed out."
         : "Kafka broker metadata access timed out.",
+    target,
+  });
+}
+
+export function readPreparationTimeoutFailure(
+  stage: KafkaReadOpeningStage,
+  target: string,
+): KafkaEngineFailure {
+  const action: Record<KafkaReadOpeningStage, string> = {
+    "topic-metadata": "loading topic metadata",
+    "starting-offsets": "finding starting offsets",
+    "verify-topic": "verifying topic identity",
+    "start-reader": "starting the message reader",
+  };
+  return new KafkaEngineFailure({
+    code: "TIMEOUT",
+    recovery:
+      stage === "starting-offsets"
+        ? "Retry with First N or a narrower Time window. If it still fails, check broker response times and the network path."
+        : "Retry the read. If it still fails, check broker response times and the advertised broker endpoints from this host.",
+    retryable: true,
+    stage: "broker",
+    summary: `Kafka reader preparation timed out while ${action[stage]}.`,
     target,
   });
 }

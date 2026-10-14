@@ -289,6 +289,9 @@ export function MessageWorkspace({
     } else if (consumptionState === "stopped") {
       emptyTitle = "Consumption stopped";
       emptyDetail = "No messages were retained for this topic.";
+    } else if (consumptionState === "failed") {
+      emptyTitle = "Read failed";
+      emptyDetail = "Follow the recovery guidance above, then retry from the message toolbar.";
     }
     if (activeFilterCount > 0 && retainedMessageCount > 0 && visibleMessages.length === 0) {
       emptyTitle = "No messages match the current filters";
