@@ -34,6 +34,7 @@ import { KafkaReadCheckpointError, type KafkaReadCheckpoint } from "../applicati
 
 import {
   cancelledFailure,
+  readPreparationTimeoutFailure,
   timeoutFailure,
   oauthFailure,
   withCleanupFailure,
@@ -71,12 +72,16 @@ import type {
   KafkaConnectionTestResult,
   KafkaRawMessageStream,
   KafkaRawMessage,
+  KafkaReadOpeningStage,
   OAuthToken,
   OAuthTokenProvider,
   StreamSkopeKafkaEngineOptions,
 } from "./types";
 
 const DEFAULT_OPERATION_TIMEOUT_MS = 5_000;
+// Recent reads can require several sequential offset lookups over a remote connection.
+// Bound the whole setup separately without relaxing any individual network request.
+const DEFAULT_READ_PREPARATION_TIMEOUT_MS = 30_000;
 
 class OperationAborted extends Error {
   constructor() {
@@ -197,6 +202,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
     private readonly latencyProbe: KafkaLatencyProbePort,
     private readonly lifecycleController: AbortController,
     private readonly operationTimeoutMs: number,
+    private readonly readPreparationTimeoutMs: number,
     private readonly services: SecureConnectionInput["services"],
     private readonly tokenRequester: NonNullable<
       StreamSkopeKafkaEngineOptions["requestOAuthToken"]
@@ -414,10 +420,13 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
       });
     }
 
+    let openingStage: KafkaReadOpeningStage = "topic-metadata";
+    let timedOutStage: KafkaReadOpeningStage | undefined;
     const timeoutController = new AbortController();
     const timeout = setTimeout(() => {
+      timedOutStage = openingStage;
       timeoutController.abort();
-    }, this.operationTimeoutMs);
+    }, this.readPreparationTimeoutMs);
     timeout.unref();
     const signal = AbortSignal.any([
       this.lifecycleController.signal,
@@ -457,6 +466,9 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
         groupId: `streamskope-${randomUUID()}`,
         request: parsedRequest,
         signal,
+        onOpeningStage: (stage): void => {
+          openingStage = stage;
+        },
       });
       const rawStream = await abortableOperation(operation, signal, () => new OperationAborted());
       const translated = new TranslatedKafkaMessageStream(
@@ -502,7 +514,7 @@ class ActiveKafkaEngineConnection implements KafkaEngineConnection {
         const failure =
           cancellationSignal.aborted || this.lifecycleController.signal.aborted
             ? cancelledFailure("broker", target)
-            : timeoutFailure("broker", target);
+            : readPreparationTimeoutFailure(timedOutStage ?? openingStage, target);
         if (failedOpen !== undefined)
           throw openCleanupDiagnostic(
             this.retainOpenCleanup(
@@ -694,6 +706,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
   private readonly adminFactory;
   private readonly consumerFactory;
   private readonly operationTimeoutMs: number;
+  private readonly readPreparationTimeoutMs: number;
   private readonly latencyProbe;
   private readonly tokenRequester;
   private readonly protectRecord;
@@ -708,11 +721,16 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
     this.consumerFactory = options.consumerFactory ?? new PlatformaticConsumerFactory();
     this.latencyProbe = options.latencyProbe ?? new PlatformaticLatencyProbe();
     this.operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
+    this.readPreparationTimeoutMs =
+      options.readPreparationTimeoutMs ?? DEFAULT_READ_PREPARATION_TIMEOUT_MS;
     this.tokenRequester = options.requestOAuthToken ?? requestOAuthToken;
     this.serviceHttp =
       options.serviceHttp ?? new NodeBoundedJsonHttp({ timeoutMs: this.operationTimeoutMs });
     if (!Number.isSafeInteger(this.operationTimeoutMs) || this.operationTimeoutMs < 1) {
       throw new RangeError("Kafka engine operation timeout must be a positive safe integer.");
+    }
+    if (!Number.isSafeInteger(this.readPreparationTimeoutMs) || this.readPreparationTimeoutMs < 1) {
+      throw new RangeError("Kafka reader preparation timeout must be a positive safe integer.");
     }
   }
 
@@ -916,6 +934,7 @@ export class StreamSkopeKafkaEngine implements KafkaConnectionPort {
         this.latencyProbe,
         lifecycleController,
         this.operationTimeoutMs,
+        this.readPreparationTimeoutMs,
         connection.services,
         this.tokenRequester,
         serviceRequests,

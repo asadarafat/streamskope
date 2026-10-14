@@ -1,4 +1,4 @@
-import { MultipleErrors, ProtocolError } from "@platformatic/kafka";
+import { MultipleErrors, ProtocolError, TimeoutError } from "@platformatic/kafka";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,6 +7,38 @@ import {
 } from "../../src/features/kafka/engine/failure";
 
 describe("Kafka administration failure mapping", () => {
+  it.each(["sdk", "nested-sdk", "nested-socket"] as const)(
+    "reports a %s timeout with actionable, sanitized diagnostics and retained causes",
+    (shape) => {
+      const privateText = "private-token-and-broker-response";
+      const timeout =
+        shape === "nested-socket"
+          ? Object.assign(new Error(privateText), { code: "ETIMEDOUT" })
+          : new TimeoutError(privateText);
+      const error =
+        shape === "sdk"
+          ? timeout
+          : new Error("Request failed", {
+              cause: new MultipleErrors("Broker response", [timeout]),
+            });
+      const cleanupCause = new Error("Cleanup failed");
+
+      const failure = mapKafkaAdminFailure(error, "selected topic", cleanupCause);
+
+      expect(failure).toMatchObject({
+        code: "TIMEOUT",
+        retryable: true,
+        stage: "broker",
+        target: "selected topic",
+      });
+      expect(failure.message).toMatch(/request timed out/iu);
+      expect(failure.recovery).toMatch(/broker endpoints.*network path.*retry/iu);
+      expect(`${failure.message} ${failure.recovery}`).not.toContain(privateText);
+      expect(failure.cause).toBe(error);
+      expect(failure.cleanupCause).toBe(cleanupCause);
+    },
+  );
+
   it("reports an unsupported broker API distinctly from empty data", () => {
     const error = Object.assign(new Error("The broker returned unsupported version"), {
       code: "UNSUPPORTED_VERSION",

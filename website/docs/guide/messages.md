@@ -49,6 +49,16 @@ arrival order and the cap affect which records you receive. First N cannot recov
 records already removed by retention or compaction. The active time-window bounds
 are displayed in UTC.
 
+If topics load but reading fails, check the error above the table. Listing topics
+does not confirm that the broker can return offsets or records. **Tail** and
+**Newest N** also search for a recent starting position, so setup can take longer
+on a slow connection or a topic with infrequent records. Try **First N** to read
+from the earliest retained offsets, or choose a known **Time window**. These modes
+read a different range; they do not bypass authentication or certificate checks.
+If they also fail, check access to the advertised broker endpoints and topic read
+permissions. Include the read mode and activity correlation ID in a failure report;
+leave out credentials and private payloads.
+
 For a past incident, select **Time window → Custom interval**. Enter an inclusive
 **Start time** and an exclusive **End time**, using ISO 8601 with seconds and a
 time zone: `2026-07-24T16:03:00+02:00` and `2026-07-24T14:03:00Z` represent the

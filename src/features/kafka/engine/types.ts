@@ -119,12 +119,16 @@ export interface KafkaRawMessageStream extends AsyncIterable<KafkaRawMessage> {
   subscribeCoverage?(listener: (coverage: KafkaReadCoverage) => void): () => void;
 }
 
+export type KafkaReadOpeningStage =
+  "topic-metadata" | "starting-offsets" | "verify-topic" | "start-reader";
+
 export type KafkaConsumerInput = KafkaClientInput & {
   readonly checkpoint?: KafkaReadCheckpoint;
   readonly expectedLocator?: KafkaRecordLocator;
   readonly groupId: string;
   readonly signal?: AbortSignal;
   readonly onFetchSample?: (sample: KafkaLatencyFetchSample) => void;
+  readonly onOpeningStage?: (stage: KafkaReadOpeningStage) => void;
   /** Content predicates consume the same prepared, protected projection delivered to readers. */
   readonly prepareRecord?: (
     message: KafkaRawMessage,
@@ -179,5 +183,7 @@ export interface StreamSkopeKafkaEngineOptions {
   readonly consumerFactory?: KafkaConsumerFactory;
   readonly latencyProbe?: KafkaLatencyProbePort;
   readonly operationTimeoutMs?: number;
+  /** Total reader preparation budget; individual broker request deadlines remain separate. */
+  readonly readPreparationTimeoutMs?: number;
   readonly requestOAuthToken?: OAuthTokenRequester;
 }
