@@ -42,7 +42,9 @@ inside NSP using the workflow service's existing access to the mounted trust fil
 ## Create the connection profile
 
 1. Open **Preferences → Plugins** and install **NSP Connector**. Activation is
-   immediate. The catalog must contain a published compatible package.
+   immediate. The catalog must contain a published compatible package. For a
+   manually downloaded package, use **Install from file** and select its signed
+   portable asset; see [Install without GitHub](offline.md).
 2. Open **Add connection → Connect via NSP**.
 3. Enter the **NSP API URL** as an HTTPS origin, such as
    `https://nsp.example.com`, plus **NSP username** and **NSP password**.
@@ -94,16 +96,16 @@ confirming no clients depend on it.
 
 ## Diagnose a failure
 
-| Failure                                | Next check                                                                                                  |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| NSP Connector absent from the catalog  | Check the supported desktop interval, then refresh the official catalog                                     |
-| API sign-in or certificate failure     | Verify the HTTPS origin, account permissions and API CA trust                                               |
-| Target version unknown or unsupported  | Check `/sdn/api/v4/system/version` and the manifest's inclusive target range; cleanup is still available    |
-| Helper name conflict                   | Have the administrator inspect the existing definition; do not overwrite it to bypass the ownership check   |
-| Workflow export rejected               | Verify the mounted JKS/password layout, `keytool` availability and certificate-only store contents          |
-| Kafka certificate/name failure         | Use the correct advertised broker hostname and CA; the API lab override does not weaken broker verification |
-| Kafka unavailable or no visible topics | Check listener/network access, authentication and topic permissions separately from successful API login    |
-| Cleanup required                       | Restore API access and retry cleanup using the same account; do not discard the recovery state              |
+| Failure                                | Next check                                                                                                     |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| NSP Connector absent from the catalog  | Check the supported desktop interval, then refresh the official catalog                                        |
+| API sign-in or certificate failure     | Verify the HTTPS origin, account permissions and API CA trust                                                  |
+| Target version unknown or unsupported  | Check the product returned by the version API and this package's admitted releases; cleanup is still available |
+| Helper name conflict                   | Have the administrator inspect the existing definition; do not overwrite it to bypass the ownership check      |
+| Workflow export rejected               | Verify the mounted JKS/password layout, `keytool` availability and certificate-only store contents             |
+| Kafka certificate/name failure         | Use the correct advertised broker hostname and CA; the API lab override does not weaken broker verification    |
+| Kafka unavailable or no visible topics | Check listener/network access, authentication and topic permissions separately from successful API login       |
+| Cleanup required                       | Restore API access and retry cleanup using the same account; do not discard the recovery state                 |
 
 Share the desktop/plugin versions, failing step and redacted correlation ID from
 **Raw logs**. Exclude passwords, tokens, truststore bytes and workflow output.
@@ -126,18 +128,45 @@ the installed desktop rehearsal and does not qualify a public plugin upgrade.
 
 ### Compatibility package
 
-The source API 4 package targets **NSP 26.4.0**. Its version is assigned when
-the plugin release workflow starts. See
-the [manifest-derived declarations](versioning.md#declared-packages) for its
-development identity, desktop bounds and inclusive target range. The official
-release catalog establishes which packages are available to install.
+The source API 4 package admits **NSP 26.4.0 and 26.11.0** in one package.
+NSP release labels use the year and release number: **26** denotes **2026**;
+**26.4** and **26.11** identify the two 2026 release lines. The API
+reports a full product version such as `26.11.0` and a separate build number.
 
-The plugin reads `GET /sdn/api/v4/system/version` before creating,
-adopting or executing its helper for setup or credential refresh. For example,
-`NSP-CN-26.4.0-rel.200` means product **26.4.0**, build **200**; `v4` is the API
-version. An unknown format, unreadable version or product outside the declared
-range prevents new retrieval and profile changes. Pending cleanup remains available.
-Workflow permissions and mounted-file prerequisites still apply.
+API 4 manifests express one inclusive interval, so this package encloses the two
+releases with **26.4.0–26.11.0** bounds. The plugin additionally admits only the
+exact products **26.4.0** and **26.11.0** before setup or credential refresh. A
+number inside the manifest interval, such as `26.8.0`, is not admitted, and later
+patches are not automatically qualified. See the
+[manifest-derived declarations](versioning.md#declared-packages) for the host
+bounds and development identity. API 5 is unnecessary for this package.
+
+The plugin version is assigned when release CI starts. A PR or local build does
+not make its portable asset available on GitHub. After publication, download the
+signed **portable** `.skope-plugin` from that plugin release and use
+**Preferences → Plugins → Install from file**. Prereleases are for manual testing;
+the ordinary catalog continues to select published compatible stable packages.
+Existing published NSP Connector 0.2.0 packages retain their original 26.4.0 target.
+
+The plugin reads `GET /sdn/api/v4/system/version` before creating, adopting or
+executing its helper. If that endpoint returns HTTP 404, it reads
+`GET /internal/shared-app-banner-utils/rest/api/v1/appBannerUtils/release-version`,
+the endpoint used by the NSP 26.11 banner. It does not fall back after a sign-in,
+authorization, certificate, network or malformed-response failure.
+`NSP-CN-26.11.0-rel.113` means product **26.11.0**, build **113**; `v4` in the legacy
+path is an API version. An unknown format, unreadable version or product outside
+the exact allowlist prevents new retrieval and profile changes. Pending cleanup
+remains available without this version gate. Workflow permissions and mounted-file
+prerequisites still apply. The banner endpoint is internal and may change in a
+later NSP build.
+
+**26.11 qualification is incomplete.** Version reading, helper reuse, combined
+trust retrieval and execution cleanup were exercised on build 113. Complete live
+consumption, reconnect and lifecycle acceptance remain unrecorded because the
+qualification host could not reach the external Kafka listener. Successful topic
+listing from another network does not prove message access. Until that acceptance
+passes, use a prerelease package for manual testing; do not interpret its declared
+target as completed qualification.
 
 ## What the workflow changes
 
@@ -153,11 +182,12 @@ The API 4 package includes **`nsp-capture.workflow.yaml`** as a declared
 resource inside its downloadable `.skope-plugin`. Packaging also exports the
 same YAML beside the package and manifest for review:
 
-| File                                                          | Purpose                                                  |
-| ------------------------------------------------------------- | -------------------------------------------------------- |
-| `streamskope-nsp-v<plugin-version>.skope-plugin`              | Installable plugin, including the workflow resource      |
-| `streamskope-nsp-v<plugin-version>-plugin.json`               | Compatibility declarations and workflow resource SHA-256 |
-| `streamskope-nsp-v<plugin-version>-nsp-capture.workflow.yaml` | Readable copy of the same workflow                       |
+| File                                                          | Purpose                                                                              |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `streamskope-nsp-v<plugin-version>.skope-plugin`              | Primary package for the official catalog, including the workflow                     |
+| `streamskope-nsp-portable-v<plugin-version>.skope-plugin`     | Publisher-signed package for **Install from file**, enclosing the same primary bytes |
+| `streamskope-nsp-v<plugin-version>-plugin.json`               | Compatibility declarations and workflow resource SHA-256                             |
+| `streamskope-nsp-v<plugin-version>-nsp-capture.workflow.yaml` | Readable copy of the same workflow                                                   |
 
 For source builds, `npm run package -- plugin nsp` writes these files to
 `dist/plugin-package/`. Download the YAML and manifest from the same official

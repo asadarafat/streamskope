@@ -13,6 +13,18 @@ import { NSP_WORKFLOW_DEFINITION, NSP_WORKFLOW_NAME } from "../../plugins/nsp/ba
 import { createHttpsTrustFixture } from "../support/https-trust-fixture";
 
 const API = "/wfm/api/v1";
+const BANNER_VERSION =
+  "/internal/shared-app-banner-utils/rest/api/v1/appBannerUtils/release-version";
+const bannerVersionResponse = {
+  response: {
+    status: 0,
+    startRow: 0,
+    endRow: 0,
+    totalRows: 1,
+    data: { nspOSVersion: "NSP-CN-26.11.0-rel.113" },
+    errors: null,
+  },
+};
 const workflowId = "6b6017a8-f6f7-4f70-a198-89e6fed8241a";
 const closes: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -34,8 +46,12 @@ function material(): Record<string, unknown> {
 }
 
 interface FixtureOptions {
+  readonly authenticationStatus?: number;
   readonly versionResponse?: unknown;
   readonly versionStatus?: number;
+  readonly dropVersionResponse?: boolean;
+  readonly bannerVersionResponse?: unknown;
+  readonly bannerVersionStatus?: number;
   readonly existingExecutionId?: string;
   readonly definition?: string;
   readonly loseCreateResponse?: boolean;
@@ -80,7 +96,7 @@ async function fixture(options: FixtureOptions = {}): Promise<NspFixture> {
       expect(request.headers.authorization).toBe(
         `Basic ${Buffer.from("operator:api-secret").toString("base64")}`,
       );
-      reply({ access_token: "fixture-token" });
+      reply({ access_token: "fixture-token" }, options.authenticationStatus ?? 200);
       return;
     }
     if (path.endsWith("/auth/revocation")) {
@@ -96,11 +112,22 @@ async function fixture(options: FixtureOptions = {}): Promise<NspFixture> {
     }
     expect(request.headers.authorization).toBe("Bearer fixture-token");
     if (path === "/sdn/api/v4/system/version") {
+      if (options.dropVersionResponse) {
+        request.socket.destroy();
+        return;
+      }
       reply(
         "versionResponse" in options
           ? options.versionResponse
           : { response: { status: 0, data: "NSP-CN-26.4.0-rel.200" } },
         options.versionStatus ?? 200,
+      );
+      return;
+    }
+    if (path === BANNER_VERSION) {
+      reply(
+        options.bannerVersionResponse ?? {},
+        options.bannerVersionStatus ?? ("bannerVersionResponse" in options ? 200 : 404),
       );
       return;
     }
@@ -206,54 +233,144 @@ async function fixture(options: FixtureOptions = {}): Promise<NspFixture> {
   };
 }
 
-it("creates and publishes one helper, reuses it, retrieves trust, deletes history and revokes its token", async () => {
-  const f = await fixture();
-  const client = f.client();
-  const requestId = randomUUID();
-  expect((await client.ensureWorkflow()).id).toBe(workflowId);
-  expect((await client.ensureWorkflow()).id).toBe(workflowId);
-  const registered: string[] = [];
-  expect(
-    await client.retrieveTrust(requestId, {
-      onExecution: (id) => {
-        registered.push(id);
-        return Promise.resolve();
-      },
-    }),
-  ).toMatchObject({ truststorePassword: "wire-secret", certificateCount: 1 });
-  expect(registered).toEqual([requestId]);
-  expect(f.execution).toBeUndefined();
-  await client.cleanupExecution(requestId, registered[0]);
-  await client.close();
-  await client.close();
-  expect(f.revoked).toBe(true);
-  expect(f.methods.filter((method) => method === `POST ${API}/workflow`)).toHaveLength(1);
-  expect(f.methods.filter((method) => method === `POST ${API}/execution`)).toHaveLength(1);
-  expect(f.methods.filter((method) => method === "GET /sdn/api/v4/system/version")).toHaveLength(1);
-  expect(f.methods.indexOf("GET /sdn/api/v4/system/version")).toBeLessThan(
-    f.methods.indexOf(`GET ${API}/workflow/${NSP_WORKFLOW_NAME}`),
-  );
-  expect(JSON.stringify(f.bodies)).not.toContain("wire-secret");
-});
+it.each(["26.4.0", "26.11.0"])(
+  "creates and reuses one helper, retrieves trust and cleans execution on NSP %s",
+  async (version) => {
+    const f = await fixture({
+      versionResponse: { response: { status: 0, data: `NSP-CN-${version}-rel.200` } },
+      ...(version === "26.11.0" ? { versionStatus: 404, bannerVersionResponse } : {}),
+    });
+    const client = f.client();
+    const requestId = randomUUID();
+    expect((await client.ensureWorkflow()).id).toBe(workflowId);
+    expect((await client.ensureWorkflow()).id).toBe(workflowId);
+    const registered: string[] = [];
+    expect(
+      await client.retrieveTrust(requestId, {
+        onExecution: (id) => {
+          registered.push(id);
+          return Promise.resolve();
+        },
+      }),
+    ).toMatchObject({ truststorePassword: "wire-secret", certificateCount: 1 });
+    expect(registered).toEqual([requestId]);
+    expect(f.execution).toBeUndefined();
+    await client.cleanupExecution(requestId, registered[0]);
+    await client.close();
+    await client.close();
+    expect(f.revoked).toBe(true);
+    expect(f.methods.filter((method) => method === `POST ${API}/workflow`)).toHaveLength(1);
+    expect(f.methods.filter((method) => method === `POST ${API}/execution`)).toHaveLength(1);
+    expect(f.methods.filter((method) => method === "GET /sdn/api/v4/system/version")).toHaveLength(
+      1,
+    );
+    expect(f.methods.filter((method) => method === `GET ${BANNER_VERSION}`)).toHaveLength(
+      version === "26.11.0" ? 1 : 0,
+    );
+    expect(f.methods.indexOf("GET /sdn/api/v4/system/version")).toBeLessThan(
+      f.methods.indexOf(`GET ${API}/workflow/${NSP_WORKFLOW_NAME}`),
+    );
+    expect(JSON.stringify(f.bodies)).not.toContain("wire-secret");
+  },
+);
 
-it("reads the authoritative NSP product and build without creating a workflow, then revokes access", async () => {
-  const f = await fixture();
+it.each(["26.4.0", "26.11.0"])(
+  "reads the authoritative NSP %s product and build without workflow access",
+  async (version) => {
+    const f = await fixture({
+      versionResponse: { response: { status: 0, data: `NSP-CN-${version}-rel.200` } },
+    });
+    const client = f.client();
+    expect(await client.readVersion()).toEqual({
+      raw: `NSP-CN-${version}-rel.200`,
+      product: version,
+      build: 200,
+    });
+    await client.close();
+    expect(f.methods).toEqual([
+      "POST /rest-gateway/rest/api/v1/auth/token",
+      "GET /sdn/api/v4/system/version",
+      "POST /rest-gateway/rest/api/v1/auth/revocation",
+    ]);
+    expect(f.revoked).toBe(true);
+  },
+);
+
+it("reads and caches the authoritative banner product/build only after the legacy endpoint is absent", async () => {
+  const f = await fixture({ versionStatus: 404, bannerVersionResponse });
   const client = f.client();
-  expect(await client.readVersion()).toEqual({
-    raw: "NSP-CN-26.4.0-rel.200",
-    product: "26.4.0",
-    build: 200,
-  });
+  const expected = { raw: "NSP-CN-26.11.0-rel.113", product: "26.11.0", build: 113 };
+  expect(await client.readVersion()).toEqual(expected);
+  expect(await client.readVersion()).toEqual(expected);
   await client.close();
   expect(f.methods).toEqual([
     "POST /rest-gateway/rest/api/v1/auth/token",
     "GET /sdn/api/v4/system/version",
+    `GET ${BANNER_VERSION}`,
     "POST /rest-gateway/rest/api/v1/auth/revocation",
   ]);
   expect(f.revoked).toBe(true);
 });
 
-it.each(["26.3.0", "26.4.1", "26.8.0"])(
+it.each([401, 404])("does not fall back when authentication fails with HTTP %s", async (status) => {
+  const f = await fixture({ authenticationStatus: status, bannerVersionResponse });
+  const client = f.client();
+  await expect(client.readVersion()).rejects.toMatchObject({
+    code: status === 401 ? "AUTHENTICATION" : "NOT_FOUND",
+    status,
+  });
+  await client.close();
+  expect(f.methods).toEqual(["POST /rest-gateway/rest/api/v1/auth/token"]);
+});
+
+it.each([
+  { bannerVersionStatus: 401 },
+  { bannerVersionStatus: 403 },
+  { bannerVersionStatus: 404 },
+  { bannerVersionStatus: 500 },
+  {
+    bannerVersionResponse: {
+      response: { status: "0", data: { nspOSVersion: "NSP-CN-26.11.0-rel.113" } },
+    },
+  },
+  {
+    bannerVersionResponse: {
+      response: { status: 1, data: { nspOSVersion: "NSP-CN-26.11.0-rel.113" } },
+    },
+  },
+  { bannerVersionResponse: { response: { status: 0, data: "NSP-CN-26.11.0-rel.113" } } },
+  {
+    bannerVersionResponse: {
+      response: { status: 0, data: [{ nspOSVersion: "NSP-CN-26.11.0-rel.113" }] },
+    },
+  },
+  {
+    bannerVersionResponse: {
+      response: { status: 0, data: { nspOSVersion: "NSP-CN-26.11.0-rel.113-private" } },
+    },
+  },
+  {
+    bannerVersionResponse: { response: { status: 0, data: { version: "NSP-CN-26.11.0-rel.113" } } },
+  },
+  {
+    bannerVersionResponse: {
+      response: { status: 0, data: { nspOSVersion: "NSP-CN-26.8.0-rel.113" } },
+    },
+  },
+])(
+  "fails closed on an unavailable, malformed or unsupported banner version: %j",
+  async (options) => {
+    const f = await fixture({ versionStatus: 404, bannerVersionResponse, ...options });
+    const client = f.client();
+    await expect(client.ensureWorkflow()).rejects.toMatchObject({ code: "VERSION" });
+    expect(f.methods.filter((method) => method === `GET ${BANNER_VERSION}`)).toHaveLength(1);
+    expect(f.methods.some((method) => method.includes(API))).toBe(false);
+    await client.close();
+    expect(f.revoked).toBe(true);
+  },
+);
+
+it.each(["26.3.0", "26.4.1", "26.8.0", "26.11.1", "27.1.0"])(
   "refuses helper creation, adoption and execution on unsupported NSP %s",
   async (version) => {
     const f = await fixture({
@@ -263,8 +380,9 @@ it.each(["26.3.0", "26.4.1", "26.8.0"])(
     const client = f.client();
     const checking = client.ensureWorkflow();
     await expect(checking).rejects.toMatchObject({ code: "VERSION" });
-    await expect(checking).rejects.toThrow("26.4.0 through 26.4.0");
+    await expect(checking).rejects.toThrow("NSP 26.4.0 or 26.11.0");
     await expect(client.retrieveTrust(randomUUID())).rejects.toMatchObject({ code: "VERSION" });
+    expect(f.methods).not.toContain(`GET ${BANNER_VERSION}`);
     expect(f.methods.some((method) => method.includes(API))).toBe(false);
     await client.close();
     expect(f.revoked).toBe(true);
@@ -274,31 +392,45 @@ it.each(["26.3.0", "26.4.1", "26.8.0"])(
 it.each([
   { versionResponse: { response: { status: 0, data: "unrecognized-secret-response" } } },
   { versionResponse: { response: { status: 1, data: "NSP-CN-26.4.0-rel.200" } } },
+  { versionStatus: 401 },
   { versionStatus: 403 },
   { versionStatus: 404 },
+  { versionStatus: 500 },
+  { dropVersionResponse: true },
 ])("fails closed before workflow access when version cannot be verified: %j", async (options) => {
   const f = await fixture(options);
   const client = f.client();
   const checking = client.ensureWorkflow();
   await expect(checking).rejects.toMatchObject({ code: "VERSION" });
-  await expect(checking).rejects.toThrow("26.4.0 through 26.4.0");
+  await expect(checking).rejects.toThrow("NSP 26.4.0 or 26.11.0");
+  expect(f.methods.filter((method) => method === `GET ${BANNER_VERSION}`)).toHaveLength(
+    options.versionStatus === 404 ? 1 : 0,
+  );
   expect(f.methods.some((method) => method.includes(API))).toBe(false);
   await client.close();
   expect(f.revoked).toBe(true);
 });
 
-it("can clean an owned execution when the product version endpoint is unavailable", async () => {
-  const requestId = randomUUID();
-  const f = await fixture({ versionStatus: 404, existingExecutionId: requestId });
-  const client = f.client();
-  await expect(client.cleanupExecution(requestId)).resolves.toBeUndefined();
-  expect(f.methods).toContain(`DELETE ${API}/execution/${requestId}`);
-  expect(f.execution).toBeUndefined();
-  expect(f.methods).not.toContain("GET /sdn/api/v4/system/version");
-  expect(f.methods.some((method) => method.includes(`${API}/workflow`))).toBe(false);
-  await client.close();
-  expect(f.revoked).toBe(true);
-});
+it.each([
+  { versionStatus: 404 },
+  { versionResponse: { response: { status: 0, data: "NSP-CN-26.8.0-rel.10" } } },
+  { versionResponse: { response: { status: 0, data: "NSP-CN-26.11.1-rel.1" } } },
+])(
+  "cleans an owned execution without consulting unsupported or unavailable version metadata: %j",
+  async (options) => {
+    const requestId = randomUUID();
+    const f = await fixture({ ...options, existingExecutionId: requestId });
+    const client = f.client();
+    await expect(client.cleanupExecution(requestId)).resolves.toBeUndefined();
+    expect(f.methods).toContain(`DELETE ${API}/execution/${requestId}`);
+    expect(f.execution).toBeUndefined();
+    expect(f.methods).not.toContain("GET /sdn/api/v4/system/version");
+    expect(f.methods).not.toContain(`GET ${BANNER_VERSION}`);
+    expect(f.methods.some((method) => method.includes(`${API}/workflow`))).toBe(false);
+    await client.close();
+    expect(f.revoked).toBe(true);
+  },
+);
 
 it.each([
   undefined,

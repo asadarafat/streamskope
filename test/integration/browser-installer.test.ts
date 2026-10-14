@@ -375,11 +375,16 @@ describe.skipIf(process.platform !== "linux")("released browser installer", () =
   it("refuses corrupt release-scoped checksums without replacing a saved deployment", async () => {
     const host = await fixture();
     const installer = await host.installer();
-    expect((await host.run(installer.file)).exitCode).toBe(0);
+    const installed = await host.run(installer.file);
+    expect(installed.exitCode, installed.stderr).toBe(0);
     const state = await readFile(join(host.state, "installation.json"));
     const scoped = join(host.state, `SHA256SUMS-${installer.version}-${installer.sourceRevision}`);
     await writeFile(scoped, "corrupt-cache\n");
-    expect((await host.run(installer.file)).exitCode).not.toBe(0);
+    const refused = await host.run(installer.file);
+    expect(refused.exitCode, refused.stderr).not.toBe(0);
+    expect(refused.stderr).toContain(
+      "Published browser metadata, topology or SHA256SUMS does not match this release",
+    );
     expect(await readFile(scoped, "utf8")).toBe("corrupt-cache\n");
     expect(await readFile(join(host.state, "installation.json"))).toEqual(state);
     expect(deployments(await host.calls())).toHaveLength(1);
