@@ -150,7 +150,7 @@ it.each(["eda", "nsp"] as const)(
     expect(notes).toContain("Live tests are unverified.");
     expect(notes).toContain("Requires StreamSkope >=0.11.0 and <0.12.0.");
     expect(notes).toContain(
-      `Supports ${component.toUpperCase()} ${component === "eda" ? "26.8.2 through 26.8.2" : "26.4.0 through 26.4.0"}`,
+      `Supports ${component.toUpperCase()} ${component === "eda" ? "26.8.2 through 26.8.2" : "26.4.0 through 26.11.0"}`,
     );
     expect(notes).toContain(changes.trim());
     expect(notes).toContain(`Source commit: ${commit} (tag ${files.tag}).`);

@@ -144,32 +144,40 @@ function fixture(initialState: JsonValue = null): {
   };
 }
 
-it("qualifies and saves host-only trust, then reuses the same profile on retry", async () => {
-  const f = fixture();
-  const first = await f.backend.execute(request());
-  const second = await f.backend.execute(request());
-  expect(first).toEqual({ ok: true, profileId: "saved-profile" });
-  expect(second).toEqual(first);
-  expect(f.commands.map((command) => command.command)).toEqual([
-    "profiles.test",
-    "profiles.create",
-    "profiles.test",
-    "profiles.update",
-  ]);
-  expect(f.commands[3]).toMatchObject({
-    payload: { profileId: "saved-profile", profile: { expectedRevision: 2 } },
-  });
-  expect(f.profiles).toHaveLength(1);
-  expect(f.api.readVersion).toHaveBeenCalledTimes(2);
-  expect(f.state.value).toBeNull();
-  for (const secret of [
-    credentials.password,
-    material.truststoreBase64,
-    material.truststorePassword,
-  ]) {
-    expect(JSON.stringify([first, second, f.events])).not.toContain(secret);
-  }
-});
+it.each(["26.4.0", "26.11.0"])(
+  "qualifies and saves host-only NSP %s trust, then reuses the profile",
+  async (version) => {
+    const f = fixture();
+    vi.mocked(f.api.readVersion).mockResolvedValue({
+      raw: `NSP-CN-${version}-rel.200`,
+      product: version,
+      build: 200,
+    });
+    const first = await f.backend.execute(request());
+    const second = await f.backend.execute(request());
+    expect(first).toEqual({ ok: true, profileId: "saved-profile" });
+    expect(second).toEqual(first);
+    expect(f.commands.map((command) => command.command)).toEqual([
+      "profiles.test",
+      "profiles.create",
+      "profiles.test",
+      "profiles.update",
+    ]);
+    expect(f.commands[3]).toMatchObject({
+      payload: { profileId: "saved-profile", profile: { expectedRevision: 2 } },
+    });
+    expect(f.profiles).toHaveLength(1);
+    expect(f.api.readVersion).toHaveBeenCalledTimes(2);
+    expect(f.state.value).toBeNull();
+    for (const secret of [
+      credentials.password,
+      material.truststoreBase64,
+      material.truststorePassword,
+    ]) {
+      expect(JSON.stringify([first, second, f.events])).not.toContain(secret);
+    }
+  },
+);
 
 it("refreshes an existing profile through update qualification while retaining independent protected credentials", async () => {
   const f = fixture();
@@ -285,7 +293,7 @@ it.each([false, true])(
       error: { code: "VALIDATION" },
     });
     if (!result.ok) {
-      expect(result.error.summary).toContain("26.4.0 through 26.4.0");
+      expect(result.error.summary).toContain("NSP 26.4.0 or 26.11.0");
       expect(result.error.recovery).toContain("Pending execution cleanup remains available");
     }
     expect(f.api.ensureWorkflow).not.toHaveBeenCalled();

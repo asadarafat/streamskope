@@ -1,7 +1,7 @@
 {
   "id": "streamskope.nsp",
   "name": "NSP Connector",
-  "description": "Discover NSP Kafka connection settings using your NSP API credentials.",
+  "description": "Discover Kafka connection settings for NSP 26.4.0 or 26.11.0 using your NSP API credentials.",
   "version": "0.0.0-dev",
   "apiVersion": 4,
   "backend": "backend.cjs",
@@ -14,7 +14,7 @@
     "target": {
       "system": "nsp",
       "minimum": "26.4.0",
-      "maximum": "26.4.0"
+      "maximum": "26.11.0"
     }
   },
   "resources": [

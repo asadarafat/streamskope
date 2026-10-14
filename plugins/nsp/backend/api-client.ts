@@ -18,6 +18,8 @@ const MAXIMUM_RESPONSE_BYTES = 8 * 1_048_576;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const TERMINAL = new Set(["SUCCESS", "ERROR", "CANCELLED"]);
 const manifest = parsePluginManifest(manifestJson);
+// API 4 stores enclosing bounds; actual NSP product admission is limited to these releases.
+const SUPPORTED_NSP_RELEASES = ["26.4.0", "26.11.0"] as const;
 
 export interface NspVersion {
   readonly raw: string;
@@ -28,7 +30,7 @@ export interface NspVersion {
 function supportedVersions(): string {
   const target = manifest.compatibility?.target;
   if (target?.system !== "nsp") throw new Error("The NSP plugin target is not declared.");
-  return `NSP ${target.minimum} through ${target.maximum} (inclusive)`;
+  return `NSP ${SUPPORTED_NSP_RELEASES.filter((version) => isTargetVersionCompatible(manifest, version)).join(" or ")}`;
 }
 
 /** Accept the documented product build, never an API version or a partial version match. */
@@ -60,8 +62,19 @@ export function parseNspVersion(value: unknown): NspVersion {
   return { raw: match[0], product: match[1], build: Number(match[2]) };
 }
 
+/** The NSP banner service wraps the same product build in data.nspOSVersion. */
+function parseNspBannerVersion(value: unknown): NspVersion {
+  const response = record(record(value).response);
+  return parseNspVersion({
+    response: { status: response.status, data: record(response.data).nspOSVersion },
+  });
+}
+
 export function requireNspTargetVersion(version: NspVersion): void {
-  if (!isTargetVersionCompatible(manifest, version.product)) {
+  if (
+    !SUPPORTED_NSP_RELEASES.some((release) => release === version.product) ||
+    !isTargetVersionCompatible(manifest, version.product)
+  ) {
     throw new NspApiError(
       `The running NSP product version is incompatible. This plugin supports ${supportedVersions()}.`,
       "VERSION",
@@ -211,7 +224,22 @@ export class NspApiClient {
     if (this.observedVersion !== undefined) return this.observedVersion;
     await this.authenticate();
     try {
-      this.observedVersion = parseNspVersion(await this.json("GET", "/sdn/api/v4/system/version"));
+      try {
+        this.observedVersion = parseNspVersion(
+          await this.json("GET", "/sdn/api/v4/system/version"),
+        );
+      } catch (error) {
+        if (!(error instanceof NspApiError) || error.code !== "NOT_FOUND" || error.status !== 404)
+          throw error;
+        // NSP 26.11's own banner uses this same-origin endpoint. Only a missing
+        // legacy endpoint permits fallback; denial, network and malformed data fail closed.
+        this.observedVersion = parseNspBannerVersion(
+          await this.json(
+            "GET",
+            "/internal/shared-app-banner-utils/rest/api/v1/appBannerUtils/release-version",
+          ),
+        );
+      }
       return this.observedVersion;
     } catch (error) {
       if (error instanceof NspApiError && ["VERSION", "CANCELLED"].includes(error.code))
