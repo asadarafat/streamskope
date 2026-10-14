@@ -2,6 +2,8 @@
 site_name = "StreamSkope"
 site_description = "Get started with StreamSkope: connect Kafka or NATS, inspect records and troubleshoot connections."
 site_url = "http://127.0.0.1:8002/"
+repo_url = "https://github.com/asadarafat/streamskope"
+repo_name = "asadarafat/streamskope"
 docs_dir = "docs"
 site_dir = ".site"
 copyright = "StreamSkope contributors · Apache-2.0"
