@@ -31,6 +31,7 @@ export default [
       "website/.preview/**",
       "website/.cache/**",
       "website/docs/launch/assets/**",
+      "website/docs/assets/video-sources.js",
       "openspec/**",
       "playwright-report/**",
       "test-results/**",
