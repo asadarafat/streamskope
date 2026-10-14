@@ -14,7 +14,4 @@ additional release highlights, not a complete list of pending changes.
 
 ## Release highlights
 
-- Kafka reader setup has a separate 30-second budget for metadata and sequential
-  offset lookups. Individual broker requests retain their five-second timeout.
-  When preparation exceeds its budget, the error identifies the active step.
-  A failed read no longer prompts you to select a topic that is already selected.
+No additional release highlights recorded.
