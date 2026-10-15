@@ -160,13 +160,20 @@ remains available without this version gate. Workflow permissions and mounted-fi
 prerequisites still apply. The banner endpoint is internal and may change in a
 later NSP build.
 
-**26.11 qualification is incomplete.** Version reading, helper reuse, combined
-trust retrieval and execution cleanup were exercised on build 113. Complete live
-consumption, reconnect and lifecycle acceptance remain unrecorded because the
-qualification host could not reach the external Kafka listener. Successful topic
-listing from another network does not prove message access. Until that acceptance
-passes, use a prerelease package for manual testing; do not interpret its declared
-target as completed qualification.
+**26.11 manual acceptance is recorded.** Version reading, helper reuse, combined
+trust retrieval and execution cleanup were exercised on build 113. On
+2026-10-15, the release owner confirmed successful message consumption,
+reconnection and workflow cleanup with the manually installed API 4 compatibility
+plugin from a network with broker access; connection and topic listing had
+previously succeeded. This supports stable publication of the compatibility
+update.
+
+The qualification host could not reach the external Kafka listener, so automated
+live consumption and lifecycle results remain unrecorded. The manual confirmation
+did not include the installed package digest or exact app build. Treat it as
+operator-reported acceptance, not a source-bound automated receipt or evidence for
+other NSP patch versions and every desktop platform. Check the plugin release
+notes and qualification report for the evidence delivered with a published package.
 
 ## What the workflow changes
 

@@ -25,15 +25,23 @@ updating; saved profiles and the immutable shared helper are retained. The Kafka
 reader-preparation fix belongs to the StreamSkope app and is not delivered by a
 plugin update.
 
-## Qualification limits
+## Qualification evidence and limits
 
 NSP 26.4.0 build 200 has prior source-host lifecycle evidence. On NSP 26.11.0
 build 113, version reading, helper reuse, combined trust retrieval and execution
-cleanup were exercised, but the external broker path from the qualification host
-was unavailable. Successful topic discovery reported from another network does
-not establish complete consumption, reconnect or lifecycle qualification.
+cleanup were exercised from the qualification host. Its external Kafka path was
+unreachable.
 
-Until a passing source-bound 26.11 live receipt is recorded, publish this change
-only as a prerelease for manual testing. Packaging and fixture checks do not
-establish live integration, installed macOS/Windows behavior or managed-service
-support. The 26.11 banner endpoint is internal and may change in a later NSP build.
+On 2026-10-15, the release owner confirmed successful message consumption,
+reconnection and workflow cleanup with the manually installed API 4 compatibility
+plugin from a network that can reach NSP. Connection and topic listing had
+previously succeeded. This operator-reported manual acceptance supports publishing
+the compatibility update as a stable plugin release; the qualification host's
+network restriction does not invalidate those results.
+
+These manual results are not an automated live-test receipt. The installed test
+package digest and exact app build were not captured with the confirmation, and
+release CI does not access the private NSP system. Preserve that distinction in
+the release qualification report. This evidence does not qualify other NSP patch
+versions, every desktop platform or managed services. The 26.11 banner endpoint is
+internal and may change in a later NSP build.
