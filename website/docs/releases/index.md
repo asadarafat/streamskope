@@ -31,6 +31,7 @@ compatibility. See [plugin versioning and compatibility](../plugins/versioning.m
 
 | Plugin release      | Archived notes                                  | Published assets                                                                            |
 | ------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| NSP Connector 0.3.0 | [Read the release notes](plugins/nsp/v0.3.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.3.0) |
 | NSP Connector 0.2.0 | [Read the release notes](plugins/nsp/v0.2.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.2.0) |
 | EDA Connector 0.2.0 | [Read the release notes](plugins/eda/v0.2.0.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/eda/v0.2.0) |
 | NSP Connector 0.1.2 | [Read the release notes](plugins/nsp/v0.1.2.md) | [Plugin release](https://github.com/asadarafat/streamskope/releases/tag/plugins/nsp/v0.1.2) |
